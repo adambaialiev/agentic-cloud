@@ -5,7 +5,6 @@
  * packages. The Fly token is FLY_API_TOKEN (or flyctl's own sign-in).
  *
  *   node install.mjs install --org <fly organization> --domain <copy's domain> \
- *        --key-file <update key file> --licence-file <licence file> \
  *        [--name <prefix>] [--region <code>] [--release <version|latest>]
  *        [--resend-key-file <file> | --smtp-host <host> [--smtp-port <587|465>]
  *         [--smtp-user <user> --smtp-password-file <file>]]
@@ -15,8 +14,10 @@
  * installer stores the settings and names the provider's own records, which
  * only that provider knows).
  *
- * The licence is stored with the backend's keys; a design
- * partner whose contract has no licence runs with --no-licence instead.
+ * Licensing is off (the product is free for now): no update key, no licence,
+ * and the prefix comes from the domain unless --name gives one. With
+ * COPY_LICENCE=on the installer asks for --key-file and --licence-file (or
+ * --no-licence) as before, and the installed cloud checks its licence.
  *
  * `install` builds a whole copy in the organization, start to finish, and can
  * be run again at any point: it carries on from what is already there. It
@@ -135,9 +136,10 @@ const eventSink = (options, deps) => deps.emit ?? (options.json ? jsonLine : () 
 
 /** Where releases come from: our update service, signed in as the customer. */
 export function updatesSource({ url = UPDATES_URL, customer, key, fetchImpl = fetch }) {
-  const auth = basic(customer, key);
+  // With licensing off there is no key: the service hands releases to anyone.
+  const auth = key ? { authorization: basic(customer, key) } : {};
   const get = async (pathname, init = {}) => {
-    const answer = await fetchImpl(`${url}${pathname}`, { ...init, headers: { authorization: auth, ...(init.headers ?? {}) } });
+    const answer = await fetchImpl(`${url}${pathname}`, { ...init, headers: { ...auth, ...(init.headers ?? {}) } });
     if (answer.status === 401) throw new PersonNeeded('update-key', 'The update service did not accept this customer id and update key.');
     return answer;
   };
@@ -292,6 +294,36 @@ export function readUpdateKey(text) {
   return { key, customer: payload.customer, domain: payload.domain, until: payload.updatesUntil };
 }
 
+/**
+ * Licensing is OFF: the product is free for now, so an install needs no
+ * update key and no licence, the update service hands releases to anyone,
+ * and the installed cloud checks and counts nothing. The whole mechanism
+ * stays in the code behind this one switch, COPY_LICENCE=on (the same name
+ * on the update service and in the installed backend), and comes back by
+ * setting it.
+ */
+export const licensingOn = () => String(process.env.COPY_LICENCE ?? '').trim().toLowerCase() === 'on';
+
+/** The app prefix when nobody gives one and no key names a customer: the
+ *  domain's labels before its last, so agents.theirco.com is agents-theirco. */
+export function prefixFromDomain(domain) {
+  const labels = String(domain).toLowerCase().split('.').slice(0, -1);
+  const prefix = labels.join('-').replace(/[^a-z0-9-]/g, '').replace(/^[^a-z]+/, '').slice(0, 42).replace(/-+$/, '');
+  return prefix;
+}
+
+/** Who the releases are fetched as: with licensing off, nobody in particular
+ *  (no key is read, even if one is given); with it on, the update key. */
+export function releaseAccess(options, domain) {
+  if (!licensingOn()) {
+    const customer = String(options.name ?? prefixFromDomain(domain)).toLowerCase();
+    return { key: null, customer, domain, until: null };
+  }
+  const updateKey = readKeyFile(options['key-file']);
+  if (domain && updateKey.domain !== domain) throw new PersonNeeded('update-key', keyForAnotherDomain(updateKey, domain));
+  return updateKey;
+}
+
 /** The update key from its file. It comes from us with the agreement, so a
  *  missing or damaged one is for a person to fetch, not a failure. */
 export function readKeyFile(file) {
@@ -309,6 +341,7 @@ export function readKeyFile(file) {
  *  domain only: the installed backend checks the signature itself. A run
  *  that carries on from a state file already stored it. */
 export function readLicence(options, domain, { resuming = false } = {}) {
+  if (!licensingOn()) return { text: null, detail: 'not needed: licensing is off, the product is free for now' };
   if (options['licence-file'] && options['licence-file'] !== true) {
     const file = options['licence-file'];
     if (!existsSync(file)) throw new PersonNeeded('licence', `There is no licence at ${file}. It comes from us with the agreement, one line in a file.`);
@@ -823,12 +856,11 @@ export async function install(options, deps = {}) {
   const nodeMajor = Number(process.versions.node.split('.')[0]);
   if (nodeMajor < 20) throw new Error(`Node ${process.versions.node} is too old; the installer needs 20 or newer.`);
 
-  const updateKey = readKeyFile(options['key-file']);
   const domain = String(options.domain ?? '').toLowerCase().replace(/\.$/, '');
   const org = String(options.org ?? '');
   if (!org) throw new PersonNeeded('fly-organization', ORG_NEEDED);
   if (!DOMAIN_SHAPE.test(domain)) throw new PersonNeeded('domain', DOMAIN_NEEDED);
-  if (updateKey.domain !== domain) throw new PersonNeeded('update-key', keyForAnotherDomain(updateKey, domain));
+  const updateKey = releaseAccess(options, domain);
   const smtpHost = options['smtp-host'] ? String(options['smtp-host']).trim() : '';
   mailOutProblem(options);
   const prefix = String(options.name ?? updateKey.customer).toLowerCase();
@@ -843,7 +875,8 @@ export async function install(options, deps = {}) {
   if (state.domain && state.domain !== domain) throw new Error(`${stateFile} is the record of ${state.domain}, not ${domain}.`);
   const save = () => writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
   Object.assign(state, { prefix, org, domain, customer: updateKey.customer });
-  if (options['no-licence']) state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv?.backend, COPY_LICENCE: 'off' } };
+  if (options['no-licence'] || !licensingOn()) state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv?.backend, COPY_LICENCE: 'off' } };
+  else state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv?.backend, COPY_LICENCE: 'on' } };
 
   const bin = deps.flyctl ?? findFlyctl();
   if (!bin) throw new Error('flyctl is not installed. Install it (fly.io/docs/flyctl/install) and run this again.');
@@ -887,7 +920,7 @@ export async function install(options, deps = {}) {
   state.region = state.region ?? options.region ?? orgFacts.nearestRegion ?? 'iad';
   const source = (deps.updatesSource ?? updatesSource)({ customer: updateKey.customer, key: updateKey.key, url: options.updates || UPDATES_URL, fetchImpl });
   const release = state.release ?? await source.release(options.release || 'latest');
-  log(`        ${orgFacts.name}: billing current. Region ${state.region}. Release ${release.version}. Update key good for releases until ${updateKey.until}.`);
+  log(`        ${orgFacts.name}: billing current. Region ${state.region}. Release ${release.version}.${updateKey.until ? ` Update key good for releases until ${updateKey.until}.` : ''}`);
   save();
   emit({ event: 'step', step: 1, of: STEPS, key: 'checks', title: 'Checking the organization, the update key and the release', status: 'done', release: release.version, region: state.region });
 
@@ -1251,12 +1284,11 @@ export async function upgrade(options, deps = {}) {
   const emit = eventSink(options, deps);
   const started = Date.now();
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const updateKey = readKeyFile(options['key-file']);
-  const stateFile = path.resolve(options.state ?? `${updateKey.customer}-copy.json`);
+  const stateFile = findStateFile(options);
   if (!existsSync(stateFile)) throw new Error(`There is no ${stateFile}. Run this where the installer left it, or give --state <file>.`);
   const state = JSON.parse(readFileSync(stateFile, 'utf8'));
   if (!state.release?.tags || !state.steps?.smoke) throw new Error(`${stateFile} is not a finished install. Run the installer to the end first.`);
-  if (updateKey.domain !== state.domain) throw new PersonNeeded('update-key', `This update key was issued for ${updateKey.domain}, not ${state.domain}.`);
+  const updateKey = releaseAccess(options, state.domain);
   const save = () => writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
   const names = namesFor(state.prefix);
   const domain = state.domain;
@@ -1440,10 +1472,15 @@ export async function plan(options, deps = {}) {
   });
   let updateKey = null;
   await check('update-key', async () => {
-    const read = readKeyFile(options['key-file']);
-    if (domainOk && read.domain !== domain) throw new PersonNeeded('update-key', keyForAnotherDomain(read, domain));
-    updateKey = read;
-    return `for ${read.customer} at ${read.domain}, releases until ${read.until}`;
+    if (licensingOn()) {
+      const read = readKeyFile(options['key-file']);
+      if (domainOk && read.domain !== domain) throw new PersonNeeded('update-key', keyForAnotherDomain(read, domain));
+      updateKey = read;
+      return `for ${read.customer} at ${read.domain}, releases until ${read.until}`;
+    }
+    if (!domainOk && !options.name) throw new UsageError(PREFIX_NEEDED);
+    updateKey = releaseAccess(options, domain);
+    return 'not needed: licensing is off, the product is free for now';
   });
   const prefix = String(options.name ?? updateKey?.customer ?? '').toLowerCase();
   const names = PREFIX_SHAPE.test(prefix) ? namesFor(prefix) : null;
@@ -1492,7 +1529,7 @@ export async function plan(options, deps = {}) {
     await check('release', async () => {
       const source = (deps.updatesSource ?? updatesSource)({ customer: updateKey.customer, key: updateKey.key, url: options.updates || UPDATES_URL, fetchImpl });
       release = await source.release(options.release || 'latest');
-      return `release ${release.version}, which this update key opens`;
+      return updateKey.key ? `release ${release.version}, which this update key opens` : `release ${release.version}`;
     });
   }
   let existing = [];
@@ -1568,7 +1605,7 @@ export async function plan(options, deps = {}) {
 function findStateFile(options) {
   if (options.state) return path.resolve(options.state);
   if (options.name) return path.resolve(`${String(options.name).toLowerCase()}-copy.json`);
-  if (options['key-file']) return path.resolve(`${readKeyFile(options['key-file']).customer}-copy.json`);
+  if (options['key-file'] && licensingOn()) return path.resolve(`${readKeyFile(options['key-file']).customer}-copy.json`);
   const here = readdirSync(process.cwd()).filter((file) => file.endsWith('-copy.json'));
   if (here.length === 1) return path.resolve(here[0]);
   throw new UsageError(here.length ? `Several installs are recorded here (${here.join(', ')}): say which with --state <file>.` : 'There is no <prefix>-copy.json here. Run this where the installer left it, or give --state <file>.');
@@ -1702,7 +1739,8 @@ async function main() {
       process.exitCode = (await plan(options)).exitCode;
       return;
     }
-    if (!options.org || !options.domain || !options['key-file']) throw new UsageError('--org, --domain and --key-file are all needed.');
+    if (!options.org || !options.domain) throw new UsageError('--org and --domain are both needed.');
+    if (licensingOn() && !options['key-file']) throw new UsageError('--key-file is needed while licensing is on (COPY_LICENCE=on).');
     await install(options);
     return;
   }
@@ -1711,27 +1749,28 @@ async function main() {
     return;
   }
   if (command === 'upgrade') {
-    if (!options['key-file']) throw new UsageError('--key-file is needed: the update key your own Agentic Cloud was installed with.');
+    if (licensingOn() && !options['key-file']) throw new UsageError('--key-file is needed while licensing is on: the update key your own Agentic Cloud was installed with.');
     await upgrade(options);
     return;
   }
   if (command !== 'copy') {
-    say('usage: node install.mjs install --org <fly organization> --domain <domain> --key-file <update key file>');
-    say('         --licence-file <licence file> | --no-licence');
+    say('usage: node install.mjs install --org <fly organization> --domain <domain>');
     say('         [--name <prefix>] [--region <code>] [--release <version>] [--wait <minutes>]');
+    say('         [--key-file <update key file> --licence-file <licence file> | --no-licence]  (only with COPY_LICENCE=on)');
     say('         [--resend-key-file <file> | --smtp-host <host> [--smtp-port <587|465>] [--smtp-user <user> --smtp-password-file <file>]]');
     say('         [--plan] [--json]');
     say('       node install.mjs status [--state <file>] [--resend-key-file <file>] [--json]');
-    say('       node install.mjs upgrade --key-file <update key file> [--release <version|latest>] [--drill] [--state <file>] [--json]');
-    say('       node install.mjs copy --customer <id> --key-file <file> --to-app <images app> [--release <version|latest>]');
+    say('       node install.mjs upgrade [--release <version|latest>] [--drill] [--state <file>] [--json] [--key-file <file>]');
+    say('       node install.mjs copy --to-app <images app> [--release <version|latest>] [--customer <id> --key-file <file>]');
     say('exit codes: 0 done, 1 failed, 2 wrong command, 3 a person is needed, 4 still waiting (run it again later)');
     process.exitCode = EXIT.usage;
     return;
   }
   const token = process.env.FLY_API_TOKEN;
   if (!token) throw new PersonNeeded('fly-sign-in', 'FLY_API_TOKEN is not set: a Fly token for the organization your own Agentic Cloud is in.');
-  if (!options.customer || !options['key-file'] || !options['to-app']) throw new UsageError('--customer, --key-file and --to-app are all needed.');
-  const key = readFileSync(options['key-file'], 'utf8').trim();
+  if (!options['to-app']) throw new UsageError('--to-app is needed.');
+  if (licensingOn() && (!options.customer || !options['key-file'])) throw new UsageError('--customer and --key-file are needed while licensing is on.');
+  const key = licensingOn() ? readFileSync(options['key-file'], 'utf8').trim() : null;
   const source = updatesSource({ customer: options.customer, key, url: options.updates || UPDATES_URL });
   const dest = flyRegistry({ app: options['to-app'], token });
   const started = Date.now();

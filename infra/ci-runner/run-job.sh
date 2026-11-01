@@ -1039,6 +1039,14 @@ REMOTE
       echo "PLATFORM_REPO unset — mirroring is armed only after the source-of-truth flip"
       exit 78
     fi
+    # Off by the owner's choice (note #936): once the platform repo is the
+    # public agentic-cloud, there is no GitHub copy to keep. The old mirror
+    # holds the PRIVATE infinite-agents history, and pushing the new
+    # repository at it with --prune --force would replace that history.
+    if [ "${GITHUB_MIRROR:-on}" = "off" ]; then
+      echo "GITHUB_MIRROR=off in /etc/ia-ci/env — no GitHub copy is kept"
+      exit 78
+    fi
     : "${RECOVERY_GIT_TOKEN:?RECOVERY_GIT_TOKEN unset in /etc/ia-ci/env — the mirror fetches with the break-glass token}"
     PLATFORM_GIT_BASE="${PLATFORM_GIT_BASE:-https://git.agentbuilt.app}"
     INTERNAL_URL="$PLATFORM_GIT_BASE/$PLATFORM_REPO.git"

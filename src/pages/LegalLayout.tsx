@@ -9,9 +9,8 @@ import { H3, LEAD } from '../components/landing-kit';
 
 export { CONTACT_EMAIL };
 
-// The public contact route is the shared product email. The service is free
-// and does not collect payment details, so the legal pages do not publish a
-// private person's name, home location or personal profile.
+// The public contact route is the shared product email. The legal pages do
+// not publish a private person's name, home location or personal profile.
 
 // Shared frame for /terms and /privacy: the landing's own surface,
 // a narrow prose column, and cross-links between the documents.

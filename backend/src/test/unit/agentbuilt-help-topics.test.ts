@@ -89,7 +89,8 @@ describe('agentbuilt help <topic>', () => {
     // Evidence on the proposal, not in the chat; the margin starts nobody.
     expect(stdout).toContain('SHOW THEM THE CHANGE');
     expect(stdout).toContain('A comment STARTS NOBODY');
-    expect(stdout).toContain('CLOSED SOURCE');
+    expect(stdout).toContain("MAKING A REPOSITORY PUBLIC IS YOUR USER'S ACT, NEVER YOURS");
+    expect(stdout).not.toContain('CLOSED SOURCE');
     expect(stdout).toContain('Clone on your computer');
     // The sharing machinery is gone and must not come back through the move.
     expect(stdout).not.toContain('home room');

@@ -5,44 +5,58 @@ import TermsOfService from './TermsOfService';
 import PrivacyPolicy from './PrivacyPolicy';
 
 describe('Terms of Service', () => {
-  it('describes the Workspace-native, browser-only product', () => {
+  it('describes the Workspace, offered as your own Agentic Cloud, plus the invite-only hosted Workspace', () => {
     render(<TermsOfService />);
 
     const body = document.body.textContent ?? '';
-    expect(body).toMatch(/one shared\s+Workspace/);
-    // The sign-in the product actually has since the email identities landed:
-    // an address and a password, confirmed by email, with the authenticator as
-    // an OPTIONAL second factor. The previous text described the retired
-    // username + rotating-code flow as the only way in.
-    expect(body).toMatch(/sign up in a browser by choosing your own address on our mail domain and a\s+password/);
-    expect(body).toMatch(/may add an authenticator app as a second factor/);
+    expect(body).toMatch(/one shared Workspace for a\s+company’s AI agents/);
+    // Note #933 (the owner, 1 Nov 2026): sign-up on our cloud is closed;
+    // the offer is your own Agentic Cloud.
+    expect(body).toMatch(/We offer it as your own Agentic Cloud/);
+    expect(body).toMatch(/new accounts are closed and an\s+account comes only with an invite/);
+    // The hosted sign-in the product has: an address here and a password,
+    // the authenticator OPTIONAL; never the retired username + code flow.
+    expect(body).toMatch(/chooses its own address on our mail domain and a\s+password, and may add an authenticator app as a second factor/);
     expect(body).toMatch(/updates appear there,\s+with optional browser alerts/);
     expect(body).not.toMatch(/username and a rotating\s+authenticator code/);
+    expect(body).not.toMatch(/You sign up in a browser/);
     expect(body).not.toMatch(/factory bot|Telegram|bot accounts/i);
+    expect(body).not.toMatch(/private copy|your own copy|Get a copy/i);
   });
 
-  it('describes a free product and separate customer provider accounts', () => {
+  // Note #935 (the owner, 1 Nov 2026, 08:56 UTC): "Let's disable licensing
+  // for now ... Let's make the product free for now." No licence, price,
+  // grace or key promise, on either offer.
+  it('says both offers are free for now, with no licence, price or key promise', () => {
+    render(<TermsOfService />);
+
+    const body = document.body.textContent ?? '';
+    expect(body).toMatch(/In a Fly.io organization of yours, on a\s+domain of yours/);
+    expect(body).toMatch(/Fly bills your organization directly; nothing of ours is on\s+that bill/);
+    expect(body).toMatch(/Both are free for now/);
+    expect(body).toMatch(/Your own Agentic Cloud and our hosted\s+Workspace are free for now\. We charge nothing, take no payments and collect no payment\s+details\./);
+    expect(body).toMatch(/The releases and support by email/);
+    expect(body).not.toMatch(/licen[cs]e|update key|grace|in writing|first month/i);
+    expect(body).not.toMatch(/\$\s?\d|USD|per person per month|billed yearly|Paddle|merchant of record|Stripe/i);
+    expect(body).not.toMatch(/Agentic Cloud Computer is free to use|free service|open.source/i);
+  });
+
+  it('keeps provider costs apart from what we bill, and the refund lines', () => {
     render(<TermsOfService />);
 
     const body = document.body.textContent ?? '';
     expect(body).toMatch(/their own Claude or ChatGPT plan/);
     expect(body).toMatch(/We do not buy, hold or resell model access/);
-    // Note #664 (2026-09-25): a new workplace brings no cloud account; its
-    // machines and sites run on ours, free, within per-workplace limits.
-    expect(body).toMatch(/Agent machines and the sites your\s+agents deploy run on our own Fly.io account, at no charge to you/);
+    // The hosted Workspace (note #664): machines and sites on ours, free,
+    // within per-workplace limits.
+    expect(body).toMatch(/Agent machines and the\s+sites your agents deploy run on our own Fly.io account, at no charge to you/);
     expect(body).toMatch(/per-workplace limits the Workspace shows/);
-    expect(body).not.toMatch(/organisation’s own Fly.io account|on Fly’s bill|scoped token/);
-    expect(body).toMatch(/Agentic Cloud Computer is free to use/);
-    expect(body).toMatch(/do not\s+charge you, accept payments, collect payment details, operate checkout or offer a paid\s+tier/);
-    expect(body).toMatch(/third-party provider charges are separate from this\s+free service/);
-    // /refunds is retired; what that page was for has to survive inside the
-    // Terms rather than vanish with it.
-    expect(body).toMatch(/there is no platform payment to refund/);
-    expect(body).toMatch(/belongs with the\s+provider that billed you/);
-    expect(body).toMatch(/was not collected by this service/);
-    expect(body).toMatch(/Nothing here limits a stronger right the law gives you/);
-    expect(body).not.toMatch(/\/refunds|Payments and refunds page/);
-    expect(body).not.toMatch(/Paddle|merchant of record|\$\s?\d|one small server/i);
+    expect(body).toMatch(/Those charges are theirs,\s+not ours/);
+    expect(body).toMatch(/there is no\s+payment of ours to refund/);
+    expect(body).toMatch(/belongs with the provider that\s+billed you/);
+    expect(body).toMatch(/was not collected by us/);
+    expect(body).toMatch(/Nothing\s+here limits a stronger right the law gives you/);
+    expect(body).not.toMatch(/\/refunds|Payments and refunds page|one small server/i);
   });
 
   it('states the approval gate as a control, not a promise of correctness', () => {
@@ -53,15 +67,15 @@ describe('Terms of Service', () => {
     expect(body).toMatch(/you are responsible for what you\s+approve/);
   });
 
-  it('does not overpromise portability of platform-held records', () => {
+  it('says what stays with the customer and does not overpromise portability of hosted records', () => {
     render(<TermsOfService />);
 
     const body = document.body.textContent ?? '';
-    expect(body).toMatch(/Workspace records.*recent conversation rows, notes, proposals and\s+encrypted credentials/s);
-    expect(body).toMatch(/platform-hosted Workspace\s+records do not automatically move/);
-    // What a deletion takes, now that the machines are ours (note #664).
-    expect(body).toMatch(/Deleting a workplace destroys its agent machines and sites on the cloud/);
-    expect(body).not.toMatch(/Work\s+already running in an account you control remains there/);
+    expect(body).toMatch(/your messages, code, files, mail, keys and logs stay in your Fly\s+organization and never reach us/);
+    expect(body).toMatch(/backs its database up daily to a bucket of yours; we hold no copy/);
+    expect(body).toMatch(/Workspace\s+records.*recent conversation rows, notes, proposals and encrypted\s+credentials/s);
+    expect(body).toMatch(/platform-hosted Workspace records do\s+not automatically move/);
+    expect(body).toMatch(/deleting a workplace\s+destroys its agent machines and sites on the cloud/);
     expect(body).not.toMatch(/everything.*keeps running.*never on our infrastructure/is);
   });
 });
@@ -111,7 +125,10 @@ describe('Privacy Policy', () => {
     render(<PrivacyPolicy />);
 
     const body = document.body.textContent ?? '';
-    expect(body).toMatch(/sign up and sign in to the Workspace in a browser with your own address on our mail\s+domain and a password/);
+    // Sign-up is closed on our cloud (note #823): an account only through an invite.
+    expect(body).toMatch(/New accounts are made only through an invite link from a workplace that has one/);
+    expect(body).toMatch(/sign\s+in to the Workspace in a browser with your own address on our mail domain and a password/);
+    expect(body).not.toMatch(/sign up and sign in/);
     expect(body).toMatch(/we send a message to such an\s+address to confirm it/);
     expect(body).toMatch(/Completion notices and approval requests are kept as Workspace notification records/);
     expect(body).toMatch(/browser push service processes the minimal title/);
@@ -141,8 +158,24 @@ describe('Privacy Policy', () => {
     const body = document.body.textContent ?? '';
     expect(body).toMatch(/14 daily snapshots/);
     expect(body).toMatch(/one weekly snapshot for up to eight\s+weeks/);
-    expect(body).toMatch(/stores no card, platform invoice or subscription billing record/);
-    expect(body).not.toMatch(/Paddle/);
+    expect(body).toMatch(/The hosted Workspace is free for now, so\s+for it we store no card, platform invoice or subscription billing record/);
+    expect(body).not.toMatch(/Paddle|does not accept payments/);
+  });
+
+  // Note #933: what we sell is your own Agentic Cloud, and its data is
+  // the customer's (knowledge private-copy, services/copy-health.ts).
+  it('says what we hold for your own Agentic Cloud, and the only things that cross', () => {
+    render(<PrivacyPolicy />);
+
+    const body = document.body.textContent ?? '';
+    expect(body).toMatch(/Your messages, code, files, mail, keys and logs never\s+reach us/);
+    expect(body).toMatch(/no access to your Agentic Cloud unless you give it to us/);
+    expect(body).toMatch(/Only what you send us/);
+    expect(body).toMatch(/free for now, so we hold no payment record or card details for it/);
+    expect(body).toMatch(/downloads it from our update service, which reads nothing from your Agentic Cloud/);
+    expect(body).not.toMatch(/licen[cs]e|update key|renewal/i);
+    expect(body).toMatch(/It holds no messages, code,\s+files, mail, keys or names of people, and it reaches us only if an admin sends it/);
+    expect(body).not.toMatch(/Agentic Cloud Computer is free to use|private copy/i);
   });
 });
 

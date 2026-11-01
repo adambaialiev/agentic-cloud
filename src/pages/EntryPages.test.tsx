@@ -77,9 +77,10 @@ describe.each(PAGES)('%s', (_name, Page, spec) => {
     // charge one, and /refunds is gone.
     expect(body).not.toMatch(/\$\s?\d|per seat|per month|\/refunds/i);
     // The cost answer says it; the team page has no answers since 2026-10-12.
-    // Since note #822 a copy is free only for its first month, and nothing
-    // offers our hosting (claims-we-never-make).
-    if (spec.faqs) expect(body).toMatch(/The first month is a free trial\./);
+    // Since note #935 (1 Nov 2026) an own cloud is free for now, with no
+    // licence, and nothing offers our hosting (claims-we-never-make).
+    if (spec.faqs) expect(body).toMatch(/Your own Agentic Cloud is free for now: no licence, no key and no charge from us\./);
+    expect(body).not.toMatch(/free trial|licence from us/);
     expect(body).not.toMatch(/free to use|runs .{0,30} for you, free|we run it for you|\bour cloud|at no charge|thirty live sites/i);
     // The honest answer about the model, never the flattering one.
     expect(body).not.toMatch(/never sees your code|your code never leaves/i);

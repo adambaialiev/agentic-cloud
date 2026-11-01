@@ -136,6 +136,7 @@ const stranger = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8
 const IMAGES = ['backend', 'git-host', 'router'];
 let upstream: ReturnType<typeof fakeRegistry>;
 let serviceUrl = '';
+let openUrl = '';
 let keyFor: (payload: Record<string, unknown>, pem?: string) => string;
 
 beforeAll(async () => {
@@ -156,9 +157,15 @@ beforeAll(async () => {
   const upstreamUrl = await listen(upstream.handler);
   const handle = updates.createUpdateService({
     upstream: upstreamUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
-    publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), revoked: new Set(['revoked-id']),
+    publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), revoked: new Set(['revoked-id']), requireKey: true,
   });
   serviceUrl = await listen((req, res) => { void handle(req, res); });
+  // Licensing off (note #935), the shipped default: no key asked, none read.
+  const open = updates.createUpdateService({
+    upstream: upstreamUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
+    publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)),
+  });
+  openUrl = await listen((req, res) => { void open(req, res); });
 });
 afterAll(() => { for (const server of servers) server.close(); });
 
@@ -238,5 +245,20 @@ describe('the installer\'s copy (note #811)', () => {
     const source = installer.updatesSource({ url: serviceUrl, customer: 'theirco', key: 'acc1.bogus.bogus' });
     const dest = installer.flyRegistry({ app: 'x', token: 'y', base: serviceUrl });
     await expect(installer.copyRelease({ source, dest, log: () => undefined })).rejects.toThrow('did not accept');
+  });
+});
+
+describe('licensing off: the update service hands releases to anyone (note #935)', () => {
+  it('answers with no sign-in, offers every release, and the installer copies the latest with no key', async () => {
+    expect((await fetch(`${openUrl}/v2/`)).status).toBe(200);
+    const listed = await (await fetch(`${openUrl}/releases`)).json();
+    expect(listed.latest).toBe('2027.02.01.1');
+    const theirs = fakeRegistry('their-token');
+    const theirsUrl = await listen(theirs.handler);
+    const source = installer.updatesSource({ url: openUrl, customer: 'agents-theirco', key: null });
+    const dest = installer.flyRegistry({ app: 'theirco-images', token: 'their-token', base: theirsUrl });
+    const { release, copied } = await installer.copyRelease({ source, dest, log: () => undefined });
+    expect(release.version).toBe('2027.02.01.1');
+    expect(Object.keys(copied)).toEqual(IMAGES);
   });
 });

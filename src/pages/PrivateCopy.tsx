@@ -18,8 +18,8 @@ import installFilmPoster from '../assets/private-copy/install-film-poster-2026-1
  * The page's main action is one line to hand a terminal agent, pointing at
  * /own-cloud.md (public/own-cloud.md), the guide written for that agent. The
  * guide does not move: it is pinned and tested (PrivateCopy.test holds it to
- * install.mjs). No price (claims-we-never-make): the first month is a free
- * trial, then a licence.
+ * install.mjs). No price (claims-we-never-make): free for now, no licence
+ * (note #935).
  */
 
 /* The installer's public repository (note #816), public since 28 Oct 2026.
@@ -141,7 +141,7 @@ export function OwnCloudAction() {
         </div>
       </div>
       <p id="qualifier" className="mt-6 type-sm font-semibold text-white">
-        Runs in your own Fly account. First month free.
+        Runs in your own Fly account. Free for now.
       </p>
     </div>
   );
@@ -206,9 +206,8 @@ export function HowToStart() {
           you everything it will create and what Fly will bill for it. Nothing is created yet.
         </li>
         <li>
-          Write to <a href={FOUNDER_MAILTO} className={INLINE_LINK}>{FOUNDER_EMAIL}</a> with your company’s
-          name and the domain you chose. We send the update key and the licence. Hand the two files
-          to your agent, and it builds your own Agentic Cloud.
+          Say yes, and your agent builds your own Agentic Cloud. Nothing is needed from us: no key,
+          no licence.
         </li>
         <li>
           Open the first admin link it hands you. You are the first admin; everyone after you joins
@@ -231,7 +230,7 @@ export function HowToStart() {
           <li>One domain of your own, such as agents.yourcompany.com.</li>
           <li>One command your agent runs. In our clean run on 29 October it went from a new Fly organization to ready in 13 min 24 s.</li>
           <li>Fly issued the certificates in under a minute that time; one has taken over an hour before, and then your agent simply waits.</li>
-          <li>The first month is a free trial, then it needs a licence from us, for upgrades and support. If it ends, nothing that already runs stops.</li>
+          <li>Free for now: no licence, no key and no charge from us.</li>
         </ul>
       </div>
     </Chapter>

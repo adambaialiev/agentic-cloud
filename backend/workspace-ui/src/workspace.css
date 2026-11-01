@@ -2286,9 +2286,7 @@ button.chatmsg.platform.aside:active {
 .repo-public-actions { display: flex; justify-content: flex-start; margin-top: 8px; }
 .repo-public-actions .btn { margin: 0; }
 .hintblock.repo-public-hint { text-align: left; padding: 6px 0 12px; }
-/* Its own gap: with publishing hidden (2026-09-29) a private repository has
-   no public-access section, and this line would sit on the card above it. */
-#repoRoomHint { padding-left: 0; padding-right: 0; margin-top: 14px; }
+#repoRoomHint { padding-left: 0; padding-right: 0; }
 
 /* The public source browser uses the Workspace's type, palette and file
    furniture, but none of its private navigation. It is one calm column whose

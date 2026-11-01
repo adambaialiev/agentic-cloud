@@ -49,7 +49,7 @@ const chapter: DocChapter = {
             by whoever provides it:
           </p>
           <ul>
-            <li><strong>The licence</strong>: the first month is a free trial. After that it needs a licence from us, which covers upgrades and support.</li>
+            <li><strong>Us</strong>: nothing. Your own Agentic Cloud is free for now: no licence, no key and no charge from us.</li>
             <li><strong>Cloud</strong>: your cloud provider bills your own account directly for the agents&rsquo; machines, your sites, your files and the Workspace itself.</li>
             <li><strong>AI</strong>: your Claude or ChatGPT subscription, billed by Anthropic or OpenAI as it always was.</li>
             <li><strong>Anything else you connect</strong>, such as a GitHub account: on that provider&rsquo;s own terms.</li>

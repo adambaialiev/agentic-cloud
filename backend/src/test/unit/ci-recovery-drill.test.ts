@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -78,6 +81,24 @@ describe('the mirror is armed only by the flip', () => {
     const section = runJob.slice(runJob.indexOf('mirror-github)'), runJob.indexOf('self-update)'));
     expect(section).toMatch(/PLATFORM_REPO:-.*\}/s);
     expect(section).toContain('exit 78');
+  });
+
+  it('GITHUB_MIRROR=off skips the mirror before any credential or network is touched (note #936)', () => {
+    // After the switch the platform repo is the public agentic-cloud, and the
+    // GitHub copy holds the PRIVATE old history: a --prune --force push of the
+    // new repository there would replace it. Run the real script: with the
+    // switch off it must exit 78 with no RECOVERY_GIT_TOKEN set at all.
+    const work = mkdtempSync(join(tmpdir(), 'mirror-off-'));
+    try {
+      const run = spawnSync('bash', [RUN_JOB, 'mirror-github', '0'.repeat(40)], {
+        env: { PATH: process.env.PATH, HOME: work, WORKDIR: work, PLATFORM_REPO: 'ns/agentic-cloud', GITHUB_MIRROR: 'off', IA_PROD_HOST: 'prod.invalid', IA_GIT_HOST_HOST: 'git.invalid' },
+        encoding: 'utf8',
+      });
+      expect(run.status).toBe(78);
+      expect(run.stdout).toContain('GITHUB_MIRROR=off');
+    } finally {
+      rmSync(work, { recursive: true, force: true });
+    }
   });
 
   it('the daemon queues a mirror only for THE repo named in its own env', () => {

@@ -9,6 +9,11 @@
  * release's images into the copy's own registry, and everything it runs
  * comes from there. This service only answers while those commands run.
  *
+ * Licensing is OFF (the product is free for now): the service hands every
+ * release to anyone, with no sign-in, and reads no key. With COPY_LICENCE=on
+ * (the same switch as the installer's and the installed backend's) it asks
+ * for a key again, as below.
+ *
  * Sign in as  <customer>:<update key>  (HTTP Basic, the way every registry
  * client already speaks). A key covers every release dated on or before its
  * `updatesUntil`, for good: a customer who stops paying keeps the versions
@@ -74,6 +79,7 @@ export function createUpdateService({
   upstreamToken,
   publicKey,
   revoked = new Set(),
+  requireKey = false,
   now = () => new Date(),
   fetchImpl = fetch,
 }) {
@@ -163,7 +169,8 @@ export function createUpdateService({
     if (req.method !== 'GET' && !head) return send(res, 405, 'This service only reads.');
     if (path === '/health') return send(res, 200, 'ok');
 
-    const key = keyOf(req);
+    // Open: everyone may read every release, as if their key had no end.
+    const key = requireKey ? keyOf(req) : { customer: 'anyone', updatesUntil: '9999-12-31' };
     const challenge = { 'www-authenticate': 'Basic realm="acc-copy-updates"' };
     if (!key) {
       return path.startsWith('/v2')
@@ -250,6 +257,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     publicKey: publicKeyFrom(process.env.COPY_SIGNING_PUBLIC_KEY?.trim()
       || readFileSync(new URL('../copy-release/signing-key.pub', import.meta.url), 'utf8')),
     revoked: new Set((process.env.REVOKED_KEY_IDS ?? '').split(',').map((id) => id.trim()).filter(Boolean)),
+    requireKey: String(process.env.COPY_LICENCE ?? '').trim().toLowerCase() === 'on',
   });
   const port = Number(process.env.PORT || 8080);
   createHttpServer((req, res) => { void handle(req, res); }).listen(port, '::', () => {

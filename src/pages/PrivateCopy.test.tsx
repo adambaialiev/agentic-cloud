@@ -46,14 +46,16 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // The real figure first (the owner, 29 Oct, 17:00 UTC), the certificate wait second.
     expect(items[2]).toMatch(/^One command your agent runs\. In our clean run on 29 October it went from a new Fly organization to ready in 13 min 24 s\.$/);
     expect(items[3]).toMatch(/one has taken over an hour before/);
-    expect(items[4]).toMatch(/^The first month is a free trial, then it needs a licence from us, for upgrades and support\. If it ends, nothing that already runs stops\.$/);
+    // Free for now, with no licence (the owner, 1 Nov 2026, note #935).
+    expect(items[4]).toMatch(/^Free for now: no licence, no key and no charge from us\.$/);
     const takes = items.join(' ');
     expect(takes).not.toMatch(/usually|always|guarantee/i);
     const body = document.body.textContent ?? '';
     // The time beside a 68-minute film: the work, and the wait said aloud.
     expect(document.querySelector('#takes')!.textContent).toMatch(/certificates in under a minute that time/);
     expect(body).not.toMatch(/About fifteen minutes\./);
-    expect(body).toMatch(/The first month is a free trial/);
+    expect(body).toMatch(/Free for now: no licence, no key and no charge from us/);
+    expect(body).not.toMatch(/free trial|first month/i);
     expect(body).toMatch(/Company single sign-on is not built\s+yet/);
   });
 
@@ -75,8 +77,8 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // two files exist, so pasting the line at once works (note #831).
     const steps = [...document.querySelectorAll('#start ol > li')].map((step) => step.textContent ?? '');
     expect(steps[0]).toMatch(/^Give your agent the line above\./);
-    // One address on the page, the founder's (note #834).
-    expect(steps[1]).toMatch(/^Write to adam@agenticcloudcomputer\.com/);
+    // Nothing to ask us for (note #935): the agent builds it on the person's yes.
+    expect(steps[1]).toMatch(/^Say yes, and your agent builds your own Agentic Cloud\. Nothing is needed from us: no key, no licence\.$/);
     for (const section of document.querySelectorAll('main > section')) expect(section.innerHTML, section.id).not.toContain('hello@agenticcloudcomputer.com');
     expect(section.textContent).toMatch(/Paste it into Claude Code, Codex or any agent that works in a terminal\./);
   });
@@ -98,7 +100,10 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
       expect(guide, `exit ${code}`).toMatch(new RegExp(`\\| \`${code}\` \\|`));
     }
     const reasons = new Set([...installer.matchAll(/(?:reason: |PersonNeeded\()'([a-z-]+)'/g)].map((m) => m[1]));
-    for (const reason of ['update-key', 'licence', 'domain', 'fly-organization', 'fly-sign-in', 'billing', 'mail-key', 'dns']) {
+    // update-key and licence stay in the installer behind COPY_LICENCE=on;
+    // with licensing off (note #935) the guide never meets them.
+    for (const reason of ['update-key', 'licence']) expect(reasons.has(reason), `installer reason ${reason}`).toBe(true);
+    for (const reason of ['domain', 'fly-organization', 'fly-sign-in', 'billing', 'mail-key', 'dns']) {
       expect(reasons.has(reason), `installer reason ${reason}`).toBe(true);
       expect(guide, `guide reason ${reason}`).toContain(`\`${reason}\``);
     }
@@ -107,7 +112,10 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(installer).toContain('-handover.txt');
     expect(guide).toContain('<prefix>-handover.txt');
     for (const command of ['--plan --json', '--json --wait 0', 'node install.mjs status --json', '--json --wait 20']) expect(guide, command).toContain(command);
-    expect(guide).toContain('node install.mjs upgrade --key-file update.key --json');
+    expect(guide).toContain('node install.mjs upgrade --json');
+    // Licensing is off: nothing in the guide sends the agent to us (note #935).
+    expect(guide).not.toMatch(/update\.key|licence\.txt|--key-file|--licence-file|adam@agenticcloudcomputer|free trial/);
+    expect(guide).toContain('free for now');
   });
 
   // It must never claim the agent can do it all alone (note #829).
@@ -126,18 +134,10 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     const questions = guide.slice(guide.indexOf('## 3. ASK YOUR PERSON'), guide.indexOf('## 4.'));
     expect(questions).toMatch(/^Run `fly orgs list` and show your person the organizations it lists/m);
     expect(guide.indexOf('fly orgs list')).toBeGreaterThan(guide.indexOf('## 3. ASK YOUR PERSON'));
-    for (const point of [/Fly organization/, /card on file and its bill/, /domain name/, /update key and the licence/, /How mail goes out/, /Who adds the DNS records/]) {
+    for (const point of [/Fly organization/, /card on file and its bill/, /domain name/, /How mail goes out/, /Who adds the DNS records/]) {
       expect(questions, String(point)).toMatch(point);
     }
-    // With no update key and licence yet, the agent still plans, then says
-    // how to ask us for them and stops (note #831): the page's line works first.
-    const noKey = guide.slice(guide.indexOf('**No update key and licence yet?**'), guide.indexOf('## 5.'));
-    expect(noKey).toContain('node install.mjs install --org <org> --domain <domain> --name <prefix> --plan --json');
-    expect(noKey).not.toMatch(/--key-file|--licence-file/);
-    expect(noKey).toMatch(/exit 3 and `"reason": "update-key"`/);
-    expect(noKey).toMatch(/adam@agenticcloudcomputer\.com/);
     expect(guide).not.toContain('hello@agenticcloudcomputer.com');
-    expect(noKey).toMatch(/Stop there\./);
     expect(questions).not.toMatch(/You cannot continue without them/);
     expect(guide).toMatch(/## 6\. DNS: ASK YOUR PERSON/);
     expect(guide).toMatch(/Show your person all three, in plain words, and \*\*wait for their yes\*\*/);
@@ -226,7 +226,7 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     const contact = document.querySelector('#contact')!;
     expect(contact.textContent).toMatch(/adam@agenticcloudcomputer\.com/);
     expect([...contact.querySelectorAll('a')].every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
-    expect(document.querySelector('#start')!.textContent).toMatch(/adam@agenticcloudcomputer\.com/);
+    expect(document.querySelector('#start')!.textContent).not.toMatch(/update key|licence from us/);
   });
 
   // The old address answers for good (public/_redirects), and the edge

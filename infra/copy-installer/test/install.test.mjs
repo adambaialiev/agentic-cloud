@@ -15,6 +15,10 @@ import path from 'node:path';
 import { expect } from './expect.mjs';
 
 const INSTALLER = path.resolve(import.meta.dirname, '../install.mjs');
+// Licensing ships OFF (the product is free for now). Most tests below were
+// written with it on and still prove that path; the 'licensing off' tests
+// at the end switch it off for themselves.
+process.env.COPY_LICENCE = 'on';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let installer;
 
@@ -223,7 +227,7 @@ describe('the installer: one command, an organization and a domain', () => {
     expect(backend.values.BACKUP_S3_BUCKET).toBe('theirco-backups');
     expect(backend.values.FIRST_ACCOUNT_CODE.length).toBeGreaterThanOrEqual(16);
     expect(backend.values.LICENCE).toBe(LICENCE);
-    expect(h.fly.deploys[0].toml).not.toContain('COPY_LICENCE');
+    expect(h.fly.deploys[0].toml).toContain('COPY_LICENCE = "on"');
     expect(h.fly.secrets['theirco-git'][0].values).toEqual({ GIT_HOST_SECRET: backend.values.GIT_HOST_SECRET, CI_WEBHOOK_SECRET: backend.values.GIT_HOST_SECRET });
     expect(h.fly.secrets['theirco-mx'][0].values.MAIL_INGEST_SECRET).toBe(backend.values.MAIL_INGEST_SECRET);
 
@@ -743,5 +747,60 @@ describe('the command line', () => {
     const { code, out } = await run(['status', '--state', path.join(tmpdir(), 'nothing-here-copy.json'), '--json']);
     expect(code).toBe(1);
     expect(JSON.parse(out.trim().split('\n').at(-1)).outcome).toBe('failed');
+  });
+});
+
+describe('licensing off: the product is free for now, and nothing asks for a key or a licence', () => {
+  const off = async (run) => {
+    delete process.env.COPY_LICENCE;
+    try { return await run(); } finally { process.env.COPY_LICENCE = 'on'; }
+  };
+
+  it('installs with no update key and no licence, fetches releases as nobody in particular, and leaves the cloud unlicensed', () => off(async () => {
+    const h = harness();
+    const asked = [];
+    const { 'key-file': _key, 'licence-file': _licence, ...bare } = h.options;
+    // The harness's DNS zone is built for the prefix theirco; the prefix a
+    // domain gives by itself is proved by the plan test and prefixFromDomain.
+    const state = await installer.install({ ...bare, name: 'theirco' }, {
+      ...h.deps,
+      updatesSource: (opts) => { asked.push(opts); return { release: async () => ({ version: '2026.10.27.1', commit: 'abc123', images: {} }) }; },
+    });
+    expect(asked[0].key).toBe(null);
+    expect(state.prefix).toBe('theirco');
+    expect(h.fly.secrets['theirco-backend'][0].values.LICENCE).toBeUndefined();
+    expect(h.fly.deploys.at(-1).toml).toContain('COPY_LICENCE = "off"');
+    expect(state.steps.smoke).toBeDefined();
+  }));
+
+  it('ignores an update key and a licence an older guide still passes', () => off(async () => {
+    const h = harness();
+    writeFileSync(h.options['key-file'], 'not a key at all');
+    const state = await installer.install({ ...h.options, name: 'theirco' }, h.deps);
+    expect(state.steps.smoke).toBeDefined();
+    expect(h.fly.secrets['theirco-backend'][0].values.LICENCE).toBeUndefined();
+  }));
+
+  it('plans with no key: both checks say not needed, and the plan is ready', () => off(async () => {
+    const h = harness();
+    const { 'key-file': _key, 'licence-file': _licence, ...bare } = h.options;
+    const result = await installer.plan(bare, h.deps);
+    expect(result.outcome).toBe('ready');
+    expect(result.checks.find((check) => check.key === 'update-key').detail).toContain('not needed');
+    expect(result.checks.find((check) => check.key === 'licence').detail).toContain('not needed');
+    expect(result.creates.find((item) => item.kind === 'app').name).toBe('agents-theirco-images');
+  }));
+
+  it('asks the update service with no sign-in at all', async () => {
+    const seen = [];
+    const source = installer.updatesSource({ url: 'https://updates.test', customer: 'x', key: null, fetchImpl: async (url, init) => { seen.push(init.headers); return new Response('{"version":"1"}'); } });
+    await source.release();
+    expect(seen[0].authorization).toBeUndefined();
+  });
+
+  it('makes a prefix from the domain', () => {
+    expect(installer.prefixFromDomain('agents.bookface.site')).toBe('agents-bookface');
+    expect(installer.prefixFromDomain('bookface.site')).toBe('bookface');
+    expect(installer.prefixFromDomain('1st.example.com')).toBe('st-example');
   });
 });

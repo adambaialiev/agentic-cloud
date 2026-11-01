@@ -60,14 +60,14 @@ export const FAQS: Faq[] = [
     key: 'needs',
     question: 'What do I need before I start?',
     answer:
-      'Your company’s own cloud account and a domain for it, plus an update key and a licence from us. Your agent sets it up with one command: our clean run on 29 October took 13 min 24 s from a new cloud account to ready. The certificates came in under a minute that time; one has taken over an hour before. Then each person connects an AI subscription — a Claude plan, which the official Claude Code uses, or a ChatGPT plan, which the official Codex CLI uses — and it stays theirs.',
+      'Your company’s own cloud account and a domain for it. Nothing from us: no key, no licence. Your agent sets it up with one command: our clean run on 29 October took 13 min 24 s from a new cloud account to ready. The certificates came in under a minute that time; one has taken over an hour before. Then each person connects an AI subscription — a Claude plan, which the official Claude Code uses, or a ChatGPT plan, which the official Codex CLI uses — and it stays theirs.',
     docs: '/docs/getting-started',
   },
   {
     key: 'cost',
     question: 'What does it cost?',
     answer:
-      'The first month is a free trial. After that your own Agentic Cloud needs a licence from us, which covers upgrades and support. Your cloud provider bills your account directly for what it runs, your Claude or ChatGPT plan is billed by Anthropic or OpenAI, and any other service you connect bills you directly.',
+      'Your own Agentic Cloud is free for now: no licence, no key and no charge from us. Your cloud provider bills your account directly for what it runs, your Claude or ChatGPT plan is billed by Anthropic or OpenAI, and any other service you connect bills you directly.',
     docs: '/docs/your-cloud-and-subscriptions#what-you-pay',
   },
   {

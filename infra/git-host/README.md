@@ -110,6 +110,21 @@ the same commit tomorrow. There is no config for this; having any protected
 branch is the switch. Hooks are re-checked on every push, so it covers
 protected repos that predate the rule.
 
+### The history guard (note #936)
+
+A repository may name the only root commits its history may have, in
+`.agentbuilt/allowed-roots` on its default branch: one 40-hex sha per line,
+`#` for comments. When that file is there, `hooks/pre-receive` refuses any
+push, to any branch or tag, that brings in a commit whose history starts at
+another root. That includes a branch merged with one. The list is read from
+the default branch as it stands, never from the push, so only an approved
+change widens it. With no file, nothing changes.
+
+It exists for `agentic-cloud`, the platform's public repository, cut on
+2026-11-01 as a fresh start from the private `infinite-agents`. A branch
+that grew from the private repository reaches its root, so pushing one would
+publish the whole private history. Carry such work over as a patch instead.
+
 ## Moving a repo between namespaces
 
 A namespace is a ROOM (note #88), so moving a repository between rooms is a

@@ -1807,6 +1807,101 @@ describe('git-host start (note #759)', () => {
   }, 40_000);
 });
 
+/**
+ * The history guard (note #936): a repository that names its allowed roots
+ * in `.agentbuilt/allowed-roots` on its default branch refuses any push that
+ * brings in history starting anywhere else. Real git, real hook, real
+ * quarantine: a local push runs pre-receive exactly as git-http-backend does.
+ */
+describe('pre-receive history guard (note #936)', () => {
+  const ENV = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.test',
+    GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.test',
+    GIT_CONFIG_NOSYSTEM: '1', HOME: tmpdir(),
+  };
+  let root: string;
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, env: ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const push = (cwd: string, ...args: string[]): { ok: boolean; out: string } => {
+    try {
+      git(cwd, 'push', '-q', ...args);
+      return { ok: true, out: '' };
+    } catch (error) {
+      return { ok: false, out: String((error as { stderr?: string }).stderr ?? error) };
+    }
+  };
+  const bare = (name: string) => {
+    const dir = join(root, `${name}.git`);
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', dir], { env: ENV });
+    writeFileSync(join(dir, 'hooks', 'pre-receive'), readFileSync(HOOK));
+    execFileSync('chmod', ['+x', join(dir, 'hooks', 'pre-receive')]);
+    return dir;
+  };
+  const work = (name: string, file: string) => {
+    const dir = join(root, name);
+    execFileSync('git', ['init', '-q', '-b', 'main', dir], { env: ENV });
+    writeFileSync(join(dir, file), `${name}\n`);
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-q', '-m', `${name} root`);
+    return dir;
+  };
+
+  beforeAll(() => { root = mkdtempSync(join(tmpdir(), 'history-guard-')); });
+  afterAll(() => { rmSync(root, { recursive: true, force: true }); });
+
+  it('refuses a branch that grew from another root, and anything merged with one, once main names its roots', () => {
+    const remote = bare('public');
+    const fresh = work('fresh', 'README.md');
+    const freshRoot = git(fresh, 'rev-parse', 'HEAD');
+    git(fresh, 'remote', 'add', 'origin', remote);
+    expect(push(fresh, 'origin', 'main').ok).toBe(true);
+    git(fresh, 'checkout', '-q', '-b', 'guard');
+    execFileSync('mkdir', ['-p', join(fresh, '.agentbuilt')]);
+    writeFileSync(join(fresh, '.agentbuilt', 'allowed-roots'), `# the fresh start\n${freshRoot}\n`);
+    git(fresh, 'add', '-A');
+    git(fresh, 'commit', '-q', '-m', 'name the root');
+    expect(push(fresh, 'origin', 'guard:main').ok).toBe(true);
+
+    // Work that grew from main is welcome.
+    writeFileSync(join(fresh, 'a.txt'), 'a\n');
+    git(fresh, 'add', '-A');
+    git(fresh, 'commit', '-q', '-m', 'a change');
+    expect(push(fresh, 'origin', 'HEAD:my-change').ok).toBe(true);
+
+    // The old private history, pushed as a branch: refused, and no ref made.
+    const old = work('old-private', 'secret.txt');
+    const oldRoot = git(old, 'rev-parse', 'HEAD');
+    git(old, 'remote', 'add', 'public', remote);
+    const refused = push(old, 'public', 'main:old-work');
+    expect(refused.ok).toBe(false);
+    expect(refused.out).toContain('carries history this repository does not allow');
+    expect(refused.out).toContain(oldRoot);
+    expect(git(remote, 'for-each-ref', '--format=%(refname)')).not.toContain('old-work');
+    expect(() => git(remote, 'cat-file', '-e', oldRoot)).toThrow();
+
+    // ...and merged into a branch of the public repository: refused too.
+    git(fresh, 'fetch', '-q', old, 'main:refs/remotes/old/main');
+    git(fresh, 'merge', '-q', '--allow-unrelated-histories', '-m', 'merge old', 'old/main');
+    const merged = push(fresh, 'origin', 'HEAD:mixed');
+    expect(merged.ok).toBe(false);
+    expect(merged.out).toContain(oldRoot);
+
+    // An orphan tag is history too.
+    const tagged = push(old, 'public', 'main:refs/tags/v0');
+    expect(tagged.ok).toBe(false);
+  });
+
+  it('leaves a repository with no allowed-roots file exactly as it was', () => {
+    const remote = bare('ordinary');
+    const first = work('first', 'one.txt');
+    git(first, 'remote', 'add', 'origin', remote);
+    expect(push(first, 'origin', 'main').ok).toBe(true);
+    const other = work('unrelated', 'two.txt');
+    git(other, 'remote', 'add', 'origin', remote);
+    expect(push(other, 'origin', 'main:orphan').ok).toBe(true);
+  });
+});
+
 describe('git-host shell scripts', () => {
   it('the pre-receive hook passes sh -n', () => {
     expect(() => execFileSync('sh', ['-n', HOOK])).not.toThrow();

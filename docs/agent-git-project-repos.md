@@ -80,19 +80,15 @@ required).
 
 ## Link-only public repositories (note #665, 2026-09-25)
 
-**Hidden since 2026-09-29 (the owner: the platform is for closed-source work,
-so no effort goes into open source).** The open-source page note #674 put up
-the day before is gone — its screen, `GET api/public/repositories` and the
-landing footer's link — and `/open-source` 301s home at the edge, kept
-reserved so no person or workplace can take the word. A PRIVATE repository's
-screen shows no public-access section at all, so nothing offers to publish
-it, and the agent docs say these repositories are closed source. A repository
-opened before then keeps everything below — its link, its page, anonymous
-cloning — and its screen still shows the state and Make private, now
-confirmed as final. The server's `POST api/repos/:name/public-access` is
-untouched (admin, human session only), so bringing publishing back is putting
-the button back. At the time of hiding exactly one repository on the platform
-was public.
+**Back since 2026-11-01 (note #936).** Publishing was hidden on 2026-09-29
+(PR #1234: the owner then wanted closed-source work only), and the open-source
+page note #674 had put up the day before went with it. That page stays gone —
+`GET api/public/repositories` and the footer link are not coming back, and
+`/open-source` still 301s home — so a public repository is reached by its
+address alone. When the owner decided to open the platform's own source, the
+admin's Make public button came back on the repository's screen; the server's
+`POST api/repos/:name/public-access` had never changed (admin, human session
+only, a root LICENSE required). Make private no longer says it is final.
 
 A repository starts private. A workplace admin can open-source it from the
 repository's Workspace screen after confirming that anyone with the link may

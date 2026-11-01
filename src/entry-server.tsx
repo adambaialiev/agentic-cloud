@@ -82,13 +82,13 @@ export const ROUTES: RouteMeta[] = [
     path: '/terms',
     title: 'Terms of Service — Agentic Cloud Computer',
     description:
-      'Terms for the shared Workspace: what your organisation brings, what the platform stores, provider costs, acceptable use, human review, and how to leave.',
+      'Terms for your own Agentic Cloud and our invite-only hosted Workspace: what you bring, what others bill, acceptable use, human review, and how to leave.',
   },
   {
     path: '/privacy',
     title: 'Privacy Policy — Agentic Cloud Computer',
     description:
-      'The precise data split: where agent machines and sites run, platform Workspace records, recent chat retention, encrypted credentials, browser notifications, and deletion.',
+      'What we hold for your own Agentic Cloud (your data never reaches us) and what our hosted Workspace stores: records, recent chat retention, encrypted credentials, notifications, and deletion.',
   },
   // The entry pages. Each answers one question a search brings someone in
   // with, using the front page's own claims — see src/pages/EntryPages.tsx for

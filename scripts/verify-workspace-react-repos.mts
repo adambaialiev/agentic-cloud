@@ -398,16 +398,18 @@ try {
   check('…and the delete is here, at the repository, never under a folder',
     (await texts('#repoDanger button')).includes('Delete this repository'),
     (await texts('#repoDanger button')).join(' | '));
-  // Opening a repository to the public is hidden (the owner, 2026-09-29):
-  // a private repository has no public-access section at all.
-  check('a private repository offers no way to become public',
-    (await page$.$eval('#repoPublicAccess', (node) => (node as HTMLElement).hidden)) === true
-    && (await page$.$$('#repoPublicHead')).length === 0
-    && !(await text('#screenRepo')).includes('Open source'),
-    await text('#screenRepo'));
+  // Publishing is back for admins (note #936): a private repository says so
+  // and offers Make public, with the licence rule beside it.
+  await page$.waitForFunction(
+    () => document.querySelector('#repoPublicAccess .name')?.textContent === 'Private',
+    { timeout: 10_000 },
+  );
+  check('a private repository says private and offers an admin Make public',
+    (await texts('.repo-public-actions button')).join(' | ') === 'Make public'
+    && (await text('#screenRepo')).includes('non-empty LICENSE file'),
+    (await texts('.repo-public-actions button')).join(' | '));
   await shot('overview-private');
-  // One opened before then keeps its link and the way back, so publish it
-  // the way it happened — in storage, before this screen — and read again.
+  // Publish it in storage, as the server's door does, and read again.
   await gitRepoStorage.update(seeded.id, {
     publicAccess: { id: randomUUID(), publishedAt: new Date().toISOString(), publishedByUserId: me.userId },
   });
@@ -416,7 +418,7 @@ try {
     () => document.querySelector('#repoPublicAccess .name')?.textContent === 'Public',
     { timeout: 10_000 },
   );
-  check('a repository opened before then says public and offers only Make private',
+  check('a public repository says public and offers Make private',
     (await texts('.repo-public-actions button')).join(' | ') === 'Make private',
     (await texts('.repo-public-actions button')).join(' | '));
   const publicActionEdge = await page$.evaluate(() => ({

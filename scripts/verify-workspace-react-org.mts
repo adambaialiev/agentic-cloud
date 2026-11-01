@@ -726,8 +726,14 @@ try {
   // no stylesheet reached and, because a native dialog blocks the renderer,
   // one no check here could even click. It is the app's card now, red where
   // the act retires her agents, and Cancel is still the safe direction.
-  await clickText('#screenOrgMember .btn.danger', /^Remove from workplace$/);
-  await page.waitForSelector('.ask', { timeout: 5_000 }).catch(() => {});
+  // The shot just above sends the page a resize event, and the member screen
+  // fills in its contribution block underneath as its reads land: a click
+  // computed against the moving page landed on nothing and no card opened
+  // (red on main 9604fd84, both CI attempts, 2026-11-01). So wait out the
+  // shot, then tap the button once its own box has stopped moving.
+  await settleAfterShot(page);
+  await tap(page, '#screenOrgMember .btn.danger');
+  await page.waitForSelector('.ask', { timeout: 10_000 }).catch(() => {});
   const removeAsk = await page.evaluate(`(() => {
     var card = document.querySelector('.ask');
     if (!card) return null;

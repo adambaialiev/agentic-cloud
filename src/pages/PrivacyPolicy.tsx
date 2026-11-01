@@ -48,24 +48,68 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  * the Settings switch and the sign-up line. The paragraph became "Your
  * builder page": a person's numbers are shown to them alone, signed in
  * (backend routes/workspace.ts publicPerson); the page itself stays public.
+ *
+ * 2026-11-01 (note #933, the owner: "Fix terms and privacy"): what we sell
+ * is your own Agentic Cloud, and the page said the service was free and took
+ * no payments. Section 2 is now that offer's data, as knowledge private-copy
+ * and the code say it: nothing of the customer's crosses to us (no messages,
+ * code, files, mail, keys or logs); the licence is checked inside the copy,
+ * offline (services/copy-licence.ts); the update service checks an update
+ * key and reads nothing from the copy (infra/copy-updates); a diagnostics
+ * bundle leaves only when an admin sends it, and holds no messages, code,
+ * files, mail, keys or names of people (services/copy-health.ts), with the
+ * usage a renewal is settled from. What we keep is the customer list, the
+ * licences and update keys we issue, and what people write to us. Sections
+ * 3 to 8 are the hosted Workspace as before, with sign-up closed (an account
+ * only through a live invite link, note #823).
+ *
+ * Same day, 08:56 UTC (note #935): licensing is off and the product is free
+ * for now, so section 2 holds no licence or update-key record and no
+ * agreement, and says no payment record is kept for either offer.
  */
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="October 12, 2026">
+    <LegalLayout title="Privacy Policy" effectiveDate="November 1, 2026">
       <LegalSection title="1. Who we are">
         <p>
-          Agentic Cloud Computer is a shared Workspace for a company&rsquo;s AI agents. It controls
-          the platform data described here.
+          Agentic Cloud Computer makes a shared Workspace for a company&rsquo;s AI agents. We offer it
+          as your own Agentic Cloud, which runs in your company&rsquo;s own cloud account, and we also
+          host a Workspace ourselves, where new accounts are closed and an account comes only with an
+          invite. Agentic Cloud Computer controls the records described here.
         </p>
         <p>
-          This page says where your agents&rsquo; work runs and which records our control plane
-          stores.
-          For anything it does not answer:
+          Section 2 says what we hold when you run your own Agentic Cloud, which is very little.
+          Sections 3 to 8 say what our hosted Workspace stores for the accounts on it. For anything
+          this page does not answer:
         </p>
         <ContactLines />
       </LegalSection>
 
-      <LegalSection title="2. What the platform stores">
+      <LegalSection title="2. Your own Agentic Cloud">
+        <p>
+          <b className="text-white">Your data stays in your cloud account.</b> The Workspace and its
+          database, the code host, files, backups, email and every agent&rsquo;s computer run in your
+          Fly.io organization, on your domain. Your messages, code, files, mail, keys and logs never
+          reach us, and we have no access to your Agentic Cloud unless you give it to us. Fly.io hosts
+          it under your agreement with them, and the AI and mail providers you choose receive what you
+          send them under yours.
+        </p>
+        <p>
+          <b className="text-white">What we hold.</b> Only what you send us: the addresses you write to
+          us from and what you write, such as your company&rsquo;s name and domain. Your own Agentic
+          Cloud is free for now, so we hold no payment record or card details for it.
+        </p>
+        <p>
+          <b className="text-white">What crosses, and when.</b> When your agent fetches a release, it
+          downloads it from our update service, which reads nothing from your Agentic Cloud. Its
+          admins can make a
+          diagnostics bundle for support: the health report, its settings with every key said only as
+          set or not set, and how many people use it, now and at most. It holds no messages, code,
+          files, mail, keys or names of people, and it reaches us only if an admin sends it.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="3. What our hosted Workspace stores">
         <p>
           <b className="text-white">Account and identity records.</b> Your email address, a hash of
           your password, and &mdash; if you add an authenticator app &mdash; an encrypted
@@ -101,10 +145,10 @@ export default function PrivacyPolicy() {
           We do not receive the password you type at an AI provider.
         </p>
         <p>
-          <b className="text-white">No payment record.</b> Agentic Cloud Computer is free to use and
-          does not accept payments, so it stores no card, platform invoice or subscription billing
-          record. Your AI provider and any other provider you connect keep their own billing records
-          under their agreements with you.
+          <b className="text-white">No payment record.</b> The hosted Workspace is free for now, so
+          for it we store no card, platform invoice or subscription billing record. Your AI provider
+          and any other provider you connect keep their own billing records under their agreements
+          with you.
         </p>
         <p>
           <b className="text-white">Your builder page.</b> Your page at agenticcloudcomputer.com and
@@ -118,7 +162,7 @@ export default function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection title="3. Where machines, sites and connected services live">
+      <LegalSection title="4. Where hosted machines, sites and connected services live">
         <p>
           Agent machines and their disks, and the sites your agents deploy, run on our own Fly.io
           account, in its Amsterdam region by default. Repositories and media can use
@@ -131,13 +175,13 @@ export default function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection title="4. Signing in and notifications">
+      <LegalSection title="5. Signing in and notifications">
         <p>
-          You sign up and sign in to the Workspace in a browser with your own address on our mail
-          domain and a password. An account created before we hosted addresses may still sign in
-          with the outside email address it was made with, and we send a message to such an
-          address to confirm it. You may add an
-          authenticator app as a second factor, which issues recovery codes we store hashed.
+          New accounts are made only through an invite link from a workplace that has one. You sign
+          in to the Workspace in a browser with your own address on our mail domain and a password.
+          An account created before we hosted addresses may still sign in with the outside email
+          address it was made with, and we send a message to such an address to confirm it. You may
+          add an authenticator app as a second factor, which issues recovery codes we store hashed.
           Browser sessions use the access records described above.
         </p>
         <p>
@@ -147,7 +191,7 @@ export default function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection title="5. Who else processes data">
+      <LegalSection title="6. Who else processes data">
         <p>
           <b className="text-white">Your AI provider</b> &mdash; Anthropic, OpenAI or a provider you
           connect &mdash; receives the prompts, code, files and context an agent sends it. Your
@@ -170,7 +214,7 @@ export default function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection title="6. Retention and deletion">
+      <LegalSection title="7. Retention and deletion">
         <p>
           The recent chat window keeps at most 500 rows per agent. Deleting an agent removes its
           active platform chat rows and chat files and destroys its machine and its harness
@@ -190,27 +234,28 @@ export default function PrivacyPolicy() {
         </p>
       </LegalSection>
 
-      <LegalSection title="7. Operator access and security">
+      <LegalSection title="8. Operator access and security">
         <p>
-          The operator can access platform records, logs and managed machines when needed to run,
-          secure or troubleshoot the service. Credentials are kept in encrypted secret storage,
-          databases and disks use their hosting provider&rsquo;s at-rest protection, and agent
-          machines are isolated from one another. No system is perfectly secure.
+          In our hosted Workspace, the operator can access platform records, logs and managed
+          machines when needed to run, secure or troubleshoot the service. Credentials are kept in
+          encrypted secret storage, databases and disks use their hosting provider&rsquo;s at-rest
+          protection, and agent machines are isolated from one another. No system is perfectly
+          secure.
         </p>
       </LegalSection>
 
-      <LegalSection title="8. Children">
+      <LegalSection title="9. Children">
         <p>The service is for organisations and is not directed to children.</p>
       </LegalSection>
 
-      <LegalSection title="9. Changes">
+      <LegalSection title="10. Changes">
         <p>
           Updates appear here with a new effective date. Material changes will be announced inside
           the Workspace or by email.
         </p>
       </LegalSection>
 
-      <LegalSection title="10. Contact">
+      <LegalSection title="11. Contact">
         <ContactLines />
       </LegalSection>
     </LegalLayout>

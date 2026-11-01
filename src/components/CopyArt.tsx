@@ -327,7 +327,7 @@ function Machines({ x, y, width = 300 }: { x: number; y: number; width?: number 
 function SidesWide() {
   /* Your side: three columns of cards; ours: one. The middle column is the
      narrowest (its longest line is the shortest), so the gap between the
-     sides holds "Releases, with your update key" on one line over its arrow
+     sides holds "Releases, free to download" on one line over its arrow
      (note #839). */
   const A = 24;
   const B = 272;
@@ -343,7 +343,7 @@ function SidesWide() {
   const R3 = 304;
   const MID = (SIDE + OURS - 16) / 2; /* the middle of the gap between the two sides */
   return (
-    <svg viewBox="0 0 1150 540" className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, files and backups buckets, your own registry, email, and every agent, site and CI machine. With us stay support, the update service and the source code with the releases. Releases come in from the update service with your update key; a diagnostics bundle goes out only if your admin sends it.">
+    <svg viewBox="0 0 1150 540" className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, files and backups buckets, your own registry, email, and every agent, site and CI machine. With us stay support, the update service and the source code with the releases. Releases come in from the update service, free to download; a diagnostics bundle goes out only if your admin sends it.">
       {/* Your side */}
       <rect x={0} y={60} width={SIDE} height={388} rx={24} className="fill-panel-soft" />
       <Label x={24} y={94} tone="ink" size={15} weight={600}>
@@ -394,7 +394,7 @@ function SidesWide() {
         <Head x={C + WC + 6} y={R2 + 32} angle={180} tone="accent" />
       </g>
       <Label x={MID} y={R2 + 22} anchor="middle" tone="accent" size={12}>
-        Releases, with your update key
+        Releases, free to download
       </Label>
 
       {/* The one thing that ever goes the other way, and only on purpose */}
@@ -437,7 +437,7 @@ function SidesTall() {
   const o1 = ours + 50;
   const o2 = o1 + H + 40;
   return (
-    <svg viewBox={`0 0 350 ${o2 + H + 18}`} className="block h-auto w-full" role="img" aria-label="Your Fly organization holds every agent, site and CI machine, the code host, previews and sites, email, files and backups buckets, the Workspace and your own registry. With us stay support, the update service and the source code. Releases come in from the update service with your update key; a diagnostics bundle goes out only if your admin sends it.">
+    <svg viewBox={`0 0 350 ${o2 + H + 18}`} className="block h-auto w-full" role="img" aria-label="Your Fly organization holds every agent, site and CI machine, the code host, previews and sites, email, files and backups buckets, the Workspace and your own registry. With us stay support, the update service and the source code. Releases come in from the update service, free to download; a diagnostics bundle goes out only if your admin sends it.">
       <rect x={0} y={top} width={350} height={end} rx={22} className="fill-panel-soft" />
       <Label x={L} y={30} tone="ink" size={15} weight={600}>
         Your Fly organization
@@ -468,7 +468,7 @@ function SidesTall() {
       <g className="copy-art-arrive">
         <Head x={R + W / 2} y={r4 + H + 6} angle={-90} tone="accent" />
       </g>
-      {['Releases,', 'with your', 'update key'].map((line, i) => (
+      {['Releases,', 'free to', 'download'].map((line, i) => (
         <Label key={line} x={R + W / 2 + 10} y={end + 26 + i * 15} tone="accent" size={12.5}>
           {line}
         </Label>

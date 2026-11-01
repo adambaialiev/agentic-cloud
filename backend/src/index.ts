@@ -1034,9 +1034,10 @@ const copyReleaseSha = PRIVATE_COPY ? (() => {
 })() : null;
 const copyAppPrefix = /^(.+)-backend$/.exec(process.env.FLY_APP_NAME ?? '')?.[1];
 // A private copy's licence (note #814): read at start and daily, never sent
-// anywhere. COPY_LICENCE=off leaves it off, for a design partner who has the
-// contract and the update key only.
-const COPY_LICENCE_ON = PRIVATE_COPY && (process.env.COPY_LICENCE ?? '').trim().toLowerCase() !== 'off';
+// anywhere. Licensing is OFF (note #935, 1 Nov 2026: the product is free for now): the
+// copy checks and counts nothing unless COPY_LICENCE=on, the one switch the
+// installer and the update service share.
+const COPY_LICENCE_ON = PRIVATE_COPY && (process.env.COPY_LICENCE ?? '').trim().toLowerCase() === 'on';
 /** People who can use the copy: members of a workplace, and anyone waiting
  *  on a request to join one. */
 const countCopyPeople = async (): Promise<number> => {

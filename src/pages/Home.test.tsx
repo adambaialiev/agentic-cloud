@@ -172,7 +172,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(top.querySelector('#home-fleet .ws-live')).toBeTruthy();
     expect(top.querySelector('code')).toBeNull();
     expect(document.querySelector('#start #give-your-agent code')?.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
-    expect(document.querySelector('#start #qualifier')?.textContent?.trim()).toBe('Runs in your own Fly account. First month free.');
+    expect(document.querySelector('#start #qualifier')?.textContent?.trim()).toBe('Runs in your own Fly account. Free for now.');
   });
 
   // Note #832: a cold email is read on a phone, where the line cannot run.

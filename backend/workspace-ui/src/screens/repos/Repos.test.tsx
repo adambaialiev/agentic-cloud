@@ -613,21 +613,58 @@ describe('publishing on approval (`agentbuilt repo publish`)', () => {
   });
 });
 
-describe('public access, now that opening a repository is hidden (2026-09-29)', () => {
-  it('offers a private repository no way to become public', async () => {
+describe('public access: an admin opens a repository from its screen (back since note #936)', () => {
+  it('offers an admin of a private repository Make public, with the licence rule beside it', async () => {
     open(
       inWorkplace({ repos: [repo({ name: 'infinite-agents' })] }),
       repoScreenScript('infinite-agents', () => ({ branch: 'main', entries: [] })),
       `/repositories/infinite-agents${scoped}`,
     );
     await screen.findByRole('heading', { name: 'infinite-agents' });
-    // The danger zone is the screen's last section, so once it is drawn the
-    // public-access section would have been too.
-    await waitFor(() => expect(document.getElementById('repoDanger')).toBeTruthy());
-    expect(document.getElementById('repoPublicHead')).toBeNull();
-    expect(document.getElementById('repoPublicAccess')?.hidden).toBe(true);
-    expect(screen.queryByRole('button', { name: 'Open source this repository' })).toBeNull();
-    expect(screen.queryByText(/LICENSE file/)).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'Public access' })).toBeTruthy();
+    expect(document.querySelector('#repoPublicAccess .name')?.textContent).toBe('Private');
+    expect(screen.getByRole('button', { name: 'Make public' })).toBeTruthy();
+    expect(screen.getByText(/non-empty LICENSE file at the repository root/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Open public page' })).toBeNull();
+  });
+
+  it('leaves a member of the workplace the state and no control', async () => {
+    open(
+      inWorkplace({ org: { ...org, role: 'member' }, repos: [repo({ name: 'infinite-agents' })] }),
+      repoScreenScript('infinite-agents', () => ({ branch: 'main', entries: [] })),
+      `/repositories/infinite-agents${scoped}`,
+    );
+    await screen.findByRole('heading', { name: 'infinite-agents' });
+    expect(await screen.findByRole('heading', { name: 'Public access' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Make public' })).toBeNull();
+    expect(screen.getByText('Only a workplace admin can change public access.')).toBeTruthy();
+    expect(screen.queryByText(/non-empty LICENSE file/)).toBeNull();
+  });
+
+  it('confirms publishing, says what a stranger can clone, and shows the link after', async () => {
+    const state = inWorkplace({ repos: [repo({ name: 'infinite-agents' })] });
+    open(
+      state,
+      {
+        ...repoScreenScript('infinite-agents', () => ({ branch: 'main', entries: [] })),
+        'POST api/repos/infinite-agents/public-access': (call) => {
+          expect(JSON.parse(String(call.init?.body))).toEqual({ public: true });
+          state.repos![0]!.publicUrl = 'https://workspace.test/acme/infinite-agents';
+          return { public: true, publicUrl: 'https://workspace.test/acme/infinite-agents', publishedAt: '2026-11-01T10:00:00.000Z' };
+        },
+      },
+      `/repositories/infinite-agents${scoped}`,
+    );
+    await screen.findByRole('heading', { name: 'infinite-agents' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Make public' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('clone the full history, including every branch');
+    expect(dialog.textContent).toContain('Copies people make cannot be recalled');
+    expect(dialog.textContent).not.toContain('open-source page');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Make public' }));
+    expect(await screen.findByRole('link', { name: 'Open public page' })).toBeTruthy();
+    expect(document.querySelector('#repoPublicAccess .name')?.textContent).toBe('Public');
+    expect(screen.getByRole('button', { name: 'Make private' })).toBeTruthy();
   });
 
   it('shows public state to a member but leaves publication controls with admins', async () => {
@@ -642,10 +679,10 @@ describe('public access, now that opening a repository is hidden (2026-09-29)', 
     await screen.findByRole('heading', { name: 'infinite-agents' });
     expect(await screen.findByRole('link', { name: 'Open public page' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Make private' })).toBeNull();
-    expect(screen.getByText('Only a workplace admin can make it private.')).toBeTruthy();
+    expect(screen.getByText('Only a workplace admin can change public access.')).toBeTruthy();
   });
 
-  it('confirms withdrawal, says it is for good and that copies already made remain', async () => {
+  it('confirms withdrawal, says copies already made remain, and offers Make public again', async () => {
     const state = inWorkplace({
       repos: [repo({ name: 'infinite-agents', publicUrl: 'https://workspace.test/public/repositories/123' })],
     });
@@ -665,11 +702,9 @@ describe('public access, now that opening a repository is hidden (2026-09-29)', 
     fireEvent.click(await screen.findByRole('button', { name: 'Make private' }));
     const dialog = await screen.findByRole('dialog');
     expect(dialog.textContent).toContain('Copies already made remain');
-    expect(dialog.textContent).toContain('cannot be made public again');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Make private' }));
-    // Private again, the section goes with the public state it described.
-    await waitFor(() => expect(document.getElementById('repoPublicHead')).toBeNull());
-    expect(screen.queryByRole('button', { name: 'Open source this repository' })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Make public' })).toBeTruthy();
+    expect(document.querySelector('#repoPublicAccess .name')?.textContent).toBe('Private');
   });
 });
 

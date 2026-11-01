@@ -1,0 +1,5 @@
+# The only root commits this repository's history may have (note #936, #939).
+# The git host refuses any push bringing in history that starts anywhere else,
+# so no branch that grew from the private infinite-agents can land here.
+0080d92300d54490a111b0981a4049a9c4ee8c58  # the platform's "Nothing approved yet"
+d4fe9aa6b4750026364c94adb746ea21f099fb2f  # first-public-commit, 1 Nov 2026

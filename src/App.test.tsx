@@ -125,8 +125,9 @@ describe('App routes', () => {
       </MemoryRouter>,
     )
     expect(await screen.findByRole('heading', { level: 1, name: 'Terms of Service' }, { timeout: 10_000 })).toBeTruthy()
-    expect(screen.getByText(/there is no platform payment to refund/)).toBeTruthy()
-    expect(screen.getByText(/was not collected by this service/)).toBeTruthy()
+    // Since note #935 both offers are free for now; the refund lines stay.
+    expect(screen.getByText(/there is no\s+payment of ours to refund/)).toBeTruthy()
+    expect(screen.getByText(/was not collected by us/)).toBeTruthy()
   })
 
   it.each([
