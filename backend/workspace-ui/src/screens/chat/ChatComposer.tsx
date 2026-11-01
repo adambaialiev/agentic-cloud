@@ -71,7 +71,6 @@ import { Svg } from '../../ui/icons.js';
 import { DraftChip } from '../../ui/DraftChip.js';
 import {
   CHAT_COUNT_FROM, CHAT_MESSAGE_MAX, CHAT_TOUCH_QUERY, chatEnterSends, chatFileRefusal,
-  chatFileSetRefusal,
 } from './chat-compose.js';
 import type { ReturnedDraft } from './outbox.js';
 
@@ -181,8 +180,6 @@ export function ChatComposer({ sending = false, onSend, onRefuse, memory = '', a
       const refusal = chatFileRefusal(file);
       if (refusal) return refusal;
     }
-    const setRefusal = chatFileSetRefusal([...picked.map((item) => item.file), ...selected]);
-    if (setRefusal) return setRefusal;
     // One URL per file per draft; remove, send and leaving revoke exactly
     // what selection created.
     setPicked([...picked, ...selected.map((file) => ({ file, url: URL.createObjectURL(file) }))]);
@@ -210,11 +207,6 @@ export function ChatComposer({ sending = false, onSend, onRefuse, memory = '', a
   const submit = async () => {
     const message = text.trim();
     if (sending || (!message && picked.length === 0)) return false;
-    // Picking checks the set as it grows; a refused send handed back in front
-    // of files picked since (note #658) can still add up past what one
-    // message carries, and the edge would answer that with its own 413.
-    const tooMuch = chatFileSetRefusal(picked.map((item) => item.file));
-    if (tooMuch) { onRefuse(tooMuch); return false; }
     const answer = onSend(message, picked.map((item) => item.file));
     const sent = typeof answer === 'boolean' ? answer : await answer;
     if (!sent) return false;

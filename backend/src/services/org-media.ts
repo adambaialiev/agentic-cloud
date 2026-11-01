@@ -280,6 +280,12 @@ export class OrgRoutedMediaStorage implements MediaStorage {
     if (storage.abortMultipart) await storage.abortMultipart(args);
   }
 
+  async peekObject(args: { storagePath: string; bytes: number }): Promise<{ sizeBytes: number; head: Buffer } | null> {
+    const storage = await this.route(args.storagePath, { provision: false });
+    if (!storage.peekObject) throw new Error('This store cannot read part of a file.');
+    return storage.peekObject(args);
+  }
+
   async abortStaleMultiparts(args: { prefix: string; olderThan: Date }): Promise<number> {
     const storage = await this.route(args.prefix, { provision: false });
     return storage.abortStaleMultiparts ? storage.abortStaleMultiparts(args) : 0;

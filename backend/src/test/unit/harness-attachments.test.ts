@@ -283,11 +283,39 @@ describe('fetchOutboundAttachment', () => {
     client.execSyncHandler = () => makeExecSyncResult({ stdout: `${100 * 1024 * 1024}\n` });
     const big = await fetchOutboundAttachment(client, 'sb-1', '/home/agent/huge.zip');
     expect(big.ok).toBe(false);
-    if (!big.ok) expect(big.reason).toContain('exceeds');
+    if (!big.ok) expect(big.reason).toBe('it is 100.0 MB, and a file sent into the chat can be up to 45.0 MB');
 
     client.execSyncHandler = () => makeExecSyncResult({ exitCode: 1, stderr: 'No such file' });
     const missing = await fetchOutboundAttachment(client, 'sb-1', '/home/agent/gone.txt');
     expect(missing.ok).toBe(false);
     if (!missing.ok) expect(missing.reason).toContain('not found');
+  });
+
+  it('sends a big file from the machine straight into storage when it is given somewhere to put it (note #943)', async () => {
+    const client = new FakeWorkspaceRuntimeClient();
+    const commands: string[] = [];
+    client.execSyncHandler = (command) => {
+      commands.push(command);
+      return makeExecSyncResult({ stdout: command.startsWith('wc -c') ? `${300 * 1024 * 1024}\n` : '' });
+    };
+    const targets: Array<{ fileName: string; contentType: string }> = [];
+    const sent = await fetchOutboundAttachment(client, 'sb-1', '~/films/cut.mp4', {
+      homeDir: '/home/agent',
+      upload: async (args) => { targets.push(args); return { id: 'f-1', uploadUrl: 'https://store.example/put?sig=1' }; },
+    });
+    expect(sent).toEqual({ ok: true, fileName: 'cut.mp4', sizeBytes: 300 * 1024 * 1024, uploadId: 'f-1' });
+    expect(targets).toEqual([{ fileName: 'cut.mp4', contentType: 'video/mp4' }]);
+    // Two commands: the size, then the machine's own PUT — never base64 back here.
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toBe("curl -sS -f -X PUT -H 'Content-Type: video/mp4' --upload-file '/home/agent/films/cut.mp4' 'https://store.example/put?sig=1'");
+    expect(commands.join('\n')).not.toContain('base64');
+
+    // A small one still comes back inline, and past 5 GB the reason has the number.
+    client.execSyncHandler = (command) => makeExecSyncResult({ stdout: command.startsWith('wc -c') ? '6\n' : Buffer.from('hello\n').toString('base64') });
+    const small = await fetchOutboundAttachment(client, 'sb-1', '/home/agent/a.txt', { upload: async () => { throw new Error('not for small files'); } });
+    expect(small.ok && small.content && Buffer.from(small.content).toString()).toBe('hello\n');
+    client.execSyncHandler = () => makeExecSyncResult({ stdout: `${6 * 1024 ** 3}\n` });
+    const huge = await fetchOutboundAttachment(client, 'sb-1', '/home/agent/disk.img', { upload: async () => ({ id: 'x', uploadUrl: 'u' }) });
+    expect(huge.ok ? '' : huge.reason).toBe('it is 6.0 GB, and a file sent into the chat can be up to 5.0 GB');
   });
 });

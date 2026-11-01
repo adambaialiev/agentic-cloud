@@ -959,10 +959,10 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 184,
-      templateHash: '5e963ddcdcb94c8e',
-      templateHashWithoutUrl: '8e417b88eba80f15',
-      platformDocsHash: '9f709e0f9873a50c',
+      version: 185,
+      templateHash: 'b27943e7ccbc5ac0',
+      templateHashWithoutUrl: 'baa05b2eea814313',
+      platformDocsHash: '09c89f5869a3f557',
       agentbuiltCliHash: 'b9cabafcf0e47965',
     });
   });

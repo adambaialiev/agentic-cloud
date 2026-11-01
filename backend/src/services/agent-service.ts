@@ -12,7 +12,7 @@ import {
   TURN_PROMPT_FILE,
   watchWorkspaceAgentActivity,
 } from './workspace-recap-runtime.js';
-import { extractOutboundAttachments, fetchOutboundAttachment, stageHarnessAttachments } from '../agent/harness-attachments.js';
+import { extractOutboundAttachments, fetchOutboundAttachment, stageHarnessAttachments, type OutboundFile } from '../agent/harness-attachments.js';
 import { recapCandidates, recapSettingsKey, validRecapSettings } from './workspace-recap-settings.js';
 import type { WorkspaceRecapRun, WorkspaceRecapSettings } from '../shared/workspace-recap.js';
 import type {
@@ -224,14 +224,19 @@ import type { AgentTokenLedger } from './agent-token-ledger.js';
 import { AGENT_WORK_COUNTED_SINCE, AgentWorkMeter } from './agent-work-meter.js';
 import {
   agentChatFileSetRefusal,
-  settleAgentChatUploads,
   validateAgentChatAttachment,
   agentChatAttachmentPath,
   agentChatStorageOwner,
   agentChatStoragePrefix,
+  AgentChatUploadsFailed,
+  measureStoredPicture,
+  recapChatFilePath,
+  storeAgentChatUploads,
   type AgentChatFile,
   type AgentChatStorage,
-  type AgentChatMessage
+  type AgentChatMessage,
+  type AgentChatUpload,
+  type StoredAgentChatUpload
 } from './agent-chat-storage.js';
 import { pendingTurnDocId } from './pending-turn-storage.js';
 import {
@@ -1075,7 +1080,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // screen (a root LICENSE required, no directory, reached by its address);
 // no agent verb can, so the docs say never to make one public yourself and
 // to prepare the LICENSE and README when the user asks for it.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 184;
+// v185 (note #943): a file sent with ATTACH: is up to 5 GB, not ~45 MB — a
+// big one goes from the machine straight into storage. No CLI change.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 185;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -3834,11 +3841,7 @@ export class AgentService {
     userId: string;
     agentId: string;
     message: string;
-    attachments?: Array<{
-      fileName: string;
-      contentType?: string;
-      data: Uint8Array;
-    }>;
+    attachments?: AgentChatUpload[];
   }): Promise<AgentPeerMessageResult & { steered?: boolean }> {
     const profile = await this.deps.userStorage.getProfile(args.userId);
     const target = profile?.telegram?.agents?.[args.agentId];
@@ -3851,7 +3854,8 @@ export class AgentService {
       return { ok: false, code: 'unavailable', reason: 'Write something or attach a file to send.' };
     }
 
-    const setRefusal = uploads.length ? agentChatFileSetRefusal(uploads.map((upload) => upload.data.byteLength)) : null;
+    const inline = uploads.flatMap((upload) => (upload.data ? [upload.data.byteLength] : []));
+    const setRefusal = inline.length ? agentChatFileSetRefusal(inline) : null;
     if (setRefusal) return { ok: false, code: 'unavailable', reason: `${setRefusal} Nothing was sent.` };
 
     // Every selected file has two jobs: it is visible in the owner's one chat
@@ -3865,73 +3869,47 @@ export class AgentService {
       }
 
       for (const upload of uploads) {
+        // A parted file was checked when it went up and is measured from the
+        // store below; only its name is the sender's to vouch for here.
         const refusal = validateAgentChatAttachment({
           fileName: upload.fileName,
-          sizeBytes: upload.data.byteLength
+          sizeBytes: upload.data ? upload.data.byteLength : 1
         });
         if (refusal) return { ok: false, code: 'unavailable', reason: refusal };
       }
 
-      const preparedWithData: Array<{
-        record: AttachmentRecord;
-        chatFile: AgentChatFile;
-        data: Buffer;
-      }> = uploads.map((upload) => {
-        const id = randomUUID();
-        const fileName = upload.fileName;
-        const contentType = inferContentType(fileName, upload.contentType);
-        const renderMode = resolveAttachmentRenderMode(contentType);
-        const storagePath = agentChatAttachmentPath(agentChatStorageOwner(args.userId, target.orgId), target.id, id, fileName);
-        const data = Buffer.isBuffer(upload.data) ? upload.data : Buffer.from(upload.data);
+      // Inline bytes are written, parted files found where they went up
+      // (note #943); a failed set leaves nothing this request wrote behind.
+      let stored: StoredAgentChatUpload[];
+      try {
+        const owner = agentChatStorageOwner(args.userId, target.orgId);
+        stored = await storeAgentChatUploads(this.deps.mediaStorage, uploads, (id, fileName) => agentChatAttachmentPath(owner, target.id, id, fileName));
+      } catch (error) {
+        console.warn(`[telegram] Could not upload Workspace chat files for agent ${target.id}:`, error);
+        return { ok: false, code: 'unavailable', reason: error instanceof AgentChatUploadsFailed ? error.message : 'Those files could not be uploaded just now. Nothing was sent.' };
+      }
+
+      preparedAttachments = stored.map(({ file, sha256 }) => {
+        const renderMode = resolveAttachmentRenderMode(file.contentType);
         return {
           record: {
-            fileId: id,
+            fileId: file.id,
             url: '',
-            storagePath,
-            fileName,
-            displayName: fileName,
-            contentType,
+            storagePath: file.storagePath,
+            fileName: file.fileName,
+            displayName: file.fileName,
+            contentType: file.contentType,
             mediaKind: renderMode.mediaKind,
             renderAs: renderMode.renderAs,
-            sizeBytes: data.byteLength,
+            sizeBytes: file.sizeBytes,
             visibility: 'session',
             source: 'user_input',
             use: 'sandbox_input',
-            sha256: createHash('sha256').update(data).digest('hex')
+            ...(sha256 ? { sha256 } : {})
           },
-          // A picture's size rides the row so the chat can hold its place
-          // before the bytes land (note #302); measured from the bytes, not
-          // the name, and simply absent for anything that is not a picture.
-          chatFile: { id, fileName, contentType, sizeBytes: data.byteLength, ...(imageDimensions(data) ?? {}), storagePath },
-          data
+          chatFile: file
         };
       });
-
-      // Wait for every upload to settle before cleaning a failed set. A fast
-      // rejection while another object was still landing would otherwise let
-      // that late object arrive after the cleanup and live there orphaned.
-      const stored = await settleAgentChatUploads(preparedWithData, (file) => (
-        this.deps.mediaStorage!.uploadObject({
-          storagePath: file.record.storagePath!,
-          contentType: file.record.contentType,
-          data: file.data
-        })
-      ));
-      if (stored.some((result) => result.status === 'rejected')) {
-        const failure = stored.find((result) => result.status === 'rejected');
-        console.warn(`[telegram] Could not upload Workspace chat files for agent ${target.id}:`,
-          failure && failure.status === 'rejected' ? failure.reason : 'unknown upload failure');
-        await Promise.all(preparedWithData.map((file) => (
-          this.deps.mediaStorage?.deleteObject?.({ storagePath: file.record.storagePath! })
-            .catch(() => {})
-        )));
-        return { ok: false, code: 'unavailable', reason: 'Those files could not be uploaded just now. Nothing was sent.' };
-      }
-
-      // Upload-only data is no longer needed after this point. Keeping the
-      // prepared type narrow makes it hard for later code to accidentally
-      // copy the request bytes into a stored chat row.
-      preparedAttachments = preparedWithData.map(({ record, chatFile }) => ({ record, chatFile }));
     }
 
     const sessionId = buildAssistantSessionId(args.userId);
@@ -5012,26 +4990,42 @@ export class AgentService {
   private async recordAgentChatFile(
     userId: string,
     agentId: string,
-    file: { fileName: string; content: Uint8Array },
+    file: OutboundFile,
   ): Promise<void> {
     const media = this.deps.mediaStorage;
     const chats = this.deps.agentChatStorage;
     if (!media || !chats) return;
-    const agent = (await this.deps.userStorage.getProfile(userId))?.telegram?.agents?.[agentId];
-    const id = randomUUID();
-    const contentType = inferContentType(file.fileName, undefined);
-    const storagePath = agentChatAttachmentPath(agentChatStorageOwner(userId, agent?.orgId), agentId, id, file.fileName);
-    await media.uploadObject({ storagePath, contentType, data: file.content });
+    const [stored] = await storeAgentChatUploads(media, [file.uploadId !== undefined
+      ? { fileName: file.fileName, uploadId: file.uploadId }
+      : { fileName: file.fileName, data: file.content }], await this.agentChatFilePathFor(userId, agentId));
     const result = await chats.append(userId, agentId, {
       role: 'agent',
       text: '',
       at: new Date().toISOString(),
-      file: {
-        id, fileName: file.fileName, contentType, sizeBytes: file.content.byteLength,
-        ...(imageDimensions(file.content) ?? {}), storagePath
-      }
+      file: stored!.file
     });
     this.cleanupTrimmedChatFiles(result.trimmed);
+  }
+
+  /** Where this agent's chat files go: the workplace it works in (note #650). */
+  private async agentChatFilePathFor(userId: string, agentId: string): Promise<(fileId: string, fileName: string) => string> {
+    const agent = (await this.deps.userStorage.getProfile(userId))?.telegram?.agents?.[agentId];
+    const owner = agentChatStorageOwner(userId, agent?.orgId);
+    return (fileId, fileName) => agentChatAttachmentPath(owner, agentId, fileId, fileName);
+  }
+
+  /**
+   * A signed PUT for one big file an agent sends into its chat (note #943):
+   * the machine uploads it there itself, and `recordAgentChatFile` then finds
+   * it by the id. One hour, so a slow link on a big file is not cut off.
+   */
+  private async agentChatUploadTarget(userId: string, agentId: string, args: { fileName: string; contentType: string }): Promise<{ id: string; uploadUrl: string }> {
+    const media = this.deps.mediaStorage;
+    if (!media) throw new Error('Chat file storage is not available.');
+    const id = randomUUID();
+    const pathFor = await this.agentChatFilePathFor(userId, agentId);
+    const { uploadUrl } = await media.createUploadTarget({ storagePath: pathFor(id, args.fileName), contentType: args.contentType, expiresInMs: 60 * 60_000 });
+    return { id, uploadUrl };
   }
 
   /** The row a chat file was said on, and the file itself — only while its
@@ -5084,7 +5078,7 @@ export class AgentService {
       ? { width: file.width, height: file.height }
       : null;
     if (preview && !size && resolveAttachmentRenderMode(file.contentType).renderAs === 'image') {
-      size = await media.downloadObject({ storagePath }).then(imageDimensions).catch(() => null);
+      size = await measureStoredPicture(media, storagePath).catch(() => null);
       if (size) {
         Object.assign(file, size);
         const { seq, ...rest } = row;
@@ -5759,12 +5753,24 @@ export class AgentService {
           const outbound = extractOutboundAttachments(text);
           const notes: string[] = [];
           for (const rawPath of outbound.paths.slice(0, WORKSPACE_AGENT_REPLY_MAX_FILES)) {
+            const media = this.deps.mediaStorage;
             const fetched = await fetchOutboundAttachment(client, sandboxId, rawPath, {
               sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
               homeDir: WORKSPACE_AGENT_HOME,
+              // A big file goes from the machine straight into this
+              // conversation's folder (note #943); the reply names it by id.
+              ...(media ? {
+                upload: async ({ fileName, contentType }: { fileName: string; contentType: string }) => {
+                  const id = randomUUID();
+                  const { uploadUrl } = await media.createUploadTarget({ storagePath: recapChatFilePath(userId, orgId, id, fileName), contentType, expiresInMs: 60 * 60_000 });
+                  return { id, uploadUrl };
+                },
+              } : {}),
             });
             if (fetched.ok) {
-              files.push({ fileName: fetched.fileName, contentType: inferContentType(fetched.fileName), data: fetched.content });
+              files.push(fetched.uploadId !== undefined
+                ? { fileName: fetched.fileName, contentType: inferContentType(fetched.fileName), uploadId: fetched.uploadId }
+                : { fileName: fetched.fileName, contentType: inferContentType(fetched.fileName), data: fetched.content });
             } else {
               notes.push(`(couldn't attach ${fetched.fileName} — ${fetched.reason})`);
             }
@@ -7930,7 +7936,7 @@ export class AgentService {
       ] : [
         'You run in single turns: when your reply ends, you STOP until the user writes again. Never promise a result is "on its way" — nothing happens between turns, so that promise breaks. Do the work first, then reply once with the finished result. If something is genuinely too big for one turn, say what IS done and ask the user to say "continue".',
       ]),
-      'To send a file into the chat, put a line `ATTACH: /absolute/path/to/file` (or `ATTACH: ~/relative/path`) on its OWN line in your reply — it arrives as a photo or document, up to ~45 MB. Use it whenever the result IS a file: reports, images, archives, exports. When the user asks for an artifact, produce the actual FILE and ATTACH it — a link to your site is a fallback, not a substitute.',
+      'To send a file into the chat, put a line `ATTACH: /absolute/path/to/file` (or `ATTACH: ~/relative/path`) on its OWN line in your reply — it arrives as a photo or document, up to 5 GB. Use it whenever the result IS a file: reports, images, archives, exports. When the user asks for an artifact, produce the actual FILE and ATTACH it — a link to your site is a fallback, not a substitute.',
       ...(this.deps.agentbuilt ? ['BUT WORDS THEY WILL READ ARE NOT A FILE. A plan, a brief, a spec, a write-up, a checklist — anything your user asked you to WRITE — goes on a quick note (`agentbuilt note add --file plan.html`; up to 100,000 characters, so a whole plan fits), or on a knowledge page when the next agent must not get it wrong. A document dropped into the chat as a file scrolls away, opens in nothing on a phone, and is found by nobody next week; a note is where they and every agent of theirs look, and it stays editable as the plan changes. So write it as a note, and give them the note in your reply. ATTACH is for what only a program opens — an image, an archive, a spreadsheet, an export — not for the words themselves.'] : []),
       'Your user may forward your message to show off what you made, so make each delivery — especially a live link — ONE complete message that stands on its own: say plainly what it is and include the link, so a stranger reading only that message understands it.',
       'Some messages reach you as voice-message TRANSCRIPTIONS, and transcription garbles words ("sales token" for "access token"). When a request reads oddly, interpret it charitably, say how you read it, and proceed on that reading.',
@@ -8988,6 +8994,9 @@ export class AgentService {
           console.warn(`[telegram] Could not put a chat file on the record for agent ${pinnedAgentId}:`, error);
         });
       },
+      ...(this.deps.mediaStorage ? {
+        prepareUserFileUpload: (args: { fileName: string; contentType: string }) => this.agentChatUploadTarget(userId, pinnedAgentId, args),
+      } : {}),
       onAgentRunComplete: async (args) => {
         if (args.processShutdown) {
           // A restart let go of a turn that is still running (note #734): it

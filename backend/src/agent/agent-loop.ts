@@ -1,4 +1,5 @@
 import { generateText } from 'ai';
+import type { OutboundFile, OutboundUploadTarget } from './harness-attachments.js';
 import type { AgentTokenLedger } from '../services/agent-token-ledger.js';
 import type { UserSecretViewer } from '../services/user-secrets.js';
 import {
@@ -208,7 +209,14 @@ export interface AgentLoopDeps {
    * Deliver a file from the agent's machine into the user's chat (the
    * harness ATTACH: convention). Wired for Telegram harness runs.
    */
-  sendUserFile?: (file: { fileName: string; content: Uint8Array }) => Promise<void>;
+  sendUserFile?: (file: OutboundFile) => Promise<void>;
+  /**
+   * Where a big ATTACH: file goes (note #943): an id and a signed PUT URL
+   * under the chat's own prefix, so the machine sends the bytes to storage
+   * itself and `sendUserFile` is handed the id. Absent → files come back
+   * through the backend, under the old inline ceiling.
+   */
+  prepareUserFileUpload?: OutboundUploadTarget;
   includePlanTools?: boolean;
 }
 

@@ -1,8 +1,10 @@
+import { createHash, randomUUID } from 'node:crypto';
 import type { SqliteDb } from './sqlite/sqlite-db.js';
-import {
-  SESSION_ATTACHMENT_MAX_BYTES,
-  sanitizeStorageSegment,
-} from './session-attachments.js';
+import type { MediaStorage } from './media-storage.js';
+import { inferContentType, sanitizeStorageSegment } from './session-attachments.js';
+import { UPLOAD_PART_BYTES } from '../shared/uploads.js';
+import { imageDimensions } from '../utils/image-dimensions.js';
+import { WORKSPACE_AGENT_CHAT_ID } from '../shared/workspace-recap-chat.js';
 
 /**
  * The Workspace chat screen's record of what an agent and its owner said
@@ -37,20 +39,32 @@ export interface AgentChatFile {
 }
 
 /**
- * A file sent from the Workspace chat follows the harness attachment ceiling:
- * it is not merely a picture on the chat surface, it is materialised in the
- * agent's inbox for the turn. Keeping one number for both halves prevents an
- * upload the screen accepts from becoming a file the harness cannot stage.
+ * A chat file has no product cap (note #943, the owner: "unlimited"). Until
+ * then it was 25 MB, borrowed from the harness's attachment rule, and the
+ * whole message rode one request into this server's memory. Now a file past
+ * one part goes up in parts (`chat-file-uploads.ts`) straight into the
+ * workplace's bucket, the agent's machine streams it to disk, and the one
+ * ceiling left is the protocol's own: S3 stitches at most 10,000 parts, and
+ * a part is 8 MiB — 78 GB. Past that the screen says so, with the number.
+ * (A file bigger than the agent's free disk still lands in the chat and
+ * downloads; the turn is told it could not be put on the machine, and why.)
  */
-export const AGENT_CHAT_ATTACHMENT_MAX_BYTES = SESSION_ATTACHMENT_MAX_BYTES;
+export const AGENT_CHAT_FILE_MAX_BYTES = UPLOAD_PART_BYTES * 10_000;
+
+/** The one refusal a chat file can earn for its size. */
+export function agentChatFileTooBig(sizeBytes: number): string {
+  const gb = (n: number) => (n / 1024 / 1024 / 1024).toFixed(0);
+  return `A chat file can be up to ${gb(AGENT_CHAT_FILE_MAX_BYTES)} GB — this one is ${gb(sizeBytes)} GB.`;
+}
 
 /**
- * A chat message carries as many files as its sender picks (note #672 took
- * the old five-file cap away) — what one message is held to is its BYTES.
- * The whole set rides one request, and the edge in front of the backend
+ * What one request may carry INLINE (note #672 took the old five-file cap
+ * away, note #943 the per-file one). The edge in front of the backend
  * (Cloudflare) answers 413 to any request body over 100 MB before it reaches
- * this code, so a set the screen accepted past that would fail with nobody's
- * words. 95 MB leaves room for the manifest and the envelope around it.
+ * this code; 95 MB leaves room for the manifest and the envelope around it.
+ * The screen sends anything that would not fit in parts first and names it in
+ * the manifest instead, so a message is never refused for this — only a
+ * client that ignores the parts door can meet it.
  */
 export const AGENT_CHAT_MESSAGE_MAX_BYTES = 95 * 1024 * 1024;
 
@@ -61,12 +75,12 @@ export const AGENT_CHAT_MESSAGE_MAX_BYTES = 95 * 1024 * 1024;
  */
 const AGENT_CHAT_UPLOAD_LANES = 6;
 
-/** Why this SET of files cannot go as one chat message, or null. */
+/** Why this SET of inline files cannot ride one request, or null. */
 export function agentChatFileSetRefusal(sizes: readonly number[]): string | null {
   if (sizes.length === 0) return 'Attach at least one file.';
   const total = sizes.reduce((sum, size) => sum + size, 0);
   if (total <= AGENT_CHAT_MESSAGE_MAX_BYTES) return null;
-  return `One chat message carries up to ${AGENT_CHAT_MESSAGE_MAX_BYTES / 1024 / 1024} MB of files — these come to ${(total / 1024 / 1024).toFixed(1)} MB. Send the rest in a second message.`;
+  return `One request carries up to ${AGENT_CHAT_MESSAGE_MAX_BYTES / 1024 / 1024} MB of files inline — these come to ${(total / 1024 / 1024).toFixed(1)} MB. Reload the page and send them again: it sends big files in parts.`;
 }
 
 /**
@@ -100,9 +114,7 @@ export function validateAgentChatAttachment(args: {
     return 'File names here are letters, digits, dots, dashes and underscores (up to 120 characters) — rename the file and attach it again.';
   }
   if (args.sizeBytes <= 0) return 'The upload arrived empty.';
-  if (args.sizeBytes > AGENT_CHAT_ATTACHMENT_MAX_BYTES) {
-    return `Chat files are up to ${AGENT_CHAT_ATTACHMENT_MAX_BYTES / 1024 / 1024} MB — this one is ${(args.sizeBytes / 1024 / 1024).toFixed(1)} MB.`;
-  }
+  if (args.sizeBytes > AGENT_CHAT_FILE_MAX_BYTES) return agentChatFileTooBig(args.sizeBytes);
   return null;
 }
 
@@ -156,6 +168,105 @@ export function agentChatAttachmentPath(
   fileName: string,
 ): string {
   return `${agentChatStoragePrefix(owner, agentId)}${sanitizeStorageSegment(fileId, 'file')}/${sanitizeStorageSegment(fileName, 'attachment')}`;
+}
+
+/** Where the Workspace Agent's chat files live for one person in one workplace. */
+export function recapChatFilePath(user: string, org: string, fileId: string, fileName: string): string {
+  return agentChatAttachmentPath(agentChatStorageOwner(user, org), `${WORKSPACE_AGENT_CHAT_ID}-${user}`, fileId, fileName);
+}
+
+/** How much of a parted file's head is read to measure a picture. JPEG's
+ *  size marker sits after any EXIF block, which can run to 64 KB on its own. */
+const UPLOADED_HEAD_BYTES = 256 * 1024;
+
+/**
+ * A file that went up in parts, found where its id and name say it is (note
+ * #943) and read back for the facts a chat row carries: its real size from
+ * the store, never from the client, and a picture's pixel size from its head.
+ * Null when there is no such object — a stale or forged id.
+ */
+export async function uploadedChatFileFacts(media: MediaStorage, storagePath: string): Promise<{ sizeBytes: number; width?: number; height?: number } | null> {
+  if (!media.peekObject) return null;
+  const peeked = await media.peekObject({ storagePath, bytes: UPLOADED_HEAD_BYTES });
+  if (!peeked || peeked.sizeBytes <= 0) return null;
+  return { sizeBytes: peeked.sizeBytes, ...(imageDimensions(peeked.head) ?? {}) };
+}
+
+/**
+ * A stored picture's pixel size, for a row written before sizes were (note
+ * #302): read from its head when the store can, rather than from the whole
+ * object — a picture in the chat may now be any size at all (note #943).
+ */
+export async function measureStoredPicture(media: MediaStorage, storagePath: string): Promise<{ width: number; height: number } | null> {
+  if (media.peekObject) {
+    const peeked = await media.peekObject({ storagePath, bytes: UPLOADED_HEAD_BYTES });
+    return peeked ? imageDimensions(peeked.head) : null;
+  }
+  return imageDimensions(await media.downloadObject({ storagePath }));
+}
+
+/**
+ * One file a chat message carries: its bytes, inline in the request, or the
+ * id of a file that already went up in parts under this conversation's prefix
+ * (note #943). The manifest says which.
+ */
+export type AgentChatUpload =
+  | { fileName: string; contentType?: string; data: Uint8Array; uploadId?: undefined }
+  | { fileName: string; contentType?: string; uploadId: string; data?: undefined };
+
+/** A message's files, stored: the row's facts, and the digest of what came inline. */
+export interface StoredAgentChatUpload {
+  file: AgentChatFile & { storagePath: string };
+  /** Only for bytes this server saw whole; a parted file is checked by size. */
+  sha256?: string;
+}
+
+export class AgentChatUploadsFailed extends Error {}
+
+/**
+ * Every file of one message into media storage — inline bytes written, parted
+ * files found where they were put — or none of them: on any failure the bytes
+ * this request wrote are deleted again, and the caller says that nothing was
+ * sent.
+ */
+export async function storeAgentChatUploads(
+  media: MediaStorage,
+  uploads: readonly AgentChatUpload[],
+  pathFor: (fileId: string, fileName: string) => string,
+): Promise<StoredAgentChatUpload[]> {
+  const prepared = uploads.map((upload) => {
+    const id = upload.uploadId ?? randomUUID();
+    const contentType = inferContentType(upload.fileName, upload.contentType);
+    return { upload, id, contentType, storagePath: pathFor(id, upload.fileName) };
+  });
+  const settled = await settleAgentChatUploads(prepared, async ({ upload, id, contentType, storagePath }): Promise<StoredAgentChatUpload> => {
+    if (upload.data === undefined) {
+      const facts = await uploadedChatFileFacts(media, storagePath);
+      if (!facts) throw new AgentChatUploadsFailed('One of those files did not finish uploading. Nothing was sent — send it again.');
+      return { file: { id, fileName: upload.fileName, contentType, ...facts, storagePath } };
+    }
+    const data = Buffer.isBuffer(upload.data) ? upload.data : Buffer.from(upload.data.buffer, upload.data.byteOffset, upload.data.byteLength);
+    await media.uploadObject({ storagePath, contentType, data });
+    return {
+      // A picture's size rides the row so the chat can hold its place before
+      // the bytes land (note #302); measured from the bytes, not the name.
+      file: { id, fileName: upload.fileName, contentType, sizeBytes: data.byteLength, ...(imageDimensions(data) ?? {}), storagePath },
+      sha256: createHash('sha256').update(data).digest('hex'),
+    };
+  });
+  const failed = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failed) {
+    // Only what THIS request wrote. A parted file stays where it went up: the
+    // id came from the client, and a refused send must never be a way to
+    // delete a file some earlier row of the conversation still shows. One
+    // nothing points at is cleared with the agent's chat files.
+    await Promise.all(prepared.filter(({ upload }) => upload.data !== undefined)
+      .map(({ storagePath }) => media.deleteObject?.({ storagePath }).catch(() => {})));
+    throw failed.reason instanceof AgentChatUploadsFailed
+      ? failed.reason
+      : new AgentChatUploadsFailed('Those files could not be uploaded just now. Nothing was sent.');
+  }
+  return settled.map((result) => (result as PromiseFulfilledResult<StoredAgentChatUpload>).value);
 }
 
 /**

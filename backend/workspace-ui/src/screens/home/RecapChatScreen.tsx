@@ -36,8 +36,7 @@ import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/worksp
 import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatStopAnswer, type RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
-import { safeFileName } from '../../ui/file-kind.js';
-import { attachmentsEnvelope } from '../chat/transcript.js';
+import { chatFilesBody } from '../chat/chat-upload.js';
 import { jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { recapDraftKey } from '../../chrome/draft-memory.js';
 import { useReturnToParent } from '../../chrome/history.js';
@@ -494,11 +493,16 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
     const settle = () => setOutgoing((current) => current.filter((sent) => sent.id !== clientId));
     void (async () => {
       try {
+        // Big files go up in parts first (note #943); the bubble says how far.
+        const progress = (sent: number, total: number) => {
+          const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 0;
+          setOutgoing((current) => current.map((item) => (item.id === clientId && item.percent !== percent ? { ...item, percent } : item)));
+        };
         const next = files.length
           ? await api.api<RecapChatAnswer>('api/recap/chat/files', {
             method: 'POST',
             headers: { 'Content-Type': 'application/vnd.agentbuilt.chat-attachments', 'x-recap-client-id': clientId },
-            body: attachmentsEnvelope(text, files, (file) => safeFileName(file.name)),
+            body: await chatFilesBody(api, WORKSPACE_AGENT_CHAT_ID, text, files, progress),
           })
           : await api.api<RecapChatAnswer>('api/recap/chat', jsonBody({ clientId, text }));
         if (pendingSend.current?.clientId === clientId) pendingSend.current = null;

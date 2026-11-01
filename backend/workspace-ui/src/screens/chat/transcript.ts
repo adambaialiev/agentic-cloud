@@ -88,27 +88,3 @@ export function filesOf(message: WorkspaceChatMessage): WorkspaceChatFile[] {
   if (Array.isArray(message.files) && message.files.length) return message.files;
   return message.file ? [message.file] : [];
 }
-
-/**
- * Four bytes of UTF-8 manifest length, then its JSON, then every file's raw
- * bytes in the same order. This is the browser half of the route's envelope:
- * no base64 expansion, and no second request that could race into a
- * different turn.
- */
-export function attachmentsEnvelope(
-  message: string,
-  files: File[],
-  nameOf: (file: File) => string,
-): Blob {
-  const manifest = new TextEncoder().encode(JSON.stringify({
-    message,
-    files: files.map((file) => ({
-      fileName: nameOf(file),
-      contentType: file.type || 'application/octet-stream',
-      sizeBytes: file.size,
-    })),
-  }));
-  const prefix = new Uint8Array(4);
-  new DataView(prefix.buffer).setUint32(0, manifest.byteLength);
-  return new Blob([prefix, manifest, ...files], { type: 'application/vnd.agentbuilt.chat-attachments' });
-}

@@ -4430,6 +4430,16 @@ input::placeholder, textarea::placeholder { color: color-mix(in srgb, var(--hint
    divider and read as a double line; in a row the accent IS the affordance. */
 .card > .actions:has(.btn + .btn + .btn) > .btn::after { display: none; }
 .hintblock { color: var(--hint); font-size: var(--ui-base); line-height: 1.35; padding: 0 12px 12px; }
+/* A status or error line in a conversation (note #943, the owner: "error
+   message should be centered"): centred under the messages, over the box,
+   wherever the chat shows one — the room chat says its refusals in the
+   banner, which is centred already. On a desk the rule in the chat block
+   above also gives these lines the column's gutters. */
+#screenAgentChat > .hintblock,
+#screenDirectMessage > .hintblock,
+#screenRecapChat > .hintblock,
+#screenHome > .hintblock,
+.chatpane > .hintblock { text-align: center; padding-top: 8px; }
 /* A subscription problem has a remedy, so it gets a card before historical
    usage instead of being reduced to a red status word above three meters. */
 .seatrecovery { padding: 12px; }
@@ -6990,6 +7000,15 @@ body.image-open {
   body.agent-chat-open .chatpane { padding-left: var(--chat-gutter); padding-right: var(--chat-gutter); }
   body.agent-chat-open .chatbar {
     padding-left: calc(var(--chat-gutter) - 8px); padding-right: calc(var(--chat-gutter) - 8px);
+  }
+  /* The lines between the conversation and the box — a refused file, a send
+     that failed, the workplace's standing line, a person who left (note
+     #943): in the column too, not at the window's edge. */
+  body.agent-chat-open #screenAgentChat > .hintblock,
+  body.agent-chat-open #screenDirectMessage > .hintblock,
+  body.agent-chat-open #screenRecapChat > .hintblock,
+  body.agent-chat-open #screenHome > .hintblock {
+    padding-left: var(--chat-gutter); padding-right: var(--chat-gutter);
   }
 }
 @media (max-width: 520px) {

@@ -13,21 +13,22 @@ import type { WorkspaceChatSendAnswer } from '../../../../src/shared/workspace-a
 import { jsonBody, type WorkspaceApi } from '../../api/client.js';
 import { useBanner } from '../../chrome/useBanner.js';
 import { useSession } from '../../session/useSession.js';
-import { safeFileName } from '../../ui/file-kind.js';
+import { chatFilesBody } from './chat-upload.js';
 import { ChatOutboxContext } from './outbox-context.js';
 import { ChatOutbox, type OutgoingMessage } from './outbox.js';
-import { attachmentsEnvelope } from './transcript.js';
 
 /** One message onto the record. The route answers once the message is
  *  admitted — its row is written before that answer leaves — so resolving
  *  here means the next read brings the row. */
-async function deliver(api: WorkspaceApi, agentId: string, message: OutgoingMessage): Promise<void> {
+async function deliver(api: WorkspaceApi, agentId: string, message: OutgoingMessage, progress: (sent: number, total: number) => void): Promise<void> {
   const path = `api/agents/${encodeURIComponent(agentId)}/chat`;
   if (message.files.length) {
+    // Big files go up in parts first (note #943); the bubble shows how far.
+    const body = await chatFilesBody(api, agentId, message.text, message.files, progress);
     await api.api(`${path}/files`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/vnd.agentbuilt.chat-attachments' },
-      body: attachmentsEnvelope(message.text, [...message.files], (file) => safeFileName(file.name)),
+      body,
     });
     return;
   }
@@ -44,7 +45,7 @@ export function ChatOutboxProvider({ children }: { children: ReactNode }) {
   }, [outbox]);
   useEffect(() => {
     outbox.connect({
-      deliver: (agentId, message) => deliver(api, agentId, message),
+      deliver: (agentId, message, progress) => deliver(api, agentId, message, progress),
       refused: (reason) => banner.show(reason),
     });
   }, [api, banner, outbox]);

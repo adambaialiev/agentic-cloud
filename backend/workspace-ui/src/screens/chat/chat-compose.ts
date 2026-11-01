@@ -6,32 +6,30 @@
  * a sentence and held to it by a test.
  */
 
-import { bytes } from '../../ui/file-kind.js';
+import { UPLOAD_PART_BYTES } from '../../../../src/shared/uploads.js';
 
 /** AGENT_USER_MESSAGE_MAX_LENGTH, the number the route refuses past. */
 export const CHAT_MESSAGE_MAX = 10_000;
 /** How close to the cap the counter appears. A counter under every two-line
  *  message is bookkeeping nobody asked for. */
 export const CHAT_COUNT_FROM = 500;
-export const CHAT_FILE_MAX_BYTES = 25 * 1024 * 1024;
-/** AGENT_CHAT_MESSAGE_MAX_BYTES: a message carries any NUMBER of files (note
- *  #672), and this many bytes of them — the most one request gets through
- *  the edge in front of the backend. */
-export const CHAT_MESSAGE_MAX_BYTES = 95 * 1024 * 1024;
+/**
+ * A chat file has no product cap (note #943). Anything past one part goes up
+ * in 8 MB parts before its message is sent (`chat-upload.ts`), so neither the
+ * edge's 100 MB body limit nor the server's memory bounds it; the one ceiling
+ * is the parted protocol's — 10,000 parts of 8 MiB — and the server says the
+ * same number (AGENT_CHAT_FILE_MAX_BYTES).
+ */
+export const CHAT_FILE_MAX_BYTES = UPLOAD_PART_BYTES * 10_000;
 
 /** Why this file cannot go, or null. */
 export function chatFileRefusal(file: { size: number }): string | null {
   if (file.size <= 0) return 'That file is empty.';
-  if (file.size > CHAT_FILE_MAX_BYTES) return `Chat files are up to 25 MB — this one is ${bytes(file.size)}.`;
+  if (file.size > CHAT_FILE_MAX_BYTES) {
+    const gb = (n: number) => (n / 1024 / 1024 / 1024).toFixed(0);
+    return `A chat file can be up to ${gb(CHAT_FILE_MAX_BYTES)} GB — this one is ${gb(file.size)} GB.`;
+  }
   return null;
-}
-
-/** Why this SET cannot go together, or null — only ever for its size. */
-export function chatFileSetRefusal(files: ReadonlyArray<{ size: number }>): string | null {
-  const total = files.reduce((sum, file) => sum + file.size, 0);
-  return total > CHAT_MESSAGE_MAX_BYTES
-    ? `One message carries up to 95 MB of files — these come to ${bytes(total)}. Send the rest in a second message.`
-    : null;
 }
 
 /**

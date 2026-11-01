@@ -893,7 +893,8 @@ export function OutgoingMessageRow({ message }: { message: OutgoingMessage }) {
   // The words exactly as their row will draw them, a named note a door
   // already, so the swap changes the clock and nothing else.
   const notes = useNoteRefs();
-  const time = 'Sending…';
+  // A big file going up in parts says how far it has got (note #943).
+  const time = message.percent !== undefined && message.state === 'sending' ? `Sending… ${message.percent}%` : 'Sending…';
   if (!message.files.length) {
     return (
       <div className="chatmsg owner sending arriving" data-time={time} aria-busy="true">

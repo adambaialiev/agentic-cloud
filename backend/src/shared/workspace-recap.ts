@@ -171,7 +171,11 @@ export interface WorkspaceRecapRun {
   text?: string;
   /** Files emitted by an acting Workspace Agent through ATTACH: lines. The
    *  backend stores them on the assistant row before anything reaches the UI. */
-  files?: Array<{ fileName: string; contentType?: string; data: Uint8Array }>;
+  /** Bytes, or the id of a file the machine put in storage itself (note #943). */
+  files?: Array<
+    | { fileName: string; contentType?: string; data: Uint8Array; uploadId?: undefined }
+    | { fileName: string; contentType?: string; uploadId: string; data?: undefined }
+  >;
   failure?: WorkspaceRecapFailure;
   /**
    * The `unavailable` was the agent's machine refusing to wake (note #763):

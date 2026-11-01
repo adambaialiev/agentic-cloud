@@ -31,40 +31,66 @@ const DEFAULT_LIST_SESSIONS_LIMIT = 10;
 const MAX_LIST_SESSIONS_LIMIT = 50;
 const DEFAULT_OBSERVE_SESSION_HISTORY_LIMIT = 3;
 const MAX_OBSERVE_SESSION_HISTORY_LIMIT = 10;
+/**
+ * Puts files on an agent's machine from signed URLs. Each one STREAMS to a
+ * temporary file beside its destination — hashed and counted on the way —
+ * and is renamed into place only once it is whole and checked (note #943: a
+ * chat file has no size cap any more, and the machine has a fraction of the
+ * memory a big one would need to sit in). A file the disk has no room for is
+ * refused before a byte is fetched, with the numbers, so the turn can say
+ * why rather than only that it failed.
+ */
 export const MATERIALIZE_SANDBOX_REMOTE_FILES_SCRIPT = `import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 const payload = JSON.parse(Buffer.from(process.env.${PATCH_TOOL_PAYLOAD_ENV} ?? '', 'base64').toString('utf8'));
+const gb = (n) => (n / 1024 / 1024 / 1024).toFixed(1) + ' GB';
 
 for (const file of payload.files) {
   fs.mkdirSync(path.dirname(file.path), { recursive: true });
   const tempPath = \`\${file.path}.tmp-\${process.pid}-\${Math.random().toString(36).slice(2, 10)}\`;
 
   try {
-    const buffer = String(file.url).startsWith('file:')
-      ? fs.readFileSync(fileURLToPath(file.url))
+    if (typeof file.expectedSizeBytes === 'number' && typeof fs.statfsSync === 'function') {
+      const disk = fs.statfsSync(path.dirname(file.path));
+      const free = Number(disk.bavail) * Number(disk.bsize);
+      if (file.expectedSizeBytes > free) {
+        throw new Error(\`no room on this machine: the file is \${gb(file.expectedSizeBytes)} and the disk has \${gb(free)} free\`);
+      }
+    }
+    const source = String(file.url).startsWith('file:')
+      ? fs.createReadStream(fileURLToPath(file.url))
       : await (async () => {
           const response = await fetch(file.url);
-          if (!response.ok) {
+          if (!response.ok || !response.body) {
             throw new Error(\`download returned HTTP \${response.status}\`);
           }
-
-          return Buffer.from(await response.arrayBuffer());
+          return Readable.fromWeb(response.body);
         })();
-    if (typeof file.expectedSizeBytes === 'number' && buffer.byteLength !== file.expectedSizeBytes) {
-      throw new Error(\`expected \${file.expectedSizeBytes} bytes but received \${buffer.byteLength}\`);
+    const hash = crypto.createHash('sha256');
+    let received = 0;
+    const tally = new Transform({
+      transform(chunk, _encoding, done) {
+        received += chunk.length;
+        hash.update(chunk);
+        done(null, chunk);
+      },
+    });
+    await pipeline(source, tally, fs.createWriteStream(tempPath));
+    if (typeof file.expectedSizeBytes === 'number' && received !== file.expectedSizeBytes) {
+      throw new Error(\`expected \${file.expectedSizeBytes} bytes but received \${received}\`);
     }
 
     if (typeof file.sha256 === 'string' && file.sha256) {
-      const digest = crypto.createHash('sha256').update(buffer).digest('hex');
-      if (digest !== String(file.sha256).toLowerCase()) {
+      if (hash.digest('hex') !== String(file.sha256).toLowerCase()) {
         throw new Error('sha256 mismatch');
       }
     }
 
-    fs.writeFileSync(tempPath, buffer);
     if (typeof file.mode === 'number') {
       fs.chmodSync(tempPath, file.mode);
     }

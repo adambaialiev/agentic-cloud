@@ -70,6 +70,10 @@ export class MemoryMediaStorage implements MediaStorage {
     const upload = this.uploads.get(args.uploadId);
     if (upload && upload.storagePath === args.storagePath) this.uploads.delete(args.uploadId);
   }
+  async peekObject(args: { storagePath: string; bytes: number }): Promise<{ sizeBytes: number; head: Buffer } | null> {
+    const object = this.objects.get(args.storagePath);
+    return object ? { sizeBytes: object.data.length, head: object.data.subarray(0, args.bytes) } : null;
+  }
   async abortStaleMultiparts(args: { prefix: string; olderThan: Date }): Promise<number> {
     let aborted = 0;
     for (const [id, upload] of [...this.uploads]) {

@@ -1,4 +1,5 @@
 import type { CopyHealth } from '../services/copy-health.js';
+import type { AgentChatUpload } from '../services/agent-chat-storage.js';
 import type { CopyLicence } from '../services/copy-licence.js';
 import type { WorkspaceChatFile, WorkspaceChatFileTextAnswer, WorkspaceManagedJob, WorkspaceSettledJob } from '../shared/workspace-api.js';
 import type { DirectMessageStorage } from '../services/direct-message-storage.js';
@@ -651,12 +652,9 @@ export interface RouteDeps {
       userId: string;
       agentId: string;
       message: string;
-      /** Files selected together in the composer, admitted with one turn. */
-      attachments?: Array<{
-        fileName: string;
-        contentType?: string;
-        data: Uint8Array;
-      }>;
+      /** Files selected together in the composer, admitted with one turn:
+       *  inline bytes, or the id of a file that went up in parts (note #943). */
+      attachments?: AgentChatUpload[];
     }): Promise<AgentPeerMessageResult & { steered?: boolean }>;
     /**
      * Something that changes what a Home overview should say happened to one

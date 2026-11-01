@@ -26,9 +26,27 @@ import {
   PATCH_TOOL_PAYLOAD_ENV,
 } from './tool-executor.js';
 import { quoteShellArg } from '../utils/shell-quote.js';
+import { inferContentType } from '../services/session-attachments.js';
 
 const INBOX_DIR_NAME = 'inbox';
 const STAGE_TIMEOUT_MS = 120_000;
+/**
+ * The slowest download a batch is still given time for, past its two-minute
+ * floor (note #943). A chat file has no size cap now, so a fixed timeout would
+ * cut off exactly the big ones: 4 MB/s gives a 1 GB file a little over six
+ * minutes, and a machine's link is usually many times that.
+ */
+const STAGE_FLOOR_BYTES_PER_SECOND = 4 * 1024 * 1024;
+
+/** How long one batch of files is given to land. */
+export function stageTimeoutMs(totalBytes: number): number {
+  return STAGE_TIMEOUT_MS + Math.ceil(Math.max(0, totalBytes) / STAGE_FLOOR_BYTES_PER_SECOND) * 1000;
+}
+
+/** The machine's own reason a batch failed, when it is one a person can act on. */
+function stageFailureReason(error: unknown): string | undefined {
+  return /no room on this machine: [^\n]*/.exec(String((error as Error)?.message ?? error))?.[0];
+}
 const MAX_INBOX_FILE_NAME_LENGTH = 80;
 const HEREDOC_DELIMITER = 'HARNESS_ATTACHMENTS_EOF';
 /**
@@ -137,7 +155,7 @@ export async function stageHarnessAttachments(
   const names = dedupeInboxFileNames(attachments.map(sanitizeInboxFileName));
 
   const staged: Array<{ attachment: AttachmentRecord; path: string; url: string }> = [];
-  const failed: Array<{ attachment: AttachmentRecord; name: string }> = [];
+  const failed: Array<{ attachment: AttachmentRecord; name: string; reason?: string }> = [];
 
   await Promise.all(attachments.map(async (attachment, index) => {
     const name = names[index];
@@ -176,11 +194,12 @@ export async function stageHarnessAttachments(
       ...(file.attachment.sha256 ? { sha256: file.attachment.sha256 } : {}),
     })));
     try {
+      const batchBytes = batch.reduce((sum, file) => sum + Math.max(0, file.attachment.sizeBytes || 0), 0);
       const result = await args.sandboxClient.execSync(
         args.sandboxId,
         command,
         args.homeDir,
-        { timeoutMs: STAGE_TIMEOUT_MS, sshUser: args.sshUser },
+        { timeoutMs: stageTimeoutMs(batchBytes), sshUser: args.sshUser },
       );
       if (result.timedOut || result.exitCode !== 0) {
         throw new Error(
@@ -193,8 +212,9 @@ export async function stageHarnessAttachments(
         `[harness-attachments] [${sessionId}] Failed to stage ${batch.length} attachment(s) on ${args.sandboxId}:`,
         error,
       );
+      const reason = stageFailureReason(error);
       for (const file of batch) {
-        failed.push({ attachment: file.attachment, name: pathPosix.basename(file.path) });
+        failed.push({ attachment: file.attachment, name: pathPosix.basename(file.path), ...(reason ? { reason } : {}) });
       }
     }
   }
@@ -210,9 +230,11 @@ export async function stageHarnessAttachments(
     }
   }
   if (failed.length > 0) {
-    lines.push(
-      `The user also attached ${failed.map((file) => file.name).join(', ')}, but the ${failed.length === 1 ? 'file' : 'files'} could not be delivered to this machine — tell the user and ask them to re-send.`,
-    );
+    const reasons = [...new Set(failed.flatMap((file) => (file.reason ? [file.reason] : [])))];
+    lines.push(reasons.length
+      // Re-sending cannot help a full disk: say what can.
+      ? `The user also attached ${failed.map((file) => file.name).join(', ')}, but the ${failed.length === 1 ? 'file' : 'files'} could not be put on this machine — ${reasons.join('; ')}. The file is still in the chat for the user to download; tell them, and free space on this machine before asking them to send it again.`
+      : `The user also attached ${failed.map((file) => file.name).join(', ')}, but the ${failed.length === 1 ? 'file' : 'files'} could not be delivered to this machine — tell the user and ask them to re-send.`);
   }
   return `[${lines.join('\n')}]`;
 }
@@ -220,11 +242,31 @@ export async function stageHarnessAttachments(
 // ── Outbound: agent → user (the ATTACH: convention) ─────────────────────────
 
 /**
- * Telegram bots may upload files up to 50 MB; leave margin for the multipart
- * envelope.
+ * What a file an agent sends may weigh when it comes back through the
+ * backend: base64 over the SSH exec channel, whole, in this server's memory.
+ * It was Telegram's 50 MB bot limit less a margin; since note #943 only a
+ * caller with nowhere to put a big file uses it. A caller that passes
+ * `upload` sends anything past {@link OUTBOUND_INLINE_MAX_BYTES} from the
+ * machine straight into storage instead, up to {@link OUTBOUND_UPLOAD_MAX_BYTES}.
  */
 export const OUTBOUND_ATTACHMENT_MAX_BYTES = 45 * 1024 * 1024;
+/** Past this a file goes machine → storage rather than through the backend. */
+export const OUTBOUND_INLINE_MAX_BYTES = 8 * 1024 * 1024;
+/**
+ * The one ceiling on a file an agent sends (note #943): it goes up as ONE
+ * signed PUT, and S3 takes at most 5 GiB in a single PUT.
+ */
+export const OUTBOUND_UPLOAD_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 const OUTBOUND_FETCH_TIMEOUT_MS = 120_000;
+/** As staging's: two minutes, plus time for the bytes at 4 MB/s. */
+const OUTBOUND_UPLOAD_FLOOR_BYTES_PER_SECOND = 4 * 1024 * 1024;
+
+/**
+ * Where a big outbound file goes (note #943): the caller mints an id and a
+ * signed PUT URL under the chat's own prefix; the machine puts the bytes
+ * there itself, and the chat names the file by that id.
+ */
+export type OutboundUploadTarget = (args: { fileName: string; contentType: string }) => Promise<{ id: string; uploadUrl: string }>;
 
 /** Line-anchored `ATTACH: /absolute/path` (or `~/path`) in a CLI reply. */
 const OUTBOUND_ATTACH_LINE = /^[ \t]*ATTACH:[ \t]*(\S[^\n]*?)[ \t]*$/gm;
@@ -247,8 +289,21 @@ export function extractOutboundAttachments(text: string): { text: string; paths:
 }
 
 export type OutboundAttachmentFetch =
-  | { ok: true; fileName: string; sizeBytes: number; content: Uint8Array }
+  | { ok: true; fileName: string; sizeBytes: number; content: Uint8Array; uploadId?: undefined }
+  | { ok: true; fileName: string; sizeBytes: number; uploadId: string; content?: undefined }
   | { ok: false; fileName: string; reason: string };
+
+/** A file an agent sent, on its way to the chat: bytes, or where they went. */
+export type OutboundFile =
+  | { fileName: string; content: Uint8Array; uploadId?: undefined }
+  | { fileName: string; uploadId: string; content?: undefined };
+
+/** The file a successful fetch hands the chat. */
+export function outboundFileOf(fetched: Extract<OutboundAttachmentFetch, { ok: true }>): OutboundFile {
+  return fetched.uploadId !== undefined
+    ? { fileName: fetched.fileName, uploadId: fetched.uploadId }
+    : { fileName: fetched.fileName, content: fetched.content };
+}
 
 /**
  * Pull one requested file off the agent's machine (size-gated, base64 over
@@ -259,9 +314,9 @@ export async function fetchOutboundAttachment(
   sandboxClient: WorkspaceRuntimeClient,
   sandboxId: string,
   rawPath: string,
-  options: { sshUser?: string; homeDir?: string; maxBytes?: number } = {},
+  options: { sshUser?: string; homeDir?: string; maxBytes?: number; upload?: OutboundUploadTarget } = {},
 ): Promise<OutboundAttachmentFetch> {
-  const maxBytes = options.maxBytes ?? OUTBOUND_ATTACHMENT_MAX_BYTES;
+  const maxBytes = options.maxBytes ?? (options.upload ? OUTBOUND_UPLOAD_MAX_BYTES : OUTBOUND_ATTACHMENT_MAX_BYTES);
   const path = options.homeDir && rawPath.startsWith('~/')
     ? `${options.homeDir}/${rawPath.slice(2)}`
     : rawPath;
@@ -281,7 +336,27 @@ export async function fetchOutboundAttachment(
       return { ok: false, fileName, reason: 'the file was not found on the machine' };
     }
     if (sizeBytes > maxBytes) {
-      return { ok: false, fileName, reason: `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB Telegram limit` };
+      const size = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)} GB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
+      return { ok: false, fileName, reason: `it is ${size(sizeBytes)}, and a file sent into the chat can be up to ${size(maxBytes)}` };
+    }
+    if (options.upload && sizeBytes > OUTBOUND_INLINE_MAX_BYTES) {
+      // Machine → storage, never through this server (note #943).
+      const contentType = inferContentType(fileName);
+      const target = await options.upload({ fileName, contentType });
+      const put = await sandboxClient.execSync(
+        sandboxId,
+        `curl -sS -f -X PUT -H ${quoteShellArg(`Content-Type: ${contentType}`)} --upload-file ${quoteShellArg(path)} ${quoteShellArg(target.uploadUrl)}`,
+        undefined,
+        {
+          timeoutMs: OUTBOUND_FETCH_TIMEOUT_MS + Math.ceil(sizeBytes / OUTBOUND_UPLOAD_FLOOR_BYTES_PER_SECOND) * 1000,
+          sshUser: options.sshUser,
+        },
+      );
+      if (put.timedOut || put.exitCode !== 0) {
+        console.warn(`[harness-attachments] Outbound upload of ${path} on ${sandboxId} failed:`, (put.stderr || `exit ${put.exitCode}`).slice(-300));
+        return { ok: false, fileName, reason: 'the file could not be uploaded from the machine' };
+      }
+      return { ok: true, fileName, sizeBytes, uploadId: target.id };
     }
     const fetched = await sandboxClient.execSync(
       sandboxId,

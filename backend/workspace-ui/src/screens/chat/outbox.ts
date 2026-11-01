@@ -59,6 +59,9 @@ export interface OutgoingMessage {
    *  answers this send is newer. */
   readonly after: number;
   readonly state: OutgoingState;
+  /** Whole percent of the big files gone up in parts so far (note #943),
+   *  while there are any; absent for a message with none. */
+  readonly percent?: number;
 }
 
 /** Words and files handed back to the box they came from. */
@@ -68,8 +71,9 @@ export interface ReturnedDraft {
 }
 
 export interface ChatOutboxOptions {
-  /** Put one message on the record; resolves once the route has admitted it. */
-  deliver: (agentId: string, message: OutgoingMessage) => Promise<void>;
+  /** Put one message on the record; resolves once the route has admitted it.
+   *  `progress` hears a big file's parts go up (note #943). */
+  deliver: (agentId: string, message: OutgoingMessage, progress: (sent: number, total: number) => void) => Promise<void>;
   /** Say why words came back. */
   refused: (reason: string) => void;
 }
@@ -268,7 +272,7 @@ export class ChatOutbox {
         if (!message || !options) return;
         this.patch(agentId, message.id, 'sending');
         try {
-          await options.deliver(agentId, message);
+          await options.deliver(agentId, message, (sent, total) => this.progress(agentId, message.id, sent, total));
         } catch (error) {
           if (this.closed) return;
           if (definiteRefusal(error)) {
@@ -312,6 +316,16 @@ export class ChatOutbox {
       this.returned.set(agentId, earlier ? joinDrafts(earlier, draft) : draft);
     }
     this.options?.refused(reason);
+  }
+
+  /** A big file's parts going up: the bubble's percentage, written only
+   *  when the whole number changes. */
+  private progress(agentId: string, id: string, sent: number, total: number): void {
+    if (!(total > 0)) return;
+    const percent = Math.min(100, Math.floor((sent / total) * 100));
+    const list = this.list(agentId);
+    if (!list.some((message) => message.id === id && message.percent !== percent)) return;
+    this.write(agentId, list.map((message) => (message.id === id ? { ...message, percent } : message)));
   }
 
   private patch(agentId: string, id: string, state: OutgoingState): void {

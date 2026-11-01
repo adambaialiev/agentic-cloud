@@ -1651,7 +1651,49 @@ describe('the composer', () => {
     await waitFor(() => expect(draft.hidden).toBe(true));
   });
 
-  it('takes any number of files, refuses a set past 95 MB together, and an empty one', async () => {
+  it('sends a file past one part in parts first, says how far on the bubble, and names it in the message (note #943)', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const at = (rest: string) => `api/agents/felix/chat/uploads/${id}${rest}?upload=u1&name=film.mp4`;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let body: Blob | null = null;
+    const scripted = open(() => ({ messages: [], working: false }), {
+      'POST api/agents/felix/chat/uploads': () => ({ id, uploadId: 'u1', partBytes: 8 * 1024 * 1024, parts: 3 }),
+      [`PUT ${at('/parts/1')}`]: () => ({ partNumber: 1, etag: 'e1' }),
+      [`PUT ${at('/parts/2')}`]: async () => { await gate; return { partNumber: 2, etag: 'e2' }; },
+      [`PUT ${at('/parts/3')}`]: async () => { await gate; return { partNumber: 3, etag: 'e3' }; },
+      [`POST api/agents/felix/chat/uploads/${id}/complete`]: () => ({ id, fileName: 'film.mp4', sizeBytes: 20 * 1024 * 1024 }),
+      'POST api/agents/felix/chat/files': (call) => { body = call.init?.body as Blob; return { ok: true, name: 'Felix' }; },
+    });
+    await head();
+    const film = new File([new Uint8Array(20 * 1024 * 1024)], 'film.mp4', { type: 'video/mp4' });
+    fireEvent.change(document.getElementById('agentChatFile')!, { target: { files: [film] } });
+    await waitFor(() => expect((document.getElementById('agentChatDraft') as HTMLElement).hidden).toBe(false));
+    fireEvent.submit(document.getElementById('agentChatForm')!);
+    // One part of three in: 8 MB of 20.
+    await waitFor(() => expect(log().querySelector('.chatmsg.sending')?.getAttribute('data-time')).toBe('Sending… 40%'));
+    release();
+    await waitFor(() => expect(body).toBeTruthy());
+    const complete = scripted.calls.find((call) => call.path.endsWith('/complete'))!;
+    expect(JSON.parse(String(complete.init?.body))).toEqual({
+      uploadId: 'u1', fileName: 'film.mp4',
+      parts: [{ partNumber: 1, etag: 'e1' }, { partNumber: 2, etag: 'e2' }, { partNumber: 3, etag: 'e3' }],
+    });
+    const bytes = new Uint8Array(await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(body!);
+    }));
+    const length = new DataView(bytes.buffer).getUint32(0);
+    // The message names the file and carries none of its bytes.
+    expect(JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length)))).toEqual({
+      message: '', files: [{ fileName: 'film.mp4', contentType: 'video/mp4', upload: id }],
+    });
+    expect(bytes.length).toBe(4 + length);
+  });
+
+  it('takes any number of files of any size (note #943), and refuses only an empty one and one past the 78 GB the parts can carry', async () => {
     open(() => ({ messages: [], working: false }));
     await head();
     const picker = document.getElementById('agentChatFile') as HTMLInputElement;
@@ -1661,15 +1703,19 @@ describe('the composer', () => {
     const draft = document.getElementById('agentChatDraft') as HTMLElement;
     await waitFor(() => expect(draft.hidden).toBe(false));
     expect(draft.querySelectorAll('.chatdraftitem')).toHaveLength(12);
-    // What one message IS held to is its bytes: four 24 MB files on top.
-    const heavy = [1, 2, 3, 4].map((n) => {
-      const file = new File([new Uint8Array([1])], `video-${n}.mp4`, { type: 'video/mp4' });
-      Object.defineProperty(file, 'size', { value: 24 * 1024 * 1024 });
+    // Note #943: no size cap either — a 38.4 MB film (the owner's) and four
+    // 24 MB ones on top all join the draft.
+    const sized = (name: string, size: number) => {
+      const file = new File([new Uint8Array([1])], name, { type: 'video/mp4' });
+      Object.defineProperty(file, 'size', { value: size });
       return file;
-    });
-    fireEvent.change(picker, { target: { files: heavy } });
-    expect((await screen.findByRole('alert')).textContent).toContain('up to 95 MB of files');
-    expect(draft.querySelectorAll('.chatdraftitem')).toHaveLength(12);
+    };
+    fireEvent.change(picker, { target: { files: [sized('film.mp4', 40_265_318), ...[1, 2, 3, 4].map((n) => sized(`video-${n}.mp4`, 24 * 1024 * 1024))] } });
+    await waitFor(() => expect(draft.querySelectorAll('.chatdraftitem')).toHaveLength(17));
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.change(picker, { target: { files: [sized('disk.img', 80 * 1024 ** 3)] } });
+    expect((await screen.findByRole('alert')).textContent).toContain('A chat file can be up to 78 GB — this one is 80 GB.');
+    expect(draft.querySelectorAll('.chatdraftitem')).toHaveLength(17);
     fireEvent.change(picker, { target: { files: [new File([], 'empty.txt', { type: 'text/plain' })] } });
     expect((await screen.findByRole('alert')).textContent).toContain('That file is empty.');
   });
@@ -1999,7 +2045,7 @@ describe('a message on its way (note #658)', () => {
   });
 
   it('names the files of a message on its way, and picks them again if it is refused', async () => {
-    let refuse: () => void = () => {};
+    let refuse: (() => void) | null = null;
     open(() => ({ messages: [], working: false }), {
       'POST api/agents/felix/chat/files': () => new Promise((_resolve, reject) => {
         refuse = () => reject(new WorkspaceApiError('Those files could not be uploaded just now. Nothing was sent.', 503, {
@@ -2017,7 +2063,10 @@ describe('a message on its way (note #658)', () => {
     expect(bubble.querySelector('.chatfileline')!.textContent).toBe('shot.png · 3 B');
     const draft = document.getElementById('agentChatDraft') as HTMLElement;
     expect(draft.hidden).toBe(true);
-    await act(async () => { refuse(); });
+    // The body is built (big files sent in parts first, note #943) before
+    // the request goes, so the request is a beat behind the bubble.
+    await waitFor(() => expect(refuse).not.toBeNull());
+    await act(async () => { refuse!(); });
     expect((await screen.findByRole('alert')).textContent).toContain('Nothing was sent.');
     expect(box().value).toBe('look');
     await waitFor(() => expect(draft.hidden).toBe(false));

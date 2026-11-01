@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { MemoryMediaStorage } from '../../services/memory-media-storage.js';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -3523,8 +3524,9 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
       expect(chatMessageAgentFromUser.mock.calls[0]![0].attachments.map((file: { fileName: string }) => file.fileName))
         .toEqual(shots.map((shot) => shot.fileName));
 
-      // Four files of 24 MB are each fine and 96 MB together: past what one
-      // message carries, refused with words rather than the edge's 413.
+      // Four files of 24 MB inline are 96 MB together: past what one request
+      // carries, refused with words rather than the edge's 413. (The screen
+      // sends such files in parts first and names them — note #943.)
       const big = Buffer.alloc(24 * 1024 * 1024, 1);
       const heavy = createMockResponse();
       await getRouteHandler(deps, '/api/agents/:id/chat/files', 'post')(mockRequest({
@@ -3532,7 +3534,7 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
         body: attachmentEnvelope('', [1, 2, 3, 4].map((n) => ({ fileName: `video-${n}.mp4`, contentType: 'video/mp4', data: big }))),
       }), heavy);
       expect(heavy.statusCode).toBe(400);
-      expect((heavy.body as { error: string }).error).toContain('up to 95 MB of files');
+      expect((heavy.body as { error: string }).error).toContain('up to 95 MB of files inline');
 
       const none = createMockResponse();
       await getRouteHandler(deps, '/api/agents/:id/chat/files', 'post')(mockRequest({
@@ -3540,6 +3542,76 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
       }), none);
       expect(none.statusCode).toBe(400);
       expect(chatMessageAgentFromUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes a file past 25 MB in parts and a message that names it (note #943)', async () => {
+      const { deps } = await buildDeps();
+      const media = new MemoryMediaStorage();
+      deps.mediaStorage = media;
+      const chatMessageAgentFromUser = vi.fn().mockResolvedValue({
+        ok: true, steered: false, recipient: { id: 'agent-a', name: 'Ben', cli: 'claude' },
+      });
+      deps.agentLifecycle = { ...lifecycleMock(), chatMessageAgentFromUser };
+      // The owner's own 38.4 MB file: five parts, never one request.
+      const film = Buffer.alloc(40_265_318, 5);
+      const start = createMockResponse();
+      await getRouteHandler(deps, '/api/agents/:id/chat/uploads', 'post')(mockRequest({
+        headers: authHeader(42), params: { id: 'agent-a' }, body: { fileName: 'film.mp4', sizeBytes: film.length, contentType: 'video/mp4' },
+      }), start);
+      expect(start.statusCode).toBe(201);
+      const started = start.body as { id: string; uploadId: string; partBytes: number; parts: number };
+      expect(started.parts).toBe(5);
+      const parts = [];
+      for (let n = 1; n <= started.parts; n += 1) {
+        const part = createMockResponse();
+        await getRouteHandler(deps, '/api/agents/:id/chat/uploads/:upload/parts/:part', 'put')(mockRequest({
+          headers: authHeader(42), params: { id: 'agent-a', upload: started.id, part: String(n) },
+          query: { upload: started.uploadId, name: 'film.mp4' },
+          body: film.subarray((n - 1) * started.partBytes, n * started.partBytes),
+        }), part);
+        expect(part.statusCode).toBe(200);
+        parts.push(part.body);
+      }
+      const done = createMockResponse();
+      await getRouteHandler(deps, '/api/agents/:id/chat/uploads/:upload/complete', 'post')(mockRequest({
+        headers: authHeader(42), params: { id: 'agent-a', upload: started.id },
+        body: { uploadId: started.uploadId, fileName: 'film.mp4', parts },
+      }), done);
+      expect(done.body).toEqual({ id: started.id, fileName: 'film.mp4', sizeBytes: film.length });
+      const [key] = [...media.objects.keys()];
+      expect(key).toMatch(new RegExp(`/agent-chats/agent-a/${started.id}/film\\.mp4$`));
+      expect(media.objects.get(key!)!.data.equals(film)).toBe(true);
+
+      // The message carries a small file inline and names the big one.
+      const manifest = Buffer.from(JSON.stringify({ message: 'cut this', files: [
+        { fileName: 'notes.txt', contentType: 'text/plain', sizeBytes: 2 },
+        { fileName: 'film.mp4', contentType: 'video/mp4', upload: started.id },
+      ] }));
+      const prefix = Buffer.alloc(4); prefix.writeUInt32BE(manifest.byteLength);
+      const sent = createMockResponse();
+      await getRouteHandler(deps, '/api/agents/:id/chat/files', 'post')(mockRequest({
+        headers: authHeader(42), params: { id: 'agent-a' }, body: Buffer.concat([prefix, manifest, Buffer.from('hi')]),
+      }), sent);
+      expect(sent.statusCode).toBe(202);
+      const attachments = chatMessageAgentFromUser.mock.calls[0]![0].attachments;
+      expect(attachments).toHaveLength(2);
+      expect(Buffer.from(attachments[0].data).toString()).toBe('hi');
+      expect(attachments[1]).toEqual({ fileName: 'film.mp4', contentType: 'video/mp4', uploadId: started.id });
+
+      // An id that is not one the doors could have minted is refused outright,
+      // and someone else's agent has no doors here.
+      const forged = Buffer.from(JSON.stringify({ message: '', files: [{ fileName: 'x.mp4', upload: '../other' }] }));
+      const forgedPrefix = Buffer.alloc(4); forgedPrefix.writeUInt32BE(forged.byteLength);
+      const bad = createMockResponse();
+      await getRouteHandler(deps, '/api/agents/:id/chat/files', 'post')(mockRequest({
+        headers: authHeader(42), params: { id: 'agent-a' }, body: Buffer.concat([forgedPrefix, forged]),
+      }), bad);
+      expect(bad.statusCode).toBe(400);
+      const stranger = createMockResponse();
+      await getRouteHandler(deps, '/api/agents/:id/chat/uploads', 'post')(mockRequest({
+        headers: authHeader(42), params: { id: 'nobody' }, body: { fileName: 'a.bin', sizeBytes: 10 },
+      }), stranger);
+      expect(stranger.statusCode).toBe(404);
     });
 
     it('POST files still accepts the one-file envelope from a page open across the deploy', async () => {

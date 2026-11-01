@@ -1,4 +1,4 @@
-import { WorkspaceRecapChat, RecapChatError, type RecapScope } from '../services/workspace-recap-chat.js';
+import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
 import { isHarnessCli, seatNoReadingNotice, subscriptionName } from '../shared/harness-clis.js';
 import { applyWorkspaceAgentProactiveChange, resolveWorkspaceAgentProactive, type WorkspaceAgentProactiveAnswer } from '../shared/workspace-agent-proactive.js';
@@ -208,10 +208,15 @@ import { VoiceTranscriptionError } from '../services/voice-transcription-service
 import { OrgSpendError } from '../services/org-spend.js';
 import {
   AGENT_CHAT_MESSAGE_MAX_BYTES,
+  agentChatAttachmentPath,
   agentChatFileSetRefusal,
+  agentChatStorageOwner,
+  agentChatStoragePrefix,
   validateAgentChatAttachment,
   type AgentChatMessage,
+  type AgentChatUpload,
 } from '../services/agent-chat-storage.js';
+import { ChatFileUploadError, ChatFileUploads, isChatUploadId, type ChatFileUploadPlace } from '../services/chat-file-uploads.js';
 import { composeSeedAgentRecap } from '../services/agent-recap.js';
 import { deleteRepoNow, isRestorableRepo } from '../services/git-repo-admin.js';
 import type { GitPullRequestDocument, PullRequestAttachment } from '../types/git-pr.js';
@@ -810,13 +815,13 @@ const AGENT_CHAT_ATTACHMENT_MANIFEST_MAX_BYTES = 256 * 1024;
  * a malformed upload because the server beneath it learned the wider
  * contract.
  */
-function parseChatAttachmentEnvelope(req: Request): { message: string; attachments: Array<{ fileName: string; contentType?: string; data: Uint8Array }> } | { error: string } {
+function parseChatAttachmentEnvelope(req: Request): { message: string; attachments: AgentChatUpload[] } | { error: string } {
   const envelope = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
   if (envelope.length < AGENT_CHAT_ATTACHMENT_ENVELOPE_PREFIX_BYTES) {
     return { error: 'That chat attachment upload is incomplete.' };
   }
   let message = '';
-  const attachments: Array<{ fileName: string; contentType?: string; data: Uint8Array }> = [];
+  const attachments: AgentChatUpload[] = [];
   const legacyFileName = String(req.get('x-chat-file-name') ?? '').trim();
 
   if (legacyFileName) {
@@ -873,9 +878,21 @@ function parseChatAttachmentEnvelope(req: Request): { message: string; attachmen
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return { error: 'That chat attachment upload is malformed.' };
       }
-      const file = value as { fileName?: unknown; contentType?: unknown; sizeBytes?: unknown };
+      const file = value as { fileName?: unknown; contentType?: unknown; sizeBytes?: unknown; upload?: unknown };
       const fileName = typeof file.fileName === 'string' ? file.fileName.trim() : '';
       const contentType = typeof file.contentType === 'string' ? file.contentType.trim() : '';
+      // A file that already went up in parts (note #943): named by its id,
+      // with no bytes of its own in this body. The service finds it under
+      // this conversation's prefix and reads its size from the store.
+      if (file.upload !== undefined) {
+        if (!isChatUploadId(file.upload) || contentType.length > 200) {
+          return { error: 'That chat attachment upload is malformed.' };
+        }
+        const refusal = validateAgentChatAttachment({ fileName, sizeBytes: 1 });
+        if (refusal) return { error: refusal };
+        attachments.push({ fileName, contentType: contentType || undefined, uploadId: file.upload });
+        continue;
+      }
       const sizeBytes = file.sizeBytes;
       if (!Number.isSafeInteger(sizeBytes) || (sizeBytes as number) <= 0
         || contentType.length > 200 || offset + (sizeBytes as number) > envelope.length) {
@@ -892,7 +909,9 @@ function parseChatAttachmentEnvelope(req: Request): { message: string; attachmen
     if (offset !== envelope.length) {
       return { error: 'That chat attachment upload is malformed.' };
     }
-    const setRefusal = agentChatFileSetRefusal(attachments.map((file) => file.data.byteLength));
+    if (!attachments.length) return { error: 'Attach at least one file.' };
+    const inline = attachments.flatMap((file) => (file.data ? [file.data.byteLength] : []));
+    const setRefusal = inline.length ? agentChatFileSetRefusal(inline) : null;
     if (setRefusal) return { error: setRefusal };
   }
   return { message, attachments };
@@ -5381,6 +5400,71 @@ self.addEventListener('activate', (event) => {
       return res.status(202).json({ ...answer, messages: await recapMessages(auth, answer.messages), ...(await recapChatDecor(auth)) } satisfies RecapChatAnswer);
     } catch (error) { return recapChatError(res, error); }
   });
+  /**
+   * A chat file in parts (note #943, `services/chat-file-uploads.ts`): the
+   * Drive and note protocol — start, 8 MB parts, complete, cancel — on both
+   * chats' doors. A file past one part goes up this way before its message
+   * is sent, and the message's envelope then names it by id, so no request
+   * carries more than one part and the edge's 100 MB body limit stops being
+   * a limit on what a person can send an agent. The Workspace Agent's doors
+   * are mounted first, on its reserved id, so that id never reaches the room
+   * agents' lookup.
+   */
+  const mountChatFileUploads = (
+    base: string,
+    placeFor: (auth: MiniAppAuth, req: Request, res: Response) => ChatFileUploadPlace | null,
+  ) => {
+    const step = async (req: Request, res: Response, act: (uploads: ChatFileUploads) => Promise<unknown>) => {
+      const auth = await authenticate(req, res);
+      if (!auth) return;
+      if (!deps.mediaStorage) return res.status(503).json({ error: 'Chat file storage is not available right now.' });
+      const place = placeFor(auth, req, res);
+      if (!place) return;
+      try {
+        return await act(new ChatFileUploads(deps.mediaStorage, place));
+      } catch (error) {
+        if (error instanceof ChatFileUploadError) return res.status(error.status).json({ error: error.message });
+        console.warn('[chat] a file upload step failed:', error);
+        return res.status(503).json({ error: 'The file could not be uploaded just now. Try again.' });
+      }
+    };
+    router.post(base, (req, res) => step(req, res, async (uploads) => (
+      res.status(201).json(await uploads.start({ fileName: req.body?.fileName, sizeBytes: req.body?.sizeBytes, contentType: req.body?.contentType }))
+    )));
+    router.put(
+      `${base}/:upload/parts/:part`,
+      raw({ type: () => true, limit: UPLOAD_PART_BYTES }),
+      (req, res) => step(req, res, async (uploads) => res.json(await uploads.part(String(req.params.upload), {
+        uploadId: req.query.upload, fileName: req.query.name, partNumber: req.params.part,
+        data: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
+      }))),
+    );
+    router.post(`${base}/:upload/complete`, (req, res) => step(req, res, async (uploads) => res.json(
+      await uploads.complete(String(req.params.upload), { uploadId: req.body?.uploadId, fileName: req.body?.fileName, parts: req.body?.parts }),
+    )));
+    router.delete(`${base}/:upload`, (req, res) => step(req, res, async (uploads) => {
+      await uploads.abort(String(req.params.upload), { uploadId: req.query.upload, fileName: req.query.name });
+      return res.json({ ok: true });
+    }));
+  };
+  mountChatFileUploads(`/api/agents/${WORKSPACE_AGENT_CHAT_ID}/chat/uploads`, (auth, _req, res) => {
+    const org = auth.orgId;
+    if (!org) { res.status(404).json({ error: 'Choose a workplace.' }); return null; }
+    return {
+      prefix: agentChatStoragePrefix(agentChatStorageOwner(auth.userId, org), `${WORKSPACE_AGENT_CHAT_ID}-${auth.userId}`),
+      path: (fileId, fileName) => recapChatFilePath(auth.userId, org, fileId, fileName),
+    };
+  });
+  mountChatFileUploads('/api/agents/:id/chat/uploads', (auth, req, res) => {
+    const agent = activeAgent(auth, String(req.params.id ?? ''));
+    if (!agent) { res.status(404).json({ error: 'No such agent on this account' }); return null; }
+    const owner = agentChatStorageOwner(auth.userId, agent.orgId);
+    return {
+      prefix: agentChatStoragePrefix(owner, agent.id),
+      path: (fileId, fileName) => agentChatAttachmentPath(owner, agent.id, fileId, fileName),
+    };
+  });
+
   /**
    * Files with a message to the Workspace Agent (note #423): the room chat's
    * envelope, the room chat's landing — stored beside the row and staged

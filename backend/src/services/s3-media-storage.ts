@@ -56,9 +56,17 @@ function quoteDispositionFileName(fileName: string): string {
  */
 export class S3MediaStorage implements MediaStorage {
   private readonly client: S3Client;
+  /**
+   * Signs upload URLs only (note #943). The SDK's default checksum mode
+   * writes the CRC32 of an EMPTY body into every presigned PutObject URL
+   * (`x-amz-checksum-crc32=AAAAAA==`), so a store that checks it refuses any
+   * real file put through the link. Checksums only when an operation
+   * requires them keeps the link to what the uploader actually sends.
+   */
+  private readonly uploadSigner: S3Client;
 
   constructor(private readonly config: S3MediaStorageConfig, client?: S3Client) {
-    this.client = client ?? new S3Client({
+    const options = {
       endpoint: config.endpoint,
       region: config.region ?? 'us-east-1',
       credentials: {
@@ -66,7 +74,9 @@ export class S3MediaStorage implements MediaStorage {
         secretAccessKey: config.secretAccessKey,
       },
       forcePathStyle: config.forcePathStyle ?? true,
-    });
+    };
+    this.client = client ?? new S3Client(options);
+    this.uploadSigner = client ?? new S3Client({ ...options, requestChecksumCalculation: 'WHEN_REQUIRED' });
   }
 
   async createUploadTarget(args: {
@@ -76,7 +86,7 @@ export class S3MediaStorage implements MediaStorage {
   }): Promise<MediaStorageUploadTarget> {
     const { expiresInSeconds, expiresAt } = presignExpiry(args.expiresInMs ?? DEFAULT_UPLOAD_URL_TTL_MS);
     const uploadUrl = await getSignedUrl(
-      this.client,
+      this.uploadSigner,
       new PutObjectCommand({
         Bucket: this.config.bucket,
         Key: args.storagePath,
@@ -202,6 +212,27 @@ export class S3MediaStorage implements MediaStorage {
     }));
     const head = await this.client.send(new HeadObjectCommand({ Bucket: this.config.bucket, Key: args.storagePath }));
     return { sizeBytes: Number(head.ContentLength ?? 0) };
+  }
+
+  async peekObject(args: { storagePath: string; bytes: number }): Promise<{ sizeBytes: number; head: Buffer } | null> {
+    try {
+      const response = await this.client.send(new GetObjectCommand({
+        Bucket: this.config.bucket,
+        Key: args.storagePath,
+        Range: `bytes=0-${Math.max(0, args.bytes - 1)}`,
+      }));
+      const head = response.Body ? Buffer.from(await response.Body.transformToByteArray()) : Buffer.alloc(0);
+      // `bytes 0-65535/40265318`: the number after the slash is the whole object.
+      const total = /\/(\d+)$/.exec(response.ContentRange ?? '')?.[1];
+      return { sizeBytes: total ? Number(total) : Number(response.ContentLength ?? head.length), head };
+    } catch (error) {
+      const name = (error as { name?: string; $metadata?: { httpStatusCode?: number } })?.name;
+      const status = (error as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+      if (name === 'NoSuchKey' || name === 'NotFound' || status === 404) return null;
+      // An empty object cannot satisfy a range; it is there, and it is empty.
+      if (name === 'InvalidRange' || status === 416) return { sizeBytes: 0, head: Buffer.alloc(0) };
+      throw error;
+    }
   }
 
   async abortMultipart(args: { storagePath: string; uploadId: string }): Promise<void> {

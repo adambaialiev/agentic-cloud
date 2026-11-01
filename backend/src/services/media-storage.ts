@@ -62,6 +62,14 @@ export interface MediaStorage {
   /** Abort every unfinished multipart upload under `prefix` started before
    *  `olderThan`; answers how many went. */
   abortStaleMultiparts?(args: { prefix: string; olderThan: Date }): Promise<number>;
+  /**
+   * A stored object's real size and its first `bytes` (note #943): how a
+   * chat file that went up in parts is checked and measured when its message
+   * is sent, without the whole file coming back into memory — enough of the
+   * head for a picture's pixel size, and the size the agent's machine checks
+   * its download against. Null when nothing is there.
+   */
+  peekObject?(args: { storagePath: string; bytes: number }): Promise<{ sizeBytes: number; head: Buffer } | null>;
 }
 
 type SignedUrlAction = 'read' | 'write';

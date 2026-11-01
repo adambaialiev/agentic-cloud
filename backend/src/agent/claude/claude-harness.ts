@@ -80,6 +80,8 @@ import type {
 import {
   extractOutboundAttachments,
   fetchOutboundAttachment,
+  outboundFileOf,
+  type OutboundFile,
   getStageableHarnessAttachments,
   stageHarnessAttachments,
 } from '../harness-attachments.js';
@@ -1654,18 +1656,19 @@ async function deliverAssistantMessage(args: {
 
   // ATTACH: lines → pull the files off the machine, fold failures into the
   // text (visible, never silent), deliver text first, then the files.
-  let outboundFiles: Array<{ fileName: string; content: Uint8Array }> = [];
+  let outboundFiles: OutboundFile[] = [];
   if (deps.sendUserFile && args.outbound) {
     const { text, paths } = extractOutboundAttachments(content);
     if (paths.length > 0) {
       const notes: string[] = [];
       for (const rawPath of paths) {
         const fetched = await fetchOutboundAttachment(args.outbound.sandboxClient, args.outbound.sandboxId, rawPath, {
+          ...(deps.prepareUserFileUpload ? { upload: deps.prepareUserFileUpload } : {}),
           sshUser: HARNESS_SSH_USER,
           homeDir: HARNESS_CWD,
         });
         if (fetched.ok) {
-          outboundFiles.push({ fileName: fetched.fileName, content: fetched.content });
+          outboundFiles.push(outboundFileOf(fetched));
         } else {
           notes.push(`(couldn't attach ${fetched.fileName} — ${fetched.reason})`);
         }
