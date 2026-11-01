@@ -1002,6 +1002,16 @@ body.agent-chat-open .home-loading {
 .chathead .chatruntime span {
   min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* "Auto-merge on" beside the runtime while the reader's own auto-merge is on
+   (note #944): yellow, as the owner asked — the gold the stars already wear,
+   which keeps its contrast on the light paper. */
+/* On the runtime's own line, after it, so the bar keeps its height: a third
+   line pushed the title up out of the pinned bar. */
+.chathead .chatsubline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chathead .chatsubline .chatruntime { min-width: 0; }
+/* The page's own face, not the runtime's monospace: narrower, so on a phone
+   both fit on the line and the model keeps its words. */
+.chathead .automergeon { flex: none; white-space: nowrap; color: var(--star); font: 600 11px/16px var(--ui-font); }
 /* The ring is the sizing wrapper here as it is in every other list — see its
    own comment for why the face inside it is the smaller of the two. 34px, not
    the 40 it wore while the bar grew to fit it: a 40px ring in a 48px row has

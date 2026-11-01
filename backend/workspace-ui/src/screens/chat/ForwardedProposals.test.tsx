@@ -91,7 +91,7 @@ describe('forwarded proposals in the Chief of Staff\'s conversation (note #724)'
     expect([forwardedState(rejected), forwardedDoor(rejected)]).toEqual([{ label: 'Rejected', tone: 'mut' }, 'See the proposal']);
     const approved = { kind: 'knowledge' as const, id: 'kp1', knowledge: kp({ status: 'approved' }) };
     expect(forwardedState(approved)).toEqual({ label: 'Approved', tone: 'ok' });
-    // Merged by auto-approve mode (note #944): never the reader's "Merged".
+    // Merged by auto-merge (note #944): never the reader's "Merged".
     const automatic = { kind: 'pr' as const, id: 'pr1', pr: pr({ status: 'merged', autoApproved: { at: 't', modeOnAt: 't', modeOnByName: 'Adam' } }) };
     expect([forwardedState(automatic), forwardedDoor(automatic)]).toEqual([{ label: 'Merged automatically', tone: 'ok' }, 'See what changed']);
     const gone = { kind: 'pr' as const, id: 'pr9' };

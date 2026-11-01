@@ -1,14 +1,15 @@
 /**
- * Note #944, in real Chrome: auto-approve mode.
+ * Note #944, in real Chrome: auto-merge, each person's own.
  *
- * An admin turns the workplace's switch on (asked once more) from the
- * workplace page; an agent's `agentbuilt pr ready` — the REAL CLI route,
+ * The reader turns their OWN switch on (asked once more) in the Workplace
+ * window, and the Chief of Staff's header says "Auto-merge on" in yellow;
+ * their agent's `agentbuilt pr ready` — the REAL CLI route,
  * with the agent's own token — then merges a green proposal at once through
  * the real `AgentService.autoApprovePullRequest`, and every surface says it
  * was automatic: the proposal's screen, the Chief of Staff's card and the
  * outcome row in the agent's own chat. A proposal whose merge conflicts falls
  * back to the ordinary ask, with the reason on its screen. Turned off, the
- * switch says who turned it off and `pr ready` asks as it always has.
+ * header line goes and `pr ready` asks as it always has.
  *
  * Only the git host is a stand-in (its merge answers merged, then conflict).
  *
@@ -179,7 +180,12 @@ try {
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
   const consoleErrors: string[] = [];
   page.on('pageerror', (error) => consoleErrors.push(String(error)));
-  page.on('response', (response) => { if (response.status() >= 500) consoleErrors.push(`${response.status()} ${response.url()}`); });
+  page.on('response', (response) => {
+    // The Workplace window's Chief of Staff cards ask its machine for its
+    // software versions; this harness runs no machines, and the card says so.
+    if (response.status() === 503 && /\/api\/agents\/[^/]+\/version/.test(response.url())) return;
+    if (response.status() >= 500) consoleErrors.push(`${response.status()} ${response.url()}`);
+  });
 
   const account = await harnessSignedIn(page, workspaceWebAuth, ORIGIN, 'adam@example.com', { firstName: 'Adam', lastName: 'B' });
   const { org } = await harnessWorkplace(orgStorage, { userId: account.userId, name: 'Scratch' });
@@ -229,37 +235,58 @@ try {
     return { status: response.status, body: await response.json() as Record<string, unknown> & { message?: string } };
   };
 
-  // ── 1. The switch, off by default, in its own words ─────────────────────
-  await page.goto(`${ORIGIN}/workplace?org=${org.orgId}`);
-  await page.waitForSelector('#orgAutoApproveSwitch', { timeout: 15_000 });
-  // The sections above it arrive on their own reads; let them settle first.
-  await pause(1_200);
-  // A reader's own scroll: the screen restores its position on first draw,
-  // which a programmatic scroll made before that lands under.
-  await page.mouse.move(195, 600);
-  await page.mouse.wheel({ deltaY: 4000 });
-  await pause(400);
-  check('the switch is off by default', await page.$eval('#orgAutoApproveSwitch', (node) => node.getAttribute('aria-checked')) === 'false');
-  check('it says what it does', (await text(page, '#orgAutoApproveSwitch')).includes('Every code proposal your agents make ready is merged without asking you. Checks must still pass.'));
+  /** Home, with the Workplace window open and its auto-merge switch in view. */
+  const openWindow = async () => {
+    await page.goto(`${ORIGIN}/`);
+    await page.waitForSelector('#homeWorkplaceDoor', { timeout: 15_000 });
+    await page.click('#homeWorkplaceDoor');
+    await page.waitForSelector('#homeAutoMergeSwitch', { timeout: 15_000 });
+    // The sections above it arrive on their own reads; let them settle first.
+    await pause(1_200);
+    await page.$eval('#homeAutoMerge', (node) => node.scrollIntoView({ block: 'center' }));
+    await pause(400);
+  };
+  const closeWindow = async () => {
+    await page.click('#homeSheetClose');
+    await page.waitForFunction(() => !document.getElementById('homeSheet'), { timeout: 5_000 });
+    await pause(400);
+  };
+
+  // ── 1. The switch, the reader's own, off by default, in its own words ───
+  await openWindow();
+  check('the switch is off by default', await page.$eval('#homeAutoMergeSwitch', (node) => node.getAttribute('aria-checked')) === 'false');
+  check('it says what it does', (await text(page, '#homeAutoMergeSwitch')).includes('Every code proposal your agents make ready is merged without asking you. Checks must still pass.'));
   await shot(page, 'n944-1-setting-off.png');
+  await closeWindow();
+  check('off, the Chief of Staff header says nothing about it', !(await page.$('#recapAutoMerge')));
 
   // ── 2. Turning it on is asked once more ─────────────────────────────────
-  await page.click('#orgAutoApproveSwitch');
-  await page.waitForFunction(() => document.body.textContent?.includes('Turn on auto-approve?'), { timeout: 5_000 });
+  await openWindow();
+  await page.click('#homeAutoMergeSwitch');
+  await page.waitForFunction(() => document.body.textContent?.includes('Turn on auto-merge?'), { timeout: 5_000 });
   await pause(300);
   await shot(page, 'n944-2-turn-on-asked.png');
   const turnOn = await page.$$('button');
   for (const button of turnOn) {
     if ((await button.evaluate((node) => node.textContent?.trim())) === 'Turn on') { await button.click(); break; }
   }
-  await page.waitForFunction(() => document.getElementById('orgAutoApproveSwitch')?.getAttribute('aria-checked') === 'true', { timeout: 5_000 });
+  await page.waitForFunction(() => document.getElementById('homeAutoMergeSwitch')?.getAttribute('aria-checked') === 'true', { timeout: 5_000 });
   await pause(500);
-  check('on, it says who turned it on', (await text(page, '#orgAutoApproveState')).startsWith('On · turned on by Adam'), await text(page, '#orgAutoApproveState'));
-  const stored = (await orgStorage.getOrg(org.orgId))!.autoApprove;
-  check('the flip is on the record: who and when', Boolean(stored?.on && stored.changedByUserId === owner.userId && stored.history?.length === 1), JSON.stringify(stored));
-  await page.$eval('#orgAutoApprove', (node) => node.scrollIntoView({ block: 'center' }));
+  check('on, it says since when', (await text(page, '#homeAutoMergeState')).startsWith('On · turned on'), await text(page, '#homeAutoMergeState'));
+  const stored = (await orgStorage.getMembership(org.orgId, owner.userId))!.autoApprove;
+  check('the flip is on the reader\'s own record: who and when', Boolean(stored?.on && stored.changedByUserId === owner.userId && stored.history?.length === 1), JSON.stringify(stored));
+  await page.$eval('#homeAutoMerge', (node) => node.scrollIntoView({ block: 'center' }));
   await pause(300);
   await shot(page, 'n944-3-setting-on.png');
+  await closeWindow();
+  // The header as the reader sees it once the toast is read and dismissed.
+  await page.click('#banner .toastdismiss').catch(() => undefined);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await pause(600);
+  const header = await page.$eval('#recapAutoMerge', (node) => ({ text: node.textContent?.trim(), color: getComputedStyle(node).color }))
+    .catch(() => null);
+  check('the Chief of Staff header says Auto-merge on, in yellow', header?.text === 'Auto-merge on' && header.color === 'rgb(176, 120, 0)', JSON.stringify(header));
+  await shot(page, 'n944-3b-header-auto-merge-on.png');
 
   // ── 3. Ada's `pr ready` on a green proposal: merged at once ─────────────
   const green = await propose('note-944-hello', 'Say hello in the README', '1'.repeat(40));
@@ -269,7 +296,7 @@ try {
     && Boolean(first.body.message?.includes('approved AUTOMATICALLY')), JSON.stringify(first.body));
   const merged = (await gitPullRequestStorage.get(green.id))!;
   check('the proposal is merged, decided by no person', merged.status === 'merged' && !merged.decidedBy && merged.autoApproved?.modeOnByUserId === owner.userId, JSON.stringify({ status: merged.status, decidedBy: merged.decidedBy, autoApproved: merged.autoApproved }));
-  check('the merge commit says it was automatic', merges[0]?.message.includes('approved automatically (auto-approve mode, turned on by Adam') ?? false, merges[0]?.message);
+  check('the merge commit says it was automatic', merges[0]?.message.includes('approved automatically (auto-merge, turned on by Adam') ?? false, merges[0]?.message);
 
   // The Chief of Staff's card, on Home.
   await page.goto(`${ORIGIN}/`);
@@ -286,7 +313,7 @@ try {
   await page.click('#recapChatLog .chatmsg.forwarded .forwardeddoor');
   await page.waitForSelector('#prAutoApproved', { timeout: 10_000 });
   await pause(600);
-  check('the proposal screen names the mode, not a person', (await text(page, '#prAutoApproved')).startsWith('Approved automatically (auto-approve mode on, turned on by Adam'), await text(page, '#prAutoApproved'));
+  check('the proposal screen names the mode, not a person', (await text(page, '#prAutoApproved')).startsWith('Approved automatically (auto-merge on, turned on by Adam'), await text(page, '#prAutoApproved'));
   check('…and its pill says Merged automatically', (await text(page, '#prPills .pill')).startsWith('Merged automatically'), await text(page, '#prPills .pill'));
   await shot(page, 'n944-5-proposal-approved-automatically.png');
   await page.$eval('#prAutoApproved', (node) => node.scrollIntoView({ block: 'center' }));
@@ -319,28 +346,29 @@ try {
   await clashDoor.at(-1)!.click();
   await page.waitForSelector('#prAutoFallback', { timeout: 10_000 });
   await pause(600);
-  check('its screen says auto-approve did not merge it, and why', (await text(page, '#prAutoFallback')) === 'Auto-approve is on, but this was not merged automatically: note-944-clash conflicts with main. It waits for your decision.', await text(page, '#prAutoFallback'));
+  check('its screen says auto-merge did not merge it, and why', (await text(page, '#prAutoFallback')) === 'Auto-merge is on, but this was not merged automatically: note-944-clash conflicts with main. It waits for your decision.', await text(page, '#prAutoFallback'));
   check('…and the decision bar is there for the reader', Boolean(await page.$('#prDecide')));
   await page.$eval('#prAutoFallback', (node) => node.scrollIntoView({ block: 'center' }));
   await pause(300);
   await shot(page, 'n944-7-fallback-waits-for-you.png');
 
-  // ── 5. Off again: the record says who, and pr ready asks as before ──────
-  await page.goto(`${ORIGIN}/workplace?org=${org.orgId}`);
-  await page.waitForSelector('#orgAutoApproveSwitch', { timeout: 15_000 });
-  await page.click('#orgAutoApproveSwitch');
-  await page.waitForFunction(() => document.getElementById('orgAutoApproveSwitch')?.getAttribute('aria-checked') === 'false', { timeout: 5_000 });
+  // ── 5. Off again: the record keeps both flips, and pr ready asks as before
+  await openWindow();
+  await page.click('#homeAutoMergeSwitch');
+  await page.waitForFunction(() => document.getElementById('homeAutoMergeSwitch')?.getAttribute('aria-checked') === 'false', { timeout: 5_000 });
   await pause(500);
-  check('off, it says who turned it off', (await text(page, '#orgAutoApproveState')).startsWith('Off · turned off by Adam'), await text(page, '#orgAutoApproveState'));
-  check('both flips are on the record', (await orgStorage.getOrg(org.orgId))!.autoApprove?.history?.length === 2);
-  await page.$eval('#orgAutoApprove', (node) => node.scrollIntoView({ block: 'center' }));
+  check('off, it says since when, and that proposals wait for the reader', /^Off · turned off .* · every proposal waits for you$/.test(await text(page, '#homeAutoMergeState')), await text(page, '#homeAutoMergeState'));
+  check('both flips are on the record', (await orgStorage.getMembership(org.orgId, owner.userId))!.autoApprove?.history?.length === 2);
+  await page.$eval('#homeAutoMerge', (node) => node.scrollIntoView({ block: 'center' }));
   await pause(300);
   await shot(page, 'n944-8-setting-off-again.png');
+  await closeWindow();
+  check('off again, the header line is gone', !(await page.$('#recapAutoMerge')));
   const plain = await propose('note-944-plain', 'Fix a typo in the README', '3'.repeat(40));
   const mergesBefore = merges.length;
   const third = await ready(plain.number);
   check('off, `pr ready` asks exactly as it always has', third.status === 200 && third.body.askedUser === true && !third.body.autoApproved
-    && !String(third.body.message).includes('uto-approve') && merges.length === mergesBefore, JSON.stringify(third.body));
+    && !String(third.body.message).includes('uto-merge') && merges.length === mergesBefore, JSON.stringify(third.body));
 
   check('the browser stayed clean', consoleErrors.length === 0, consoleErrors.join(' | '));
   if (failures.length) throw new Error(failures.join('; '));

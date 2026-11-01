@@ -30,6 +30,7 @@ import { workplaceHasTeam } from '../org/org-words.js';
 import { sitesOf } from '../sites/site-words.js';
 import { AgentActivity } from './AgentActivity.js';
 import { Agents } from './Agents.js';
+import { AutoMerge } from './AutoMerge.js';
 import { Decisions } from './Decisions.js';
 import { Drive } from './Drive.js';
 import { HomeJoinRequests } from './HomeJoinRequests.js';
@@ -76,6 +77,9 @@ export function WorkplacePanel({ orgId }: { orgId: string }) {
           them. Sites only once the workplace has one. */}
       <Drive />
       <Repositories />
+      {/* The reader's own auto-merge (note #944): what happens to their
+          agents' proposals, beside where those proposals land. */}
+      <AutoMerge />
       <Knowledge />
       {hasSites ? <Sites /> : null}
       {/* Buckets only once the workplace has one (note #768). */}

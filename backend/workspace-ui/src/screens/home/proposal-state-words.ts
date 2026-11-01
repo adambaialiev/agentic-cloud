@@ -13,7 +13,7 @@ export const PR_STATE_TEXT: Record<string, { label: string; tone: string }> = {
   // is nobody's move, least of all the reader's.
   draft: { label: 'Still being prepared', tone: ' mut' },
   merged: { label: 'Merged', tone: ' ok' },
-  // Merged by auto-approve mode, decided by no person (note #944).
+  // Merged by auto-merge, decided by no person (note #944).
   mergedAutomatically: { label: 'Merged automatically', tone: ' ok' },
   rejected: { label: 'Rejected', tone: ' mut' },
   withdrawn: { label: 'Withdrawn', tone: ' mut' },

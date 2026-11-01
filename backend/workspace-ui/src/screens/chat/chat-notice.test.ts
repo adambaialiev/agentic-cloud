@@ -65,10 +65,10 @@ describe('the outcomes', () => {
     expect(notice.meta).toBe('PR #12 · infinite-agents');
   });
 
-  it('a change merged by auto-approve mode says no person decided it (note #944)', () => {
+  it('a change merged by auto-merge says no person decided it (note #944)', () => {
     const notice = platformChatNotice(
       '[Platform] PR #12 ("Move Home to React") in agentic-cloud was APPROVED AUTOMATICALLY: slice-2 is merged into main.'
-      + ' Auto-approve mode is on in this workplace (turned on by Adam at 1 Nov 2026, 15:02 UTC), so no person read it before it merged.'
+      + ' Auto-merge is on for your user (turned on by Adam at 1 Nov 2026, 15:02 UTC), so no person read it before it merged.'
       + ' Say so when you report it — never that your user approved it.'
       + '\n\nThis is the outcome of the change proposal you opened — not a new request from your user.',
     );
@@ -76,7 +76,7 @@ describe('the outcomes', () => {
     expect(notice.tone).toBe('ok');
     expect(notice.door).toBe('See what changed');
     expect(notice.title).toBe('Move Home to React');
-    expect(notice.detail).toBe('slice-2 → main · auto-approve mode, turned on by Adam at 1 Nov 2026, 15:02 UTC');
+    expect(notice.detail).toBe('slice-2 → main · auto-merge, turned on by Adam at 1 Nov 2026, 15:02 UTC');
     expect(notice.meta).toBe('PR #12 · agentic-cloud');
   });
 

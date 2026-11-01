@@ -1814,7 +1814,7 @@ const deps: RouteDeps = {
     : {}),
   // The agent asks; the USER taps. This is the only path that merges.
   requestPullRequestApproval: (args) => agentService.requestPullRequestApproval(args),
-  // Auto-approve mode (note #944): the workplace's switch, a person's, merges.
+  // Auto-merge (note #944): the proposal owner's own switch merges.
   autoApprovePullRequest: (args) => agentService.autoApprovePullRequest(args),
   // Same shape for CI secrets: the tap is what hands a key to a repo's runs.
   tellOwnerCiSecretsGranted: (args) => agentService.tellOwnerCiSecretsGranted(args),

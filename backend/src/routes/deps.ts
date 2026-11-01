@@ -374,10 +374,9 @@ export interface RouteDeps {
     pullRequestId: string;
   }) => Promise<boolean>;
   /**
-   * Auto-approve mode's merge (note #944): `pr ready` calls it, never an
-   * agent verb, for a proposal it just made ready while the workplace's
-   * switch — which only an admin, a person, turns on — is on and the checks
-   * passed. Merges through the owner's own gate and records the decision as
+   * Auto-merge (note #944): `pr ready` calls it, never an agent verb, for a
+   * proposal it just made ready while its owner's own switch — which only
+   * that person turns on — is on and the checks passed. Merges through the owner's own gate and records the decision as
    * automatic; anything that stops the merge leaves the proposal open,
    * awaiting its owner, with the reason recorded.
    */

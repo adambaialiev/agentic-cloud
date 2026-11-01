@@ -358,14 +358,6 @@ export interface OrgDocument {
    */
   agentMachineSizeId?: string;
   /**
-   * Auto-approve mode (note #944): while `on`, a code proposal an agent makes
-   * ready with passing checks is merged at once, decided automatically and
-   * never in a person's name. Absent is off — the default. Written only by
-   * an admin's own request (`PUT /api/org/auto-approve`); no agent route
-   * writes it. Every flip is kept in `history` (who, when).
-   */
-  autoApprove?: WorkplaceAutoApprove;
-  /**
    * The org's face (note #56): an avatar an admin set, shown wherever the
    * workplace is named. Bytes live in the org's OWN media bucket under
    * `users/<orgId>/org/…` (the org-namespaced owner prefix the media router
@@ -424,6 +416,17 @@ export interface OrgMembershipDocument {
    */
   lastSeenAt?: string;
   recap?: { text: string; at: string };
+  /**
+   * Auto-merge (note #944; Adam, 1 Nov 2026: "Each user should enable
+   * disable for itself"): while `on`, a code proposal one of THIS member's
+   * agents makes ready with passing checks is merged at once, decided
+   * automatically and never in their name. Each person's own: it touches no
+   * teammate's agents, and only that person's own request writes it
+   * (`PUT /api/org/auto-approve`) — no agent route does. Absent is off, the
+   * default. Every flip is kept in `history`.
+   */
+  autoApprove?: WorkplaceAutoApprove;
+
   /** The workplace's briefing for this member — one per workplace again since
    * rooms left the product (note #843), with its history below. Private to
    * this member; never serialized in People or workplace lists. */

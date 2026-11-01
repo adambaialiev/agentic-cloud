@@ -780,18 +780,19 @@ describe('POST /repos/:name/prs/:number/ready', () => {
   });
 
   /**
-   * Note #944 (Adam, 2026-11-01): auto-approve mode. With the workplace's
-   * switch on, `pr ready` merges a proposal whose checks passed instead of
+   * Note #944 (Adam, 2026-11-01): auto-merge, each person's own. With the
+   * proposal owner's switch on, `pr ready` merges a proposal whose checks passed instead of
    * asking; red or missing checks still wait; off changes nothing; and a
    * merge that fails leaves the ordinary ask, with the reason.
    */
-  describe('auto-approve mode (note #944)', () => {
+  describe('auto-merge (note #944)', () => {
     const withMode = async (deps: Partial<RouteDeps>, on: boolean | null, opts: { ci?: boolean } = {}) => {
       const orgStorage = new InMemoryOrgStorage();
       const org = await orgStorage.createOrg({ name: 'Acme', createdByUserId: 'user-1' });
       await orgStorage.addMember({ orgId: org.orgId, userId: 'user-1', role: 'admin' });
       if (on !== null) {
-        await orgStorage.updateOrg(org.orgId, {
+        // The proposal owner's OWN switch, on their membership.
+        await orgStorage.touchMember(org.orgId, 'user-1', {
           autoApprove: { on, changedAt: '2026-11-01T15:02:00.000Z', changedByUserId: 'user-1', changedByName: 'Adam' },
         });
       }
@@ -833,13 +834,30 @@ describe('POST /repos/:name/prs/:number/ready', () => {
       const body = res.body as { askedUser: boolean; autoApproved: boolean; message: string };
       expect(body).toMatchObject({ askedUser: false, autoApproved: true });
       expect(body.message).toContain('approved AUTOMATICALLY');
-      expect(body.message).toContain('turned on by Adam at 1 Nov 2026, 15:02 UTC');
+      expect(body.message).toContain('Auto-merge is on for your user (turned on by Adam at 1 Nov 2026, 15:02 UTC)');
       expect(body.message).toContain('never that your user approved it');
       // The Chief of Staff's card says the same, so nobody takes it for a
       // human decision.
       expect(proposalReady).toHaveBeenCalledWith(expect.objectContaining({
-        text: 'Ben\'s PR #1 in api — Rewrite checkout — was approved automatically and merged into main (auto-approve mode on, turned on by Adam at 1 Nov 2026, 15:02 UTC); no person read it first. Its card is in this conversation.',
+        text: 'Ben\'s PR #1 in api — Rewrite checkout — was approved automatically and merged into main (auto-merge on, turned on by Adam at 1 Nov 2026, 15:02 UTC); no person read it first. Its card is in this conversation.',
       }));
+    });
+
+    it('a teammate\'s switch never merges your agents\' work — each person\'s is their own', async () => {
+      const { deps, token, asks } = await buildDeps();
+      const { org } = await withMode(deps, null);
+      green(deps);
+      await deps.orgStorage!.addMember({ orgId: org.orgId, userId: 'user-2', role: 'admin' });
+      await deps.orgStorage!.touchMember(org.orgId, 'user-2', {
+        autoApprove: { on: true, changedAt: '2026-11-01T15:02:00.000Z', changedByUserId: 'user-2', changedByName: 'Teammate' },
+      });
+      const autoApprovePullRequest = vi.fn();
+      deps.autoApprovePullRequest = autoApprovePullRequest as never;
+      await quiet(deps, token);
+
+      expect((await ready(deps, token)).statusCode).toBe(200);
+      expect(autoApprovePullRequest).not.toHaveBeenCalled();
+      expect(asks).toHaveLength(1);
     });
 
     it('on, with red or running checks: refused exactly as before — nothing merges', async () => {
@@ -905,7 +923,7 @@ describe('POST /repos/:name/prs/:number/ready', () => {
         expect(res.statusCode).toBe(200);
         expect(autoApprovePullRequest).not.toHaveBeenCalled();
         expect(asks).toHaveLength(1);
-        expect((res.body as { message: string }).message).not.toContain('uto-approve');
+        expect((res.body as { message: string }).message).not.toContain('uto-merge');
         expect((await gitPullRequestStorage.listByRepo(repo.id))[0]!.autoApproveFallback).toBeUndefined();
       }
     });
@@ -926,7 +944,7 @@ describe('POST /repos/:name/prs/:number/ready', () => {
       expect(body.message).toContain('NOT merged automatically: feat/checkout conflicts with main');
       expect(body.message).toContain('is with your user now');
       expect(proposalReady).toHaveBeenCalledWith(expect.objectContaining({
-        text: expect.stringContaining('is ready for the person\'s decision: auto-approve is on, but it was not merged automatically because feat/checkout conflicts with main'),
+        text: expect.stringContaining('is ready for the person\'s decision: auto-merge is on, but it was not merged automatically because feat/checkout conflicts with main'),
       }));
 
       // A merge that throws is a fallback too, never a failed invitation.
@@ -1612,11 +1630,11 @@ describe('the pull-request approval flows', () => {
    * return value is the re-read status, never an inference.
    */
   /**
-   * Note #944: auto-approve mode's merge. Same anchor and the same required-
+   * Note #944: auto-merge's merge. Same anchor and the same required-
    * checks gate as a person's Approve; recorded as automatic, never in the
    * owner's name; and anything that stops it leaves the proposal open.
    */
-  describe('auto-approve mode\'s merge (note #944)', () => {
+  describe('auto-merge\'s merge (note #944)', () => {
     const mode = { onAt: '2026-11-01T15:02:00.000Z', byUserId: 'user-1', byName: 'Adam' };
     const auto = (service: unknown, pullRequestId: string) => (service as {
       autoApprovePullRequest(args: { pullRequestId: string; mode: typeof mode }): Promise<{ status: string; reason?: string }>;
@@ -1631,7 +1649,7 @@ describe('the pull-request approval flows', () => {
 
       expect(merge).toHaveBeenCalledWith('user-1', 'api', expect.objectContaining({
         base: 'main', head: 'feat/checkout', expectedHead: 'a'.repeat(40),
-        message: expect.stringContaining('approved automatically (auto-approve mode, turned on by Adam at 1 Nov 2026, 15:02 UTC)'),
+        message: expect.stringContaining('approved automatically (auto-merge, turned on by Adam at 1 Nov 2026, 15:02 UTC)'),
       }));
       const landed = (await gitPullRequestStorage.get(pr.id))!;
       expect(landed.status).toBe('merged');
@@ -1649,7 +1667,7 @@ describe('the pull-request approval flows', () => {
       const rows = await agentChatStorage.getAfter('user-1', 'agent-a', 0);
       expect(rows.some((row) => row.text.includes('awaits your decision'))).toBe(false);
       expect(rows.at(-1)).toMatchObject({ role: 'platform', open: { pr: pr.id } });
-      expect(rows.at(-1)!.text).toContain('PR #1 ("Rewrite checkout") in api was APPROVED AUTOMATICALLY: feat/checkout is merged into main. Auto-approve mode is on in this workplace (turned on by Adam at 1 Nov 2026, 15:02 UTC)');
+      expect(rows.at(-1)!.text).toContain('PR #1 ("Rewrite checkout") in api was APPROVED AUTOMATICALLY: feat/checkout is merged into main. Auto-merge is on for your user (turned on by Adam at 1 Nov 2026, 15:02 UTC)');
     });
 
     for (const [result, reason] of [

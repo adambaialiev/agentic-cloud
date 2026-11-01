@@ -116,7 +116,7 @@ export interface GitPullRequestDocument {
   /** Optional reason, relayed to the agent: "no" alone makes it retry blindly. */
   decisionNote?: string;
   /**
-   * Merged by auto-approve mode (note #944), not by a person: `decidedBy`
+   * Merged by auto-merge (note #944), not by a person: `decidedBy`
    * stays empty, because nobody read it, and this says which mode did —
    * turned on when, by whom. Every surface that names the decider reads it.
    */

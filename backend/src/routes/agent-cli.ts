@@ -2635,14 +2635,14 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     // readying a colleague's work is told the outcome alongside the proposer.
     await git.prs.update(doc.id, { draft: undefined, readyAt, readyByAgentId: auth.agentId });
 
-    // Auto-approve mode (note #944): when a workplace admin has switched it
+    // Auto-merge (note #944): when the proposal's owner has switched theirs
     // on, the proposal is merged now instead of waiting — through the
     // owner's own merge gate, recorded as automatic. Checks still gate: a
     // verdict that is not green, or none at all on a repo whose CI is on,
     // never merges. Anything that stops it leaves the ordinary ask below,
     // with the reason on the proposal, so nothing is ever silently stuck.
     let autoFallback: string | null = null;
-    const autoMode = await autoApproveModeFor(auth, repo);
+    const autoMode = await autoApproveModeFor(auth, repo, doc);
     if (autoMode) {
       const blocker = autoApproveChecksBlocker(verdict, repo.ci === true);
       if (blocker) {
@@ -2657,12 +2657,12 @@ export function agentCliRoutes(deps: RouteDeps): Router {
           const by = auth.agents[doc.createdByAgentId]?.name;
           const turnedOn = `turned on by ${autoMode.changedByName} at ${autoApproveTime(autoMode.changedAt)}`;
           const chiefOfStaff = await chiefOfStaffCard(auth, repo, doc,
-            `${by ? `${by}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — was approved automatically and merged into ${doc.targetBranch} (auto-approve mode on, ${turnedOn}); no person read it first. Its card is in this conversation.`);
+            `${by ? `${by}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — was approved automatically and merged into ${doc.targetBranch} (auto-merge on, ${turnedOn}); no person read it first. Its card is in this conversation.`);
           return res.json({
             ok: true,
             askedUser: false,
             autoApproved: true,
-            message: `Auto-approve mode is on in this workplace (${turnedOn}), so PR #${doc.number} was approved AUTOMATICALLY and ${doc.sourceBranch} is merged into ${doc.targetBranch} — nobody was asked${chiefOfStaff ? '; the card in their Chief of Staff chat says the same' : ''}. When you report it, say it merged automatically, never that your user approved it. Follow up on it as on any merge (its checks and deploys on ${doc.targetBranch}); the outcome also reaches you as a [Platform] message.`,
+            message: `Auto-merge is on for your user (${turnedOn}), so PR #${doc.number} was approved AUTOMATICALLY and ${doc.sourceBranch} is merged into ${doc.targetBranch} — nobody was asked${chiefOfStaff ? '; the card in their Chief of Staff chat says the same' : ''}. When you report it, say it merged automatically, never that your user approved it. Follow up on it as on any merge (its checks and deploys on ${doc.targetBranch}); the outcome also reaches you as a [Platform] message.`,
           });
         }
         autoFallback = outcome.reason;
@@ -2686,10 +2686,10 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     // a proposal already in front of them. Best effort like the chat card
     // above: the proposal is recorded and in the queue whatever happens here.
     const chiefOfStaff = await chiefOfStaffCard(auth, repo, doc, autoFallback
-      ? `${auth.agents[doc.createdByAgentId]?.name ? `${auth.agents[doc.createdByAgentId]!.name}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — is ready for the person's decision: auto-approve is on, but it was not merged automatically because ${autoFallback}. Its card is in this conversation.`
+      ? `${auth.agents[doc.createdByAgentId]?.name ? `${auth.agents[doc.createdByAgentId]!.name}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — is ready for the person's decision: auto-merge is on, but it was not merged automatically because ${autoFallback}. Its card is in this conversation.`
       : undefined);
     const autoWords = autoFallback
-      ? `Auto-approve is on in this workplace, but PR #${doc.number} was NOT merged automatically: ${autoFallback}. It waits for your user's decision like any other proposal, and its screen says why. `
+      ? `Auto-merge is on for your user, but PR #${doc.number} was NOT merged automatically: ${autoFallback}. It waits for your user's decision like any other proposal, and its screen says why. `
       : '';
     return res.json({
       ok: true,
@@ -2702,16 +2702,18 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   });
 
   /**
-   * The workplace's auto-approve switch (note #944), when it is ON and this
-   * backend can act on it — or null. Read from the agent's own workplace,
-   * the one its proposals belong to. An agent can only READ it here: no
-   * route of this router writes it.
+   * The proposal OWNER's auto-merge switch (note #944), when it is ON and
+   * this backend can act on it — or null. Each person's own: it is read
+   * from the membership of the person whose agent proposed it, in the
+   * agent's own workplace, so one member's switch never merges a teammate's
+   * work. An agent can only READ it here: no route of this router writes it.
    */
-  const autoApproveModeFor = async (auth: AgentAuth, repo: GitRepoDocument): Promise<WorkplaceAutoApprove | null> => {
+  const autoApproveModeFor = async (auth: AgentAuth, repo: GitRepoDocument, doc: GitPullRequestDocument): Promise<WorkplaceAutoApprove | null> => {
     const orgId = auth.orgId ?? repo.orgId ?? null;
     if (!orgId || !deps.orgStorage || !deps.autoApprovePullRequest) return null;
-    const org = await deps.orgStorage.getOrg(orgId).catch(() => null);
-    return org?.autoApprove?.on ? org.autoApprove : null;
+    const owner = doc.createdByUserId ?? auth.userId;
+    const membership = await deps.orgStorage.getMembership(orgId, owner).catch(() => null);
+    return membership?.autoApprove?.on ? membership.autoApprove : null;
   };
 
   /**

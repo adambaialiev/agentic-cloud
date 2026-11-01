@@ -7239,8 +7239,8 @@ export class AgentService {
   }
 
   /**
-   * Auto-approve mode's decision (note #944): `pr ready` calls this, for a
-   * proposal it has just made ready, when the workplace's switch is on and
+   * Auto-merge's decision (note #944): `pr ready` calls this, for a
+   * proposal it has just made ready, when its owner's own switch is on and
    * the checks passed. It merges through the same anchor and the same
    * required-checks gate an owner's Approve does, and records the decision
    * as AUTOMATIC — `autoApproved`, with the mode's who and when, and no
@@ -7294,7 +7294,7 @@ export class AgentService {
         head: doc.sourceBranch,
         // The same anchor as a person's Approve: the sha `pr ready` pinned.
         expectedHead: doc.headSha,
-        message: `${doc.title}\n\nPR #${doc.number} from ${doc.sourceBranch}, approved automatically (auto-approve mode, turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}).`,
+        message: `${doc.title}\n\nPR #${doc.number} from ${doc.sourceBranch}, approved automatically (auto-merge, turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}).`,
         ...(doc.squash ? { squash: true } : {})
       });
     } catch (error) {
@@ -7315,7 +7315,7 @@ export class AgentService {
       doc.createdByUserId ?? doc.userId, doc, repo.name,
       `PR #${doc.number} ("${doc.title}") in ${repo.name} was APPROVED AUTOMATICALLY:`
       + ` ${doc.sourceBranch} is merged into ${doc.targetBranch}.`
-      + ` Auto-approve mode is on in this workplace (turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}),`
+      + ` Auto-merge is on for your user (turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}),`
       + ' so no person read it before it merged. Say so when you report it — never that your user approved it.',
     );
     return { status: 'merged', mergeCommitSha: result.mergeCommitSha };

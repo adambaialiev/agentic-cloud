@@ -11042,57 +11042,59 @@ describe('the workplace screens (members, seats, invites)', () => {
     });
 
     /**
-     * NOTE #944. Auto-approve: every member reads whether the workplace
-     * merges ready proposals without asking; only an admin flips it, every
-     * flip is recorded with who and when, and off is the default.
+     * NOTE #944. Auto-merge is each person's own ("Each user should enable
+     * disable for itself", Adam, 1 Nov 2026): any member turns theirs on and
+     * off, nobody reaches a teammate's, every flip is recorded, and off is
+     * the default. The state read carries it for the header and the window.
      */
-    it('auto-approve is off by default, readable by a member, and only an admin turns it on or off — on the record', async () => {
+    it('auto-merge is each member\'s own switch: off by default, theirs to flip, on the record, and on the state read', async () => {
       const { deps, orgStorage, org } = await buildOrgDeps();
       const read = getRouteHandler(deps, '/api/org/auto-approve', 'get');
       const write = getRouteHandler(deps, '/api/org/auto-approve', 'put');
 
       const before = createMockResponse();
       await read(mockRequest({ headers: authHeader(43) }), before);
-      expect(before.body).toEqual({ on: false, canChange: false });
-
-      const refused = createMockResponse();
-      await write(mockRequest({ headers: authHeader(43), body: { on: true } }), refused);
-      expect(refused.statusCode).toBe(403);
-      expect((refused.body as { error: string }).error).toContain('Only a workplace admin');
-      expect((await orgStorage.getOrg(org.orgId))!.autoApprove).toBeUndefined();
+      expect(before.body).toEqual({ on: false });
 
       const nonsense = createMockResponse();
-      await write(mockRequest({ headers: authHeader(42), body: { on: 'yes' } }), nonsense);
+      await write(mockRequest({ headers: authHeader(43), body: { on: 'yes' } }), nonsense);
       expect(nonsense.statusCode).toBe(400);
 
+      // A MEMBER turns their own on — no admin needed.
       const on = createMockResponse();
-      await write(mockRequest({ headers: authHeader(42), body: { on: true } }), on);
+      await write(mockRequest({ headers: authHeader(43), body: { on: true } }), on);
       expect(on.statusCode).toBe(200);
-      expect(on.body).toMatchObject({ ok: true, changed: true, on: true, canChange: true, changedByName: expect.stringContaining('Owner') });
-      const stored = (await orgStorage.getOrg(org.orgId))!.autoApprove!;
-      expect(stored).toMatchObject({ on: true, changedByUserId: 'user-1' });
-      expect(stored.history).toEqual([expect.objectContaining({ on: true, byUserId: 'user-1' })]);
-      // The admin's own "last did" line says it, like any other decision.
-      expect((await orgStorage.getMembership(org.orgId, 'user-1'))!.recap?.text).toContain('auto-approve on');
+      expect(on.body).toMatchObject({ ok: true, changed: true, on: true });
+      const mine = (await orgStorage.getMembership(org.orgId, 'user-2'))!.autoApprove!;
+      expect(mine).toMatchObject({ on: true, changedByUserId: 'user-2' });
+      expect(mine.history).toEqual([expect.objectContaining({ on: true, byUserId: 'user-2' })]);
+      expect((await orgStorage.getMembership(org.orgId, 'user-2'))!.recap?.text).toContain('auto-merge on');
+      // …and the admin's stays exactly as it was: off, untouched.
+      expect((await orgStorage.getMembership(org.orgId, 'user-1'))!.autoApprove).toBeUndefined();
+      const admins = createMockResponse();
+      await read(mockRequest({ headers: authHeader(42) }), admins);
+      expect(admins.body).toEqual({ on: false });
 
       // The same answer twice is not a flip: the history keeps meaning flips.
       const again = createMockResponse();
-      await write(mockRequest({ headers: authHeader(42), body: { on: true } }), again);
+      await write(mockRequest({ headers: authHeader(43), body: { on: true } }), again);
       expect(again.body).toMatchObject({ ok: true, changed: false });
-      expect((await orgStorage.getOrg(org.orgId))!.autoApprove!.history).toHaveLength(1);
+      expect((await orgStorage.getMembership(org.orgId, 'user-2'))!.autoApprove!.history).toHaveLength(1);
+
+      // The state read carries the reader's own, for the header and the window.
+      const memberState = createMockResponse();
+      await getRouteHandler(deps, '/api/state', 'get')(mockRequest({ headers: authHeader(43) }), memberState);
+      expect((memberState.body as { org: { autoMerge?: { on: boolean } } }).org.autoMerge).toMatchObject({ on: true });
+      const adminState = createMockResponse();
+      await getRouteHandler(deps, '/api/state', 'get')(mockRequest({ headers: authHeader(42) }), adminState);
+      expect((adminState.body as { org: { autoMerge?: unknown } }).org.autoMerge).toBeUndefined();
 
       const off = createMockResponse();
-      await write(mockRequest({ headers: authHeader(42), body: { on: false } }), off);
+      await write(mockRequest({ headers: authHeader(43), body: { on: false } }), off);
       expect(off.body).toMatchObject({ ok: true, changed: true, on: false });
-
-      const member = createMockResponse();
-      await read(mockRequest({ headers: authHeader(43) }), member);
-      const answer = member.body as { on: boolean; canChange: boolean; history: Array<{ on: boolean }> };
-      expect(answer.on).toBe(false);
-      expect(answer.canChange).toBe(false);
-      // Newest first, and names only — never a user id.
-      expect(answer.history.map((change) => change.on)).toEqual([false, true]);
-      expect(JSON.stringify(member.body)).not.toContain('user-1');
+      const after = createMockResponse();
+      await read(mockRequest({ headers: authHeader(43) }), after);
+      expect((after.body as { history: Array<{ on: boolean }> }).history.map((change) => change.on)).toEqual([false, true]);
     });
 
     it('a hosted workplace has no bill: spend answers that, and never walks our account (note #664)', async () => {

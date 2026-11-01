@@ -1,26 +1,30 @@
 /**
- * Auto-approve mode (note #944, Adam, 2026-11-01: "auto-approve mode. If
- * it's on, all proposals should be automatically approved").
+ * Auto-merge mode (note #944, Adam, 2026-11-01: "auto-approve mode. If it's
+ * on, all proposals should be automatically approved" — then, the same day:
+ * "Each user should enable disable for itself").
  *
- * One switch per workplace, turned on and off by a workplace admin from the
- * workplace's own screen — never by an agent: no agent route writes it. While
- * it is on, a code proposal an agent makes ready (`agentbuilt pr ready`) whose
- * checks passed is merged at once, through the same merge path an owner's
- * Approve takes, and recorded as decided AUTOMATICALLY — never in the owner's
- * name, because nobody read it. Off is the default and today's behaviour.
+ * One switch per PERSON in a workplace, in the Workplace window, flipped only
+ * by that person — never by an agent, and never by anyone for a teammate: no
+ * agent route writes it, and the route that does writes the caller's own.
+ * While it is on, a code proposal one of that person's agents makes ready
+ * (`agentbuilt pr ready`) whose checks passed is merged at once, through the
+ * same merge path their Approve takes, and recorded as decided
+ * AUTOMATICALLY — never in their name, because nobody read it. Off is the
+ * default and today's behaviour. While it is on, the Chief of Staff's header
+ * says "Auto-merge on".
  *
- * The words live here, once, because four surfaces say them and must agree:
- * the setting, the proposal's screen, the Chief of Staff's card and the
- * outcome the proposing agent is woken with.
+ * The words live here, once, because several surfaces say them and must
+ * agree: the setting, the proposal's screen, the Chief of Staff's card and
+ * the outcome the proposing agent is woken with.
  */
 
 /** What the switch does, in its own words — shown on the setting itself. */
 export const AUTO_APPROVE_SETTING_WORDS = 'Every code proposal your agents make ready is merged without asking you. Checks must still pass.';
 
-/** The switch as one workplace holds it, and the record of every flip. */
+/** The switch as one member holds it, and the record of every flip. */
 export interface WorkplaceAutoApprove {
   on: boolean;
-  /** When it was last turned on or off, and by whom (an admin, a person). */
+  /** When it was last turned on or off, and by whom (the member themselves). */
   changedAt: string;
   changedByUserId: string;
   /** Their name as it was then: a later rename must not rewrite the record. */
@@ -68,12 +72,12 @@ export function autoApproveTime(iso: string): string {
 
 /** The line that stands where a person's name would: who decided — nobody. */
 export function autoApprovedWords(approval: Pick<PullRequestAutoApproval, 'modeOnAt' | 'modeOnByName'>): string {
-  return `Approved automatically (auto-approve mode on, turned on by ${approval.modeOnByName || 'an admin'} at ${autoApproveTime(approval.modeOnAt)})`;
+  return `Approved automatically (auto-merge on, turned on by ${approval.modeOnByName || 'its owner'} at ${autoApproveTime(approval.modeOnAt)})`;
 }
 
 /** The line a proposal auto-approve could not merge wears while it waits. */
 export function autoApproveFallbackWords(fallback: Pick<PullRequestAutoApproveFallback, 'reason'>): string {
-  return `Auto-approve is on, but this was not merged automatically: ${fallback.reason}. It waits for your decision.`;
+  return `Auto-merge is on, but this was not merged automatically: ${fallback.reason}. It waits for your decision.`;
 }
 
 /**

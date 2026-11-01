@@ -639,15 +639,22 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
               )
               : WORKSPACE_AGENT}
           </h1>
-          <button
-            className="sub chatruntime"
-            id="recapChatRuntime"
-            type="button"
-            aria-label={`Change ${WORKSPACE_AGENT} model and effort. Current: ${runtime}`}
-            onClick={openSettings}
-          >
-            <span>{runtime}</span>
-          </button>
+          <div className="chatsubline">
+            <button
+              className="sub chatruntime"
+              id="recapChatRuntime"
+              type="button"
+              aria-label={`Change ${WORKSPACE_AGENT} model and effort. Current: ${runtime}`}
+              onClick={openSettings}
+            >
+              <span>{runtime}</span>
+            </button>
+            {/* The reader's own auto-merge, while it is on (note #944; Adam,
+                1 Nov 2026: "in chief of staff chat screen in header it should
+                be displayed text that auto merge is on as yellow colored
+                text"): their agents' proposals merge without them reading. */}
+            {workspace?.org?.autoMerge?.on ? <span className="sub automergeon" id="recapAutoMerge">Auto-merge on</span> : null}
+          </div>
         </div>
         {home ? <HomeChrome /> : null}
       </div>

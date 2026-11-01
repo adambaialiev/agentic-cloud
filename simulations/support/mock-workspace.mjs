@@ -890,14 +890,6 @@ export async function startMockWorkspace(repoRoot, options = {}) {
       return true;
     }
 
-    // Auto-approve mode (note #944): the workplace page reads its switch.
-    // Off, as every workplace starts; no journey here flips it.
-    if (req.method === 'GET' && url.pathname === '/workspace/api/org/auto-approve') {
-      if (!expectSession(req, respondJson)) return true;
-      respondJson(200, { on: false, canChange: true });
-      return true;
-    }
-
     // Nothing on any road connects a cloud any more (note #664): the real
     // backend refuses it for a hosted workplace, and a UI that asks is a bug.
     if (req.method === 'POST' && url.pathname === '/workspace/api/org/fly') {

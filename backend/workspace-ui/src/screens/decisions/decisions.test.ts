@@ -93,7 +93,7 @@ describe('the status pill', () => {
     expect(statusPill({ status: 'conflict', decidedAt: null, to: 'main' }, false, ''))
       .toEqual({ tone: 'quiet', text: 'Conflicts with main' });
     expect(statusPill({ status: 'stale', decidedAt: null, to: 'main' }, false, '').text).toBe('Went stale');
-    // Merged by auto-approve mode (note #944): the pill says no person did.
+    // Merged by auto-merge (note #944): the pill says no person did.
     expect(statusPill({ status: 'merged', decidedAt: at, to: 'main', autoApproved: { at, modeOnAt: at, modeOnByName: 'Adam' } }, false, '3m ago'))
       .toEqual({ tone: 'merged', text: 'Merged automatically 3m ago' });
     // A merge in flight outranks the record underneath it.
