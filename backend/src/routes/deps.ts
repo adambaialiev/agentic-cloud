@@ -1,3 +1,4 @@
+import type { CopyMailSetup } from '../services/copy-mail-setup.js';
 import type { CopyHealth } from '../services/copy-health.js';
 import type { AgentChatUpload } from '../services/agent-chat-storage.js';
 import type { CopyLicence } from '../services/copy-licence.js';
@@ -312,6 +313,13 @@ export interface RouteDeps {
   /** Mail that has arrived at those addresses (note #509 slice 2). Absent →
    *  the inbox routes 503 and the Worker retries rather than bouncing. */
   mailIngest?: MailIngestService;
+  /**
+   * Email set up after the install, in a private copy (note #946): its
+   * state, the setup an admin goes through, and the one answer to "is mail
+   * on here?" that the Mail section and the agents' CLI read. Absent off a
+   * copy, where mail is always on.
+   */
+  copyMail?: CopyMailSetup;
   /** The owner's own reads of that inbox. Same absence, same answer. */
   mailMessages?: MailMessageStorage;
   /** Answering a message (slice 4). Absent without a sending key → the reply

@@ -104,7 +104,10 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // update-key and licence stay in the installer behind COPY_LICENCE=on;
     // with licensing off (note #935) the guide never meets them.
     for (const reason of ['update-key', 'licence']) expect(reasons.has(reason), `installer reason ${reason}`).toBe(true);
-    for (const reason of ['domain', 'fly-organization', 'fly-sign-in', 'billing', 'mail-key', 'dns']) {
+    // No mail-key since note #946: email is set up later, in the Workspace.
+    expect(reasons.has('mail-key')).toBe(false);
+    expect(guide).not.toMatch(/--resend-key-file|--smtp-/);
+    for (const reason of ['domain', 'fly-organization', 'fly-sign-in', 'billing', 'dns']) {
       expect(reasons.has(reason), `installer reason ${reason}`).toBe(true);
       expect(guide, `guide reason ${reason}`).toContain(`\`${reason}\``);
     }
@@ -135,7 +138,7 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     const questions = guide.slice(guide.indexOf('## 3. ASK YOUR PERSON'), guide.indexOf('## 4.'));
     expect(questions).toMatch(/^Run `fly orgs list` and show your person the organizations it lists/m);
     expect(guide.indexOf('fly orgs list')).toBeGreaterThan(guide.indexOf('## 3. ASK YOUR PERSON'));
-    for (const point of [/Fly organization/, /card on file and its bill/, /domain name/, /How mail goes out/, /Who adds the DNS records/]) {
+    for (const point of [/Fly organization/, /card on file and its bill/, /domain name/, /Do not ask about email/, /Who adds the DNS records/]) {
       expect(questions, String(point)).toMatch(point);
     }
     expect(guide).not.toContain('hello@agenticcloudcomputer.com');

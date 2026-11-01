@@ -6,7 +6,7 @@ The whole installer is one file, [`install.mjs`](install.mjs). It needs Node and
 
 ## If you are an AI agent
 
-Your person asked you to set up their own Agentic Cloud with this installer. You can run all of it, but some steps belong to them, and the installer tells you which. Nothing is needed from us: no key, no licence, no email. The product is free for now.
+Your person asked you to set up their own Agentic Cloud with this installer. You can run all of it, but some steps belong to them, and the installer tells you which. Nothing is needed from us: no key, no licence, no email. The product is free for now. Email is not part of the install: once it is up, an admin sets it up in the Workspace, under Mail.
 
 1. **Plan.** Run the install command with `--plan --json`. It changes nothing and costs nothing. Show your person what it will create and what it costs, and wait for their yes.
 2. **Install.** Run the same command with `--json --wait 0` instead of `--plan`. It builds everything, then stops with exit code 3 and `"reason": "dns"`, listing the exact DNS records.
@@ -30,16 +30,15 @@ With `--json`, every line on stdout is one JSON object, and the last line is alw
 | `0` | Done. |
 | `1` | It failed. `message` says why. |
 | `2` | The command was wrong. |
-| `3` | A person is needed. `reason` is one of `domain`, `fly-organization`, `fly-sign-in`, `billing`, `mail-key` or `dns`. |
-| `4` | Still waiting on Fly, Let's Encrypt or the mail provider. Nobody needs to do anything; run the same command again later. |
+| `3` | A person is needed. `reason` is one of `domain`, `fly-organization`, `fly-sign-in`, `billing` or `dns`. |
+| `4` | Still waiting on Fly or Let's Encrypt. Nobody needs to do anything; run the same command again later. |
 
 ## What you need
 
 - **Node 20 or newer** and **[flyctl](https://fly.io/docs/flyctl/install/)**, signed in or with `FLY_API_TOKEN` set to a token for the organization.
 - **A Fly organization** with billing in order. The installer checks this before it creates anything.
-- **A domain for your own Agentic Cloud**, such as `agents.yourcompany.com`, where you can add DNS records. Use a name of its own, not your company's main domain: the Workspace, mail, code, previews and sites all live on it.
+- **A domain for your own Agentic Cloud**, such as `agents.yourcompany.com`, where you can add DNS records. Use a name of its own, not your company's main domain: the Workspace, code, previews, sites and (once an admin sets it up) mail all live on it.
 - **Nothing from us.** No key, no licence and no email: the product is free for now. (The licensing code is still here, off; `COPY_LICENCE=on` brings back `--key-file` and `--licence-file`.)
-- **A way to send mail** (optional; it can be added later). Either a [Resend](https://resend.com) API key, or any provider over standard SMTP.
 
 ## Install
 
@@ -52,7 +51,6 @@ Options:
 - `--name <prefix>`: the prefix for every name it creates. The default comes from the domain: `agents.yourcompany.com` gives `agents-yourcompany`. Fly app names are global, so the prefix must be one nobody else uses.
 - `--region <code>`: the Fly region. The default is the one nearest to you.
 - `--release <version>`: install a release other than the latest.
-- `--resend-key-file <file>`, or `--smtp-host <host> [--smtp-port 587|465] [--smtp-user <user> --smtp-password-file <file>]`: mail out.
 - `--wait <minutes>`: how long it waits for DNS and certificates before stopping. The default is 60.
 - `--plan`: change nothing. It checks everything the install needs and lists what it would create, with Fly's prices, and the DNS records it will ask for.
 - `--json`: print progress and the result as JSON lines on stdout. The first-admin link and the master key then go to `<prefix>-handover.txt` (readable only by you) instead of the screen.
@@ -68,10 +66,10 @@ At the end it prints:
 ## Check where it stands
 
 ```sh
-node install.mjs status [--state <prefix>-copy.json] [--resend-key-file <file>] [--json]
+node install.mjs status [--state <prefix>-copy.json] [--json]
 ```
 
-It only looks. It asks your domain's own name servers for each record, Fly for each certificate, and the mail receiver for its own. It says what is still missing and never creates, restarts or changes anything.
+It only looks. It asks your domain's own name servers for each record, and Fly for each certificate. It says what is still missing and never creates, restarts or changes anything.
 
 ## Upgrade
 
@@ -90,30 +88,32 @@ node install.mjs upgrade [--release <version>] [--drill] [--json]
 
 | What | Names |
 | --- | --- |
-| Five apps: the image registry, the backend (the Workspace and its database), the code host, the router for previews and sites, and the mail receiver | `<prefix>-images`, `-backend`, `-git`, `-router`, `-mx` |
+| Four apps: the image registry, the backend (the Workspace and its database), the code host, and the router for previews and sites | `<prefix>-images`, `-backend`, `-git`, `-router` |
 | Two buckets: files, and database backups | `<prefix>-media`, `<prefix>-backups` |
-| Three disks: the database, the code, and the mail receiver's certificate | created with the apps |
-| A dedicated IPv4 address for the mail receiver (a Fly charge), since mail cannot run on a shared one | on `<prefix>-mx` |
+| Two disks: the database and the code | created with the apps |
 | Certificates for the domain, `git.` and `*.` | requested from Fly |
 
 Keys are made on your machine and stored only as Fly secrets on your apps:
 
 - an SSH key the backend uses to reach your agents' machines;
 - the master key;
-- shared secrets between the backend, the code host and the mail receiver;
+- shared secrets between the backend and the code host, and the one a mail receiver will present once there is one;
 - the first-admin code.
 
 It also asks Fly for a separate organization token for the backend. It writes `<prefix>-copy.json` beside itself, holding names and addresses only and never a key; the upgrade command reads it. A log of each run goes to `<prefix>-install.log` or `<prefix>-upgrade.log`.
 
-It prints about twelve DNS records for you to add and checks them with your domain's own name servers. If you use SMTP, add your provider's own SPF and DKIM records too.
+It prints six DNS records for you to add and checks them with your domain's own name servers.
+
+## Email, later
+
+The install makes no mail receiver and asks for no mail provider. When you want email, an admin opens Mail in the Workspace and follows "Set up email": they give a Resend key or any provider's SMTP settings, the Workspace makes the mail receiver `<prefix>-mx` in this same organization (with the dedicated IPv4 mail needs, about $4 a month at Fly's list prices), shows the MX, A, DMARC and provider records to add, checks them, and turns mail on once they are right. A receiver an older installer made is found and kept. Until then everything else works: people's addresses are already on your domain, and the Workspace says plainly wherever something would have gone by email.
 
 ## Where it connects, and what it sends
 
 - **Fly** (flyctl, and `api.fly.io` to read your organization's billing state): to create and deploy everything above, in your organization, with your token.
 - **Our update service** (`https://acc-updates.fly.dev`): with no sign-in, only to download a release's list of images and the images themselves. It sends nothing about your own Agentic Cloud, which runs only from your own registry and never pulls from us.
 - **Your domain's name servers**: to check the records you added.
-- **Resend's API** (only with `--resend-key-file`): to register your domain for sending and read the records it needs.
-- **Your own Agentic Cloud itself**: the smoke test reads the health pages of the Workspace, the code host, the router and the mail receiver, the sign-up page, and the mail receiver's greeting on port 25.
+- **Your own Agentic Cloud itself**: the smoke test reads the health pages of the Workspace, the code host and the router, and the sign-up page.
 
 There is no telemetry. Once installed, your own Agentic Cloud makes no call to us.
 

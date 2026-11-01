@@ -109,6 +109,7 @@ import {
   heldMailLetters, heldMailPlace, holdMailLetters, holdMailPlace, mailPageKept, mailStarChanged, type MailListKey,
 } from './mail-cache.js';
 import { MailComposeScreen } from './MailComposeScreen.js';
+import { MailNotSetUp, mailIsOff } from './MailNotSetUp.js';
 import { MailStar } from './MailStar.js';
 import {
   MAIL_PLACE_EMPTY, MAIL_PLACE_TITLE, MAIL_SEARCH_PLACEHOLDER, mailCanStar, mailConversationLine, mailConversationName, mailPlaceMark,
@@ -595,6 +596,10 @@ export function MailScreen({ place = 'inbox' }: { place?: MailPlaceName }) {
   // write one — but only while nothing is being searched for: a search that
   // finds nothing says THAT, in the list's own words.
   const emptyInbox = place === 'inbox' && answer && !rows && !searched && !typed.trim();
+  // A private copy installs without email (note #946): until an admin sets
+  // it up, the inbox says so above itself and offers no way to write out.
+  const mailSetup = state?.mailSetup;
+  const mailOff = mailIsOff(mailSetup);
 
   return <div className="screen" id={screenId}>
     <ScreenTitle title={MAIL_PLACE_TITLE[place]} sub={address || 'Your address'} />
@@ -604,8 +609,9 @@ export function MailScreen({ place = 'inbox' }: { place?: MailPlaceName }) {
     </div></div> : null}
     {!failure && wait === 'drawn' && !answer ? <MailWait /> : null}
     {starFailed ? <div className="hintblock mailwarn" role="alert" id="mailStarFailed">{starFailed}</div> : null}
-    {answer && !emptyInbox ? <div className="card" id="mailList">
-      {place === 'inbox' ? <WriteMailRow id="mailWrite" top onPress={() => setWriting(true)} /> : null}
+    {mailOff && place === 'inbox' ? <MailNotSetUp setup={mailSetup} domain={address.split('@')[1] ?? ''} /> : null}
+    {answer && !(emptyInbox) ? <div className="card" id="mailList">
+      {place === 'inbox' && !mailOff ? <WriteMailRow id="mailWrite" top onPress={() => setWriting(true)} /> : null}
       <MailSearchField place={place} value={typed} onType={type} />
       {searched ? <div className="empty mailfound" id="mailFound" aria-live="polite">
         {current ? mailSearchLine(messages.length, searched, place, Boolean(answer.nextBefore)) : 'Searching…'}
@@ -633,7 +639,7 @@ export function MailScreen({ place = 'inbox' }: { place?: MailPlaceName }) {
       </button> : null}
       {pagingHere?.failed ? <div className="hintblock" role="alert" id="mailOlderFailed">{pagingHere.failed}</div> : null}
     </div> : null}
-    {emptyInbox ? <div className="card">
+    {emptyInbox && !mailOff ? <div className="card">
       <div className="empty">
         {address ? <>Nothing has arrived yet. Mail sent to <strong>{address}</strong> lands here.</> : 'Choose your address in Settings, and mail sent to it lands here.'}
       </div>

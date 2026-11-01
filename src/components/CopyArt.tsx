@@ -687,7 +687,7 @@ export const INSTALL_STEPS: Station[] = [
   { icon: 'key', title: 'Buckets, keys', lines: ['and addresses'] },
   { icon: 'machine', title: 'Deploys', lines: ['four apps, and asks', 'for certificates'] },
   { icon: 'records', title: 'DNS records', lines: ['checked every', '15 seconds'] },
-  { icon: 'check', title: 'Smoke test', lines: ['Workspace, code,', 'previews, mail'] },
+  { icon: 'check', title: 'Smoke test', lines: ['Workspace, code,', 'previews'] },
   { icon: 'link', title: 'One-time link', lines: ['and the master key,', 'shown once'], tone: 'ok' },
 ];
 

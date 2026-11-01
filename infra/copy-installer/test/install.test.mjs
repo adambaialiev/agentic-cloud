@@ -150,7 +150,6 @@ function harness({ billing = 'CURRENT', failOnce, stuckCert, dnsNever = false } 
       names: installer.namesFor('theirco'),
       backendV4: ipsOf('theirco-backend').find((ip) => ip.Type === 'shared_v4').Address,
       backendV6: ipsOf('theirco-backend').find((ip) => ip.Type === 'v6').Address,
-      mxV4: ipsOf('theirco-mx').find((ip) => ip.Type === 'v4').Address,
       acmeTarget: `${DOMAIN}.x1y2z3.flydns.net`,
       gitAcmeTarget: `git.${DOMAIN}.x1y2z3.flydns.net`,
     });
@@ -198,15 +197,16 @@ describe('the installer: one command, an organization and a domain', () => {
     // Everything named before anything is stored, stored before it starts.
     expect(verbs.indexOf('apps create')).toBeLessThan(verbs.indexOf('storage create'));
     expect(verbs.lastIndexOf('secrets import')).toBeLessThan(verbs.indexOf('deploy --config'));
-    expect([...h.fly.apps].sort()).toEqual(['theirco-backend', 'theirco-git', 'theirco-images', 'theirco-mx', 'theirco-router']);
+    // No mail receiver: email is set up later, from the Workspace (note #946).
+    expect([...h.fly.apps].sort()).toEqual(['theirco-backend', 'theirco-git', 'theirco-images', 'theirco-router']);
     expect(h.copied).toEqual(['theirco-images 2026.10.27.1']);
 
-    // Four apps, then the backend again with its own private address.
-    expect(h.fly.deploys.map((d) => d.app)).toEqual(['theirco-backend', 'theirco-git', 'theirco-router', 'theirco-mx', 'theirco-backend']);
+    // Three apps, then the backend again with its own private address.
+    expect(h.fly.deploys.map((d) => d.app)).toEqual(['theirco-backend', 'theirco-git', 'theirco-router', 'theirco-backend']);
     expect(h.fly.deploys[0].image).toBe('registry.fly.io/theirco-images:backend-2026.10.27.1');
     expect(h.fly.deploys[0].toml).not.toContain('FLY_BACKEND_PEER_IP');
-    expect(h.fly.deploys[4].toml).toContain('FLY_BACKEND_PEER_IP = "fdaa:0:1::2"');
-    const backendToml = h.fly.deploys[4].toml;
+    expect(h.fly.deploys[3].toml).toContain('FLY_BACKEND_PEER_IP = "fdaa:0:1::2"');
+    const backendToml = h.fly.deploys[3].toml;
     for (const line of [
       'FLY_MACHINE_IMAGE = "registry.fly.io/theirco-images:machine-2026.10.27.1"',
       'FLY_IMAGE_APP = "theirco-images"',
@@ -215,8 +215,10 @@ describe('the installer: one command, an organization and a domain', () => {
       `MAIL_DOMAIN = "${DOMAIN}"`,
       'PRIVATE_COPY = "1"',
       'FLY_REGION = "fra"',
+      // The image the Workspace starts the mail receiver from, when an admin sets email up.
+      'FLY_MX_IMAGE = "registry.fly.io/theirco-images:mx-2026.10.27.1"',
     ]) expect(backendToml).toContain(line);
-    expect(h.fly.deploys[3].toml).toContain('handlers = ["proxy_proto"]');
+    expect(h.fly.deploys.some((d) => d.toml.includes('proxy_proto'))).toBe(false);
 
     // The keys: staged before the first deploy, shared where they must match.
     const backend = h.fly.secrets['theirco-backend'][0];
@@ -229,11 +231,14 @@ describe('the installer: one command, an organization and a domain', () => {
     expect(backend.values.LICENCE).toBe(LICENCE);
     expect(h.fly.deploys[0].toml).toContain('COPY_LICENCE = "on"');
     expect(h.fly.secrets['theirco-git'][0].values).toEqual({ GIT_HOST_SECRET: backend.values.GIT_HOST_SECRET, CI_WEBHOOK_SECRET: backend.values.GIT_HOST_SECRET });
-    expect(h.fly.secrets['theirco-mx'][0].values.MAIL_INGEST_SECRET).toBe(backend.values.MAIL_INGEST_SECRET);
+    // The backend keeps the secret its mail receiver will present, once there is one.
+    expect(backend.values.MAIL_INGEST_SECRET).toMatch(/^[0-9a-f]{64}$/);
+    expect(h.fly.secrets['theirco-mx']).toBeUndefined();
 
-    // Mail gets its own IPv4; the mail receiver is restarted once its name points at it.
-    expect(h.fly.ips.get('theirco-mx').map((ip) => ip.Type)).toEqual(['v4']);
-    expect(h.fly.mxRestarts()).toBe(1);
+    // No dedicated address (mail's $2 a month), and nothing restarted for it.
+    expect(h.fly.ips.get('theirco-mx')).toBeUndefined();
+    expect([...h.fly.ips.values()].flat().some((ip) => ip.Type === 'v4')).toBe(false);
+    expect(h.fly.mxRestarts()).toBe(0);
 
     // The records are printed, and the two things the admin needs come once.
     const out = h.lines.join('\n');
@@ -241,12 +246,13 @@ describe('the installer: one command, an organization and a domain', () => {
     expect(out).toContain(`_acme-challenge.${DOMAIN}`);
     expect(out).toContain(`https://${DOMAIN}/signup#first-account=${backend.values.FIRST_ACCOUNT_CODE}`);
     expect(out).toContain(`Master key:       ${backend.values.SECRETS_MASTER_KEY}`);
-    expect(out).toContain('Mail out:         not set up');
+    expect(out).toContain('Email:            not set up yet. An admin sets it up in the Workspace, under Mail');
+    for (const mail of [`mx.${DOMAIN}`, '_dmarc.', ' MX ']) expect(out).not.toContain(mail);
     // What stays on the engineer's disk holds names and addresses, never a key.
     const kept = h.stateText();
     for (const value of Object.values(backend.values)) expect(kept).not.toContain(value);
     expect(Object.keys(state.steps)).toEqual(['apps', 'release', 'buckets', 'keys', 'secrets', 'addresses', 'deploy', 'certificates', 'dns', 'smoke']);
-    expect(state.mxV4).toBe(h.fly.ips.get('theirco-mx')[0].Address);
+    expect(state.mxV4).toBeUndefined();
   });
 
   it('run again, makes nothing twice and shows the master key never again', async () => {
@@ -313,7 +319,7 @@ describe('upgrades with a way back', () => {
     const state = await installer.upgrade(h.options, h.deps);
     const rolled = h.fly.deploys.slice(h.before);
     expect(rolled.map((d) => `${d.app} ${d.image.split(':')[1]}`)).toEqual([
-      'theirco-backend backend-2026.10.28.1', 'theirco-git git-host-2026.10.28.1', 'theirco-router router-2026.10.28.1', 'theirco-mx mx-2026.10.28.1',
+      'theirco-backend backend-2026.10.28.1', 'theirco-git git-host-2026.10.28.1', 'theirco-router router-2026.10.28.1',
     ]);
     expect(rolled[0].toml).toContain('COPY_RELEASE = "2026.10.28.1"');
     expect(rolled[0].toml).toContain('FLY_BACKEND_PEER_IP = "fdaa:0:1::2"');
@@ -343,8 +349,8 @@ describe('upgrades with a way back', () => {
     await expect(installer.upgrade(h.options, h.deps)).rejects.toThrow('The upgrade to 2026.10.28.1 failed and agents.theirco.test is back on 2026.10.27.1');
     const rolled = h.fly.deploys.slice(h.before).map((d) => `${d.app} ${d.image.split('-').pop()}`);
     expect(rolled).toEqual([
-      'theirco-backend 2026.10.28.1', 'theirco-git 2026.10.28.1', 'theirco-router 2026.10.28.1', 'theirco-mx 2026.10.28.1',
-      'theirco-backend 2026.10.27.1', 'theirco-git 2026.10.27.1', 'theirco-router 2026.10.27.1', 'theirco-mx 2026.10.27.1',
+      'theirco-backend 2026.10.28.1', 'theirco-git 2026.10.28.1', 'theirco-router 2026.10.28.1',
+      'theirco-backend 2026.10.27.1', 'theirco-git 2026.10.27.1', 'theirco-router 2026.10.27.1',
     ]);
     expect(h.fly.sql.some((c) => c.includes('.restore /data/pre-upgrade-2026.10.27.1.db'))).toBe(true);
     expect(h.fly.calls.some((args) => args.join(' ') === 'apps restart theirco-backend')).toBe(true);
@@ -407,22 +413,12 @@ describe('the installer and the licence', () => {
     expect(h.fly.deploys.at(-1).toml).toContain('COPY_LICENCE = "off"');
   });
 
-  it('sends mail out through any provider over SMTP, and names that provider\'s records', async () => {
-    const h = harness();
-    const passwordFile = path.join(h.dir, 'smtp.password');
-    writeFileSync(passwordFile, 'smtp-secret\n');
-    await installer.install({ ...h.options, 'smtp-host': 'smtp.postmarkapp.com', 'smtp-user': 'token-user', 'smtp-password-file': passwordFile }, h.deps);
-    const stored = h.fly.secrets['theirco-backend'].map((write) => write.values).find((values) => values.SMTP_HOST);
-    expect(stored).toEqual({ SMTP_HOST: 'smtp.postmarkapp.com', SMTP_PORT: '587', SMTP_USER: 'token-user', SMTP_PASSWORD: 'smtp-secret' });
-    const out = h.lines.join('\n');
-    expect(out).toContain('Also add the SPF and DKIM records smtp.postmarkapp.com gives you for');
-    expect(out).not.toContain('Mail out:         not set up');
-    expect(h.stateText()).not.toContain('smtp-secret');
-
-    const both = harness();
-    await expect(installer.install({ ...both.options, 'smtp-host': 'smtp.example.com', 'resend-key-file': passwordFile }, both.deps))
-      .rejects.toThrow('Mail out goes one way');
-    expect(both.fly.calls).toEqual([]);
+  it('takes no mail flags any more, and says email is set up later in the Workspace (note #946)', async () => {
+    for (const flag of ['resend-key-file', 'smtp-host', 'smtp-user', 'smtp-password-file', 'smtp-port']) {
+      const h = harness();
+      await expect(installer.install({ ...h.options, [flag]: 'x' }, h.deps)).rejects.toThrow(`--${flag} is not taken any more. Email is not part of the install`);
+      expect(h.fly.calls).toEqual([]);
+    }
   });
 });
 
@@ -531,32 +527,6 @@ describe('the installer\'s parts', () => {
     expect(await check({ name: `_dmarc.${DOMAIN}`, type: 'TXT', value: 'v=DMARC1; p=quarantine' })).toBe(true);
   });
 
-  it('registers the domain with Resend and reads its records whole', async () => {
-    const seen = [];
-    const fetchImpl = async (url, init = {}) => {
-      seen.push(`${init.method} ${new URL(url).pathname}`);
-      if (init.method === 'GET' && url.endsWith('/domains')) return new Response(JSON.stringify({ data: [] }));
-      if (init.method === 'POST' && url.endsWith('/domains')) {
-        return new Response(JSON.stringify({
-          id: 'd1',
-          records: [
-            { record: 'SPF', name: 'send', type: 'MX', value: 'feedback-smtp.eu-west-1.amazonses.com', priority: 10 },
-            { record: 'SPF', name: 'send', type: 'TXT', value: 'v=spf1 include:amazonses.com ~all' },
-            { record: 'DKIM', name: 'resend._domainkey', type: 'TXT', value: 'p=MIGf' },
-          ],
-        }));
-      }
-      if (url.endsWith('/domains/d1')) return new Response(JSON.stringify({ id: 'd1', status: seen.length > 4 ? 'verified' : 'pending' }));
-      return new Response('{}');
-    };
-    const resend = installer.resendProvider({ key: 're_x', fetchImpl });
-    const { id, records } = await resend.register(DOMAIN);
-    expect(id).toBe('d1');
-    expect(records.map((r) => `${r.name} ${r.type}`)).toEqual([`send.${DOMAIN} MX`, `send.${DOMAIN} TXT`, `resend._domainkey.${DOMAIN} TXT`]);
-    expect(await resend.verified('d1')).toBe(false);
-    expect(await resend.verified('d1')).toBe(true);
-  });
-
   it('reads a bucket\'s keys from flyctl\'s words', () => {
     expect(installer.bucketKeys('ready\nAWS_ENDPOINT_URL_S3: https://fly.storage.tigris.dev\nAWS_REGION: auto\nBUCKET_NAME: b\nAWS_ACCESS_KEY_ID: tid_1\nAWS_SECRET_ACCESS_KEY: tsec_2\n'))
       .toEqual({ bucket: 'b', endpoint: 'https://fly.storage.tigris.dev', region: 'auto', accessKeyId: 'tid_1', secretAccessKey: 'tsec_2' });
@@ -583,12 +553,16 @@ describe('driven by an agent: a plan, JSON, and when a person is needed', () => 
     expect(h.copied).toEqual([]);
 
     expect(result.creates.filter((item) => item.kind === 'app').map((item) => item.name))
-      .toEqual(['theirco-images', 'theirco-backend', 'theirco-git', 'theirco-router', 'theirco-mx']);
-    expect(result.creates.find((item) => item.name === 'a dedicated IPv4 on theirco-mx').monthlyUsd).toBe(2);
+      .toEqual(['theirco-images', 'theirco-backend', 'theirco-git', 'theirco-router']);
+    // Email is not in the price (note #946): no receiver, no disk for its
+    // certificate, no dedicated IPv4. What it adds later is said apart.
+    expect(result.creates.some((item) => /mx|IPv4 on|mail/i.test(`${item.name} ${item.what}`) && item.monthlyUsd)).toBe(false);
     expect(result.creates.find((item) => item.name === 'theirco-backend').monthlyUsd).toBe(11.38);
-    expect(result.monthlyUsd).toBe(21.5);
+    expect(result.monthlyUsd).toBe(17.41);
+    expect(result.mail).toEqual({ included: false, laterMonthlyUsd: 4.09, how: installer.MAIL_LATER });
+    expect(result.checks.find((check) => check.key === 'mail')).toEqual({ key: 'mail', ok: true, detail: 'not part of the install: an admin sets it up later in the Workspace, under Mail' });
     expect(result.records.find((record) => record.name === `*.${DOMAIN}`).value).toBe('theirco-router.fly.dev');
-    expect(result.records).toHaveLength(9);
+    expect(result.records).toHaveLength(6);
     expect(result.release).toBe('2026.10.27.1');
     // The result is the last event, and no key rides in it.
     expect(events.at(-1)).toEqual(result);
@@ -631,9 +605,9 @@ describe('driven by an agent: a plan, JSON, and when a person is needed', () => 
     for (const key of ['node', 'domain', 'flyctl', 'fly-sign-in', 'fly-organization', 'apps']) {
       expect(result.checks.find((check) => check.key === key)?.ok, key).toBe(true);
     }
-    expect(result.creates.filter((item) => item.kind === 'app')).toHaveLength(5);
-    expect(result.monthlyUsd).toBe(21.5);
-    expect(result.records).toHaveLength(9);
+    expect(result.creates.filter((item) => item.kind === 'app')).toHaveLength(4);
+    expect(result.monthlyUsd).toBe(17.41);
+    expect(result.records).toHaveLength(6);
     expect(result.release).toBe(null);
     expect(writes(h.fly.calls)).toEqual([]);
   });
@@ -653,7 +627,7 @@ describe('driven by an agent: a plan, JSON, and when a person is needed', () => 
     const events = [];
     await installer.install({ ...h.options, json: true }, { ...h.deps, emit: (event) => events.push(event) });
     expect(events.filter((event) => event.event === 'step' && event.status === 'done').map((event) => event.key)).toEqual(['checks', ...installer.INSTALL_STEPS]);
-    expect(events.find((event) => event.event === 'dns-records').records).toHaveLength(9);
+    expect(events.find((event) => event.event === 'dns-records').records).toHaveLength(6);
     const result = events.at(-1);
     expect(result.outcome).toBe('done');
     expect(result.exitCode).toBe(0);
@@ -679,9 +653,10 @@ describe('driven by an agent: a plan, JSON, and when a person is needed', () => 
     const result = installer.resultOf(error);
     expect(result.outcome).toBe('needs-person');
     expect(result.reason).toBe('dns');
-    expect(result.records).toHaveLength(9);
+    expect(result.records).toHaveLength(6);
     expect(result.records.find((record) => record.name === `git.${DOMAIN}`)).toEqual({ name: `git.${DOMAIN}`, type: 'CNAME', value: 'theirco-git.fly.dev', why: 'the code host' });
-    expect(result.records.find((record) => record.type === 'MX')).toEqual({ name: DOMAIN, type: 'MX', value: `mx.${DOMAIN}`, priority: 10, why: 'mail in' });
+    expect(result.records.map((record) => record.name)).not.toContain(`mx.${DOMAIN}`);
+    expect(result.records.some((record) => record.type === 'MX' || record.name.startsWith('_dmarc.'))).toBe(false);
     expect(JSON.parse(h.stateText()).steps.dns).toBeUndefined();
 
     h.addDns();
@@ -757,7 +732,7 @@ describe('status: it only looks', () => {
     expect(missing.outcome).toBe('needs-person');
     expect(missing.exitCode).toBe(3);
     expect(missing.reason).toBe('dns');
-    expect(missing.records).toHaveLength(9);
+    expect(missing.records).toHaveLength(6);
 
     h.addDns();
     const waiting = await look();

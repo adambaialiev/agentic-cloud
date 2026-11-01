@@ -34,6 +34,13 @@ CREATE TABLE IF NOT EXISTS copy_licence (
   doc TEXT NOT NULL
 );
 
+-- Email set up after the install (note #946): the provider (keys encrypted),
+-- the receiver the Workspace made, the last check. Only a copy writes here.
+CREATE TABLE IF NOT EXISTS copy_mail_setup (
+  key TEXT PRIMARY KEY,
+  doc TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS drive_items (
   org_id TEXT NOT NULL,
   item_id TEXT NOT NULL,

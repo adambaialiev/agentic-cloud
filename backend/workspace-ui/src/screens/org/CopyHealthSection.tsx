@@ -12,6 +12,9 @@ import { errorMessage } from '../../ui/format.js';
 import { TypeIcon, type IconName } from '../../ui/icons.js';
 import { relative } from '../../ui/time.js';
 import { useOrgApi } from './useOrgApi.js';
+import { useNavigate } from 'react-router-dom';
+import { toFor } from '../../routes.js';
+import { useWorkspace } from '../../workspace/useWorkspace.js';
 
 const GLYPHS: Record<WorkspaceCopyHealthPart['key'], IconName> = {
   workspace: 'gauge',
@@ -25,6 +28,8 @@ const GLYPHS: Record<WorkspaceCopyHealthPart['key'], IconName> = {
 
 export function CopyHealthSection() {
   const api = useOrgApi();
+  const { state } = useWorkspace();
+  const navigate = useNavigate();
   const banner = useBanner();
   const [health, setHealth] = useState<WorkspaceCopyHealth | null>(null);
   const [error, setError] = useState('');
@@ -119,6 +124,10 @@ export function CopyHealthSection() {
         {hasLicence && !pasting
           ? <button className="addrow" id="orgCopyLicenceDoor" type="button" onClick={() => setPasting(true)}>Paste a licence</button>
           : null}
+        {/* Email is set up after the install (note #946), from its own screen. */}
+        <button className="addrow" id="orgCopyMailDoor" type="button" onClick={() => navigate(toFor({ kind: 'mailSetup' })!)}>
+          {state?.mailSetup?.state === 'on' ? 'Email settings' : 'Set up email'}
+        </button>
         <button className="addrow" id="orgCopyDiagnostics" type="button" disabled={saving} onClick={() => { void download(); }}>
           {saving ? <span className="spinner" /> : null}
           Download diagnostics

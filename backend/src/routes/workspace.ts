@@ -221,6 +221,8 @@ import { ChatFileUploadError, ChatFileUploads, isChatUploadId, type ChatFileUplo
 import { composeSeedAgentRecap } from '../services/agent-recap.js';
 import { deleteRepoNow, isRestorableRepo } from '../services/git-repo-admin.js';
 import type { GitPullRequestDocument, PullRequestAttachment } from '../types/git-pr.js';
+import { CopyMailSetupError } from '../services/copy-mail-setup.js';
+import type { WorkspaceCopyMailProviderInput } from '../shared/workspace-api.js';
 import { LICENSE_FILE, detectLicense, readmeDescription } from '../shared/licenses.js';
 import { orgKnowledgeShelfNamespace, type GitNamespace } from '../services/org-git.js';
 import { pickNumbered, workplaceNumberSeries, type NumberSeries } from '../services/workplace-numbers.js';
@@ -4800,6 +4802,10 @@ self.addEventListener('activate', (event) => {
       ...(joining ? { joining } : {}),
       ...(licenceNotice && (licenceNotice.state !== 'valid' || licenceNotice.overLimit)
         ? { copyLicence: { state: licenceNotice.state === 'valid' ? 'over' : licenceNotice.state, line: licenceNotice.line } }
+        : {}),
+      // Email in a private copy, which installs without it (note #946).
+      ...(deps.copyMail
+        ? { mailSetup: { state: deps.copyMail.phase(), ...(auth.orgRole === 'admin' ? { canSetUp: true as const } : {}) } }
         : {}),
       organizations,
       canCreateOrg,
@@ -12437,6 +12443,57 @@ self.addEventListener('activate', (event) => {
     const pasted = await deps.copyLicence.paste(String(req.body?.licence ?? ''));
     if (!pasted.ok) return res.status(400).json({ error: pasted.why });
     return res.json({ state: pasted.status.state, line: pasted.status.line });
+  });
+
+  /**
+   * Email, set up after the install (note #946): for an admin of the
+   * workplace asking, in a copy. The provider first, then the receiver in the
+   * copy's own Fly organization, then the records, checked until they are
+   * right, when mail turns on by itself. No answer ever carries a key.
+   */
+  const copyMailAdmin = async (req: Request, res: Response) => {
+    if (!deps.copyMail) {
+      res.status(404).json({ error: 'Only your own Agentic Cloud sets up its email here.' });
+      return null;
+    }
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return null;
+    if (ctx.membership.role !== 'admin') {
+      res.status(403).json({ error: 'Only an admin sets up email.' });
+      return null;
+    }
+    return deps.copyMail;
+  };
+  const copyMailAnswer = async (res: Response, run: () => Promise<unknown>) => {
+    try {
+      return res.json(await run());
+    } catch (error) {
+      if (error instanceof CopyMailSetupError) return res.status(error.status).json({ error: error.message });
+      console.warn('[copy-mail] setup step failed:', error);
+      return res.status(502).json({ error: `That did not work: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  };
+  router.get('/api/copy/mail', async (req, res) => {
+    const mail = await copyMailAdmin(req, res);
+    if (!mail) return;
+    return res.json(mail.status());
+  });
+  router.post('/api/copy/mail/provider', async (req, res) => {
+    const mail = await copyMailAdmin(req, res);
+    if (!mail) return;
+    return copyMailAnswer(res, () => mail.setProvider(req.body as WorkspaceCopyMailProviderInput));
+  });
+  router.post('/api/copy/mail/receiver', async (req, res) => {
+    const mail = await copyMailAdmin(req, res);
+    if (!mail) return;
+    return copyMailAnswer(res, () => mail.createReceiver());
+  });
+  router.post('/api/copy/mail/check', async (req, res) => {
+    const mail = await copyMailAdmin(req, res);
+    if (!mail) return;
+    return copyMailAnswer(res, () => mail.check());
   });
 
   router.get('/api/copy/diagnostics', async (req, res) => {

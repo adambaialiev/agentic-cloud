@@ -29,6 +29,9 @@ export interface CopyHealthOptions {
   gitHealthUrl?: string;
   routerHealthUrl?: string;
   mailHealthUrl?: string;
+  /** Email's state, read live: a copy installs without it and an admin sets
+   *  it up later (note #946). With it, mailHealthUrl is not used. */
+  mail?: () => { phase: 'off' | 'provider' | 'records' | 'on'; healthUrl: string | null };
   env: Record<string, string | undefined>;
   /** The licence, when the copy has the check on (note #814). */
   licence?: () => Promise<LicenceStatus>;
@@ -142,8 +145,15 @@ export function createCopyHealth(options: CopyHealthOptions) {
   }
 
   async function mailIn(): Promise<CopyHealthPart | null> {
-    if (!options.mailHealthUrl) return null;
-    const { json, error } = await ask(options.mailHealthUrl);
+    const mail = options.mail?.();
+    if (mail && mail.phase !== 'on' && mail.phase !== 'records') {
+      // Not a fault: email is optional, and set up from the Mail section.
+      return { key: 'mail-in', name: 'Mail in', ok: true, line: mail.phase === 'provider' ? 'being set up: the mail receiver is not made yet' : 'not set up: an admin can set it up under Mail' };
+    }
+    const url = mail ? mail.healthUrl : options.mailHealthUrl;
+    if (!url) return null;
+    const { json, error } = await ask(url);
+    if (mail?.phase === 'records' && !json?.ok) return { key: 'mail-in', name: 'Mail in', ok: false, line: `being set up: the mail receiver is starting (${error ?? 'unexpected answer'})` };
     if (!json?.ok) return { key: 'mail-in', name: 'Mail in', ok: false, line: `not answering (${error ?? 'unexpected answer'})` };
     return json.starttls
       ? { key: 'mail-in', name: 'Mail in', ok: true, line: 'answering, encryption on' }

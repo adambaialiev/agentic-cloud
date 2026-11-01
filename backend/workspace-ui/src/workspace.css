@@ -7505,3 +7505,26 @@ h2.mailfileshead { margin-top: 16px; }
 .chatlog .firstrunteam .arrivinghead { margin: 0 0 8px; padding: 0 6px; font-size: var(--ui-sm); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--hint); }
 .chatlog .firstrunteam .crow.arriving-planned .ctext { color: var(--hint); }
 .chatlog .firstrunteam .crow.arriving-ready .name { font-weight: 500; }
+
+/* Email set up after the install, in a private copy (note #946): each DNS
+   record as a provider's form asks for it, marked as the name servers
+   answered it. Words, not pills: "In" / "Not yet" in plain colour. */
+.mailrecord .mailrecord-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.mailrecord .mailrecord-name { overflow-wrap: anywhere; }
+.mailrecord .mailrecord-type { color: var(--hint); font-size: var(--ui-sm); }
+.mailrecord .mailrecord-mark { margin-left: auto; font-size: var(--ui-sm); }
+.mailrecord .mailrecord-mark.ok { color: var(--ok); }
+.mailrecord .mailrecord-mark.wait { color: var(--warn); }
+.mailrecord .mailrecord-mark.none { color: var(--hint); }
+.mailrecord .mailrecord-value { overflow-wrap: anywhere; font-size: var(--ui-sm); user-select: all; }
+.mailsetupform { padding: 4px 0 8px; }
+.mailsetupform .segtabs { margin: 8px 12px; }
+.mailsetupform .actions { padding: 0 12px 4px; }
+/* A row whose second line is a sentence, not a label: the list's fixed
+   one-line box (.crow .cline, 18px) would push a wrapped sentence up into
+   the name above it, so these lines grow with their words instead. */
+.crow .cline.wrapline { height: auto; align-items: flex-start; margin-top: 4px; }
+.crow .cline.wrapline .ctext { white-space: normal; overflow: visible; text-overflow: clip; }
+#mailNotSetUp .mailnotsetup-what { text-align: left; padding-top: 0; }
+#mailSetupState .name { white-space: normal; }
+.mailsetupform .frow .segtabs { margin: 6px 0 2px; }
