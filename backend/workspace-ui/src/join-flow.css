@@ -1,0 +1,132 @@
+/* Join flows borrow the Workspace's existing header, card, row, pill, button,
+   empty-state and confirmation vocabulary. These rules only arrange the few
+   pieces unique to a join request: its status copy, per-person decisions and
+   the shareable-link field. */
+
+/* Signed out: one compact context note above the unchanged sign-in card. */
+.join-invite strong { display: block; font-size: var(--ui-base); }
+.join-invite p { margin-top: 3px; color: var(--hint); font-size: var(--ui-sm); line-height: 1.35; }
+.join-invite.muted { background: color-mix(in srgb, var(--hint) 10%, transparent); }
+.join-invite-error { display: block; margin-top: 6px; color: color-mix(in srgb, var(--danger) 82%, var(--text)); font-size: var(--ui-sm); overflow-wrap: anywhere; }
+
+/* Signed in: the workplace is the identity in the shared header, with the
+   invitation's state under its name — the name alone. A monogram stands for a
+   person or an agent you are about to talk to; a workplace you have not
+   joined yet is a name, and drawing a letter for it only added furniture. */
+
+/* One coherent invitation card: meaning, decision and the short-lived error
+   all stay with the thing they describe. Status is a bare colour word—the
+   Workspace's existing state vocabulary—not a floating pill. */
+.join-summary { overflow: hidden; }
+.join-summary-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px; }
+.join-summary-head .main { flex: 1; min-width: 0; }
+.join-status { font-size: var(--ui-sm); font-weight: 500; line-height: var(--ui-sm-leading); color: var(--accent); }
+.join-status.running { color: var(--warn); }
+.join-status.merged { color: var(--ok); }
+.join-status.rejected { color: var(--danger); }
+.join-status.quiet { color: var(--hint); }
+.join-description { margin-top: 4px; color: var(--text); font-size: var(--ui-lg); line-height: var(--ui-lg-leading); overflow-wrap: anywhere; }
+.join-actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 20px;
+  padding: 9px 16px 11px; border-top: 1px solid var(--border);
+}
+.join-actions:empty { display: none; }
+.join-actions .formcommit { margin-top: 0; }
+.join-actions .btn { font-size: var(--ui-base); }
+/* A pending request watches for the answer itself, so the card carries only
+   a quiet line under its description — no button, no indicator. */
+.join-watching { margin: 8px 0 0; color: var(--hint); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); }
+.join-error { margin: 0 16px 12px; }
+.join-own-workplace { margin-top: 8px; text-align: center; }
+.join-own-workplace .btn { color: var(--hint); font-size: var(--ui-base); }
+.join-account .name { overflow-wrap: anywhere; }
+.join-account-mark { display: grid; place-items: center; color: var(--hint); font-size: var(--ui-sm); font-weight: 500; letter-spacing: .025em; }
+
+/* Home brings only live requests above the Workspace Agent. The card names
+   itself once, then gives the available space to the actual person: no
+   generic person icon, warning sentence, count or alert-coloured surface. */
+.homejoincard { overflow: hidden; }
+.homejoinlabel {
+  padding: 14px 14px 2px; color: var(--hint);
+  font-size: var(--ui-sm); font-weight: 500;
+  text-transform: uppercase; letter-spacing: .08em; line-height: var(--ui-sm-leading);
+}
+
+/* One pending person: who they are, then the two decisions as a matched
+   pair. The owner, 2026-10-27: a bare "Decline" beside a tinted "Approve"
+   pill, alone at the far end of a tall second row, read as sloppy. Both are
+   now the same shape and size, side by side under the text column on a
+   phone, and on the person's own row once the card is wide enough. */
+.orgjoin-request + .orgjoin-request { border-top: 1px solid var(--border); }
+.join-person-mark { display: grid; place-items: center; color: var(--hint); font-size: 10.5px; font-weight: 650; letter-spacing: .025em; }
+.orgjoin-request > .crow { padding-top: 12px; padding-bottom: 10px; }
+.orgjoin-who { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.orgjoin-who .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orgjoin-when { flex: none; color: var(--hint); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); }
+.orgjoin-decisions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 13px 52px; }
+.orgjoin-decisions .join-decline, .orgjoin-decisions .join-approve {
+  width: 100%; min-width: 0; min-height: 38px; margin: 0; padding: 0 14px;
+  justify-content: center; gap: 6px; border-radius: 999px;
+  font-size: var(--ui-base); font-weight: 500; line-height: 1;
+}
+.orgjoin-decisions .join-decline {
+  border: 1px solid var(--border); color: var(--text); background: transparent;
+  transition: background .12s ease;
+}
+.orgjoin-decisions .join-decline:hover:not(:disabled) { background: color-mix(in srgb, var(--hint) 8%, transparent); }
+.orgjoin-decisions .join-decline:disabled { color: var(--hint); }
+/* Wide enough (the Workplace screen on a computer): the pair moves up onto
+   the person's row, at the trailing edge, each as wide as its words. */
+#orgJoinRequests > .card, .homejoincard { container-type: inline-size; }
+@container (min-width: 520px) {
+  .orgjoin-request { display: flex; flex-wrap: wrap; align-items: center; }
+  .orgjoin-request > .crow { flex: 1; min-width: 0; padding-bottom: 12px; }
+  .orgjoin-decisions { grid-template-columns: auto auto; padding: 0 14px 0 0; }
+  .orgjoin-decisions .join-decline, .orgjoin-decisions .join-approve { min-width: 100px; }
+  .orgjoin-request > .orgjoin-inline-error { flex-basis: 100%; }
+}
+.homejoincard .orgjoin-request > .crow { padding-top: 9px; }
+.orgjoin-request > .orgjoin-inline-error { margin: -3px 14px 13px 52px; padding: 0; }
+
+/* A link keeps the standard row as its identity and puts the only unusual
+   control—the long, selectable URL—under the row's text column. */
+.orgjoin-link { position: relative; }
+.orgjoin-link + .orgjoin-link { border-top: 1px solid var(--border); }
+.orgjoin-link > .crow { padding-right: 48px; }
+.orgjoin-link-tools { padding: 0 12px 12px 54px; }
+.orgjoin-copyfield { display: flex; align-items: stretch; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: color-mix(in srgb, var(--bg) 68%, var(--card)); }
+.orgjoin-copyfield:focus-within { border-color: color-mix(in srgb, var(--accent) 65%, transparent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.orgjoin-copyfield input { flex: 1; min-width: 0; width: 100%; border: 0; border-radius: 0; padding: 8px 12px; background: transparent; color: var(--hint); font: var(--ui-base)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; outline: none; box-shadow: none; }
+.orgjoin-copy { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 44px; padding: 0 12px; border-left: 1px solid var(--border); border-radius: 0; color: var(--accent); font-size: var(--ui-sm); font-weight: 500; background: var(--accent-soft); }
+.orgjoin-revoke {
+  position: absolute; top: 7px; right: 8px;
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: var(--r-md);
+  color: color-mix(in srgb, var(--hint) 45%, var(--card));
+  background: transparent; -webkit-tap-highlight-color: transparent;
+  transition: color .12s ease, background .12s ease;
+}
+.orgjoin-revoke:hover, .orgjoin-revoke:focus-visible { color: color-mix(in srgb, var(--hint) 82%, var(--card)); }
+.orgjoin-revoke:active { color: var(--text); background: color-mix(in srgb, var(--hint) 8%, transparent); }
+.orgjoin-revoke .spinner { width: 12px; height: 12px; border-width: 1.5px; }
+.orgjoin-revoke:disabled { opacity: .5; }
+.orgjoin-link > .orgjoin-inline-error { margin: -4px 14px 13px 58px; padding: 0; }
+.join-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.join-screen button:focus-visible, .orgjoin-request button:focus-visible,
+.orgjoin-link button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+@media (max-width: 360px) {
+  .orgjoin-decisions, .orgjoin-link-tools { padding-left: 14px; }
+  .orgjoin-request > .orgjoin-inline-error, .orgjoin-link > .orgjoin-inline-error { margin-left: 14px; }
+  .orgjoin-copy > span { display: none; }
+}
+
+/* The invite page: the link itself is the workplace screen's join-link row;
+   the plate only holds the page's shape while it loads or refuses. */
+.inviteplate { margin-top: 10px; padding: 12px 16px 14px; border-radius: var(--r-lg); background: var(--card); }
+#inviteLinkCard { margin-top: 10px; }
+#screenInvite .formhint, #screenInvite .formfail { margin-top: 8px; padding: 0 2px; }
+.inviteactions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 2px; }
+.inviteactions .btn { width: auto; min-height: 44px; margin: 0; padding: 8px 2px; font-size: var(--ui-base); }
+.inviteactions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

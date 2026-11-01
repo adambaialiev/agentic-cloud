@@ -1,0 +1,101 @@
+name: Deploy backend
+
+# Builds the Node/TS backend and ships it to the Hetzner backend host
+# (ia-backend, <backend-host>). Safe to run BEFORE cutover: it lands code but
+# only restarts the service if it is enabled. While the service is dormant
+# (disabled), the new release is staged and nothing starts — so this pipeline
+# can run for weeks before an operator flips the switch.
+#
+# One-time SECRET (Settings -> Secrets -> Actions) — already set by the agent
+# that built this pipeline:
+#   BACKEND_DEPLOY_SSH_KEY  private half of the app@ia-backend deploy keypair.
+#
+# Cutover / rollback: docs/backend-cutover-runbook.md
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+env:
+  DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+  DEPLOY_USER: app
+  DEPLOY_ROOT: /opt/infinite-agents
+  NODE_VERSION: '22'
+
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install, build, prune to production deps
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build            # tsc -> dist/ (matches how Render builds)
+          npm prune --omit=dev     # strip devDeps, keep dist/ + prod node_modules
+
+      - name: Assemble release artifact
+        working-directory: backend
+        run: |
+          rm -rf ../.release
+          mkdir -p ../.release
+          # assets/ holds the pre-generated agent avatars, read from disk at
+          # bot-activation time. tsc does not copy non-TS files into dist, so
+          # without this line every agent silently keeps the grey default.
+          # scripts/ ships too: the operator tools (platform-credentials,
+          # list-users, ...) are documented as runnable from the host's
+          # /opt/infinite-agents/current, which only holds this artifact.
+          cp -R dist node_modules assets scripts package.json package-lock.json ../.release/
+          echo "${GITHUB_SHA}" > ../.release/RELEASE_SHA
+
+      - name: Configure SSH (deploy key + pinned known_hosts)
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.BACKEND_DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key for ia-backend (avoids TOFU / MITM on first connect).
+          cat > ~/.ssh/known_hosts <<'EOF'
+          ${{ vars.DEPLOY_HOST }} ${{ vars.DEPLOY_HOST_KEY }}
+          EOF
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy release + guarded restart
+        run: |
+          set -euo pipefail
+          RELEASE="${DEPLOY_ROOT}/releases/${GITHUB_SHA}"
+          SSH="ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts ${DEPLOY_USER}@${DEPLOY_HOST}"
+
+          # 1) Ship the built artifact into a per-SHA release dir.
+          $SSH "mkdir -p '${RELEASE}'"
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts" \
+            .release/ "${DEPLOY_USER}@${DEPLOY_HOST}:${RELEASE}/"
+
+          # 2) Atomically point `current` at the new release.
+          $SSH "ln -sfn '${RELEASE}' '${DEPLOY_ROOT}/current'"
+
+          # 3) Restart ONLY if the service is enabled. Dormant => stays down.
+          $SSH "if systemctl is-enabled --quiet infinite-agents-backend; then \
+                  sudo systemctl restart infinite-agents-backend && echo 'restarted'; \
+                else \
+                  echo 'service dormant (disabled) — release staged, not started'; \
+                fi"
+
+          # 4) Prune old releases, keep the 5 most recent.
+          $SSH "ls -1dt ${DEPLOY_ROOT}/releases/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf"

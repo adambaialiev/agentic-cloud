@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Claude Code and Codex agents with git, hosting, storage and email built in — Agentic Cloud Computer</title>
+    <meta name="description" content="Everything an agent needs to finish the job. Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for." />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#fcfcfb" />
+    <meta name="author" content="Agentic Cloud Computer" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://agenticcloudcomputer.com/" />
+
+    <!-- Somebody whose browser is already signed in did not come to the front
+         page to be sold the product they are using: the root address sends
+         them straight into the Workspace (note #526).
+
+         Inline, and in the <head>, on purpose. Every public route here ships
+         prerendered (scripts/prerender.mjs), so the real landing markup is in
+         the document and paints as soon as the body is parsed — a redirect
+         decided after the module bundle has downloaded and hydrated would
+         show the page first and then snatch it away. This runs before the
+         body exists, so nothing is drawn to take back.
+
+         The signal is the CSRF cookie the backend sets beside the HttpOnly
+         session one (services/workspace-web-session.ts). It is deliberately
+         readable by JavaScript, it is set and cleared with the session, and
+         it is worth nothing to anyone who reads it here. Nothing is fetched
+         to ask: a signed-out visitor — and every crawler, which carries no
+         cookies at all — pays no round trip and gets the page it asked for.
+
+         This file is the template for EVERY prerendered route, hence the
+         exact `/` test: only the root address is the one being spoken about.
+         `?stay` opens it anyway, which is how a signed-in person reads their
+         own marketing page. `replace` rather than `assign` keeps the address
+         being left out of history, so Back does not bounce off it again. -->
+    <script>
+      (function () {
+        if (location.pathname !== '/') return;
+        if (new URLSearchParams(location.search).has('stay')) return;
+        if (!/(?:^|;\s*)(?:__Host-acc_csrf|acc_csrf)=[^;\s]/.test(document.cookie || '')) return;
+        location.replace('/login');
+      })();
+    </script>
+    
+    <!-- Open Graph / Social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Claude Code and Codex agents with git, hosting, storage and email built in — Agentic Cloud Computer" />
+    <meta property="og:description" content="Everything an agent needs to finish the job. Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for." />
+    <meta property="og:url" content="https://agenticcloudcomputer.com/" />
+    <meta property="og:image" content="https://agenticcloudcomputer.com/og-image.png?v=31" />
+    <meta property="og:image:width" content="2400" />
+    <meta property="og:image:height" content="1260" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Claude Code and Codex agents with git, hosting, storage and email built in — Agentic Cloud Computer" />
+    <meta name="twitter:description" content="Everything an agent needs to finish the job. Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for." />
+    <meta name="twitter:image" content="https://agenticcloudcomputer.com/og-image.png?v=31" />
+
+    <!-- The site's one webfont: Inter, subset to latin, one variable file for
+         every weight it uses, served from this origin. Preloaded because the
+         browser cannot see it until it has parsed the stylesheet, by which
+         time the first paint is already drawn in the fallback; `crossorigin`
+         is required even same-origin or the preload is fetched twice. It does
+         not block that paint — `font-display: swap` in index.css, over a
+         metric-matched Arial so the swap does not move a line. -->
+    <link rel="preload" href="/fonts/inter-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "include": [
+    "/*"
+  ],
+  "exclude": [
+    "/assets/*",
+    "/fonts/*",
+    "/agent-avatars/*",
+    "/away/*",
+    "/docs",
+    "/docs/*",
+    "/terms",
+    "/privacy",
+    "/teams",
+    "/og-preview",
+    "/claude-code-in-the-cloud",
+    "/codex-in-the-cloud",
+    "/ai-agents-for-your-team",
+    "/four-phases",
+    "/why-fly",
+    "/own-cloud",
+    "/own-cloud.md",
+    "/private-copy",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/llms.txt",
+    "/favicon.ico",
+    "/favicon-16x16.png",
+    "/favicon-32x32.png",
+    "/apple-touch-icon.png",
+    "/android-chrome-192x192.png",
+    "/android-chrome-512x512.png",
+    "/logo-bw.png",
+    "/logo-claude-code.png",
+    "/og-image.png"
+  ]
+}

@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+resolved_tools="$repo_root/.githooks/.resolved-tools.sh"
+
+if [ -f "$resolved_tools" ]; then
+  # Use the absolute Node/npm CLI path captured during setup so GUI commits
+  # do not depend on inheriting an interactive shell PATH.
+  . "$resolved_tools"
+fi
+
+if [ -n "${NODE_BIN:-}" ] && [ -n "${NPM_CLI_JS:-}" ] && [ -x "$NODE_BIN" ] && [ -f "$NPM_CLI_JS" ]; then
+  PATH="$(dirname "$NODE_BIN"):$PATH"
+  export PATH
+  exec "$NODE_BIN" "$NPM_CLI_JS" run build
+fi
+
+if command -v npm >/dev/null 2>&1; then
+  exec npm run build
+fi
+
+echo "pre-commit: npm not found; run 'npm run prepare' from a shell with Node.js available." >&2
+exit 1

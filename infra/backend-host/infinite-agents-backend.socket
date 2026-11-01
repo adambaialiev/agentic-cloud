@@ -1,0 +1,18 @@
+[Unit]
+Description=Infinite Agents backend HTTP listener
+Documentation=https://github.com/owner/infinite-agents/blob/main/docs/backend-cutover-runbook.md
+Before=infinite-agents-backend.service
+
+[Socket]
+# Caddy proxies localhost:3001 as ::1 on this host. systemd keeps this listener
+# open while Node stops and starts, so connections wait in the kernel backlog
+# instead of receiving ECONNREFUSED (and becoming brief 502 responses).
+ListenStream=[::1]:3001
+Accept=no
+Backlog=4096
+NoDelay=true
+FileDescriptorName=backend-http
+Service=infinite-agents-backend.service
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,33 @@
+name = "infinite-agents-backend"
+main = "dist/index.js"
+compatibility_date = "2024-01-01"
+node_compat = true
+
+[vars]
+NODE_ENV = "production"
+CORS_ORIGIN = "https://agenticcloudcomputer.com"
+WEB_APP_BASE_URL = "https://agenticcloudcomputer.com"
+SELF_HOSTED_PUBLIC_API_URL = "https://api.agenticcloudcomputer.com"
+SELF_HOSTED_PUBLIC_APP_URL = "https://agenticcloudcomputer.com"
+
+# Environment variables (set these in Cloudflare dashboard or via secrets)
+# [secrets]
+# ANTHROPIC_API_KEY
+# DEEPSEEK_API_KEY
+# DEEPSEEK_PEAK_PRICING_EFFECTIVE_AT
+# OPENAI_API_KEY
+# OPENROUTER_API_KEY
+# AI_MODEL
+# VOICE_TRANSCRIPTION_PROVIDER
+# VOICE_TRANSCRIPTION_MODEL
+# COINGECKO_DEMO_API_KEY
+# COINGECKO_CACHE_TTL_MS
+# COINGECKO_MAX_STALE_MS
+# SPOTIFY_CLIENT_ID
+# SPOTIFY_CLIENT_SECRET
+# SPOTIFY_REFRESH_TOKEN
+# SOLANA_RPC_URL
+# HELIUS_WEBHOOK_API_KEY
+# HELIUS_WEBHOOK_ID
+# HELIUS_WEBHOOK_URL
+# HELIUS_WEBHOOK_AUTH_HEADER

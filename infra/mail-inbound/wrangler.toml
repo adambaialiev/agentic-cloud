@@ -1,0 +1,22 @@
+# Deploy (manual, like preview-router and the machine images — Actions is off):
+#   cd infra/mail-inbound
+#   CLOUDFLARE_API_TOKEN=$CLOUDFLARE_MAIL_TOKEN npx wrangler@latest deploy
+#   CLOUDFLARE_API_TOKEN=$CLOUDFLARE_MAIL_TOKEN npx wrangler@latest secret put MAIL_INGEST_SECRET
+# The token needs Account:Workers Scripts:Edit; pointing the zone's catch-all
+# at this script needs Zone:Email Routing Rules:Edit and is done by
+# ./apply-email-routing.mjs, not by wrangler.
+#
+# MAIL_INGEST_SECRET is a Worker SECRET, never a var: the same value lives in
+# /etc/infinite-agents/backend.env on ia-backend, and the two must be rotated
+# together (set the new one here first — the backend accepts only one).
+#
+# An Email Worker has no route and no URL. It runs because an Email Routing
+# rule names it, which is why deploying this script alone changes nothing.
+name = "mail-inbound"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+account_id = "2acc98ccfb2a55a86ba0314e7955f657"
+workers_dev = false
+
+[vars]
+BACKEND_ORIGIN = "https://api.agenticcloudcomputer.com"

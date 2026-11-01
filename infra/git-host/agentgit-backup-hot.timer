@@ -1,0 +1,17 @@
+[Unit]
+Description=Intra-day off-box backup of the internal git host's repositories
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+
+[Timer]
+# Three daytime runs between the nightly 03:30 full runs, jittered the same
+# way. Same-day re-runs overwrite that day's bundle atomically, so the newest
+# state always wins and retention sees one file per day, exactly as before.
+OnCalendar=*-*-* 09,15,21:30:00
+RandomizedDelaySec=1800
+# NOT persistent, unlike the nightly: a missed intra-day run is covered hours
+# later, and the nightly (which IS persistent) already guarantees the day.
+Persistent=false
+Unit=agentgit-backup-hot.service
+
+[Install]
+WantedBy=timers.target

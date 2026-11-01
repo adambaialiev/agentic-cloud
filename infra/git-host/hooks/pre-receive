@@ -1,0 +1,97 @@
+#!/bin/sh
+# Installed into every bare repo by git-host.mjs at creation
+# (docs/agent-git-phase1.md). This is the last moment the platform can say no,
+# so both rules that can refuse a push live here rather than in the service:
+# a service restart mid-push must not open a gap.
+#
+# Environment, set by git-host.mjs when it spawns git-http-backend:
+#   AGENTGIT_REPO_MAX_BYTES    per-repo cap  (0 = unlimited)
+#   AGENTGIT_USER_MAX_BYTES    per-user cap  (0 = unlimited)
+#   AGENTGIT_USER_USED_BYTES   the user's current total across repos
+#   AGENTGIT_REPO_USED_BYTES   this repo's current size
+#
+# Protection is read from the repo's own config (agentgit.protectedBranch —
+# multi-valued, one entry per protected branch), so it survives restarts,
+# moves and restores from backup. Branch names match the host's isSafeBranch
+# (no whitespace), so splitting the list on IFS is exact.
+set -eu
+
+# Off-boarded host (git-host.mjs sets this under GIT_HOST_STANDALONE=1): the
+# approval gates and quotas left with the platform. Whoever reaches this box
+# — the org's own private network, by construction — pushes anywhere.
+if [ -n "${AGENTGIT_STANDALONE:-}" ]; then exit 0; fi
+
+protected="$(git config --get-all agentgit.protectedBranch 2>/dev/null || true)"
+
+status=0
+while read -r old _new ref; do
+  [ -n "$ref" ] || continue
+  case "$ref" in
+    refs/heads/*)
+      for branch in $protected; do
+        if [ "$ref" = "refs/heads/$branch" ]; then
+          echo "remote:" >&2
+          echo "remote: \"$branch\" is protected — your user approves what lands there." >&2
+          echo "remote: Push a branch instead, then open a PR:" >&2
+          echo "remote:     git push origin HEAD:my-change" >&2
+          echo "remote:     agentbuilt pr create --from my-change --title \"...\"" >&2
+          echo "remote:" >&2
+          status=1
+        fi
+      done
+      ;;
+    refs/tags/*)
+      # A protected repo's tags are append-only: new tags land freely, but an
+      # existing one (old sha is non-zero) never moves and never disappears —
+      # a release that a deploy or another agent resolved yesterday must
+      # resolve to the same commit tomorrow.
+      case "$old" in *[!0]*)
+        if [ -n "$protected" ]; then
+          tag="${ref#refs/tags/}"
+          echo "remote:" >&2
+          echo "remote: Tags in a protected repo are permanent — \"$tag\" already exists and" >&2
+          echo "remote: cannot be moved or deleted. Push the new state under a new tag name." >&2
+          echo "remote:" >&2
+          status=1
+        fi
+      ;; esac
+      ;;
+  esac
+done
+
+[ "$status" -eq 0 ] || exit "$status"
+
+repo_max="${AGENTGIT_REPO_MAX_BYTES:-0}"
+user_max="${AGENTGIT_USER_MAX_BYTES:-0}"
+user_used="${AGENTGIT_USER_USED_BYTES:-0}"
+repo_used="${AGENTGIT_REPO_USED_BYTES:-0}"
+
+# The incoming objects are already on disk in the quarantine directory, so
+# their real size is measurable here — no estimating from the wire.
+quarantine="${GIT_QUARANTINE_PATH:-}"
+incoming=0
+if [ -n "$quarantine" ] && [ -d "$quarantine" ]; then
+  incoming="$(du -s -b "$quarantine" 2>/dev/null | cut -f1)"
+  incoming="${incoming:-0}"
+fi
+
+mb() { echo $(( ${1:-0} / 1048576 )); }
+
+if [ "$repo_max" -gt 0 ] && [ $(( repo_used + incoming )) -gt "$repo_max" ]; then
+  echo "remote:" >&2
+  echo "remote: This push would take the repo to $(mb $(( repo_used + incoming ))) MB — the limit is $(mb "$repo_max") MB." >&2
+  echo "remote: The platform stores source, not build output or datasets. Add them to" >&2
+  echo "remote: .gitignore, and if they are already committed, rewrite that history." >&2
+  echo "remote:" >&2
+  exit 1
+fi
+
+if [ "$user_max" -gt 0 ] && [ $(( user_used + incoming )) -gt "$user_max" ]; then
+  echo "remote:" >&2
+  echo "remote: This push would take your account to $(mb $(( user_used + incoming ))) MB across all repos" >&2
+  echo "remote: — the limit is $(mb "$user_max") MB. Run \`agentbuilt repo list\` to see where it went." >&2
+  echo "remote:" >&2
+  exit 1
+fi
+
+exit 0

@@ -1,0 +1,51 @@
+{
+  "name": "infinite-agents",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist-ssr && node scripts/prerender.mjs",
+    "test": "npm --prefix backend test && npm run test:frontend",
+    "postinstall": "npm --prefix backend install --include=dev",
+    "prepare": "node scripts/setup-git-hooks.mjs",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test:frontend": "backend/node_modules/.bin/vitest run --config vitest.frontend.config.ts",
+    "test:frontend:coverage": "backend/node_modules/.bin/vitest run --coverage --config vitest.frontend.config.ts",
+    "simulate": "node simulations/all.mjs",
+    "simulate:onboarding": "node simulations/onboarding.mjs",
+    "simulate:signin": "node simulations/returning-signin.mjs",
+    "simulate:recovery": "node simulations/recovery-access.mjs",
+    "simulate:join": "node simulations/team-join.mjs",
+    "simulate:join-existing": "node simulations/team-join-existing.mjs",
+    "simulate:handoff": "node simulations/handoff-and-approval.mjs",
+    "simulate:tour": "node simulations/workspace-tour.mjs",
+    "simulate:mail": "node simulations/mail.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "jsdom": "^27.2.0",
+    "postcss": "^8.5.19",
+    "puppeteer-core": "^25.4.0",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4"
+  }
+}

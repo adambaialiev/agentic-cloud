@@ -1,0 +1,49 @@
+[Unit]
+Description=Infinite Agents backend (Node/Express + Telegram webhook)
+Documentation=https://github.com/owner/infinite-agents/blob/main/docs/backend-cutover-runbook.md
+Requires=infinite-agents-backend.socket
+After=network-online.target wg-quick@fly.service infinite-agents-backend.socket
+Wants=network-online.target
+# The backend reaches user Fly Machines over the WireGuard `fly` peer. Do not
+# start the app before that interface is up, or early SSH connects would fail.
+Wants=wg-quick@fly.service
+
+[Service]
+Type=simple
+# Pass the listener that stays owned by infinite-agents-backend.socket into
+# Node as fd 3. The backend consumes the standard LISTEN_* activation contract.
+Sockets=infinite-agents-backend.socket
+User=app
+Group=app
+WorkingDirectory=/opt/infinite-agents/current
+# All real secrets live here (mode 600, root-owned). Provisioned as a documented
+# placeholder; the process exits early with dummy values, which is expected until
+# cutover. `-` prefix so a missing file does not block a `systemctl start` test.
+EnvironmentFile=-/etc/infinite-agents/backend.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+# Give the process time to drain in-flight agent turns on stop (index.ts does a
+# graceful shutdown on SIGTERM).
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=infinite-agents-backend
+
+# Hardening — the app only needs to read its release dir. Keep this conservative;
+# the backend shells out to ssh, so do NOT add NoNewPrivileges/PrivateDevices
+# without re-testing the SSH executor path.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+# ProtectSystem's read-only /etc applies to the service's sudo children too —
+# the mount namespace survives setuid, so a sudoers rule alone changes nothing
+# here. The org-tunnel converge (org-wireguard.ts) writes exactly two places:
+# the interface conf, and the enable-at-boot symlink. Without these holes it
+# fails with EROFS and every client-org machine dies waiting for SSH — and a
+# sudo rehearsal from a LOGIN shell passes, because that shell is outside this
+# namespace (2026-08-24, a founder's first agent).
+ReadWritePaths=/etc/wireguard /etc/systemd/system
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<!-- 3s intro bumper for the demo video, in the landing page's design language
+     (colors/fonts/keyframes mirror src/pages/FactoryLanding.tsx). Rendered to
+     intro.mp4 by render.mjs, which inlines the logo reference below as a data
+     URI so headless Chrome's file:// CSS-subresource restriction can't blank
+     the mark. Open in a browser to preview; the animation loops on reload. -->
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body {
+    background: #0b0b0f;
+    color: #ececf1;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace; }
+
+  .grid-bg {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%);
+    opacity: 0;
+    animation: fade-in 0.6s ease-out 0s forwards;
+  }
+
+  .stage {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+
+  .mark {
+    width: 150px; height: 112px;
+    background-color: #fbbf24;
+    -webkit-mask-image: url(../../public/logo-bw.png);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+    mask-image: url(../../public/logo-bw.png);
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+    opacity: 0;
+    animation: rise-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+  }
+
+  .wordmark {
+    margin-top: 34px;
+    font-size: 76px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    opacity: 0;
+    animation: rise-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s forwards;
+  }
+
+  .belt {
+    margin-top: 42px;
+    width: 560px; height: 3px;
+    background-image: linear-gradient(90deg, #fbbf24 0 14px, transparent 14px);
+    background-size: 26px 100%;
+    background-repeat: repeat-x;
+    -webkit-mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+    mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+    opacity: 0;
+    animation:
+      fade-in 0.4s ease-out 0.7s forwards,
+      belt 1.4s linear 0s infinite;
+  }
+
+  .tagline {
+    margin-top: 40px;
+    font-size: 24px;
+    letter-spacing: 0.08em;
+    color: #fbbf24;
+    display: flex; align-items: center;
+    opacity: 0;
+    animation: fade-in 0.01s linear 1.05s forwards;
+  }
+  .tagline .typed {
+    overflow: hidden;
+    white-space: nowrap;
+    width: 0;
+    animation: type 1.15s steps(33, end) 1.05s forwards;
+  }
+  .cursor {
+    display: inline-block;
+    width: 13px; height: 26px;
+    margin-left: 8px;
+    background: #fbbf24;
+    animation: blink 1.6s ease-in-out 0s infinite;
+  }
+
+  @keyframes fade-in { to { opacity: 1; } }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(22px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes type { from { width: 0; } to { width: 100%; } }
+  @keyframes belt { from { background-position-x: 0; } to { background-position-x: 26px; } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+</style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="stage">
+    <div class="mark"></div>
+    <div class="wordmark">Agentic Cloud Computer</div>
+    <div class="belt"></div>
+    <p class="tagline mono"><span class="typed">An agent factory in your Telegram</span><span class="cursor"></span></p>
+  </div>
+</body>
+</html>

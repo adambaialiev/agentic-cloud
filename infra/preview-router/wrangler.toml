@@ -1,0 +1,17 @@
+# Deploy (manual, like machine images — Actions is disabled):
+#   cd infra/preview-router
+#   CLOUDFLARE_API_TOKEN=$(cat ~/.secrets/cloudflare_workers_token) npx wrangler@latest deploy
+# The token needs Account:Workers Scripts:Edit + Zone:Workers Routes:Edit
+# (agentbuilt.app). Requires the proxied wildcard record `*.agentbuilt.app`
+# (A 192.0.2.1, orange cloud) to exist — the Worker is what answers it.
+# The zone also needs the respect-origin cache rule from apply-cache-rules.mjs
+# (issue #966) — without it, zone defaults edge-cache static assets for 4h
+# regardless of the machine's Cache-Control, making deploys look stale.
+name = "preview-router"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+account_id = "2acc98ccfb2a55a86ba0314e7955f657"
+workers_dev = false
+routes = [
+  { pattern = "*.agentbuilt.app/*", zone_name = "agentbuilt.app" },
+]

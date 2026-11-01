@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Northstar Studio">
+  <!-- The fixture organization's mark. Square: every surface that draws an
+       workplace rounds it in CSS, so the file must not round itself. -->
+  <rect width="64" height="64" fill="#1b2450"/>
+  <!-- The north star: a four-point sparkle with concave sides, which is what
+       keeps it a star rather than a diamond at 24 pixels. -->
+  <path d="M34 8c1.4 8.9 4.8 14.7 10.2 17.6C38.8 28.4 35.4 34.2 34 43c-1.4-8.8-4.8-14.6-10.2-17.4C29.2 22.7 32.6 16.9 34 8Z" fill="#f5c451"/>
+  <path d="M19 33c.9 5.4 3 9 6.4 10.8-3.4 1.8-5.5 5.4-6.4 10.8-.9-5.4-3-9-6.4-10.8 3.4-1.8 5.5-5.4 6.4-10.8Z" fill="#f5c451" opacity=".8"/>
+</svg>

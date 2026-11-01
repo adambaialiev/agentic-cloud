@@ -1,0 +1,13 @@
+import puppeteer from 'puppeteer-core';
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+const HOME='/home/agent'; const root=path.join(HOME,'.cache/puppeteer/chrome'); const b=readdirSync(root).sort().pop()!;
+const browser = await puppeteer.launch({ executablePath: path.join(root,b,'chrome-linux64/chrome'), args:['--no-sandbox'] });
+const page = await browser.newPage(); await page.setViewport({width:390,height:844,deviceScaleFactor:1});
+await page.goto(process.argv[2], {waitUntil:'networkidle0'});
+await page.waitForSelector('#prFiles');
+console.log(await page.evaluate(`(() => { const out=[]; let n=document.getElementById('prFiles'); while(n){ const cs=getComputedStyle(n); out.push([n.tagName, n.id, n.className && String(n.className).slice(0,40), n.scrollHeight, n.clientHeight, cs.overflowY, cs.position].join(' | ')); n=n.parentElement;} out.push('html '+document.documentElement.scrollHeight+' '+innerHeight+' scrollingElement='+document.scrollingElement.scrollHeight); return out.join('\\n'); })()`));
+await page.evaluate(`document.getElementById('prFiles').scrollIntoView({block:'start'})`);
+await new Promise(r=>setTimeout(r,300));
+console.log('after scrollIntoView top=', await page.evaluate(`document.getElementById('prFiles').getBoundingClientRect().top`), 'scrollY=', await page.evaluate('scrollY'));
+await browser.close();

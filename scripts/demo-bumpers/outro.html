@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<!-- 3s outro bumper for the demo video — see intro.html for how this renders. -->
+<head>
+<meta charset="utf-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; }
+  body {
+    background: #0b0b0f;
+    color: #ececf1;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace; }
+
+  .grid-bg {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 50%, black 40%, transparent 100%);
+    opacity: 0;
+    animation: fade-in 0.5s ease-out 0s forwards;
+  }
+
+  .stage {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+
+  .lockup {
+    display: flex; align-items: center; gap: 26px;
+    opacity: 0;
+    animation: rise-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+  }
+  .mark {
+    width: 84px; height: 63px;
+    background-color: #fbbf24;
+    -webkit-mask-image: url(../../public/logo-bw.png);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    -webkit-mask-size: contain;
+    mask-image: url(../../public/logo-bw.png);
+    mask-repeat: no-repeat;
+    mask-position: center;
+    mask-size: contain;
+  }
+  .wordmark {
+    font-size: 56px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+  }
+
+  .domain {
+    margin-top: 54px;
+    font-size: 34px;
+    letter-spacing: 0.08em;
+    color: #fbbf24;
+    display: flex; align-items: center;
+    opacity: 0;
+    animation: fade-in 0.01s linear 0.7s forwards;
+  }
+  .domain .typed {
+    overflow: hidden;
+    white-space: nowrap;
+    width: 0;
+    animation: type 0.85s steps(24, end) 0.7s forwards;
+  }
+  .cursor {
+    display: inline-block;
+    width: 17px; height: 36px;
+    margin-left: 10px;
+    background: #fbbf24;
+    animation: blink 1.6s ease-in-out 0s infinite;
+  }
+
+  .free {
+    margin-top: 34px;
+    font-size: 24px;
+    color: #a3a3ad;
+    opacity: 0;
+    animation: fade-in 0.45s ease-out 1.75s forwards;
+  }
+
+  @keyframes fade-in { to { opacity: 1; } }
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(22px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes type { from { width: 0; } to { width: 100%; } }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+</style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="stage">
+    <div class="lockup">
+      <div class="mark"></div>
+      <div class="wordmark">Agentic Cloud Computer</div>
+    </div>
+    <p class="domain mono"><span class="typed">agenticcloudcomputer.com</span><span class="cursor"></span></p>
+    <p class="free">Your first agent is free.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[Unit]
+Description=Report an agentgit-backup run that failed without reporting itself
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+
+[Service]
+Type=oneshot
+User=agentgit
+Group=agentgit
+Environment=HOME=/opt/agentgit
+# %i is the failed unit's name, passed through by OnFailure=…@%n.service.
+ExecStart=/opt/agentgit/notify-unit-failure.sh %i
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentgit-notify
+# A handler that hangs would be worse than one that never ran.
+TimeoutStartSec=60
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/agentgit

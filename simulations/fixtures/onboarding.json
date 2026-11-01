@@ -1,0 +1,76 @@
+{
+  "account": {
+    "username": "samira_owner",
+    "displayName": "Samira",
+    "totpCode": "123456",
+    "firstName": "Samira",
+    "lastName": "Rahimi",
+    "mailbox": "samira.rahimi",
+    "password": "a-strong-password-42"
+  },
+  "recoveryCodes": [
+    "J7KM-4QPT-N2VX-C6RA",
+    "BR5Y-H2WK-7MNP-Q4TZ",
+    "C3FV-X6LA-P7RD-K2WU",
+    "D4QZ-M7NC-V2KB-T5RY"
+  ],
+  "organization": {
+    "id": "org_northstar",
+    "name": "Northstar Studio",
+    "defaultName": "Samira’s workplace"
+  },
+  "room": {
+    "roomId": "room_product",
+    "name": "Product"
+  },
+  "security": {
+    "sessionCookie": "fixture_session_01",
+    "csrfToken": "fixture_csrf_01"
+  },
+  "cloud": {
+    "token": "fo1_fixture_org_deploy_token",
+    "orgSlug": "northstar-studio"
+  },
+  "agent": {
+    "id": "agent_ruby",
+    "name": "Ruby",
+    "cli": "codex",
+    "model": "gpt-5.6-sol",
+    "effort": "high"
+  },
+  "signin": {
+    "url": "https://chatgpt.com/device-fixture",
+    "claudeUrl": "https://claude.ai/oauth/authorize?code=true&client_id=fixture&response_type=code&redirect_uri=fixture&scope=user%3Ainference&state=fixture-state",
+    "userCode": "FIXT-URE1",
+    "failure": "The sign-in expired — codes only live a few minutes. Start it again.",
+    "seatLabel": "ChatGPT · signed in 6 Sep"
+  },
+  "firstJob": {
+    "brief": "Make a simple one-page website for my project and send me a link to look at it. Where you do not know something, use a placeholder and tell me what to fill in.",
+    "replyLink": "https://ruby-fixture.agentbuilt.app",
+    "reply": "Done — your one-page site is up at https://ruby-fixture.agentbuilt.app (first load takes about 10 seconds if it has been quiet).\n\nTo fill in:\n- Project name\n- One sentence on what it does and who it is for\n- Three benefits\n- Contact email"
+  },
+  "firstRun": {
+    "greeting": "Hi Samira, I'm your Chief of Staff. Tell me what you're working on, and I'll put a team of agents on it.",
+    "starter": "Set up a team for my startup.",
+    "ask": "Got it. Your agents and I run on your own Claude or ChatGPT plan. Sign it in below, and I'll start.",
+    "askAgain": "I've kept that too. Sign in your plan above, and I'll start on all of it.",
+    "where": "You sign in on Claude's or OpenAI's own page, and your password never touches us.",
+    "receipt": "Your ChatGPT plan is signed in.",
+    "room": {
+      "roomId": "room_meal_planner",
+      "name": "Meal planner"
+    },
+    "agents": [
+      {
+        "id": "agent_juno",
+        "name": "Juno"
+      },
+      {
+        "id": "agent_ivy",
+        "name": "Ivy"
+      }
+    ],
+    "plan": "Here's the plan for **Meal planner**:\n- **Juno** puts a one-page waitlist site live for the meal planner, with a sign-up form, and sends you the link.\n- **Ivy** reviews the five meal-planning apps people already use and writes a first knowledge page on what yours must do better.\nThey're starting now. I'll tell you when the waitlist page is ready."
+  }
+}

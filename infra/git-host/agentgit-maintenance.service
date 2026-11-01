@@ -1,0 +1,33 @@
+[Unit]
+Description=Weekly git gc across the internal git host's repositories
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+# Catches a run that died without reporting itself — the handler stays quiet
+# when the job managed to send its own failure message.
+OnFailure=agentgit-backup-failed@%n.service
+
+[Service]
+Type=oneshot
+User=agentgit
+Group=agentgit
+WorkingDirectory=/opt/agentgit
+# git reads $HOME for config; without this it resolves to / and logs noise.
+Environment=HOME=/opt/agentgit
+ExecStart=/opt/agentgit/maintain-repos.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentgit-maintenance
+
+# A full gc of the largest allowed repo (300 MB) is minutes, not hours; an
+# hour bounds the whole fleet so a wedged run cannot hold the lock forever.
+TimeoutStartSec=3600
+
+# Same hardening as the backup job. Unlike it, this one really does write to
+# the repos — that is its whole job — and they live under /var/lib/agentgit.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/agentgit

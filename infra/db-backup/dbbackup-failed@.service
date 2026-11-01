@@ -1,0 +1,31 @@
+[Unit]
+Description=Report a dbbackup run that failed without reporting itself
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/db-backup/README.md
+
+[Service]
+Type=oneshot
+User=dbbackup
+Group=dbbackup
+Environment=HOME=/opt/dbbackup
+Environment=OPS_NOTIFY_ENV=/etc/dbbackup/ops-notify.env
+Environment=OPS_NOTIFY_MARKER=/var/lib/dbbackup/last-notify
+Environment=OPS_NOTIFY_SCRIPT=/opt/dbbackup/notify.sh
+ExecStart=/opt/dbbackup/notify-unit-failure.sh %i
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dbbackup-notify
+TimeoutStartSec=60
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+# Only its own state: the marker that lets the notifier tell "the job reported
+# itself" from "the job died before it could". This handler matters more here
+# than elsewhere, because the snapshot runs as ExecStartPre — a failure there
+# means the job never reached the code that reports its own failures.
+ReadWritePaths=/var/lib/dbbackup
+
+[Install]
+WantedBy=multi-user.target

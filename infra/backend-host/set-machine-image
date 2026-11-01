@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Repoint the image new machines are created from, and restart the backend.
+# Installed to /usr/local/bin by provision.sh (and by every deploy-prod),
+# owned by root, and the ONLY root action the deploy user may take beyond
+# restarting its own service.
+#
+# Why a script rather than giving CI a root key: the image build workflow needs
+# exactly one privileged effect — "make this image the one new machines boot
+# from". A root key in GitHub Actions grants every other effect too, forever,
+# to anyone who can edit a workflow file. This grants that one, and validates
+# its argument before doing anything.
+#
+#   sudo /usr/local/bin/set-machine-image registry.fly.io/ia-machine-images:sha-abc123def456
+#   sudo /usr/local/bin/set-machine-image --git-host ghcr.io/<owner>/ia-machine-images:git-host-sha-abc123def456
+#   sudo /usr/local/bin/set-machine-image --msg-host ghcr.io/<owner>/ia-machine-images:msg-host-sha-abc123def456
+#
+# Three kinds of machine, one setting each:
+#   (default)   FLY_MACHINE_IMAGE   — agent machines. Tag family sha-<12>.
+#   --git-host  FLY_GIT_HOST_IMAGE  — a workplace's own code host (byo-git).
+#   --msg-host  FLY_MSG_HOST_IMAGE  — a workplace's messaging machine (note #608).
+#               Host tag families git-host-… and msg-host-…, ghcr only: those
+#               images are pushed nowhere else, and a client org can pull only
+#               public refs.
+# Each mode refuses the others' tags, so a host image can never become the
+# image every new agent machine boots from, nor one host's image another's.
+#
+# Exit codes: 0 changed or already correct, 1 refused or failed. Any failure
+# leaves the env file as it was.
+set -euo pipefail
+
+ENV_FILE=/etc/infinite-agents/backend.env
+UNIT=infinite-agents-backend
+HEALTH_URL=http://localhost:3001/api/health
+# The ghcr account that owns the public package. Root-owned local config, read
+# here rather than written into the repository — which carries no account name
+# — and never taken from the argument: the caller still chooses a TAG only.
+# A placeholder ("owner") baked in as if it were a value is exactly what broke
+# every image build on 2026-09-01, so a missing or malformed file refuses
+# loudly instead of quietly shrinking the allowlist to one entry.
+OWNER_FILE=/etc/infinite-agents/ghcr-owner
+
+fail() { echo "set-machine-image: $*" >&2; exit 1; }
+
+[[ -r "${OWNER_FILE}" ]] \
+  || fail "${OWNER_FILE} is missing — it must hold the ghcr.io account that owns the public image"
+GHCR_OWNER="$(tr -d '[:space:]' < "${OWNER_FILE}")"
+[[ "${GHCR_OWNER}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]] \
+  || fail "${OWNER_FILE} does not hold a valid ghcr.io account name"
+
+USAGE="usage: set-machine-image [--git-host|--msg-host] <registry>:<label>"
+HOST_FAMILY=""
+case "${1:-}" in
+  --git-host) HOST_FAMILY=git-host; VAR=FLY_GIT_HOST_IMAGE ;;
+  --msg-host) HOST_FAMILY=msg-host; VAR=FLY_MSG_HOST_IMAGE ;;
+esac
+if [[ -n "${HOST_FAMILY}" ]]; then
+  shift
+  REGISTRIES=("ghcr.io/${GHCR_OWNER}/ia-machine-images")
+  # <family>-sha-<12> from the CI job; a retag (…-r2) stays in the family, and
+  # the family prefix is what keeps each host mode off the other's tags.
+  LABEL_RE="${HOST_FAMILY}-[A-Za-z0-9._-]{1,118}"
+else
+  VAR=FLY_MACHINE_IMAGE
+  # The registry paths are fixed here, not passed in: the caller chooses a TAG,
+  # not a registry. Without that, "set-machine-image evil.example/x:latest"
+  # would be a valid instruction to boot every new machine from someone
+  # else's image. Two entries since 2026-08-23 (byo-fly-design): ghcr is the
+  # public home the whole fleet — client orgs included — boots from; the
+  # Fly-org copy is the rollback path a GHCR outage cannot take away.
+  REGISTRIES=(
+    "ghcr.io/${GHCR_OWNER}/ia-machine-images"
+    registry.fly.io/ia-machine-images
+  )
+  # Tag charset is the OCI-legal one, deliberately excluding anything the
+  # shell or sed would treat as syntax.
+  LABEL_RE='[A-Za-z0-9_][A-Za-z0-9._-]{0,127}'
+  # The code-host and messaging-host images share this package. Either one as
+  # FLY_MACHINE_IMAGE would boot every new agent machine as a server it is not.
+  if [[ "${1:-}" =~ :(git|msg)-host- ]]; then
+    fail "refusing '${1}' as FLY_MACHINE_IMAGE — that tag is a host image, not an agent machine image"
+  fi
+fi
+
+[[ $# -eq 1 ]] || fail "${USAGE} (registries: ${REGISTRIES[*]})"
+IMAGE_REF="$1"
+
+REF_OK=""
+for REGISTRY in "${REGISTRIES[@]}"; do
+  if [[ "${IMAGE_REF}" =~ ^"${REGISTRY}":${LABEL_RE}$ ]]; then
+    REF_OK=1
+    break
+  fi
+done
+[[ -n "${REF_OK}" ]] || fail "refusing '${IMAGE_REF}' as ${VAR} — must be <registry>:<label> with registry one of: ${REGISTRIES[*]}"
+
+[[ -f "${ENV_FILE}" ]] || fail "${ENV_FILE} does not exist"
+
+if grep -qxF "${VAR}=${IMAGE_REF}" "${ENV_FILE}"; then
+  echo "set-machine-image: ${VAR} already ${IMAGE_REF} — nothing to do"
+  exit 0
+fi
+
+# Write via a temp copy so a failure midway cannot leave a half-edited env
+# file, and keep a backup of what was replaced for a fast manual rollback.
+TMP="$(mktemp "${ENV_FILE}.XXXXXX")"
+trap 'rm -f "${TMP}"' EXIT
+cp -a "${ENV_FILE}" "${TMP}"
+
+if grep -q "^${VAR}=" "${TMP}"; then
+  # '|' as the delimiter: the reference contains '/' and ':'.
+  sed -i "s|^${VAR}=.*|${VAR}=${IMAGE_REF}|" "${TMP}"
+else
+  printf '%s=%s\n' "${VAR}" "${IMAGE_REF}" >> "${TMP}"
+fi
+
+grep -qxF "${VAR}=${IMAGE_REF}" "${TMP}" \
+  || fail "edit did not take — ${ENV_FILE} left untouched"
+
+PREVIOUS="$(grep -m1 "^${VAR}=" "${ENV_FILE}" || echo "${VAR}=(unset)")"
+cp -a "${ENV_FILE}" "${ENV_FILE}.previous"
+# Ownership and mode go on the temp file BEFORE the swap, so that once the env
+# file changes the only thing left that can fail is the restart — which is the
+# failure this script knows how to talk about. Anything failing after the swap
+# would leave a new image configured, the old process running, and an error
+# message about neither.
+chown root:root "${TMP}"
+chmod 600 "${TMP}"
+mv "${TMP}" "${ENV_FILE}"
+trap - EXIT
+
+echo "set-machine-image: ${PREVIOUS} -> ${VAR}=${IMAGE_REF}"
+echo "set-machine-image: previous env saved at ${ENV_FILE}.previous"
+
+systemctl restart "${UNIT}"
+# "active" only proves the Node process exists. With socket activation, even a
+# TCP connect succeeds before Node accepts a request, so require an actual 200
+# and bound every attempt in case the inherited socket only queues it.
+for i in $(seq 1 12); do
+  code=$(curl -fsS --max-time 3 -o /dev/null -w '%{http_code}' "${HEALTH_URL}" 2>/dev/null || true)
+  if [[ "${code}" = 200 ]] && systemctl is-active --quiet "${UNIT}"; then
+    echo "set-machine-image: ${UNIT} healthy after ${i} attempt(s)"
+    exit 0
+  fi
+  sleep 2
+done
+
+fail "${UNIT} did not serve after ~60s — restore with: cp ${ENV_FILE}.previous ${ENV_FILE} && systemctl restart ${UNIT}"

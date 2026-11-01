@@ -1,0 +1,89 @@
+# Retired addresses, kept answering rather than left to the SPA fallback.
+#
+# The fallback is the trap: an unknown path is served index.html with a 200,
+# so a dead URL silently shows the homepage and a crawler files it as another
+# copy of the front page instead of dropping it. An edge redirect here is the
+# mechanism that actually works — a client-side <Navigate> needs JavaScript,
+# and emitting no file at all leaves the CDN serving its cached copy of the
+# OLD page for as long as its cache header allows.
+
+# The standalone pricing page is retired. Keep old shared links useful.
+/pricing / 301
+/pricing/ / 301
+
+# The screenshot tour and every article were removed on 2026-09-07, when the
+# site was cut back to the landing page and the legal documents. All of these
+# were indexed and some have been forwarded, so they go home rather than 404.
+/tour / 301
+/tour/ / 301
+/guides / 301
+/guides/ / 301
+/guides/claude-code-in-the-cloud / 301
+/guides/claude-code-channels / 301
+/guides/keep-claude-code-running / 301
+/guides/claude-code-on-a-vps / 301
+/guides/openclaw-hosting / 301
+/guides/what-to-hand-an-ai-engineer / 301
+/guides/claude-code-alternatives / 301
+/guides/claude-code-pricing / 301
+/guides/claude-code-on-your-phone / 301
+/guides/background-agents / 301
+/guides/ai-agent-for-a-small-business / 301
+/guides/hire-an-ai-engineer / 301
+/guides/* / 301
+
+# The payments and refunds page is retired (2026-09-14). The service takes no
+# payments, so a whole page saying so was one more surface to keep true; its
+# two load-bearing sentences moved into Terms section 3. The address was
+# indexed and linked from every footer, so it keeps answering.
+/refunds /terms 301
+/refunds/ /terms 301
+
+# The 30 committed marketing crops were deleted with the capture pipeline on
+# 2026-09-14 (PR #923): the site renders the Workspace's own components now, so
+# nothing links one. Deleting the files is not enough on its own — this host
+# answers an unknown path with index.html and a 200, so every /shots/*.webp a
+# crawler had indexed became another copy of the front page rather than a page
+# that had gone. Send them home instead.
+/shots/* / 301
+
+# The "Every screen" reference chapter was removed on 2026-09-24 (the owner:
+# verbose and not necessary). It was live for a day and in the sitemap, so the
+# address goes to the contents rather than to the front page.
+/docs/every-screen /docs 301
+/docs/every-screen/ /docs 301
+
+# The open-source page (note #674) was taken down on 2026-09-29, a day after
+# it went up: the owner decided the platform is for closed-source work. Its
+# footer link had been on every landing page, so the address goes home rather
+# than to a public-address lookup for a name nobody may hold.
+/open-source / 301
+/open-source/ / 301
+
+# The Request access page (note #791) stood for a few hours on 2026-10-25,
+# while registration was closed; the owner reopened sign-up the same evening
+# (note #794). Its address had been linked from every page and llms.txt, so it
+# sends a visitor to the sign-up it stood in for.
+/request-access /signup 301
+/request-access/ /signup 301
+
+# The public Leaderboard (note #200) was taken down on 2026-10-28 (Adam, note
+# #824): a person reaches their own builder page from the Workspace's account
+# menu instead. Its address was linked from sign-up, Home and the privacy
+# policy for weeks, so it goes to the front page rather than to a
+# public-address lookup for a word nobody may hold.
+/leaderboard / 301
+/leaderboard/ / 301
+
+# The page for your own Agentic Cloud stood at /private-copy for the engineer
+# (notes #818, #827) until 28 Oct 2026, when it was rewritten for the leader
+# and moved to /own-cloud (note #829). The old address is in outreach drafts,
+# the installer's README, the film's closing card and the knowledge pages, so
+# it answers for good.
+#
+# Since note #832 (29 Oct 2026) both are part of the one home page, so both
+# go straight to it. /own-cloud.md, the agent's guide, does not move.
+/private-copy / 301
+/private-copy/ / 301
+/own-cloud / 301
+/own-cloud/ / 301

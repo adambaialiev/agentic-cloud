@@ -1,0 +1,6 @@
+/* What the shell needs beyond workspace.css. Keep this small: a rule every
+   screen shares belongs in workspace.css. */
+
+/* The old page never drew an <a> as a button; the shell does, so a link
+   styled as one must look like the button beside it. */
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }

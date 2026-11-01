@@ -1,0 +1,242 @@
+/**
+ * Private copy stage 3, piece 1 (note #811): one release in our private
+ * registry, opened per customer by a signed update key, and copied into the
+ * copy's own registry by its installer. A fake registry stands in for
+ * registry.fly.io on both sides.
+ */
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { createHash, generateKeyPairSync } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+
+const INFRA = path.resolve(__dirname, '../../../../infra');
+type Signed = {
+  signPayload: (payload: object, pem: string) => string;
+  verifySigned: (text: string, key: unknown) => Record<string, unknown> | null;
+  publicKeyFrom: (x: string) => unknown;
+  publicKeyX: (key: unknown) => string;
+};
+let signed: Signed;
+let updates: {
+  createUpdateService: (opts: Record<string, unknown>) => (req: IncomingMessage, res: ServerResponse) => Promise<void>;
+  fileFromTar: (archive: Buffer, name: string) => Buffer | null;
+};
+let installer: {
+  updatesSource: (opts: Record<string, unknown>) => unknown;
+  flyRegistry: (opts: Record<string, unknown>) => unknown;
+  copyRelease: (opts: Record<string, unknown>) => Promise<{ release: { version: string }; copied: Record<string, { tag: string; digest: string }> }>;
+};
+
+const digestOf = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+
+/** A ustar archive of the given files, as a builder's COPY layer is. */
+function tar(files: Record<string, string>): Buffer {
+  const parts: Buffer[] = [];
+  for (const [name, text] of Object.entries(files)) {
+    const body = Buffer.from(text);
+    const header = Buffer.alloc(512);
+    header.write(name, 0);
+    header.write('0000644\0', 100);
+    header.write('0000000\0', 108);
+    header.write('0000000\0', 116);
+    header.write(`${body.length.toString(8).padStart(11, '0')}\0`, 124);
+    header.write('00000000000\0', 136);
+    header.write('        ', 148);
+    header.write('0', 156);
+    header.write('ustar\0', 257);
+    header.write('00', 263);
+    let sum = 0;
+    for (const byte of header) sum += byte;
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148);
+    parts.push(header, body, Buffer.alloc((512 - (body.length % 512)) % 512));
+  }
+  parts.push(Buffer.alloc(1024));
+  return Buffer.concat(parts);
+}
+
+/** registry.fly.io as far as these two need it: one repository per name,
+ *  Basic x:<token>, manifests by tag or digest, monolithic uploads. */
+function fakeRegistry(token: string) {
+  const blobs = new Map<string, Buffer>();
+  const manifests = new Map<string, Map<string, { bytes: Buffer; type: string }>>();
+  const repo = (name: string) => manifests.get(name) ?? manifests.set(name, new Map()).get(name)!;
+  const addImage = (name: string, tag: string, layers: Buffer[]) => {
+    const config = Buffer.from(JSON.stringify({ architecture: 'amd64', os: 'linux', tag }));
+    for (const blob of [config, ...layers]) blobs.set(digestOf(blob), blob);
+    const doc = {
+      schemaVersion: 2, mediaType: 'application/vnd.oci.image.manifest.v1+json',
+      config: { mediaType: 'application/vnd.oci.image.config.v1+json', digest: digestOf(config), size: config.length },
+      layers: layers.map((layer) => ({ mediaType: 'application/vnd.oci.image.layer.v1.tar+gzip', digest: digestOf(layer), size: layer.length })),
+    };
+    const bytes = Buffer.from(JSON.stringify(doc));
+    const entry = { bytes, type: doc.mediaType };
+    repo(name).set(tag, entry);
+    repo(name).set(digestOf(bytes), entry);
+  };
+  const handler = (req: IncomingMessage, res: ServerResponse) => {
+    if (req.headers.authorization !== `Basic ${Buffer.from(`x:${token}`).toString('base64')}`) {
+      res.writeHead(401).end();
+      return;
+    }
+    const url = new URL(req.url!, 'http://x');
+    const [, , name, kind, ref] = url.pathname.split('/');
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      const body = Buffer.concat(chunks);
+      if (kind === 'tags') {
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+          name, tags: [...repo(name!).keys()].filter((t) => !t.startsWith('sha256:')),
+        }));
+      } else if (kind === 'manifests' && req.method === 'PUT') {
+        const entry = { bytes: body, type: String(req.headers['content-type']) };
+        repo(name!).set(ref!, entry);
+        repo(name!).set(digestOf(body), entry);
+        res.writeHead(201, { 'docker-content-digest': digestOf(body) }).end();
+      } else if (kind === 'manifests') {
+        const entry = repo(name!).get(decodeURIComponent(ref!));
+        if (!entry) { res.writeHead(404).end(); return; }
+        res.writeHead(200, { 'content-type': entry.type, 'docker-content-digest': digestOf(entry.bytes), 'content-length': entry.bytes.length });
+        res.end(req.method === 'HEAD' ? undefined : entry.bytes);
+      } else if (kind === 'blobs' && ref === 'uploads') {
+        if (req.method === 'POST') {
+          res.writeHead(202, { location: `/v2/${name}/blobs/uploads/session-1?state=x` }).end();
+        } else {
+          const digest = url.searchParams.get('digest')!;
+          if (digestOf(body) !== digest) { res.writeHead(400).end(); return; }
+          blobs.set(digest, body);
+          res.writeHead(201).end();
+        }
+      } else if (kind === 'blobs') {
+        const blob = blobs.get(decodeURIComponent(ref!));
+        if (!blob) { res.writeHead(404).end(); return; }
+        res.writeHead(200, { 'content-length': blob.length }).end(req.method === 'HEAD' ? undefined : blob);
+      } else {
+        res.writeHead(404).end();
+      }
+    });
+  };
+  return { handler, addImage, blobs, manifests };
+}
+
+const servers: Server[] = [];
+async function listen(handler: (req: IncomingMessage, res: ServerResponse) => void): Promise<string> {
+  const server = createServer(handler);
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+}
+
+const { privateKey } = generateKeyPairSync('ed25519');
+const PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const stranger = generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const IMAGES = ['backend', 'git-host', 'router'];
+let upstream: ReturnType<typeof fakeRegistry>;
+let serviceUrl = '';
+let keyFor: (payload: Record<string, unknown>, pem?: string) => string;
+
+beforeAll(async () => {
+  signed = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-release/signed.mjs')).href);
+  updates = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-updates/server.mjs')).href);
+  installer = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-installer/install.mjs')).href);
+  keyFor = (payload, pem = PEM) => signed.signPayload({ kind: 'update', id: 'k1', customer: 'theirco', domain: 'agents.theirco.test', updatesUntil: '2026-12-31', ...payload }, pem);
+  upstream = fakeRegistry('our-token');
+  for (const version of ['2026.10.27.1', '2027.02.01.1']) {
+    for (const image of IMAGES) upstream.addImage('acc-copy-releases', `${image}-${version}`, [gzipSync(Buffer.from(`${image} ${version} layer`))]);
+    const release = {
+      version, commit: 'abc123', images: Object.fromEntries(IMAGES.map((image) => [image, { tag: `${image}-${version}` }])),
+    };
+    upstream.addImage('acc-copy-releases', `release-${version}`, [gzipSync(tar({
+      'copy-release.json': JSON.stringify(release), 'install.mjs': `// installer of ${version}\n`,
+    }))]);
+  }
+  const upstreamUrl = await listen(upstream.handler);
+  const handle = updates.createUpdateService({
+    upstream: upstreamUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
+    publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), revoked: new Set(['revoked-id']),
+  });
+  serviceUrl = await listen((req, res) => { void handle(req, res); });
+});
+afterAll(() => { for (const server of servers) server.close(); });
+
+const as = (customer: string, key: string) => ({ authorization: `Basic ${Buffer.from(`${customer}:${key}`).toString('base64')}` });
+
+describe('the update service (note #811)', () => {
+  it('answers nobody without a live update key of ours, for the customer it names', async () => {
+    expect((await fetch(`${serviceUrl}/health`)).status).toBe(200);
+    const bare = await fetch(`${serviceUrl}/v2/`);
+    expect(bare.status).toBe(401);
+    expect(bare.headers.get('www-authenticate')).toContain('Basic');
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('theirco', keyFor({})) })).status).toBe(200);
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('otherco', keyFor({})) })).status).toBe(401);
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('theirco', keyFor({}, stranger)) })).status).toBe(401);
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('theirco', keyFor({ id: 'revoked-id' })) })).status).toBe(401);
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('theirco', keyFor({ kind: 'licence' })) })).status).toBe(401);
+    const tampered = keyFor({}).replace(/\.([^.]+)\./, (_, body: string) => `.${Buffer.from(JSON.stringify({ ...JSON.parse(Buffer.from(body, 'base64url').toString()), updatesUntil: '2099-01-01' })).toString('base64url')}.`);
+    expect((await fetch(`${serviceUrl}/v2/`, { headers: as('theirco', tampered) })).status).toBe(401);
+  });
+
+  it('covers the releases dated on or before the key\'s end, and says so about a newer one', async () => {
+    const headers = as('theirco', keyFor({}));
+    const releases = await (await fetch(`${serviceUrl}/releases`, { headers })).json();
+    expect(releases).toMatchObject({ latest: '2026.10.27.1', releases: [{ version: '2026.10.27.1', date: '2026-10-27' }] });
+    const tags = (await (await fetch(`${serviceUrl}/v2/acc-copy/tags/list`, { headers })).json()).tags;
+    expect(tags).toContain('backend-2026.10.27.1');
+    expect(tags.some((tag: string) => tag.includes('2027'))).toBe(false);
+    const newer = await fetch(`${serviceUrl}/v2/acc-copy/manifests/backend-2027.02.01.1`, { headers });
+    expect(newer.status).toBe(403);
+    expect(JSON.stringify(await newer.json())).toContain('until 2026-12-31');
+    expect((await fetch(`${serviceUrl}/releases/2027.02.01.1/install.mjs`, { headers })).status).toBe(403);
+    // A longer key sees the newer release as the latest.
+    const later = as('theirco', keyFor({ updatesUntil: '2027-12-31' }));
+    expect((await (await fetch(`${serviceUrl}/releases`, { headers: later })).json()).latest).toBe('2027.02.01.1');
+  });
+
+  it('hands out a release\'s own files, and the images as a registry would', async () => {
+    const headers = as('theirco', keyFor({}));
+    const release = await (await fetch(`${serviceUrl}/releases/latest/copy-release.json`, { headers })).json();
+    expect(release).toMatchObject({ version: '2026.10.27.1', commit: 'abc123' });
+    expect(await (await fetch(`${serviceUrl}/releases/2026.10.27.1/install.mjs`, { headers })).text()).toBe('// installer of 2026.10.27.1\n');
+    const manifest = await fetch(`${serviceUrl}/v2/acc-copy/manifests/backend-2026.10.27.1`, { headers });
+    expect(manifest.status).toBe(200);
+    const layer = (await manifest.json()).layers[0];
+    const blob = Buffer.from(await (await fetch(`${serviceUrl}/v2/acc-copy/blobs/${layer.digest}`, { headers })).arrayBuffer());
+    expect(digestOf(blob)).toBe(layer.digest);
+    expect((await fetch(`${serviceUrl}/v2/acc-copy/manifests/not-a-release`, { headers })).status).toBe(404);
+    expect((await fetch(`${serviceUrl}/v2/acc-copy/blobs/${layer.digest}`, { method: 'POST', headers })).status).toBe(405);
+  });
+});
+
+describe('the installer\'s copy (note #811)', () => {
+  it('copies every image of a release into the copy\'s own registry, byte for byte', async () => {
+    const theirs = fakeRegistry('their-token');
+    const theirsUrl = await listen(theirs.handler);
+    const source = installer.updatesSource({ url: serviceUrl, customer: 'theirco', key: keyFor({}) });
+    const dest = installer.flyRegistry({ app: 'theirco-images', token: 'their-token', base: theirsUrl });
+    const lines: string[] = [];
+    const { release, copied } = await installer.copyRelease({ source, dest, log: (line: string) => lines.push(line) });
+    expect(release.version).toBe('2026.10.27.1');
+    expect(Object.keys(copied)).toEqual(IMAGES);
+    for (const image of IMAGES) {
+      const ours = upstream.manifests.get('acc-copy-releases')!.get(`${image}-2026.10.27.1`)!;
+      const copy = theirs.manifests.get('theirco-images')!.get(`${image}-2026.10.27.1`)!;
+      expect(copy.bytes.equals(ours.bytes)).toBe(true);
+      expect(copied[image]!.digest).toBe(digestOf(ours.bytes));
+      for (const entry of JSON.parse(ours.bytes.toString()).layers) expect(theirs.blobs.has(entry.digest)).toBe(true);
+    }
+    expect(lines).toHaveLength(3);
+    // A second run moves nothing it already has.
+    const again: string[] = [];
+    await installer.copyRelease({ source, dest, log: (line: string) => again.push(line) });
+    expect(again.every((line) => line.includes(' 0 MB moved'))).toBe(true);
+  });
+
+  it('stops on a key the service refuses, in words', async () => {
+    const source = installer.updatesSource({ url: serviceUrl, customer: 'theirco', key: 'acc1.bogus.bogus' });
+    const dest = installer.flyRegistry({ app: 'x', token: 'y', base: serviceUrl });
+    await expect(installer.copyRelease({ source, dest, log: () => undefined })).rejects.toThrow('did not accept');
+  });
+});

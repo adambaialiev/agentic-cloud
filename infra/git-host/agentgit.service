@@ -1,0 +1,35 @@
+[Unit]
+Description=Agentic Cloud Computer internal git host (bare repos over smart HTTP)
+Documentation=https://github.com/owner/infinite-agents/blob/main/docs/agent-git-phase1.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentgit
+Group=agentgit
+WorkingDirectory=/opt/agentgit
+# Secrets (GIT_HOST_SECRET, BACKEND_URL) live here, mode 600, root-owned.
+EnvironmentFile=/etc/agentgit/agentgit.env
+ExecStart=/usr/bin/node /opt/agentgit/git-host.mjs
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentgit
+
+# Hardening. The service shells out to git and du and writes only under the
+# repos root, so it can be locked down much harder than the backend.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# The one writable path. MinIO's data is deliberately NOT here: a bug in this
+# service must not be able to touch the media store it shares a box with.
+ReadWritePaths=/var/lib/agentgit
+
+[Install]
+WantedBy=multi-user.target

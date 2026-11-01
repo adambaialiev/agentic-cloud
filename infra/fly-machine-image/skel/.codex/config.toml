@@ -1,0 +1,33 @@
+# Baked operator defaults. Every key here is also converged onto machines that
+# already exist by buildTelegramAgentCliDefaultsScript(), which rides the
+# identity write — this seed only covers the window before that first lands.
+#
+# CLI versions are pinned fleet-wide via config/harnessCliVersions
+# (`cli:versions bump` + the pre-sleep updater), so the startup update check
+# would only nag about versions we haven't rolled yet. The docs describe this
+# key as "set to false only when updates are centrally managed" — exactly our
+# case.
+check_for_update_on_startup = false
+
+# How much of AGENTS.md Codex will read. Its own default is 32 KiB and it drops
+# the remainder SILENTLY: the platform doc reached 38.5 KiB, so every Codex
+# agent was missing the last 6.6 KiB of its instructions — the tail of the
+# secrets rules and the whole of "Starting a fresh chat" — while Claude agents,
+# which have no such cap, read the identical file whole.
+#
+# 256 KiB is ~6x the current doc. Headroom is the point: the failure is silent,
+# so this must never be the number we are close to.
+project_doc_max_bytes = 262144
+
+# The window Codex budgets a turn against. Its catalog carries two figures per
+# model — `context_window` (what it uses by default) and `max_context_window`
+# (the largest the model takes); for the gpt-5.6 family they are 272,000 and
+# 872,000, so an agent left on the default works in under a third of the window
+# its model actually has.
+#
+# One value is safe for every model: Codex clamps the request to that model's
+# own maximum and then holds back 5% for the reply. Measured on codex-cli
+# 0.152.1 — gpt-5.6-sol/terra/luna go 258,400 -> 828,400, gpt-5.5 (max 272,000)
+# and an unrecognised slug stay at 258,400. So this asks for "as much as this
+# model allows" rather than freezing today's ceiling into the file.
+model_context_window = 1000000

@@ -1,0 +1,16 @@
+[Unit]
+Description=Nightly off-box backup of the internal git host's repositories
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+
+[Timer]
+# Quiet hour UTC, jittered so this box and the backend's SQLite backup do not
+# both wake into the same minute.
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=1800
+# A box that was down at 03:30 backs up when it comes back, rather than
+# skipping that day in silence.
+Persistent=true
+Unit=agentgit-backup.service
+
+[Install]
+WantedBy=timers.target

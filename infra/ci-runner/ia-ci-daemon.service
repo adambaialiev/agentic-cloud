@@ -1,0 +1,25 @@
+# Webhook CI/CD daemon — install on ia-ci-runner. The daemon code lives in
+# /opt/ia-ci (STABLE), never in the job checkout the daemon mutates:
+#   install -o runner -m755 daemon.mjs run-job.sh /opt/ia-ci/
+#   cp ia-ci-daemon.service /etc/systemd/system/ && systemctl enable --now ia-ci-daemon
+# Secrets in /etc/ia-ci/env (600): GH_TOKEN  WEBHOOK_SECRET  REPO
+[Unit]
+Description=infinite-agents webhook CI/CD daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=runner
+EnvironmentFile=/etc/ia-ci/env
+Environment=WORKDIR=/home/runner/ci-work
+Environment=LOG_DIR=/home/runner/ci-logs
+Environment=RUNJOB=/opt/ia-ci/run-job.sh
+# Runs from /opt/ia-ci, NOT the work checkout — jobs `git checkout --force`
+# the checkout to arbitrary SHAs, which would delete the daemon out from under
+# systemd (the crash-loop bug of 2026-07-31).
+ExecStart=/usr/bin/node /opt/ia-ci/daemon.mjs
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

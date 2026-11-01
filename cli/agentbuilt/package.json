@@ -1,0 +1,13 @@
+{
+  "name": "agentbuilt",
+  "version": "1.0.0",
+  "description": "Production hosting CLI for platform agent machines (agentbuilt.app)",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "agentbuilt": "./agentbuilt.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
