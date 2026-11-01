@@ -779,6 +779,187 @@ describe('POST /repos/:name/prs/:number/ready', () => {
     });
   });
 
+  /**
+   * Note #944 (Adam, 2026-11-01): auto-merge, each person's own. With the
+   * proposal owner's switch on, `pr ready` merges a proposal whose checks passed instead of
+   * asking; red or missing checks still wait; off changes nothing; and a
+   * merge that fails leaves the ordinary ask, with the reason.
+   */
+  describe('auto-merge (note #944)', () => {
+    const withMode = async (deps: Partial<RouteDeps>, on: boolean | null, opts: { ci?: boolean } = {}) => {
+      const orgStorage = new InMemoryOrgStorage();
+      const org = await orgStorage.createOrg({ name: 'Acme', createdByUserId: 'user-1' });
+      await orgStorage.addMember({ orgId: org.orgId, userId: 'user-1', role: 'admin' });
+      if (on !== null) {
+        // The proposal owner's OWN switch, on their membership.
+        await orgStorage.touchMember(org.orgId, 'user-1', {
+          autoApprove: { on, changedAt: '2026-11-01T15:02:00.000Z', changedByUserId: 'user-1', changedByName: 'Adam' },
+        });
+      }
+      deps.orgStorage = orgStorage;
+      const userStorage = deps.userStorage!;
+      const profile = await userStorage.getProfile('user-1');
+      await userStorage.updateProfile('user-1', {
+        telegram: { ...profile!.telegram!, agents: { ...profile!.telegram!.agents, 'agent-a': { ...profile!.telegram!.agents!['agent-a']!, orgId: org.orgId } as never } },
+      });
+      if (opts.ci) {
+        const repo = (await deps.gitRepoStorage!.listByUser('user-1'))[0]!;
+        await deps.gitRepoStorage!.update(repo.id, { ci: true });
+      }
+      const proposalReady = vi.fn(async () => 'added' as const);
+      deps.workspaceAgent = { proposalReady } as never;
+      return { org, proposalReady };
+    };
+    const green = (deps: Partial<RouteDeps>) => {
+      deps.gitCommitStatusStorage = { listBySha: async () => [{ state: 'success', startedAt: new Date().toISOString() }] } as never;
+    };
+
+    it('on, with green checks: merged at once, nobody asked, and every word says it was automatic', async () => {
+      const { deps, token, asks, gitPullRequestStorage, repo } = await buildDeps();
+      const { proposalReady } = await withMode(deps, true);
+      green(deps);
+      const autoApprovePullRequest = vi.fn(async () => ({ status: 'merged' as const, mergeCommitSha: 'c'.repeat(40) }));
+      deps.autoApprovePullRequest = autoApprovePullRequest;
+      await quiet(deps, token);
+
+      const res = await ready(deps, token);
+      expect(res.statusCode).toBe(200);
+      const doc = (await gitPullRequestStorage.listByRepo(repo.id))[0]!;
+      expect(autoApprovePullRequest).toHaveBeenCalledWith({
+        pullRequestId: doc.id,
+        mode: { onAt: '2026-11-01T15:02:00.000Z', byUserId: 'user-1', byName: 'Adam' },
+      });
+      // Nothing is asked of a person: no "awaits your decision" card.
+      expect(asks).toEqual([]);
+      const body = res.body as { askedUser: boolean; autoApproved: boolean; message: string };
+      expect(body).toMatchObject({ askedUser: false, autoApproved: true });
+      expect(body.message).toContain('approved AUTOMATICALLY');
+      expect(body.message).toContain('Auto-merge is on for your user (turned on by Adam at 1 Nov 2026, 15:02 UTC)');
+      expect(body.message).toContain('never that your user approved it');
+      // The Chief of Staff's card says the same, so nobody takes it for a
+      // human decision.
+      expect(proposalReady).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'Ben\'s PR #1 in api — Rewrite checkout — was approved automatically and merged into main (auto-merge on, turned on by Adam at 1 Nov 2026, 15:02 UTC); no person read it first. Its card is in this conversation.',
+      }));
+    });
+
+    it('a teammate\'s switch never merges your agents\' work — each person\'s is their own', async () => {
+      const { deps, token, asks } = await buildDeps();
+      const { org } = await withMode(deps, null);
+      green(deps);
+      await deps.orgStorage!.addMember({ orgId: org.orgId, userId: 'user-2', role: 'admin' });
+      await deps.orgStorage!.touchMember(org.orgId, 'user-2', {
+        autoApprove: { on: true, changedAt: '2026-11-01T15:02:00.000Z', changedByUserId: 'user-2', changedByName: 'Teammate' },
+      });
+      const autoApprovePullRequest = vi.fn();
+      deps.autoApprovePullRequest = autoApprovePullRequest as never;
+      await quiet(deps, token);
+
+      expect((await ready(deps, token)).statusCode).toBe(200);
+      expect(autoApprovePullRequest).not.toHaveBeenCalled();
+      expect(asks).toHaveLength(1);
+    });
+
+    it('on, with red or running checks: refused exactly as before — nothing merges', async () => {
+      const { deps, token, asks } = await buildDeps();
+      await withMode(deps, true);
+      const autoApprovePullRequest = vi.fn();
+      deps.autoApprovePullRequest = autoApprovePullRequest as never;
+      const statuses: Array<Record<string, unknown>> = [{ state: 'failure', startedAt: new Date().toISOString() }];
+      deps.gitCommitStatusStorage = { listBySha: async () => statuses } as never;
+      await quiet(deps, token);
+
+      expect((await ready(deps, token)).statusCode).toBe(409);
+      statuses.splice(0, 1, { state: 'pending', startedAt: new Date().toISOString() });
+      expect((await ready(deps, token)).statusCode).toBe(409);
+      expect(autoApprovePullRequest).not.toHaveBeenCalled();
+      expect(asks).toEqual([]);
+    });
+
+    it('on, with no verdict on a repo whose CI is on: waits for its owner, and says why', async () => {
+      const { deps, token, asks, gitPullRequestStorage, repo } = await buildDeps();
+      const { proposalReady } = await withMode(deps, true, { ci: true });
+      deps.gitCommitStatusStorage = { listBySha: async () => [] } as never;
+      const autoApprovePullRequest = vi.fn();
+      deps.autoApprovePullRequest = autoApprovePullRequest as never;
+      await quiet(deps, token);
+
+      const res = await ready(deps, token);
+      expect(res.statusCode).toBe(200);
+      expect(autoApprovePullRequest).not.toHaveBeenCalled();
+      expect(asks).toHaveLength(1);
+      const doc = (await gitPullRequestStorage.listByRepo(repo.id))[0]!;
+      expect(doc.status).toBe('open');
+      expect(doc.autoApproveFallback).toMatchObject({ reason: 'no checks have reported on it yet' });
+      expect((res.body as { message: string }).message).toContain('NOT merged automatically: no checks have reported on it yet');
+      expect(proposalReady).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining('was not merged automatically because no checks have reported on it yet'),
+      }));
+    });
+
+    it('on, on a repo with CI off: merges with no verdict, as an owner\'s Approve would', async () => {
+      const { deps, token, asks } = await buildDeps();
+      await withMode(deps, true);
+      deps.gitCommitStatusStorage = { listBySha: async () => [] } as never;
+      const autoApprovePullRequest = vi.fn(async () => ({ status: 'merged' as const, mergeCommitSha: 'c'.repeat(40) }));
+      deps.autoApprovePullRequest = autoApprovePullRequest;
+      await quiet(deps, token);
+
+      expect((await ready(deps, token)).statusCode).toBe(200);
+      expect(autoApprovePullRequest).toHaveBeenCalledTimes(1);
+      expect(asks).toEqual([]);
+    });
+
+    it('off, or never set: today\'s behaviour exactly — the ask, and no automatic anything', async () => {
+      for (const on of [false, null]) {
+        const { deps, token, asks, gitPullRequestStorage, repo } = await buildDeps();
+        await withMode(deps, on);
+        green(deps);
+        const autoApprovePullRequest = vi.fn();
+        deps.autoApprovePullRequest = autoApprovePullRequest as never;
+        await quiet(deps, token);
+
+        const res = await ready(deps, token);
+        expect(res.statusCode).toBe(200);
+        expect(autoApprovePullRequest).not.toHaveBeenCalled();
+        expect(asks).toHaveLength(1);
+        expect((res.body as { message: string }).message).not.toContain('uto-merge');
+        expect((await gitPullRequestStorage.listByRepo(repo.id))[0]!.autoApproveFallback).toBeUndefined();
+      }
+    });
+
+    it('on, when the merge fails: falls back to the ordinary ask with the reason, so nothing is stuck', async () => {
+      const { deps, token, asks } = await buildDeps();
+      const { proposalReady } = await withMode(deps, true);
+      green(deps);
+      deps.autoApprovePullRequest = vi.fn(async () => ({ status: 'fallback' as const, reason: 'feat/checkout conflicts with main' }));
+      await quiet(deps, token);
+
+      const res = await ready(deps, token);
+      expect(res.statusCode).toBe(200);
+      expect(asks).toHaveLength(1);
+      const body = res.body as { askedUser: boolean; autoApproveFallback: string; message: string };
+      expect(body.askedUser).toBe(true);
+      expect(body.autoApproveFallback).toBe('feat/checkout conflicts with main');
+      expect(body.message).toContain('NOT merged automatically: feat/checkout conflicts with main');
+      expect(body.message).toContain('is with your user now');
+      expect(proposalReady).toHaveBeenCalledWith(expect.objectContaining({
+        text: expect.stringContaining('is ready for the person\'s decision: auto-merge is on, but it was not merged automatically because feat/checkout conflicts with main'),
+      }));
+
+      // A merge that throws is a fallback too, never a failed invitation.
+      const thrown = await buildDeps();
+      await withMode(thrown.deps, true);
+      green(thrown.deps);
+      thrown.deps.autoApprovePullRequest = vi.fn(async () => { throw new Error('host down'); });
+      await quiet(thrown.deps, thrown.token);
+      const answered = await ready(thrown.deps, thrown.token);
+      expect(answered.statusCode).toBe(200);
+      expect(thrown.asks).toHaveLength(1);
+      expect((answered.body as { message: string }).message).toContain('the merge failed (host down)');
+    });
+  });
+
   it('lists a quiet proposal as such, so the agent can see what it still owes', async () => {
     const { deps, token } = await buildDeps();
     await quiet(deps, token);
@@ -1448,6 +1629,97 @@ describe('the pull-request approval flows', () => {
    * card-tap flow (same anchor, same hand-back, same chat message), and its
    * return value is the re-read status, never an inference.
    */
+  /**
+   * Note #944: auto-merge's merge. Same anchor and the same required-
+   * checks gate as a person's Approve; recorded as automatic, never in the
+   * owner's name; and anything that stops it leaves the proposal open.
+   */
+  describe('auto-merge\'s merge (note #944)', () => {
+    const mode = { onAt: '2026-11-01T15:02:00.000Z', byUserId: 'user-1', byName: 'Adam' };
+    const auto = (service: unknown, pullRequestId: string) => (service as {
+      autoApprovePullRequest(args: { pullRequestId: string; mode: typeof mode }): Promise<{ status: string; reason?: string }>;
+    }).autoApprovePullRequest({ pullRequestId, mode });
+
+    it('merges through the owner\'s anchor and records it as automatic — no person named', async () => {
+      const { service, pr, gitPullRequestStorage, gitRepoStorage, repo, merge, started, agentChatStorage } = await buildGate({
+        status: 'merged', fastForward: true, mergeCommitSha: 'c'.repeat(40),
+      });
+
+      expect(await auto(service, pr.id)).toEqual({ status: 'merged', mergeCommitSha: 'c'.repeat(40) });
+
+      expect(merge).toHaveBeenCalledWith('user-1', 'api', expect.objectContaining({
+        base: 'main', head: 'feat/checkout', expectedHead: 'a'.repeat(40),
+        message: expect.stringContaining('approved automatically (auto-merge, turned on by Adam at 1 Nov 2026, 15:02 UTC)'),
+      }));
+      const landed = (await gitPullRequestStorage.get(pr.id))!;
+      expect(landed.status).toBe('merged');
+      expect(landed.decidedBy).toBeUndefined();
+      expect(landed.autoApproved).toMatchObject({ modeOnAt: mode.onAt, modeOnByUserId: 'user-1', modeOnByName: 'Adam' });
+      expect(landed.deliveryStartedAt).toBeTruthy();
+      expect((await gitRepoStorage.get(repo.id))!.defaultBranchTipSha).toBe('c'.repeat(40));
+
+      // The agent is woken with an outcome that says it was automatic, and
+      // its chat's card is that row — no "awaits your decision" ask.
+      expect(started).toHaveLength(1);
+      const wake = JSON.stringify(started[0]);
+      expect(wake).toContain('was APPROVED AUTOMATICALLY');
+      expect(wake).toContain('never that your user approved it');
+      const rows = await agentChatStorage.getAfter('user-1', 'agent-a', 0);
+      expect(rows.some((row) => row.text.includes('awaits your decision'))).toBe(false);
+      expect(rows.at(-1)).toMatchObject({ role: 'platform', open: { pr: pr.id } });
+      expect(rows.at(-1)!.text).toContain('PR #1 ("Rewrite checkout") in api was APPROVED AUTOMATICALLY: feat/checkout is merged into main. Auto-merge is on for your user (turned on by Adam at 1 Nov 2026, 15:02 UTC)');
+    });
+
+    for (const [result, reason] of [
+      [{ status: 'conflict' }, 'feat/checkout conflicts with main'],
+      [{ status: 'stale' }, 'feat/checkout moved after it was made ready'],
+      [{ status: 'gone' }, 'feat/checkout is gone'],
+    ] as const) {
+      it(`a merge that answers ${result.status} leaves the proposal open, waiting for its owner, with the reason`, async () => {
+        const { service, pr, gitPullRequestStorage, started } = await buildGate(result);
+        expect(await auto(service, pr.id)).toEqual({ status: 'fallback', reason });
+        const left = (await gitPullRequestStorage.get(pr.id))!;
+        // Not the terminal `conflict` a person's Approve writes: nobody has
+        // seen it yet, and the card they are about to get must be decidable.
+        expect(left.status).toBe('open');
+        expect(left.autoApproved).toBeUndefined();
+        expect(left.autoApproveFallback).toMatchObject({ reason });
+        expect(started).toHaveLength(0);
+      });
+    }
+
+    it('a host that throws is a fallback too', async () => {
+      const gate = await buildGate({ status: 'merged' });
+      gate.merge.mockRejectedValueOnce(new Error('host down'));
+      expect(await auto(gate.service, gate.pr.id)).toEqual({ status: 'fallback', reason: 'the merge failed (host down)' });
+      expect((await gate.gitPullRequestStorage.get(gate.pr.id))!.status).toBe('open');
+    });
+
+    it('a repo that requires checks holds it at the same door a person\'s Approve meets', async () => {
+      const { service, pr, gitPullRequestStorage, gitRepoStorage, repo, merge, statuses } = await buildGate({
+        status: 'merged', fastForward: true, mergeCommitSha: 'c'.repeat(40),
+      });
+      await gitRepoStorage.update(repo.id, { requireChecks: true });
+      statuses.push({ state: 'failure', startedAt: new Date().toISOString() });
+      const answer = await auto(service, pr.id);
+      expect(answer.status).toBe('fallback');
+      expect(answer.reason).toContain('checks are failing on the proposed commit');
+      expect(merge).not.toHaveBeenCalled();
+      expect((await gitPullRequestStorage.get(pr.id))!.status).toBe('open');
+    });
+
+    it('never touches a quiet or already-decided proposal', async () => {
+      const { service, pr, gitPullRequestStorage, merge } = await buildGate({ status: 'merged' });
+      await gitPullRequestStorage.update(pr.id, { draft: true });
+      expect((await auto(service, pr.id)).status).toBe('fallback');
+      await gitPullRequestStorage.update(pr.id, { draft: undefined, status: 'rejected' });
+      expect((await auto(service, pr.id)).status).toBe('fallback');
+      expect(merge).not.toHaveBeenCalled();
+      expect((await gitPullRequestStorage.get(pr.id))!.status).toBe('rejected');
+      expect((await gitPullRequestStorage.get(pr.id))!.autoApproveFallback).toBeUndefined();
+    });
+  });
+
   describe('the Mini App decision path', () => {
     it('approve merges with the head-sha anchor and hands the outcome back', async () => {
       const { service, pr, gitPullRequestStorage, merge, started, agentChatStorage } = await buildGate({

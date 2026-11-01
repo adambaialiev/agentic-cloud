@@ -1,4 +1,5 @@
 import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
+import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
 import { isHarnessCli, seatNoReadingNotice, subscriptionName } from '../shared/harness-clis.js';
 import { applyWorkspaceAgentProactiveChange, resolveWorkspaceAgentProactive, type WorkspaceAgentProactiveAnswer } from '../shared/workspace-agent-proactive.js';
@@ -98,6 +99,7 @@ import {
   type WorkspaceOrgFlyAnswer,
   type WorkspaceOrgFlyMoveAsked,
   type WorkspaceOrgAgentMachineAnswer,
+  type WorkspaceOrgAutoApproveAnswer,
   type WorkspacePeopleAnswer,
   type WorkspaceTokenUsageAnswer,
   type WorkspacePeopleLiveAnswer,
@@ -979,6 +981,16 @@ function orgAgentMachineAnswer(
   };
 }
 
+function autoApproveAnswer(mode: WorkplaceAutoApprove | undefined): WorkspaceOrgAutoApproveAnswer {
+  return {
+    on: Boolean(mode?.on),
+    ...(mode ? { changedAt: mode.changedAt } : {}),
+    ...(mode?.history?.length
+      ? { history: [...mode.history].reverse().map((change) => ({ on: change.on, at: change.at })) }
+      : {}),
+  };
+}
+
 /**
  * Who sent a message that arrived from another agent, out of the row's own
  * words. The page reads the same two wordings for the same reason: the old one
@@ -1508,6 +1520,14 @@ function describeProposal(
     // The rejection reason, so a decided proposal's screen shows WHY — the
     // same words the agent was woken with.
     decisionNote: doc.decisionNote ?? null,
+    // Who decided, when nobody did (note #944): the auto-merge switch that
+    // merged it, and the reason it did not when it fell back to a person.
+    ...(doc.autoApproved
+      ? { autoApproved: { at: doc.autoApproved.at, modeOnAt: doc.autoApproved.modeOnAt, modeOnByName: doc.autoApproved.modeOnByName } }
+      : {}),
+    ...(doc.autoApproveFallback && doc.status === 'open'
+      ? { autoApproveFallback: { at: doc.autoApproveFallback.at, reason: doc.autoApproveFallback.reason } }
+      : {}),
     // Who asked, whose agent it is, and the agent's own face — the same one
     // its row on home wears, absent for a renamed or deleted agent, which
     // keeps the name line and loses only the picture.
@@ -4603,6 +4623,7 @@ self.addEventListener('activate', (event) => {
       activeSeatIds?: string[];
       avatarUrl?: string;
       workspaceAgentAvatarUrl?: string;
+      autoMerge?: { on: boolean; changedAt?: string };
     } | null = null;
     // Whether the Workplace section may offer the founder door. Creation
     // is unlimited, so this is true whenever the layer is wired, whether the
@@ -4741,6 +4762,13 @@ self.addEventListener('activate', (event) => {
           // signed-URL shape every personal picture on this payload rides.
           ...(orgAvatarUrl ? { avatarUrl: orgAvatarUrl } : {}),
           ...(workspaceAgentAvatarUrl ? { workspaceAgentAvatarUrl } : {}),
+          // The reader's OWN auto-merge (note #944), on the read Home and the
+          // Workplace window already make: the header's yellow line and the
+          // window's switch draw from it, with no request of their own.
+          // Absent until they first touch it.
+          ...(membership.autoApprove
+            ? { autoMerge: { on: membership.autoApprove.on, changedAt: membership.autoApprove.changedAt } }
+            : {}),
           // Which providers the caller could run an agent on RIGHT NOW — a
           // live seat of their own (the set the agent rows above were judged
           // by). The New-agent chooser reads it to route a missing sign-in
@@ -11377,6 +11405,53 @@ self.addEventListener('activate', (event) => {
     const changed = effectiveAgentMachineSize(org.agentMachineSizeId).id !== size.id;
     await ctx.storage.updateOrg(ctx.membership.orgId, { agentMachineSizeId: size.id });
     return res.json({ ...orgAgentMachineAnswer(size.id, ctx.membership.role), ok: true, changed });
+  });
+
+  /**
+   * Auto-merge (note #944): whether a proposal one of the READER's own
+   * agents makes ready is merged without asking them. Each person's own
+   * switch ("Each user should enable disable for itself", Adam, 1 Nov
+   * 2026), so this reads the caller's membership and nobody else's.
+   */
+  router.get('/api/org/auto-approve', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return;
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(autoApproveAnswer(ctx.membership.autoApprove));
+  });
+
+  /**
+   * Turn one's own on or off. Any member, for themselves only: there is no
+   * user id to name, so a teammate's switch cannot be reached, and the
+   * agents' router has no verb that writes it. Every flip is recorded on the
+   * membership (when), and on the person's own line of what they last did.
+   */
+  router.put('/api/org/auto-approve', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return;
+    const on = (req.body as { on?: unknown } | undefined)?.on;
+    if (typeof on !== 'boolean') return res.status(400).json({ error: 'Pass on: true or false.' });
+    const current = ctx.membership.autoApprove;
+    if (Boolean(current?.on) === on) {
+      // Nothing moved: no flip to record, so the history keeps meaning flips.
+      return res.json({ ...autoApproveAnswer(current), ok: true, changed: false });
+    }
+    const at = new Date().toISOString();
+    const byName = personDisplayName(await deps.userStorage?.getProfile(auth.userId).catch(() => null));
+    const autoApprove: WorkplaceAutoApprove = {
+      on,
+      changedAt: at,
+      changedByUserId: auth.userId,
+      changedByName: byName,
+      history: [...current?.history ?? [], { on, at, byUserId: auth.userId, byName }].slice(-AUTO_APPROVE_HISTORY_MAX),
+    };
+    await ctx.storage.touchMember(ctx.membership.orgId, auth.userId, { autoApprove });
+    await recordPersonAction(auth, personActionLines.switchedAutoApprove(on));
+    return res.json({ ...autoApproveAnswer(autoApprove), ok: true, changed: true });
   });
 
   /** The org's cloud inventory and honest cost estimates — admins only. */

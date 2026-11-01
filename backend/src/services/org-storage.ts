@@ -215,7 +215,7 @@ export function stampSeat(
 }
 
 /** The fields `touchMember` may write; anything absent is left as it was. */
-export type OrgMemberTouch = Partial<Pick<OrgMembershipDocument, 'lastSeenAt' | 'recap' | 'workspaceRecap' | 'workspaceRecapHistory' | 'workspaceRecapSettings' | 'workspaceAgentSettings' | 'workspaceRecapReadAt' | 'workspaceRecapChat' | 'workspaceAgentProactive' | 'workspaceAgentEventLedger' | 'inheritedSeatsAt'>>;
+export type OrgMemberTouch = Partial<Pick<OrgMembershipDocument, 'lastSeenAt' | 'recap' | 'workspaceRecap' | 'workspaceRecapHistory' | 'workspaceRecapSettings' | 'workspaceAgentSettings' | 'workspaceRecapReadAt' | 'workspaceRecapChat' | 'workspaceAgentProactive' | 'workspaceAgentEventLedger' | 'inheritedSeatsAt' | 'autoApprove'>>;
 
 export class InMemoryOrgStorage implements OrgStorage {
   private orgs = new Map<string, OrgDocument>();

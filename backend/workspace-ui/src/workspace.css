@@ -1002,6 +1002,16 @@ body.agent-chat-open .home-loading {
 .chathead .chatruntime span {
   min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* "Auto-merge on" beside the runtime while the reader's own auto-merge is on
+   (note #944): yellow, as the owner asked — the gold the stars already wear,
+   which keeps its contrast on the light paper. */
+/* On the runtime's own line, after it, so the bar keeps its height: a third
+   line pushed the title up out of the pinned bar. */
+.chathead .chatsubline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chathead .chatsubline .chatruntime { min-width: 0; }
+/* The page's own face, not the runtime's monospace: narrower, so on a phone
+   both fit on the line and the model keeps its words. */
+.chathead .automergeon { flex: none; white-space: nowrap; color: var(--star); font: 600 11px/16px var(--ui-font); }
 /* The ring is the sizing wrapper here as it is in every other list — see its
    own comment for why the face inside it is the smaller of the two. 34px, not
    the 40 it wore while the bar grew to fit it: a 40px ring in a 48px row has
@@ -2635,6 +2645,14 @@ button.chatmsg.platform.aside:active {
 .daycard .lbdaytitle { margin-bottom: 2px; }
 .daycard b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
 @media (pointer: coarse) { .daycard { display: none; } }
+/* An on/off switch on a row (role="switch"): the Chief of Staff's "On its
+   own" card and the workplace's auto-approve (note #944). Named for the
+   Leaderboard's switch, its style left with that page (note #824) while
+   these switches stayed. */
+.lbswitch { flex: none; width: 38px; height: 22px; border-radius: 999px; position: relative; background: color-mix(in srgb, var(--hint) 35%, transparent); transition: background-color .15s ease; }
+.lbswitch > span { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.lbswitch.on { background: var(--accent); }
+.lbswitch.on > span { transform: translateX(16px); }
 /* Settings → Your builder page: the X profile's own little form. */
 /* The X profile's editor (note #755): the box takes the row's whole width
    under its label, and Cancel and Save stand together on a line beneath it,

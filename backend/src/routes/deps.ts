@@ -382,6 +382,17 @@ export interface RouteDeps {
     pullRequestId: string;
   }) => Promise<boolean>;
   /**
+   * Auto-merge (note #944): `pr ready` calls it, never an agent verb, for a
+   * proposal it just made ready while its owner's own switch — which only
+   * that person turns on — is on and the checks passed. Merges through the owner's own gate and records the decision as
+   * automatic; anything that stops the merge leaves the proposal open,
+   * awaiting its owner, with the reason recorded.
+   */
+  autoApprovePullRequest?: (args: {
+    pullRequestId: string;
+    mode: { onAt: string; byUserId: string; byName: string };
+  }) => Promise<{ status: 'merged'; mergeCommitSha: string } | { status: 'fallback'; reason: string }>;
+  /**
    * Tells the owner, in the asking agent's chat, that `names` now reach CI
    * runs on the repo's protected branch (note #739: the grant is applied at
    * once; nothing is asked). Returns whether the line was written. Names

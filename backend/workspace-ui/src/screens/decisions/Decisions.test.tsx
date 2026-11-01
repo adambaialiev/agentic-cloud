@@ -671,6 +671,31 @@ describe('the decision on a change', () => {
     expect(screen.getByText('Your note to the agent: Use the other table.')).toBeTruthy();
     expect(document.getElementById('prHint')!.hidden).toBe(true);
   });
+
+  it('merged by auto-merge: no person is named as the decider, and the switch is (note #944)', async () => {
+    const decidedAt = new Date(Date.now() - 3 * 60_000).toISOString();
+    openPr(proposal({
+      pr: {
+        status: 'merged', decidedAt,
+        autoApproved: { at: decidedAt, modeOnAt: '2026-11-01T15:02:00.000Z', modeOnByName: 'Adam' },
+      } as never,
+    }));
+    await prScreen();
+    expect(document.querySelector('#prPills .pill')!.textContent).toBe('Merged automatically 3m ago');
+    expect(document.getElementById('prAutoApproved')!.textContent)
+      .toBe('Approved automatically (auto-merge on, turned on by Adam at 1 Nov 2026, 15:02 UTC). No person read it before it merged.');
+    expect(document.getElementById('prDecide')).toBeNull();
+  });
+
+  it('an open proposal auto-merge could not merge waits for the reader, and says why', async () => {
+    openPr(proposal({
+      pr: { autoApproveFallback: { at: new Date().toISOString(), reason: 'feat/x conflicts with main' } } as never,
+    }));
+    await prScreen();
+    expect(document.getElementById('prAutoFallback')!.textContent)
+      .toBe('Auto-merge is on, but this was not merged automatically: feat/x conflicts with main. It waits for your decision.');
+    expect(document.getElementById('prAutoApproved')).toBeNull();
+  });
 });
 
 describe('the diff behind a change', () => {

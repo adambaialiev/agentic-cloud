@@ -452,6 +452,13 @@ export interface WorkspaceProposalRow {
   /** Whether THIS viewer decides it; Home's queue lists only those. */
   canDecide: boolean;
   checks?: WorkspaceChecksSummary;
+  /**
+   * Merged by auto-merge (note #944), not by a person: the mode's who
+   * and when, which every surface names in place of a decider.
+   */
+  autoApproved?: { at: string; modeOnAt: string; modeOnByName: string };
+  /** Auto-approve was on but did not merge it; it waits, and this says why. */
+  autoApproveFallback?: { at: string; reason: string };
 }
 
 export interface WorkspaceKnowledgeProposalRow {
@@ -546,6 +553,12 @@ export interface WorkspaceOrgSummary {
    * the separate recap read lands. Absent when the release carries no file.
    */
   workspaceAgentAvatarUrl?: string;
+  /**
+   * The reader's OWN auto-merge switch here (note #944): on, their agents'
+   * proposals with passing checks merge without asking them. Absent until
+   * they first touch it, which reads as off.
+   */
+  autoMerge?: { on: boolean; changedAt?: string };
   /**
    * An admin asked to delete this workplace (2026-09-22). While it stands the
    * Workspace shows only the lock screen: who asked, when it goes for good,
@@ -1854,6 +1867,20 @@ export interface WorkspaceOrgAgentMachineWritten extends WorkspaceOrgAgentMachin
   /** False when the workplace was already building new agents on it. */
   changed: boolean;
 }
+
+/**
+ * GET / PUT api/org/auto-approve (note #944): the READER's own auto-merge
+ * switch in this workplace — each person turns theirs on and off, and it
+ * covers only their own agents' proposals.
+ */
+export interface WorkspaceOrgAutoApproveAnswer {
+  on: boolean;
+  /** The last flip, absent while they have never touched the switch. */
+  changedAt?: string;
+  /** Every flip, newest first. */
+  history?: Array<{ on: boolean; at: string }>;
+}
+export interface WorkspaceOrgAutoApproveRequest { on: boolean }
 
 /** GET api/org/spend */
 export interface WorkspaceOrgSpendMachine {

@@ -20,6 +20,8 @@
  * knowledge proposals; admin-only boundaries still apply to destructive and
  * shared-secret requests. Finer roles wait for a real client to need one.
  */
+import type { WorkplaceAutoApprove } from '../shared/auto-approve.js';
+
 export type OrgRole = 'admin' | 'member';
 
 export interface OrgDocument {
@@ -414,6 +416,17 @@ export interface OrgMembershipDocument {
    */
   lastSeenAt?: string;
   recap?: { text: string; at: string };
+  /**
+   * Auto-merge (note #944; Adam, 1 Nov 2026: "Each user should enable
+   * disable for itself"): while `on`, a code proposal one of THIS member's
+   * agents makes ready with passing checks is merged at once, decided
+   * automatically and never in their name. Each person's own: it touches no
+   * teammate's agents, and only that person's own request writes it
+   * (`PUT /api/org/auto-approve`) — no agent route does. Absent is off, the
+   * default. Every flip is kept in `history`.
+   */
+  autoApprove?: WorkplaceAutoApprove;
+
   /** The workplace's briefing for this member — one per workplace again since
    * rooms left the product (note #843), with its history below. Private to
    * this member; never serialized in People or workplace lists. */

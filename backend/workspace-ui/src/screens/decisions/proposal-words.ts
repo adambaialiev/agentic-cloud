@@ -55,7 +55,7 @@ export function bytes(n: number): string {
 /** What state this proposal is in, in the hue that already means that on this
  *  page — and WHEN, which the row has always said and the screen never did. */
 export function statusPill(
-  pr: Pick<WorkspaceProposalDetailRecord, 'status' | 'decidedAt' | 'to' | 'draft'>,
+  pr: Pick<WorkspaceProposalDetailRecord, 'status' | 'decidedAt' | 'to' | 'draft' | 'autoApproved'>,
   merging: boolean,
   when: string,
 ): { tone: string; text: string } {
@@ -67,7 +67,8 @@ export function statusPill(
     case 'open': return pr.draft
       ? { tone: 'quiet', text: 'Still being prepared' }
       : { tone: 'open', text: 'Waiting for you' };
-    case 'merged': return { tone: 'merged', text: `Merged${stamp}` };
+    // Nobody approved it (note #944): the pill says the mode did.
+    case 'merged': return { tone: 'merged', text: `${pr.autoApproved ? 'Merged automatically' : 'Merged'}${stamp}` };
     case 'rejected': return { tone: 'rejected', text: `Rejected${stamp}` };
     case 'withdrawn': return { tone: 'quiet', text: `Withdrawn${stamp}` };
     case 'stale': return { tone: 'quiet', text: 'Went stale' };

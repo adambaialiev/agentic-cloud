@@ -398,3 +398,69 @@ agent told to run it on the old binary would have nowhere to go.
 Knowledge proposals follow the same rule since the owner asked for it the
 same day: `knowledge propose` is quiet and `agentbuilt knowledge proposals
 ready <n>` is the invitation — see docs/agent-knowledge-pages.md.
+
+## Auto-merge (note #944, 2026-11-01)
+
+Adam: *"auto-approve mode. If it's on, all proposals should be automatically
+approved."* Then, the same day: *"I envision auto merge mode on/off individual
+for each user in workplace modal window. And if it's on, in chief of staff
+chat screen in header it should be displayed text that auto merge is on as
+yellow colored text"* and *"Each user should enable disable for itself."*
+
+**Each person's own.** One switch per member of a workplace, kept on the
+membership (`OrgMembershipDocument.autoApprove`: on, when, and a `history` of
+the last 50 flips), in the **Workplace window** under Repositories, worded with
+what it does: *Every code proposal your agents make ready is merged without
+asking you. Checks must still pass.* Any member flips their own
+(`PUT api/org/auto-approve` names no user, so a teammate's cannot be reached),
+turning it on asks once more, and the flip is on their own last-action line.
+It covers only proposals from that person's own agents: `pr ready` reads the
+switch of the proposal's OWNER, so one member's switch never merges a
+teammate's work. The agents' router has no verb that writes it — an agent only
+meets it in `pr ready`'s answer. Off is the default and today's behaviour.
+
+**The header.** The state read carries the reader's own switch
+(`org.autoMerge`), so the window's switch and the Chief of Staff header draw
+from the read Home already makes. While it is on, the header says
+*Auto-merge on* in yellow (`--star`) beside the model line.
+
+**What it does.** `pr ready` makes the proposal ready as always, then, with
+the owner's switch on, decides it instead of asking (`AgentService.autoApprovePullRequest`):
+
+- **Checks still gate.** Red and running are refused by `pr ready` itself, as
+  before. Green merges. Superseded never does. No verdict at all merges only
+  where the repo's CI is off — what an owner's Approve does there — and on a
+  repo with CI on it waits for its owner instead (`autoApproveChecksBlocker`).
+  A repo with `requireChecks` meets the same `requiredChecksBlocker` an
+  owner's Approve meets.
+- **Same merge path.** The same host merge, anchored to the sha `pr ready`
+  pinned, the same landing stamp, the same follow-up: the proposing agent
+  (and a card sender) is woken with the outcome, the note's state advances
+  with the merge, and deploys run as on any merge to main.
+- **Recorded as automatic.** `autoApproved` (when, and the mode's who and
+  when) and no `decidedBy`: no surface may name a person who did not read it.
+  The proposal screen's pill says *Merged automatically* and its line
+  *Approved automatically (auto-merge on, turned on by Adam at
+  1 Nov 2026, 15:02 UTC). No person read it before it merged.*; the Chief of
+  Staff's card and every history row say *Merged automatically*; the merge
+  commit says *approved automatically*; the agent's outcome is *PR #N … was
+  APPROVED AUTOMATICALLY …*, drawn in its chat as a *Merged automatically*
+  card, and no *awaits your decision* ask is written.
+- **Nothing silently stuck.** A merge that conflicts, finds the branch moved,
+  finds it gone or throws leaves the proposal OPEN — not the terminal
+  `conflict` a person's Approve writes, since nobody has seen it yet — with
+  `autoApproveFallback.reason`, and `pr ready` sends the ordinary ask. Its
+  screen says *Auto-merge is on, but this was not merged automatically:
+  <reason>. It waits for your decision.*, and the agent's answer and the
+  Chief of Staff's card say the same.
+
+Only code proposals: knowledge changes have been live at once since note
+#746, and the human-only asks (deleting a site, repository or agent, sending
+mail) are untouched. A proposal already waiting when the switch is turned on
+is not swept up; the mode decides at `pr ready`.
+
+Proof: `git-prs.test.ts` (on → merged and automatic; red or missing checks →
+waits; off → unchanged; merge failure → falls back), `workspace-router.test.ts`
+(each member's own switch, its record and the state read), the screen
+tests (`AutoMerge.test.tsx`: the window's switch and the header line), and in Chrome
+`scripts/verify-workspace-auto-approve.mts`.
