@@ -7505,5 +7505,5 @@ h2.mailfileshead { margin-top: 16px; }
 .mailsetupform .actions { padding: 0 12px 4px; }
 #mailNotSetUp .mailnotsetup-what { text-align: left; }
 #mailNotSetUp .ctext { white-space: normal; overflow: visible; text-overflow: clip; display: block; }
-#mailSetupState .name { white-space: normal; }
+#mailSetupState .name, #screenMailSetup .ctext { white-space: normal; overflow: visible; text-overflow: clip; display: block; }
 .mailsetupform .frow .segtabs { margin: 6px 0 2px; }
