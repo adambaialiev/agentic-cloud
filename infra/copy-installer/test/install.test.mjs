@@ -426,6 +426,76 @@ describe('the installer and the licence', () => {
   });
 });
 
+describe('Fly\'s registry saying "repository not found" mid-copy (1 Nov 2026)', () => {
+  it('asks again on NAME_UNKNOWN and 5xx, then succeeds; a 401 is not asked again', async () => {
+    const seen = [];
+    let uploadStarts = 0;
+    let manifestPuts = 0;
+    const server = createServer((req, res) => {
+      seen.push(`${req.method} ${req.url.split('?')[0]}`);
+      req.resume();
+      req.on('end', () => {
+        if (req.method === 'POST' && req.url.startsWith('/v2/app-images/blobs/uploads/')) {
+          uploadStarts += 1;
+          if (uploadStarts === 1) {
+            res.writeHead(404, { 'content-type': 'application/json' });
+            return res.end('{"errors":[{"code":"NAME_UNKNOWN","message":"app repository not found"}]}');
+          }
+          res.writeHead(202, { location: '/v2/app-images/blobs/uploads/session-1' });
+          return res.end();
+        }
+        if (req.method === 'PUT' && req.url.startsWith('/v2/app-images/blobs/uploads/session-1')) {
+          res.writeHead(201);
+          return res.end();
+        }
+        if (req.method === 'PUT' && req.url === '/v2/app-images/manifests/v1') {
+          manifestPuts += 1;
+          if (manifestPuts === 1) { res.writeHead(502); return res.end('bad gateway'); }
+          res.writeHead(201, { 'docker-content-digest': 'sha256:abc' });
+          return res.end();
+        }
+        if (req.url === '/v2/locked/blobs/uploads/') { res.writeHead(401); return res.end('denied'); }
+        res.writeHead(404);
+        res.end();
+      });
+    });
+    await new Promise((resolve) => { server.listen(0, '127.0.0.1', resolve); });
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const waited = [];
+    const retry = { wait: async (s) => { waited.push(s); }, log: () => {} };
+    try {
+      const dir = mkdtempSync(path.join(tmpdir(), 'reg-retry-'));
+      const file = path.join(dir, 'layer');
+      writeFileSync(file, 'layer bytes');
+      const dest = installer.flyRegistry({ app: 'app-images', token: 't', base, retry });
+      await dest.putBlob('sha256:0000000000000000000000000000000000000000000000000000000000000000', file);
+      expect(uploadStarts).toBe(2);
+      expect(await dest.putManifest('v1', Buffer.from('{}'), 'application/vnd.oci.image.manifest.v1+json')).toBe('sha256:abc');
+      expect(manifestPuts).toBe(2);
+      expect(waited).toEqual([5, 5]);
+      const locked = installer.flyRegistry({ app: 'locked', token: 't', base, retry });
+      let refused = null;
+      try { await locked.putBlob('sha256:1111111111111111111111111111111111111111111111111111111111111111', file); } catch (error) { refused = error; }
+      expect(String(refused?.message)).toContain('401');
+      expect(waited).toEqual([5, 5]);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('gives up after its waits, with the registry\'s own words', async () => {
+    let calls = 0;
+    const waited = [];
+    const error = await installer.retryRegistry('image v1', async () => {
+      calls += 1;
+      throw new Error('Image v1 refused: 404 {"errors":[{"code":"NAME_UNKNOWN"}]}');
+    }, { waits: [1, 2], wait: async (s) => { waited.push(s); }, log: () => {} }).catch((e) => e);
+    expect(calls).toBe(3);
+    expect(waited).toEqual([1, 2]);
+    expect(String(error.message)).toContain('NAME_UNKNOWN');
+  });
+});
+
 describe('the installer\'s parts', () => {
   it('makes an Ed25519 SSH key pair in OpenSSH form', () => {
     const pair = installer.sshKeyPair('theirco-backend@agents.theirco.test');

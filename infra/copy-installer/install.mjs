@@ -162,11 +162,34 @@ export function updatesSource({ url = UPDATES_URL, customer, key, fetchImpl = fe
   };
 }
 
+/** A refusal from Fly's registry that is worth asking again: it has said
+ *  "404 NAME_UNKNOWN: app repository not found" for an app it had taken five
+ *  images into a moment before (a real install, 1 Nov 2026), and like any
+ *  registry it answers 429 and 5xx now and then. Never a 401 or 403, and never
+ *  a manifest it judged invalid: those do not change by waiting. */
+export function registryHiccup(error) {
+  const text = String(error?.message ?? error);
+  return /NAME_UNKNOWN|repository not found|: (429|5\d\d)\b|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up|fetch failed/i.test(text);
+}
+
+/** Ask again, about three minutes in all, while the answer is a hiccup. */
+export async function retryRegistry(what, attempt, { waits = [5, 10, 20, 40, 60, 60], wait = (s) => sleep(s * 1000), log = say } = {}) {
+  for (let tries = 0; ; tries += 1) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (tries >= waits.length || !registryHiccup(error)) throw error;
+      log(`  ${what}: ${error.message}; asking again in ${waits[tries]} s`);
+      await wait(waits[tries]);
+    }
+  }
+}
+
 /** Where the copy runs from: its own Fly registry, one app's repository. */
-export function flyRegistry({ app, token, base = FLY_REGISTRY, fetchImpl = fetch }) {
+export function flyRegistry({ app, token, base = FLY_REGISTRY, fetchImpl = fetch, retry = {} }) {
   const auth = basic('x', token);
   const url = (pathname) => `${base}/v2/${app}/${pathname}`;
-  return {
+  const self = {
     async hasBlob(digest) {
       const answer = await fetchImpl(url(`blobs/${digest}`), { method: 'HEAD', headers: { authorization: auth } });
       return answer.ok;
@@ -199,6 +222,13 @@ export function flyRegistry({ app, token, base = FLY_REGISTRY, fetchImpl = fetch
       return answer.headers.get('docker-content-digest');
     },
   };
+  // Every write is asked again on a hiccup. An upload starts over from its
+  // POST, because a refused or broken session cannot be resumed.
+  const putBlob = self.putBlob;
+  const putManifest = self.putManifest;
+  self.putBlob = (digest, file) => retryRegistry(`layer ${digest.slice(0, 19)}`, () => putBlob(digest, file), retry);
+  self.putManifest = (tag, bytes, type) => retryRegistry(`image ${tag}`, () => putManifest(tag, bytes, type), retry);
+  return self;
 }
 
 const sha256 = (file) => new Promise((resolve, reject) => {
