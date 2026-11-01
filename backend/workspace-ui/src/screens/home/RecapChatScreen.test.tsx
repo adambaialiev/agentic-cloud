@@ -1539,3 +1539,45 @@ describe('the header\'s model and effort while the chat loads (note #735)', () =
     }
   });
 });
+
+/** Note #945: the same recap line under the Chief of Staff's latest request. */
+describe('the recap line under its latest request (note #945)', () => {
+  const ended = { startedAt: new Date(Date.now() - 65_000).toISOString(), endedAt: new Date(Date.now() - 1_000).toISOString() };
+  const asked: RecapChatAnswer = {
+    orgId: 'o1', working: false, waiting: [],
+    messages: [
+      { id: 'a1', role: 'owner', text: 'Ask Theo to ship the booking page', at: ended.startedAt },
+      { id: 'a2', role: 'assistant', text: 'Asked Theo; I will tell you when it lands.', at: new Date(Date.now() - 2_000).toISOString() },
+    ],
+  };
+  const line = () => document.getElementById('recapChatRecap');
+
+  it('stands under the request once it is over, centred in the column, saying whose answer it still waits for', async () => {
+    mount({ ...asked, waiting: ['Theo'], lastTurn: { ...ended, recap: 'Theo is shipping the booking page. Nothing for you until he reports.' } });
+    await waitFor(() => expect(line()).toBeTruthy());
+    expect(line()!.querySelector('.turnfacts')!.textContent).toMatch(/^Worked for 1m 4s · done .+ · waiting on Theo$/);
+    expect(line()!.querySelector('.turnrecaptext')!.textContent).toBe('Recap: Theo is shipping the booking page. Nothing for you until he reports.');
+    // In the conversation's scroller, after its log: the column's own child.
+    expect(line()!.parentElement!.id).toBe('recapChatScroll');
+    expect(document.getElementById('recapChatLog')!.contains(line())).toBe(false);
+  });
+
+  it('draws no recap before it arrives, then the recap in place when it does', async () => {
+    let answer: RecapChatAnswer = { ...asked, lastTurn: ended };
+    mount(answer, undefined, { 'GET api/recap/chat': () => answer });
+    await waitFor(() => expect(line()).toBeTruthy());
+    expect(line()!.querySelector('.turnrecaptext')).toBeNull();
+    answer = { ...asked, lastTurn: { ...ended, recap: 'Theo is on it.' } };
+    await waitFor(() => expect(line()!.querySelector('.turnrecaptext')?.textContent).toBe('Recap: Theo is on it.'), { timeout: 5000 });
+  });
+
+  it('is absent while a request runs and under the person\'s own newest words', async () => {
+    let answer: RecapChatAnswer = { ...asked, working: true, phase: 'Thinking…', lastTurn: { ...ended, recap: 'Done.' } };
+    mount(answer, undefined, { 'GET api/recap/chat': () => answer });
+    await screen.findByText('Ask Theo to ship the booking page');
+    expect(line()).toBeNull();
+    answer = { ...asked, messages: [...asked.messages, { id: 'a3', role: 'owner', text: 'Thanks', at: new Date().toISOString() }], lastTurn: { ...ended, recap: 'Done.' } };
+    await screen.findByText('Thanks', undefined, { timeout: 5000 });
+    expect(line()).toBeNull();
+  });
+});

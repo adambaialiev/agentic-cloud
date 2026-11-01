@@ -269,6 +269,8 @@ export interface RecapChatAnswer {
   avatarUrl?: string;
   /** The first run (note #726): the person has written and no plan is signed in yet — the screen draws the sign-in card under the ask. */
   awaitingSeat?: boolean;
+  /** The latest completed request and its recap, for the line under it (note #945). */
+  lastTurn?: import('./turn-recap.js').WorkspaceTurnRecap;
 }
 /** POST api/recap/chat/stop — the same answer a room agent's Stop gives. */
 export interface RecapChatStopAnswer { ok: true; stopped: boolean; name: string }

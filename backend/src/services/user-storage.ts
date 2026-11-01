@@ -25,6 +25,10 @@ export interface TelegramAgentFieldUpdates {
   cli?: AgentCli;
   /** The durable turn boundary (note #455): stamped when a work turn ends. */
   lastTurnEndedAt?: string | null;
+  /** When that turn started (note #945), stamped in the same write. */
+  lastTurnStartedAt?: string | null;
+  /** When a recap summary last returned, changed or not (note #945). */
+  recapCheckedAt?: string | null;
   /** The post-turn summary's "finished" verdict (note #707); `null` when it judged otherwise. */
   workFinishedAt?: string | null;
   /** Immutable workplace assignment; written by creation/backfill only. */

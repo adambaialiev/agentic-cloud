@@ -1009,6 +1009,8 @@ export interface WorkspaceChatAnswer {
   activity?: string;
   activitySince?: string;
   context?: WorkspaceAgentContext;
+  /** The latest completed turn and its recap, for the line under it (note #945). */
+  lastTurn?: import('./turn-recap.js').WorkspaceTurnRecap;
 }
 
 /** One durable process the agent deliberately left running beyond its turn.

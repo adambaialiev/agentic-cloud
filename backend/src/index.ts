@@ -1878,6 +1878,7 @@ const deps: RouteDeps = {
     chatMessageAgentFromUser: (args) => agentService.chatMessageAgentFromUser(args),
     converseWorkspaceRecap: (userId, orgId, prompt, settings, onPhase, options) => agentService.converseWorkspaceRecap(userId, orgId, prompt, settings, onPhase, options),
     summarizeWorkspaceRecap: (userId, orgId, prompt, settings) => agentService.summarizeWorkspaceRecap(userId, orgId, prompt, settings),
+    workspaceAgentTurnEnded: (userId, orgId, turn) => agentService.workspaceAgentTurnEnded(userId, orgId, turn),
     workspaceSeatIdsInUse: (userId, orgId) => agentService.workspaceSeatIdsInUse(userId, orgId),
     onWorkspaceActivity: (listener) => agentService.onWorkspaceActivity(listener),
     agentChatMessages: (userId, agentId, afterSeq) => (

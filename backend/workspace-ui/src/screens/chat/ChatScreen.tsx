@@ -98,6 +98,9 @@ import { broughtArrivals, mergeTranscript, transcriptCursor, type TranscriptRow 
 import { useChatOutbox } from './useChatOutbox.js';
 import { useTranscripts } from './useTranscripts.js';
 import { useManagedJobs } from '../jobs/useManagedJobs.js';
+import { TurnRecap } from './TurnRecap.js';
+import { showsTurnRecap } from './turn-recap-words.js';
+import type { WorkspaceTurnRecap } from '../../../../src/shared/turn-recap.js';
 import { RadioButton } from '../../radio/RadioButton.js';
 
 export const CHAT_POLL_MS = 3000;
@@ -603,6 +606,8 @@ export function ChatScreen() {
     working: false, preparing: false, activity: '',
   });
   const [context, setContext] = useState<WorkspaceAgentContext | null>(null);
+  // The latest completed turn and its recap (note #945), from the same read.
+  const [lastTurn, setLastTurn] = useState<WorkspaceTurnRecap | undefined>(undefined);
   const [stopping, setStopping] = useState(false);
   // What the reader has sent that is not on the record yet (note #658). It
   // lives above this screen, so a message that went keeps going — and keeps
@@ -789,6 +794,13 @@ export function ChatScreen() {
       // re-render the transcript beneath it every three seconds.
       const nextContext = answer.context ?? null;
       setContext((held) => (sameContext(held, nextContext) ? held : nextContext));
+      // The recap line (note #945), on the same terms: only a change redraws.
+      const nextLastTurn = answer.lastTurn;
+      setLastTurn((held) => (
+        held?.endedAt === nextLastTurn?.endedAt && held?.startedAt === nextLastTurn?.startedAt && held?.recap === nextLastTurn?.recap
+          ? held
+          : nextLastTurn
+      ));
       const nextTurn = { working: answer.working, preparing: Boolean(answer.preparing), activity: answer.activity ?? '' };
       outbox.noteRebuilding(id, nextTurn.preparing);
       setTurn((held) => (
@@ -973,6 +985,20 @@ export function ChatScreen() {
   // arrives or leaves it changes the pane's height without a viewport event;
   // carry a following reader to the new end and, through that scroll, let the
   // viewport hook learn the pane's new height before the next keyboard move.
+  // The recap line under the latest turn (note #945) is the conversation's
+  // newest words when it arrives — after the reply, when the summary does —
+  // so a reader at the end is carried down to it, as to a row.
+  const lastRow = rows.at(-1);
+  const recapShown = showsTurnRecap(lastTurn, {
+    busy: turn.working || turn.preparing || pending.length > 0,
+    ...(lastRow ? { last: lastRow } : {}),
+    ...(() => { const reply = rows.findLast((row) => row.role === 'agent'); return reply ? { lastReplyAt: reply.at } : {}; })(),
+  });
+  const recapKey = recapShown && lastTurn ? `${lastTurn.endedAt}|${lastTurn.recap ?? ''}|${jobs.length}` : '';
+  useLayoutEffect(() => {
+    if (recapKey && stick.current) scrollToBottom(pane.current, true);
+  }, [recapKey]);
+
   useLayoutEffect(() => {
     const visible = jobs.length > 0;
     if (visible === jobsWereVisible.current) return;
@@ -1293,6 +1319,9 @@ export function ChatScreen() {
           {pending.map((message) => <OutgoingMessageRow key={message.id} message={message} />)}
         </div>
         </ChatGalleryProvider>
+
+        {/* Under the latest completed turn, once it is over (note #945). */}
+        {recapShown && lastTurn ? <TurnRecap id="agentChatRecap" turn={lastTurn} jobs={jobs.length} /> : null}
 
         {/* Visible only while a turn runs: the typing bubble carries the newest
             tool line, and Stop keeps the bot chat's contract — the in-flight

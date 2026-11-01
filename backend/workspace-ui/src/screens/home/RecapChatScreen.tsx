@@ -37,6 +37,8 @@ import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatStopAnswer
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
 import { chatFilesBody } from '../chat/chat-upload.js';
+import { TurnRecap } from '../chat/TurnRecap.js';
+import { showsTurnRecap } from '../chat/turn-recap-words.js';
 import { jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { recapDraftKey } from '../../chrome/draft-memory.js';
 import { useReturnToParent } from '../../chrome/history.js';
@@ -582,6 +584,15 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // screen has already been told landed.
   const running = Boolean(answer?.working);
   const working = running && !stopped;
+  // The recap line under the latest completed request (note #945). The
+  // conversation's last word is the last row it DRAWS — a quiet event
+  // turn's rows stay in the record and off the screen.
+  const shownMessages = messages.filter((_, at) => { const form = views[at]?.form; return form !== 'hidden' && form !== 'remove-room'; });
+  const recapShown = showsTurnRecap(answer?.lastTurn, {
+    busy: running || pending.length > 0,
+    ...(shownMessages.length ? { last: shownMessages.at(-1)! } : {}),
+    ...(() => { const reply = shownMessages.findLast((message) => message.role === 'assistant'); return reply ? { lastReplyAt: reply.at } : {}; })(),
+  });
   let lastDay = '';
   return <>
     {picking ? <RecapRuntimePicker orgId={orgId} seed={settings} target="agent" onClose={() => { setPicking(false); readSettings(); }} /> : null}
@@ -704,6 +715,10 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
               Home and its own screen, through `agentStateLine`. */}
         </div>
         </ChatGalleryProvider>
+        {/* Under the latest completed request, once it is over (note #945),
+            with whose answers it is still collecting where an agent's says
+            what it left running. */}
+        {recapShown && answer?.lastTurn ? <TurnRecap id="recapChatRecap" turn={answer.lastTurn} waiting={answer.waiting} /> : null}
         {/* Visible only while a request runs: the typing bubble carries the
             phase the machine reports — Thinking…, the rare first-time
             setup, Stopping… (never the machine waking, note #633; a room

@@ -52,6 +52,7 @@ import type {
 import { MAIL_UPLOAD_CONTENT_TYPE, mailAddress } from '../shared/workspace-mail.js';
 import { handleProblem } from '../shared/handles.js';
 import { agentWorkFinished, FRESH_CHAT_MESSAGE, freshChatRefusal } from '../shared/fresh-chats.js';
+import { turnRecapOf } from '../shared/turn-recap.js';
 import { MailOutboxError, replyAll, replyRecipient } from '../services/mail-outbox.js';
 import { MAIL_UPLOAD_MAX_BYTES, readMailUpload } from '../services/mail-upload.js';
 import { MailSendError } from '../services/mail-sender.js';
@@ -5316,7 +5317,10 @@ self.addEventListener('activate', (event) => {
     const face = await workspaceAgentFaceForOrg(auth.orgId);
     const record = Object.values(auth.profile.telegram?.agents ?? {})
       .find((candidate) => candidate.orgId === auth.orgId && isWorkspaceAgent(candidate));
-    return { ...(face ? { avatarUrl: face } : {}), ...contextFields(record?.contextUsage) };
+    // The line under its latest completed request (note #945), from the
+    // record every answer already reads.
+    const lastTurn = turnRecapOf(record);
+    return { ...(face ? { avatarUrl: face } : {}), ...contextFields(record?.contextUsage), ...(lastTurn ? { lastTurn } : {}) };
   };
   /** How many forwarded proposals one answer reads fresh — the newest. An
    *  older card keeps the words it was forwarded with (its row's text). */
@@ -8773,6 +8777,9 @@ self.addEventListener('activate', (event) => {
       ...(working
         ? liveActivityFields(deps.agentLifecycle?.agentActivity?.(auth.userId, agentId))
         : {}),
+      // The recap line under the latest completed turn (note #945): the row
+      // recap and the turn's own stamps, off the same record as the ring.
+      ...(() => { const lastTurn = turnRecapOf(agent); return lastTurn ? { lastTurn } : {}; })(),
     } satisfies WorkspaceChatAnswer);
   });
 

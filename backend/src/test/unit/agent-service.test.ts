@@ -520,7 +520,8 @@ describe('AgentService', () => {
       const storedFinishedAt = async () => (await userStorage.getProfile('user-1'))
         ?.telegram?.agents?.['agent-a']?.workFinishedAt;
       const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
-      return { svc, service, execSync, pool, storedRecap, storedFinishedAt, settle };
+      const storedAgent = async () => (await userStorage.getProfile('user-1'))?.telegram?.agents?.['agent-a'];
+      return { svc, service, execSync, pool, storedRecap, storedFinishedAt, storedAgent, settle };
     };
 
     /**
@@ -692,6 +693,68 @@ describe('AgentService', () => {
       await settle();
       expect(execSync).toHaveBeenCalledTimes(1);
       expect(await storedRecap()).toEqual({ text: 'Keeps the shop site', at: '2026-08-20T08:00:00Z' });
+    });
+
+    /**
+     * Note #945: the chat's recap line asks "has this turn's summary
+     * arrived", which an UNCHANGED recap answers too — so every usable
+     * result stamps `recapCheckedAt`, while `at` still moves only on news.
+     */
+    it('stamps when a summary came back, changed or not, apart from the recap\'s own stamp (note #945)', async () => {
+      const unchanged = await setup({
+        execSync: vi.fn().mockResolvedValue({ stdout: '{"recap":"Keeps the shop site"}', stderr: '', exitCode: 0, timedOut: false }),
+        agent: { recap: { text: 'Keeps the shop site', at: '2026-08-20T08:00:00Z' } },
+      });
+      const before = Date.now();
+      unchanged.svc.appendAgentRecapMessage('user-1', 'agent-a', 'owner', 'thanks!');
+      unchanged.svc.queueTelegramAgentRecap('user-1', 'agent-a');
+      await unchanged.settle();
+      const quiet = await unchanged.storedAgent();
+      expect(quiet?.recap).toEqual({ text: 'Keeps the shop site', at: '2026-08-20T08:00:00Z' });
+      expect(Date.parse(quiet?.recapCheckedAt ?? '')).toBeGreaterThanOrEqual(before);
+
+      const changed = await setup();
+      changed.svc.appendAgentRecapMessage('user-1', 'agent-a', 'owner', 'fix the backup');
+      changed.svc.queueTelegramAgentRecap('user-1', 'agent-a');
+      await changed.settle();
+      const news = await changed.storedAgent();
+      expect(news?.recapCheckedAt).toBe(news?.recap?.at);
+    });
+
+    it('a failed summary stamps nothing — the line keeps saying no recap has arrived (note #945)', async () => {
+      const { svc, storedAgent, settle } = await setup({
+        execSync: vi.fn().mockResolvedValue({ stdout: 'gibberish', stderr: '', exitCode: 0, timedOut: false }),
+      });
+      svc.appendAgentRecapMessage('user-1', 'agent-a', 'owner', 'do a thing');
+      svc.queueTelegramAgentRecap('user-1', 'agent-a');
+      await settle();
+      const record = await storedAgent();
+      expect(record?.recapCheckedAt).toBeUndefined();
+    });
+
+    /**
+     * Note #945: the Chief of Staff's request gets the same summary, on its
+     * own record, for the recap line in its chat — and since no roster or
+     * briefing reads that record's recap, writing it is no news for Home.
+     */
+    it('summarizes the Chief of Staff\'s request onto its own record, with the turn\'s stamps, and tells Home nothing (note #945)', async () => {
+      const { service, execSync, storedRecap, storedAgent, settle } = await setup({
+        agent: { purpose: 'workspace-recap', orgId: 'org-1' },
+      });
+      const heard: string[] = [];
+      service.onWorkspaceActivity((event) => { heard.push(event.kind); });
+      const startedAt = new Date(Date.now() - 30_000).toISOString();
+      await service.workspaceAgentTurnEnded('user-1', 'org-1', {
+        startedAt,
+        messages: [{ role: 'owner', text: 'ask Theo for an update' }, { role: 'agent', text: 'Asked Theo.' }],
+      });
+      await settle();
+      expect(String(execSync.mock.calls[0]![1])).toContain('[owner] ask Theo for an update');
+      expect((await storedRecap())?.text).toBe('Fixed and verified the backup.');
+      const record = await storedAgent();
+      expect(record?.lastTurnStartedAt).toBe(startedAt);
+      expect(Date.parse(record?.lastTurnEndedAt ?? '')).toBeGreaterThan(Date.parse(startedAt));
+      expect(heard).not.toContain('recap-written');
     });
 
     it('no seat means silence', async () => {
@@ -2966,6 +3029,27 @@ describe('AgentService — onboarding pipelining + agent record fixes', () => {
     // agent's reply elsewhere knows the reply is whole from this, not from
     // the run registry a restart empties.
     expect(Date.parse(record?.lastTurnEndedAt ?? '')).toBeGreaterThanOrEqual(before);
+  });
+
+  it('stamps when the turn started beside when it ended, for the chat\'s recap line (note #945)', async () => {
+    const userStorage = new InMemoryUserStorage();
+    await baseProfile(userStorage, {
+      agents: {
+        'agent-1': telegramAgent('claude', { agentId: 'agent-1', name: 'Alex', serverId: 'fly_ia-1.aa11', connectedAt: 't' }),
+      },
+    });
+    const service = createAgentService({ userStorage, sessionStorage: new InMemorySessionStorage(), eventEmitter: new AgentEventEmitter() });
+    const session = { sessionId: buildTelegramSessionId('user-1'), runtimeContext: undefined } as unknown;
+    const deps = await (service as unknown as {
+      buildTelegramLoopDeps: (u: string, s: unknown, c: string, o: unknown) => Promise<{
+        onAgentRunComplete?: (args: { userId: string; sessionId: string; startedAtMs?: number }) => Promise<void>;
+      }>;
+    }).buildTelegramLoopDeps('user-1', session, '123456', { agentId: 'agent-1' });
+    const startedAtMs = Date.now() - 12_000;
+    await deps.onAgentRunComplete!({ userId: 'user-1', sessionId: 'sess', startedAtMs });
+    const record = (await userStorage.getProfile('user-1'))?.telegram?.agents?.['agent-1'];
+    expect(record?.lastTurnStartedAt).toBe(new Date(startedAtMs).toISOString());
+    expect(Date.parse(record!.lastTurnEndedAt!) - startedAtMs).toBeGreaterThanOrEqual(12_000);
   });
 
   it('uses the credential retry horizon when a provider omits the reset time', async () => {

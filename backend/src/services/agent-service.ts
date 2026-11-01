@@ -6056,14 +6056,42 @@ export class AgentService {
       await this.writeAgentWorkFinished(userId, agentId, agent, result!.finished && !options.chatReset);
     }
     // An unchanged recap keeps its stamp: `at` answers "when did this row
-    // last say something new", not "when did the summarizer last run".
+    // last say something new", not "when did the summarizer last run". The
+    // chat's recap line (note #945) needs the other answer — has this turn's
+    // summary arrived — so every usable result stamps `recapCheckedAt`.
+    const checkedAt = new Date().toISOString();
     if (text === previousRecap) {
+      await this.deps.userStorage.updateAgentFields(userId, agentId, { recapCheckedAt: checkedAt })
+        .catch((error) => { console.warn(`[recap] Could not stamp the recap check for agent ${agentId}:`, error); });
       return;
     }
     await this.deps.userStorage.updateAgentFields(userId, agentId, {
-      recap: { text, at: new Date().toISOString() }
+      recap: { text, at: checkedAt },
+      recapCheckedAt: checkedAt,
     });
-    this.emitWorkspaceActivity(userId, agentId, 'recap-written');
+    // The Chief of Staff's own recap is read by its chat alone: it is in no
+    // roster and no briefing, so writing it is no news for Home's overview.
+    if (!isWorkspaceAgent(agent)) this.emitWorkspaceActivity(userId, agentId, 'recap-written');
+  }
+
+  /**
+   * The Chief of Staff's request ended (note #945): stamp its turn on its own
+   * record, as an agent's turn end is stamped, and run the same row-recap
+   * summary over what the request said, for the recap line under it in its
+   * chat. Never awaited by the conversation and never fatal — failure is
+   * silence, by the recap contract.
+   */
+  async workspaceAgentTurnEnded(userId: string, orgId: string, turn: { startedAt?: string; messages: AgentRecapTurnMessage[] }): Promise<void> {
+    const agent = Object.values((await this.deps.userStorage.getProfile(userId))?.telegram?.agents ?? {})
+      .find((candidate) => candidate.orgId === orgId && isWorkspaceAgent(candidate));
+    if (!agent) return;
+    const started = Date.parse(turn.startedAt ?? '');
+    await this.deps.userStorage.updateAgentFields(userId, agent.id, {
+      lastTurnEndedAt: new Date().toISOString(),
+      lastTurnStartedAt: Number.isFinite(started) ? turn.startedAt! : null,
+    });
+    if (!turn.messages.length) return;
+    await this.updateTelegramAgentRecap(userId, agent.id, turn.messages);
   }
 
   /**
@@ -9053,8 +9081,13 @@ export class AgentService {
           // knows the reply is WHOLE — the run registry above forgets every
           // turn at a restart, and "not working" then looks the same as
           // "finished". Stamped after the last chat row of the turn landed.
+          // Its start rides the same write (note #945): the chat's recap
+          // line says how long the turn worked, and which recap is its own.
           await this.deps.userStorage.updateAgentFields(userId, pinnedAgentId, {
             lastTurnEndedAt: new Date().toISOString(),
+            ...(args.startedAtMs !== undefined && Number.isFinite(args.startedAtMs)
+              ? { lastTurnStartedAt: new Date(args.startedAtMs).toISOString() }
+              : { lastTurnStartedAt: null }),
           }).catch((error) => {
             console.warn(`[telegram] Could not stamp the turn end for agent ${pinnedAgentId}:`, error);
             return false;

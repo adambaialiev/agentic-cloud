@@ -20,6 +20,7 @@ import { sleepUnlessAborted } from '../agent/harness-turn-output.js';
 import { canServeInline } from '../shared/inline-files.js';
 import { readChatFileText } from './chat-file-text.js';
 import type { AttachmentRecord } from '../types/tools.js';
+import type { AgentRecapTurnMessage } from './agent-recap.js';
 import type { WorkspaceChatFileTextAnswer } from '../shared/workspace-api.js';
 import { resolveWorkspaceAgentProactive, WORKSPACE_AGENT_PERMISSION_WORDS, WORKSPACE_AGENT_PERMISSIONS, type WorkspaceAgentEvent, type WorkspaceAgentEventTurnSummary, type WorkspaceAgentPermission, type WorkspaceAgentProactive } from '../shared/workspace-agent-proactive.js';
 
@@ -587,6 +588,36 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
    */
   private async run(user: string, org: string) {
     const key = this.key(user, org);
+    // The request's start, for the recap line under it (note #945).
+    const startedAt = new Date().toISOString();
+    try { await this.runTurns(user, org, key); }
+    finally { void this.turnEnded(user, org, startedAt).catch(() => {}); }
+  }
+  /**
+   * The request is over (note #945): what it said goes to the same row-recap
+   * summary an agent's turn gets, and its start and end onto the record, so
+   * the chat draws the line under it. A request that showed nothing — a
+   * quiet event turn — leaves the line under the turn the person last saw.
+   */
+  private async turnEnded(user: string, org: string, startedAt: string): Promise<void> {
+    const ended = this.deps.agentLifecycle?.workspaceAgentTurnEnded;
+    if (!ended) return;
+    const state = await this.load(user, org);
+    const since = Date.parse(startedAt);
+    const visible = state.messages.filter((m) => !m.hidden && m.kind !== 'new-chat-divider' && !isNoteReceipt(m));
+    const first = visible.findIndex((m) => Date.parse(m.at) >= since);
+    if (first < 0) return;
+    // The words that started it — the person's, or an agent's answer — were
+    // written just before the run began.
+    const ask = first > 0 && (visible[first - 1]!.role === 'owner' || visible[first - 1]!.role === 'agent') ? first - 1 : first;
+    const messages = visible.slice(ask).map((m): AgentRecapTurnMessage => (
+      m.role === 'owner' ? { role: 'owner', text: m.text }
+        : m.role === 'assistant' ? { role: 'agent', text: m.text }
+          : { role: 'platform', text: m.role === 'agent' && m.name ? `${m.name}: ${m.text}` : m.text }
+    ));
+    await ended(user, org, { startedAt, messages });
+  }
+  private async runTurns(user: string, org: string, key: string) {
     for (;;) {
       const handle: { controller: AbortController; intent?: 'steer' | 'stop' } = { controller: new AbortController() };
       this.runs.set(key, handle);

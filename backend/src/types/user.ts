@@ -575,6 +575,19 @@ export interface AgentRecord {
    */
   lastTurnEndedAt?: string;
   /**
+   * When that same turn STARTED, ISO, stamped in the same write as
+   * `lastTurnEndedAt` (note #945): the chat's recap line says how long the
+   * turn worked, and only a recap written since this moment is this turn's.
+   */
+  lastTurnStartedAt?: string;
+  /**
+   * When a recap summary last came back with a usable text, ISO — whether or
+   * not it changed the recap (note #945). `recap.at` keeps answering "when
+   * did the row last say something new"; this answers "has the summary for
+   * the latest turn arrived", which an unchanged recap answers too.
+   */
+  recapCheckedAt?: string;
+  /**
    * When the recap summarizer last judged this agent's work FINISHED — done,
    * with nothing waiting on anyone (note #707) — ISO. Written only by the
    * post-turn summary; cleared by one that judged otherwise and by a turn that

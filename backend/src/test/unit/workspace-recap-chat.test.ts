@@ -1979,3 +1979,54 @@ describe('the first run (note #726): the Chief of Staff runs the first ten minut
     expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.firstRun).toBeUndefined();
   });
 });
+
+/**
+ * Note #945: the recap line under the Chief of Staff's latest request is the
+ * same row-recap summary an agent's turn gets. The conversation's part is to
+ * hand the request's words over when it ENDS — once, after the reply is
+ * recorded, never delaying it — and nothing for a request that showed nothing.
+ */
+describe('the recap line\'s summary (note #945)', () => {
+  const withTurnEnd = async (replies: string[]) => {
+    const x = await setup(replies);
+    const turnEnded = vi.fn(async (_u: string, _o: string, _turn: { startedAt?: string; messages: Array<{ role: string; text: string }> }) => {});
+    (x.deps.agentLifecycle as unknown as Record<string, unknown>).workspaceAgentTurnEnded = turnEnded;
+    return { ...x, turnEnded };
+  };
+
+  it('hands the ended request\'s ask and reply to the summary, once, with when it started', async () => {
+    const x = await withTurnEnd(['Asked Theo; I will tell you when it lands.']);
+    const before = Date.now();
+    await x.chat.send('u1', x.org, 'request-1', 'Ask Theo to ship the booking page');
+    await x.done();
+    await vi.waitFor(() => expect(x.turnEnded).toHaveBeenCalledTimes(1));
+    const [user, org, turn] = x.turnEnded.mock.calls[0]!;
+    expect([user, org]).toEqual(['u1', x.org]);
+    expect(Date.parse(turn.startedAt!)).toBeGreaterThanOrEqual(before - 5);
+    expect(turn.messages).toEqual([
+      { role: 'owner', text: 'Ask Theo to ship the booking page' },
+      { role: 'agent', text: 'Asked Theo; I will tell you when it lands.' },
+    ]);
+  });
+
+  it('says what an agent answered, by name, when that answer started the request', async () => {
+    const x = await withTurnEnd(['Asked Theo.', 'Theo shipped it; it is live.']);
+    await x.chat.send('u1', x.org, 'request-1', 'Ask Theo for an update');
+    await x.done();
+    await vi.waitFor(() => expect(x.turnEnded).toHaveBeenCalledTimes(1));
+    await x.answerFrom('a1', 'The booking page is live.');
+    await x.done();
+    await vi.waitFor(() => expect(x.turnEnded).toHaveBeenCalledTimes(2));
+    expect(x.turnEnded.mock.calls[1]![2].messages.map((m) => m.role)).toEqual(['platform', 'agent']);
+    expect(x.turnEnded.mock.calls[1]![2].messages[0]!.text).toContain('The booking page is live.');
+  });
+
+  it('hands nothing over for a request that showed nothing — the line stays under the turn the person saw', async () => {
+    const x = await withTurnEnd([`${EVENT_QUIET}: nothing needs them.`]);
+    await x.orgStorage.touchMember(x.org, 'u1', { workspaceAgentProactive: { ...DEFAULT_WORKSPACE_AGENT_PROACTIVE, events: true } });
+    await x.chat.receiveEvents({ userId: 'u1', orgId: x.org, events: [{ kind: 'checks-red', key: 'checks-red:pr1:abc', text: 'Checks failed on proposal #4.', at: '2026-10-11T08:00:00.000Z' }] });
+    await x.done();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(x.turnEnded).not.toHaveBeenCalled();
+  });
+});

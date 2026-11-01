@@ -1584,6 +1584,23 @@ button.chatmsg.platform.aside:active {
    holds that entrance back until the send that started the turn has
    finished rising: two entrances in one frame read as a jumble, one after
    the other reads as cause and effect, which is what they are. */
+/* The recap line under the latest completed turn (note #945, the owner: "recap
+   line like in terminal claude code"): two muted lines centred in the
+   conversation column — the turn's facts, then the recap in italics. The
+   pane already carries the column's gutters on a desk and the phone's 16 on
+   a phone, so centring inside it is centring in the column. It fades in
+   rather than rising: it is a caption arriving under words already read, not
+   a message, and it must not move the reply above it. */
+.turnrecap {
+  margin: 14px auto 6px; max-width: 560px; padding: 0 8px;
+  text-align: center; color: var(--hint);
+  font-size: var(--ui-sm); line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.turnrecap p { margin: 0; }
+.turnrecap .turnrecaptext { font-style: italic; margin-top: 2px; animation: turnrecapin .4s ease-out; }
+@keyframes turnrecapin { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .turnrecap .turnrecaptext { animation: none; } }
 .chatlive { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; }
 .chatlive .chatmsg {
   display: flex; align-items: center; gap: 8px; min-width: 0; height: 40px; margin-top: 0;

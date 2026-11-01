@@ -674,6 +674,12 @@ export interface RouteDeps {
      */
     converseWorkspaceRecap?(userId: string, orgId: string, prompt: string, settings?: import('../shared/workspace-recap.js').WorkspaceRecapSettings | null, onPhase?: (phase: string) => Promise<void>, options?: import('../services/agent-service.js').WorkspaceAgentTurnOptions): Promise<import('../shared/workspace-recap.js').WorkspaceRecapRun>;
     summarizeWorkspaceRecap?(userId: string, orgId: string, prompt: string, settings?: import('../shared/workspace-recap.js').WorkspaceRecapSettings | null): Promise<import('../shared/workspace-recap.js').WorkspaceRecapRun>;
+    /**
+     * The Chief of Staff's request ended (note #945): stamp the turn on its
+     * record and run the row-recap summary over it, for the recap line under
+     * the turn in its chat. Fire-and-forget; failure is silence.
+     */
+    workspaceAgentTurnEnded?(userId: string, orgId: string, turn: { startedAt?: string; messages: import('../services/agent-recap.js').AgentRecapTurnMessage[] }): Promise<void>;
     /** Seat IDs actually leased by this member's private Workspace Agent or briefing. */
     workspaceSeatIdsInUse?(userId: string, orgId: string): string[];
     agentChatMessages?(userId: string, agentId: string, afterSeq: number): Promise<Array<{

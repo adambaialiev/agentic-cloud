@@ -3352,6 +3352,39 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
       expect(await read()).not.toHaveProperty('context');
     });
 
+    /**
+     * Note #945: the recap line under the latest completed turn rides the
+     * same read as the rows and the ring — the row recap and the turn's own
+     * stamps off the one record, never a second summary.
+     */
+    it('GET carries the latest completed turn, with its recap once this turn\'s summary has arrived (note #945)', async () => {
+      const { deps, userStorage } = await buildDeps();
+      deps.agentLifecycle = { ...lifecycleMock(), agentChatMessages: vi.fn().mockResolvedValue(chatRows) };
+      const read = async () => {
+        const res = createMockResponse();
+        await getRouteHandler(deps, '/api/agents/:id/chat', 'get')(mockRequest({
+          headers: authHeader(42), params: { id: 'agent-a' },
+        }), res);
+        expect(res.statusCode).toBe(200);
+        return res.body as Record<string, unknown>;
+      };
+      // No turn on record: no line.
+      expect(await read()).not.toHaveProperty('lastTurn');
+      await userStorage.updateAgentFields('user-1', 'agent-a', {
+        lastTurnStartedAt: '2026-11-01T20:38:00.000Z',
+        lastTurnEndedAt: '2026-11-01T20:38:12.000Z',
+        recap: { text: 'Shipped the pricing page.', at: '2026-11-01T19:00:00.000Z' },
+      });
+      // The recap on record is the turn before's: the facts alone.
+      expect((await read()).lastTurn).toEqual({ startedAt: '2026-11-01T20:38:00.000Z', endedAt: '2026-11-01T20:38:12.000Z' });
+      await userStorage.updateAgentFields('user-1', 'agent-a', {
+        recap: { text: 'Paused on DNS. Next, add the 17 records.', at: '2026-11-01T20:38:30.000Z' },
+      });
+      expect((await read()).lastTurn).toEqual({
+        startedAt: '2026-11-01T20:38:00.000Z', endedAt: '2026-11-01T20:38:12.000Z', recap: 'Paused on DNS. Next, add the 17 records.',
+      });
+    });
+
     it('GET treats a missing or garbled cursor as the full window', async () => {
       const { deps } = await buildDeps();
       const agentChatMessages = vi.fn().mockResolvedValue([]);
@@ -6410,6 +6443,25 @@ describe('the workplace screens (members, seats, invites)', () => {
     const org = (res.body as { org: { role: string; invites: unknown } }).org;
     expect(org.role).toBe('member');
     expect(org.invites).toBeNull();
+  });
+
+  it('answers the Chief of Staff\'s latest request and its recap from its own record (note #945)', async () => {
+    const { deps, userStorage } = await buildOrgDeps();
+    const read = async () => {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/recap/chat', 'get')(mockRequest({ headers: authHeader(43) }), res);
+      expect(res.statusCode).toBe(200);
+      return res.body as Record<string, unknown>;
+    };
+    expect(await read()).not.toHaveProperty('lastTurn');
+    await userStorage.updateAgentFields('user-2', 'agent-d', {
+      lastTurnStartedAt: '2026-11-01T20:38:00.000Z',
+      lastTurnEndedAt: '2026-11-01T20:39:04.000Z',
+      recap: { text: 'Theo is shipping the booking page.', at: '2026-11-01T20:39:20.000Z' },
+    });
+    expect((await read()).lastTurn).toEqual({
+      startedAt: '2026-11-01T20:38:00.000Z', endedAt: '2026-11-01T20:39:04.000Z', recap: 'Theo is shipping the booking page.',
+    });
   });
 
   it('answers the Chief of Staff\'s forwarded proposals as they stand now, and never one outside the workplace (note #724)', async () => {
