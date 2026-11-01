@@ -2,7 +2,7 @@
 
 A guide for an AI agent (Claude Code, Codex or any agent with a terminal) asked by its person to set up their company's own Agentic Cloud.
 
-Your own Agentic Cloud is the whole Agentic Cloud Computer platform (the Workspace, the agents' machines, git hosting, sites, files and email) installed in the company's own Fly.io organization, on a domain of theirs. One installer builds it. Nothing of theirs is kept by us: the only time the installer reaches us is to download a release, with no sign-in. It needs nothing from us: no key, no licence, no email. The product is free for now.
+Your own Agentic Cloud is the whole Agentic Cloud Computer platform (the Workspace, the agents' machines, git hosting, sites, files and email) installed in the company's own Fly.io organization, on a domain of theirs. One installer builds it. Email is not part of the install: once it is up, an admin turns it on from the Workspace whenever they want it. Nothing of theirs is kept by us: the only time the installer reaches us is to download a release, with no sign-in. It needs nothing from us: no key, no licence, no email. The product is free for now.
 
 It takes one command. In our clean run on 29 October 2026 it went from a new Fly organization to ready in 13 min 24 s; Fly issued the domain's certificates in under a minute that time, but one has taken over an hour before, and then you wait and run the same command again. Follow the steps in order. The page for people is https://agenticcloudcomputer.com/own-cloud.
 
@@ -12,7 +12,7 @@ It takes one command. In our clean run on 29 October 2026 it went from a new Fly
 - **Stop and ask your person** wherever this guide says ASK YOUR PERSON, and whenever the installer ends with exit code 3 ("a person is needed"). Those answers are theirs, not yours: never guess one, and never pick a Fly organization, a domain or a payment yourself.
 - **Never show or store a secret.** The Fly token, the master key and the first-admin link stay out of your replies, out of commits and out of any file you write. Pass files by path and the token through the environment. With `--json`, the installer itself keeps every key off its output.
 - **Running it again is safe.** The installer writes every finished step to `<prefix>-copy.json` and carries on from the first unfinished one, making nothing twice.
-- **Waiting is not failing.** Exit code 4 means Fly, Let's Encrypt or the mail provider is still working. Nobody needs to do anything: run the same command again later, and do not start over.
+- **Waiting is not failing.** Exit code 4 means Fly or Let's Encrypt is still working. Nobody needs to do anything: run the same command again later, and do not start over.
 - **This guide assumes you run on your person's computer,** where they can put files and open a file you point to. If you run anywhere else, agree with them first how files reach you and how they read the handover file.
 
 ## 1. Check this computer
@@ -48,19 +48,20 @@ Run `fly orgs list` and show your person the organizations it lists. Then ask al
 
 1. **The Fly organization.** Which of those, by its slug. It needs a card on file and its bill paid up: Fly bills it directly for everything the install runs. Nothing of ours is on that bill. If the one they want is not listed, the Fly user signed in is not a member of it: go back to step 2, and they sign in as one who is.
 2. **The domain name.** A name of its own, such as `agents.yourcompany.com`, never the company's main domain: the company's mail lives there, and the sites its agents publish will share this name.
-3. **How mail goes out:** any provider over standard SMTP (host, port 465 or 587, user, and a file holding the password), a Resend key file, or neither for now. It can be added later.
-4. **Who adds the DNS records:** your person, or you, if you can edit the domain's DNS and they want you to.
-5. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) becomes public app names on Fly. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
+3. **Who adds the DNS records:** your person, or you, if you can edit the domain's DNS and they want you to.
+4. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) becomes public app names on Fly. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
+
+Do not ask about email. It is not part of the install: once their Agentic Cloud is up, an admin sets it up in the Workspace, under Mail, with their mail provider's details, and the Workspace makes the mail receiver and shows the records to add. Tell your person that, so nobody expects it at the end.
 
 ## 4. Get the installer, and show your person the plan
 
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/42e8812e7f4153543c1cc7be6309b22b2f473382?path=infra/copy-installer/install.mjs'
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/4a4f07db66498df0c7d6cff3be7beeeaddb4ba2c?path=infra/copy-installer/install.mjs'
 ```
 
-Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `f0e9f62945b964e2539777162d00bbb9c7a9ab7df7de1ba3e344148c359e25a2`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
+Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `aec069572118ec47056b4304057d4529856ba51429f23d32a8a6f91a1981a72f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
 
 It is one file of plain JavaScript with no packages. Its code and tests are public in the platform's own open-source repository, at https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer, so you and your person can read every line first.
 
@@ -70,7 +71,7 @@ Then run the plan. It changes nothing, costs nothing and writes no file:
 node install.mjs install --org <org> --domain <domain> --plan --json
 ```
 
-Add the mail flags, `--name` and `--region` here too, if your person gave them (see step 5).
+Add `--name` and `--region` here too, if your person gave them.
 
 - **Exit 0:** the plan is ready. Its result lists `creates[]` (every app, disk, bucket, address, certificate, token and secret it will make, each with Fly's list price), `monthlyUsd` (the total) and `records[]` (the DNS records it will ask for). Show your person all three, in plain words, and **wait for their yes**. Point out two things: the Workspace keeps a Fly organization token so it can start agent machines (revoking it stops that), and the prices are Fly's list prices, billed by Fly to their organization.
 - **Exit 3:** a person is needed first. The result's `reason` and `person[]` say what (see the table at the end). Ask your person, then run the plan again.
@@ -83,11 +84,6 @@ With your person's yes, run the same command with `--json --wait 0` in place of 
 node install.mjs install --org <org> --domain <domain> --json --wait 0
 ```
 
-Add one way to send mail, if your person gave one:
-
-- SMTP: `--smtp-host <host> --smtp-port 465 --smtp-user <user> --smtp-password-file <file>` (465 or 587; 587 if you leave the port out)
-- Resend: `--resend-key-file <file>`
-
 Every line on stdout is one JSON object, and the last one is always `{"event": "result", ...}`; the readable lines go to stderr. It builds everything: the apps, the release copied into their own registry (about 1.4 GB, most of the time), the buckets, the keys, the deploys and the certificate requests. Then it stops with **exit code 3 and `"reason": "dns"`**, listing every record in `records[]` (name, type, value, priority).
 
 If your session might end before it finishes, run it where it outlives you (tmux, for example). Nothing is lost if it stops: run the same command again.
@@ -95,7 +91,6 @@ If your session might end before it finishes, run it where it outlives you (tmux
 ## 6. DNS: ASK YOUR PERSON (unless you can edit it)
 
 - Give your person the records exactly as listed, all DNS only (not proxied), and ask them to add them. If you can edit their DNS and they want you to, add them yourself, exactly as listed.
-- With SMTP, they also add the SPF and DKIM records their mail provider gives them. Only that provider knows them, so the installer does not wait for them; without them, mail out lands in spam.
 - Then check, without changing anything:
 
   ```
@@ -112,7 +107,7 @@ Run the install command again, this time with `--json --wait 20`:
 node install.mjs install --org <org> --domain <domain> --json --wait 20
 ```
 
-- **Exit 0:** done. The last step is a smoke test of the Workspace, the sign-up page, the code host, a preview name and mail on port 25; the result names `handoverFile`.
+- **Exit 0:** done. The last step is a smoke test of the Workspace, the sign-up page, the code host, and a preview name; the result names `handoverFile`.
 - **Exit 4:** a certificate is still coming. Fly can take over an hour: in one real install the code host's certificate did. Run the same command again later.
 - **Exit 1:** it failed, and `message` says why. Show your person that message, fix what it names, and run the same command again.
 
@@ -124,6 +119,8 @@ The result names `<prefix>-handover.txt` (readable by this user alone). It holds
 2. open the first-admin link in a **new** browser tab and make the first account, which becomes the admin. It works once, and only while there is no account; everyone after them joins through an invite link, and an admin approves each person;
 3. delete the file.
 
+Tell them too that email is not set up yet: when they want it, an admin opens Mail in the Workspace and follows "Set up email". It needs their mail provider's details (a Resend key, or any provider's SMTP settings), adds about $4 a month to their Fly bill for the mail receiver, and asks for a few more DNS records.
+
 Keep `<prefix>-copy.json` in this folder, and ask your person to keep a copy somewhere safe: the upgrade reads it, and once the install is done it holds names and addresses only, no keys.
 
 ## Later: upgrades
@@ -134,7 +131,7 @@ In the same folder:
 node install.mjs upgrade --json
 ```
 
-It takes the latest release (`--release <version>` picks one), snapshots the database and the disks, rolls the four apps one at a time and runs the smoke test again. If anything fails, it puts the old release back on all four and the database back as it was. `--drill` rehearses exactly that: it upgrades, fails on purpose and comes back.
+It takes the latest release (`--release <version>` picks one), snapshots the database and the disks, rolls the backend, the code host and the router one at a time and runs the smoke test again. If anything fails, it puts the old release back on all of them and the database back as it was. A mail receiver the Workspace made follows the new release by itself. `--drill` rehearses exactly that: it upgrades, fails on purpose and comes back.
 
 ## Exit codes, and when to ask your person
 
@@ -144,7 +141,7 @@ It takes the latest release (`--release <version>` picks one), snapshots the dat
 | `1` | It failed; `message` says why. | Show your person the message; fix what it names; run again. |
 | `2` | The command was wrong. | Check the flags against this guide. |
 | `3` | A person is needed; `reason` says for what. | ASK YOUR PERSON (below), then run again. |
-| `4` | Still waiting on Fly, Let's Encrypt or the mail provider. | Nothing; run the same command again later. |
+| `4` | Still waiting on Fly or Let's Encrypt. | Nothing; run the same command again later. |
 
 The reasons behind exit code 3:
 
@@ -152,9 +149,8 @@ The reasons behind exit code 3:
 - `fly-organization`: which organization to use. Without `--org`, the plan lists the ones the sign-in reaches.
 - `fly-sign-in`: flyctl is not signed in. Your person signs in (step 2).
 - `billing`: the organization has no card or an unpaid bill. The result's `billingUrl` is where they fix it.
-- `mail-key`: the mail provider's key is missing or refused. Mail out is optional.
 - `dns`: the records are not all in yet. The result lists them.
 
 ## What it costs
 
-Your own Agentic Cloud is free for now: no licence, no key and no charge from us. Fly bills the company's account directly for the machines and disks: the plan shows Fly's list prices, and on our own test install that came to about $0.86 a day while it stood, plus about $0.09 an hour for each agent while it is awake. The agents use the company's own Claude or ChatGPT plans.
+Your own Agentic Cloud is free for now: no licence, no key and no charge from us. Fly bills the company's account directly for the machines and disks: the plan shows Fly's list prices (about $17 a month before any agent), plus about $0.09 an hour for each agent while it is awake. Email, once an admin turns it on, adds about $4 a month. The agents use the company's own Claude or ChatGPT plans.
