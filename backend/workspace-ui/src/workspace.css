@@ -2635,6 +2635,14 @@ button.chatmsg.platform.aside:active {
 .daycard .lbdaytitle { margin-bottom: 2px; }
 .daycard b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
 @media (pointer: coarse) { .daycard { display: none; } }
+/* An on/off switch on a row (role="switch"): the Chief of Staff's "On its
+   own" card and the workplace's auto-approve (note #944). Named for the
+   Leaderboard's switch, its style left with that page (note #824) while
+   these switches stayed. */
+.lbswitch { flex: none; width: 38px; height: 22px; border-radius: 999px; position: relative; background: color-mix(in srgb, var(--hint) 35%, transparent); transition: background-color .15s ease; }
+.lbswitch > span { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.lbswitch.on { background: var(--accent); }
+.lbswitch.on > span { transform: translateX(16px); }
 /* Settings → Your builder page: the X profile's own little form. */
 /* The X profile's editor (note #755): the box takes the row's whole width
    under its label, and Cancel and Save stand together on a line beneath it,

@@ -20,6 +20,8 @@
  * knowledge proposals; admin-only boundaries still apply to destructive and
  * shared-secret requests. Finer roles wait for a real client to need one.
  */
+import type { WorkplaceAutoApprove } from '../shared/auto-approve.js';
+
 export type OrgRole = 'admin' | 'member';
 
 export interface OrgDocument {
@@ -355,6 +357,14 @@ export interface OrgDocument {
    * a reconnect nobody expected to change it.
    */
   agentMachineSizeId?: string;
+  /**
+   * Auto-approve mode (note #944): while `on`, a code proposal an agent makes
+   * ready with passing checks is merged at once, decided automatically and
+   * never in a person's name. Absent is off — the default. Written only by
+   * an admin's own request (`PUT /api/org/auto-approve`); no agent route
+   * writes it. Every flip is kept in `history` (who, when).
+   */
+  autoApprove?: WorkplaceAutoApprove;
   /**
    * The org's face (note #56): an avatar an admin set, shown wherever the
    * workplace is named. Bytes live in the org's OWN media bucket under

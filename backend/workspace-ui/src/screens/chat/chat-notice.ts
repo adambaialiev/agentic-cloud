@@ -152,6 +152,20 @@ export function platformChatNotice(text: string): ChatNotice {
     };
   }
 
+  // Merged by auto-approve mode (note #944): the same card as a merge, but
+  // its badge and line say no person decided it — the reader must never take
+  // it for their own approval.
+  const automatic = body.match(/^PR #(\d+) \("([\s\S]+?)"\) in ([^\n]+?) was APPROVED AUTOMATICALLY: ([^\n]+?) is merged into ([^\n]+?)\. Auto-approve mode is on in this workplace \(turned on by ([^\n]+?) at ([^\n)]+?)\)/);
+  if (automatic) {
+    return {
+      icon: null, label: 'Change proposal', badge: 'Merged automatically', tone: 'ok',
+      door: 'See what changed',
+      title: automatic[2]!,
+      detail: `${automatic[4]} → ${automatic[5]} · auto-approve mode, turned on by ${automatic[6]} at ${automatic[7]}`,
+      meta: `PR #${automatic[1]} · ${automatic[3]}`,
+    };
+  }
+
   const rejected = body.match(/^Your user REJECTED PR #(\d+) \("([\s\S]+?)"\) in ([\s\S]+?)\. Nothing was merged\./);
   if (rejected) {
     const reason = body.match(/Their reason: "([\s\S]*?)" — address/);

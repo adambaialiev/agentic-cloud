@@ -1,4 +1,5 @@
 import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
+import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
 import { isHarnessCli, seatNoReadingNotice, subscriptionName } from '../shared/harness-clis.js';
 import { applyWorkspaceAgentProactiveChange, resolveWorkspaceAgentProactive, type WorkspaceAgentProactiveAnswer } from '../shared/workspace-agent-proactive.js';
@@ -98,6 +99,7 @@ import {
   type WorkspaceOrgFlyAnswer,
   type WorkspaceOrgFlyMoveAsked,
   type WorkspaceOrgAgentMachineAnswer,
+  type WorkspaceOrgAutoApproveAnswer,
   type WorkspacePeopleAnswer,
   type WorkspaceTokenUsageAnswer,
   type WorkspacePeopleLiveAnswer,
@@ -977,6 +979,20 @@ function orgAgentMachineAnswer(
   };
 }
 
+function orgAutoApproveAnswer(
+  mode: WorkplaceAutoApprove | undefined,
+  role: string,
+): WorkspaceOrgAutoApproveAnswer {
+  return {
+    on: Boolean(mode?.on),
+    ...(mode ? { changedAt: mode.changedAt, changedByName: mode.changedByName } : {}),
+    canChange: role === 'admin',
+    ...(mode?.history?.length
+      ? { history: [...mode.history].reverse().map((change) => ({ on: change.on, at: change.at, byName: change.byName })) }
+      : {}),
+  };
+}
+
 /**
  * Who sent a message that arrived from another agent, out of the row's own
  * words. The page reads the same two wordings for the same reason: the old one
@@ -1506,6 +1522,14 @@ function describeProposal(
     // The rejection reason, so a decided proposal's screen shows WHY — the
     // same words the agent was woken with.
     decisionNote: doc.decisionNote ?? null,
+    // Who decided, when nobody did (note #944): the auto-approve mode that
+    // merged it, and the reason it did not when it fell back to a person.
+    ...(doc.autoApproved
+      ? { autoApproved: { at: doc.autoApproved.at, modeOnAt: doc.autoApproved.modeOnAt, modeOnByName: doc.autoApproved.modeOnByName } }
+      : {}),
+    ...(doc.autoApproveFallback && doc.status === 'open'
+      ? { autoApproveFallback: { at: doc.autoApproveFallback.at, reason: doc.autoApproveFallback.reason } }
+      : {}),
     // Who asked, whose agent it is, and the agent's own face — the same one
     // its row on home wears, absent for a renamed or deleted agent, which
     // keeps the name line and loses only the picture.
@@ -11371,6 +11395,61 @@ self.addEventListener('activate', (event) => {
     const changed = effectiveAgentMachineSize(org.agentMachineSizeId).id !== size.id;
     await ctx.storage.updateOrg(ctx.membership.orgId, { agentMachineSizeId: size.id });
     return res.json({ ...orgAgentMachineAnswer(size.id, ctx.membership.role), ok: true, changed });
+  });
+
+  /**
+   * Auto-approve mode (note #944): whether a proposal an agent makes ready is
+   * merged without asking. Any member may read it — it decides what happens
+   * to their agents' work — and the history rides along for everyone, since
+   * it names only who flipped a workplace-wide switch and when.
+   */
+  router.get('/api/org/auto-approve', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return;
+    const org = await ctx.storage.getOrg(ctx.membership.orgId);
+    if (!org) return res.status(404).json({ error: 'No such workplace.' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(orgAutoApproveAnswer(org.autoApprove, ctx.membership.role));
+  });
+
+  /**
+   * Turn it on or off — a workplace ADMIN, a person: this router answers only
+   * a person's session, and the agents' router has no verb that writes it.
+   * Every flip is recorded on the workplace (who, when), and on the admin's
+   * own line of what they last did.
+   */
+  router.put('/api/org/auto-approve', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return;
+    if (ctx.membership.role !== 'admin') {
+      return res.status(403).json({
+        error: 'Only a workplace admin can turn auto-approve on or off — it decides every proposal in the workplace.',
+      });
+    }
+    const on = (req.body as { on?: unknown } | undefined)?.on;
+    if (typeof on !== 'boolean') return res.status(400).json({ error: 'Pass on: true or false.' });
+    const org = await ctx.storage.getOrg(ctx.membership.orgId);
+    if (!org) return res.status(404).json({ error: 'No such workplace.' });
+    if (Boolean(org.autoApprove?.on) === on) {
+      // Nothing moved: no flip to record, so the history keeps meaning flips.
+      return res.json({ ...orgAutoApproveAnswer(org.autoApprove, ctx.membership.role), ok: true, changed: false });
+    }
+    const at = new Date().toISOString();
+    const byName = personDisplayName(await deps.userStorage?.getProfile(auth.userId).catch(() => null));
+    const autoApprove: WorkplaceAutoApprove = {
+      on,
+      changedAt: at,
+      changedByUserId: auth.userId,
+      changedByName: byName,
+      history: [...org.autoApprove?.history ?? [], { on, at, byUserId: auth.userId, byName }].slice(-AUTO_APPROVE_HISTORY_MAX),
+    };
+    await ctx.storage.updateOrg(ctx.membership.orgId, { autoApprove });
+    await recordPersonAction(auth, personActionLines.switchedAutoApprove(on));
+    return res.json({ ...orgAutoApproveAnswer(autoApprove, ctx.membership.role), ok: true, changed: true });
   });
 
   /** The org's cloud inventory and honest cost estimates — admins only. */

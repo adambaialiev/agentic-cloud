@@ -195,6 +195,7 @@ import { GIT_COMMIT_STATUS_NOT_PASSING, effectiveStatusState, worstCheckState } 
 import type { GitHostClient } from './git-host-client.js';
 import type { GitPullRequestDocument, GitPullRequestStatus } from '../types/git-pr.js';
 import { MAX_PR_DECISION_NOTE_LENGTH, pullRequestAwaitsDecision } from '../types/git-pr.js';
+import { autoApproveTime, type PullRequestAutoApproval } from '../shared/auto-approve.js';
 import type { PreviewDomainService } from './preview-domain-service.js';
 import type {
   AgentMessage,
@@ -7104,25 +7105,7 @@ export class AgentService {
     // filter saying "nothing to do" is an answer. NO checks does not: the
     // sha CI has not judged yet is exactly the one this flag exists to hold.
     if (repo.requireChecks) {
-      const verdicts = this.deps.gitCommitStatusStorage
-        ? await this.deps.gitCommitStatusStorage.listBySha(doc.repoId, doc.headSha)
-        : null;
-      const now = new Date();
-      const blocker = verdicts === null
-        ? 'checks are not available on this backend right now'
-        : verdicts.length === 0
-          ? 'no checks have run for the proposed commit yet — give CI a moment'
-          : verdicts.some((v) => effectiveStatusState(v, now) === 'pending')
-            ? 'checks are still running on the proposed commit'
-            : verdicts.some((v) => effectiveStatusState(v, now) === 'superseded')
-              // Blocks like a failure, but must not be WORDED like one: nothing
-              // broke, a newer commit simply took this one's place, and the job
-              // will never report. Telling the owner "checks are failing" sends
-              // them hunting a bug that does not exist.
-              ? 'a newer commit superseded the checks for the proposed commit — re-propose from the current branch tip'
-              : verdicts.some((v) => GIT_COMMIT_STATUS_NOT_PASSING.has(effectiveStatusState(v, now)))
-                ? 'checks are failing on the proposed commit'
-                : null;
+      const blocker = await this.requiredChecksBlocker(doc);
       if (blocker) {
         toast(`Not merged: ${blocker}.`);
         await sendMessage(
@@ -7156,23 +7139,7 @@ export class AgentService {
     }
 
     if (result.status === 'merged') {
-      await prs.update(doc.id, {
-        status: 'merged',
-        decidedAt: new Date().toISOString(),
-        decidedBy: userId,
-        mergeCommitSha: result.mergeCommitSha,
-        deliveryStartedAt
-      });
-      // The merge moved the target branch without any push, so the host's
-      // push report will never see it: stamp the landing here — but only for
-      // the repo's own home branch; a proposal into a side branch is not
-      // "landed on main".
-      if (doc.targetBranch === (repo.defaultBranch ?? 'main')) {
-        await repos.update(repo.id, {
-          defaultBranchTipSha: result.mergeCommitSha,
-          defaultBranchPushAt: new Date().toISOString()
-        });
-      }
+      await this.recordPullRequestMerged(doc, repo, result.mergeCommitSha, deliveryStartedAt, { decidedBy: userId });
       removeButtons();
       await sendMessage(`✅ PR #${doc.number} merged into ${escapeTelegramHtml(doc.targetBranch)}.`);
       await this.notifyAgentOfPullRequestDecision(
@@ -7209,6 +7176,149 @@ export class AgentService {
     }
     await sendMessage(`⚠️ PR #${doc.number} can no longer be merged — its branch is gone.`);
     return true;
+  }
+
+  /**
+   * Why a repo that opted into required checks (`requireChecks`) must not
+   * merge this proposal's pinned sha yet — or null when its checks all pass.
+   * Skipped counts as passing; NO checks does not. Shared by an owner's
+   * Approve and by auto-approve (note #944), so the two gates cannot drift.
+   */
+  private async requiredChecksBlocker(doc: GitPullRequestDocument): Promise<string | null> {
+    const verdicts = this.deps.gitCommitStatusStorage
+      ? await this.deps.gitCommitStatusStorage.listBySha(doc.repoId, doc.headSha)
+      : null;
+    const now = new Date();
+    return verdicts === null
+      ? 'checks are not available on this backend right now'
+      : verdicts.length === 0
+        ? 'no checks have run for the proposed commit yet — give CI a moment'
+        : verdicts.some((v) => effectiveStatusState(v, now) === 'pending')
+          ? 'checks are still running on the proposed commit'
+          : verdicts.some((v) => effectiveStatusState(v, now) === 'superseded')
+            // Blocks like a failure, but must not be WORDED like one: nothing
+            // broke, a newer commit simply took this one's place, and the job
+            // will never report. Telling the owner "checks are failing" sends
+            // them hunting a bug that does not exist.
+            ? 'a newer commit superseded the checks for the proposed commit — re-propose from the current branch tip'
+            : verdicts.some((v) => GIT_COMMIT_STATUS_NOT_PASSING.has(effectiveStatusState(v, now)))
+              ? 'checks are failing on the proposed commit'
+              : null;
+  }
+
+  /**
+   * A merge that landed: the proposal's record, and the repo's home-branch
+   * stamp. `decider` is the owner who approved, or the auto-approve record
+   * (note #944) — never both, so no surface can name a person who did not
+   * read it.
+   */
+  private async recordPullRequestMerged(
+    doc: GitPullRequestDocument,
+    repo: GitRepoDocument,
+    mergeCommitSha: string,
+    deliveryStartedAt: string,
+    decider: { decidedBy: string } | { autoApproved: PullRequestAutoApproval },
+  ): Promise<void> {
+    await this.deps.gitPullRequestStorage!.update(doc.id, {
+      status: 'merged',
+      decidedAt: new Date().toISOString(),
+      ...decider,
+      mergeCommitSha,
+      deliveryStartedAt
+    });
+    // The merge moved the target branch without any push, so the host's
+    // push report will never see it: stamp the landing here — but only for
+    // the repo's own home branch; a proposal into a side branch is not
+    // "landed on main".
+    if (doc.targetBranch === (repo.defaultBranch ?? 'main')) {
+      await this.deps.gitRepoStorage!.update(repo.id, {
+        defaultBranchTipSha: mergeCommitSha,
+        defaultBranchPushAt: new Date().toISOString()
+      });
+    }
+  }
+
+  /**
+   * Auto-approve mode's decision (note #944): `pr ready` calls this, for a
+   * proposal it has just made ready, when the workplace's switch is on and
+   * the checks passed. It merges through the same anchor and the same
+   * required-checks gate an owner's Approve does, and records the decision
+   * as AUTOMATIC — `autoApproved`, with the mode's who and when, and no
+   * `decidedBy`, because no person read it.
+   *
+   * It never ends a proposal any other way. Whatever stops the merge — a
+   * required check, a branch that moved, a conflict with main, a host that
+   * did not answer — leaves the proposal open, awaiting its owner exactly as
+   * if the mode were off, with the reason on the record
+   * (`autoApproveFallback`) for the proposal's screen to show; the caller
+   * then sends the ordinary ask. A conflict is NOT marked terminal here, as
+   * it is when a person approves: nobody has seen the proposal yet, and the
+   * card they are about to get must still be decidable.
+   *
+   * On a merge the proposing agent (and the card's sender) is woken with an
+   * outcome that says it was automatic, and the agent's chat gets that row
+   * as its card — no "awaits your decision" ask is written, because nothing
+   * is asked.
+   */
+  async autoApprovePullRequest(args: {
+    pullRequestId: string;
+    mode: { onAt: string; byUserId: string; byName: string };
+  }): Promise<{ status: 'merged'; mergeCommitSha: string } | { status: 'fallback'; reason: string }> {
+    const prs = this.deps.gitPullRequestStorage;
+    const repos = this.deps.gitRepoStorage;
+    const fallback = async (reason: string, docId?: string) => {
+      if (docId) {
+        await prs?.update(docId, { autoApproveFallback: { at: new Date().toISOString(), reason } }).catch(() => false);
+      }
+      return { status: 'fallback' as const, reason };
+    };
+    if (!prs || !repos || !this.deps.gitHostClient) return fallback('change proposals are not available on this backend right now');
+    const doc = await prs.get(args.pullRequestId);
+    if (!doc) return fallback('the proposal could not be read');
+    // Nothing to fall back TO on a quiet or decided proposal: no record.
+    if (!pullRequestAwaitsDecision(doc)) return fallback(`it is ${doc.draft ? 'not ready yet' : doc.status}`);
+    const repo = await repos.get(doc.repoId);
+    if (!repo || repo.deletedAt) return fallback('its repository is gone', doc.id);
+    if (repo.requireChecks) {
+      const blocker = await this.requiredChecksBlocker(doc);
+      if (blocker) return fallback(`this repository requires passing checks, and ${blocker}`, doc.id);
+    }
+    const host = this.deps.orgGitHost
+      ? await this.deps.orgGitHost.clientFor(repo.orgId ?? null)
+      : this.deps.gitHostClient;
+    const deliveryStartedAt = new Date().toISOString();
+    let result;
+    try {
+      result = await host.merge(repo.userId, repo.name, {
+        base: doc.targetBranch,
+        head: doc.sourceBranch,
+        // The same anchor as a person's Approve: the sha `pr ready` pinned.
+        expectedHead: doc.headSha,
+        message: `${doc.title}\n\nPR #${doc.number} from ${doc.sourceBranch}, approved automatically (auto-approve mode, turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}).`,
+        ...(doc.squash ? { squash: true } : {})
+      });
+    } catch (error) {
+      return fallback(`the merge failed (${error instanceof Error ? error.message : String(error)})`, doc.id);
+    }
+    if (result.status === 'stale') return fallback(`${doc.sourceBranch} moved after it was made ready`, doc.id);
+    if (result.status === 'conflict') return fallback(`${doc.sourceBranch} conflicts with ${doc.targetBranch}`, doc.id);
+    if (result.status !== 'merged') return fallback(`${doc.sourceBranch} is gone`, doc.id);
+
+    const autoApproved: PullRequestAutoApproval = {
+      at: new Date().toISOString(),
+      modeOnAt: args.mode.onAt,
+      modeOnByUserId: args.mode.byUserId,
+      modeOnByName: args.mode.byName,
+    };
+    await this.recordPullRequestMerged(doc, repo, result.mergeCommitSha, deliveryStartedAt, { autoApproved });
+    await this.notifyAgentOfPullRequestDecision(
+      doc.createdByUserId ?? doc.userId, doc, repo.name,
+      `PR #${doc.number} ("${doc.title}") in ${repo.name} was APPROVED AUTOMATICALLY:`
+      + ` ${doc.sourceBranch} is merged into ${doc.targetBranch}.`
+      + ` Auto-approve mode is on in this workplace (turned on by ${args.mode.byName} at ${autoApproveTime(args.mode.onAt)}),`
+      + ' so no person read it before it merged. Say so when you report it — never that your user approved it.',
+    );
+    return { status: 'merged', mergeCommitSha: result.mergeCommitSha };
   }
 
   /**

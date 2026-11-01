@@ -38,6 +38,7 @@ import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { WorkplaceNameForm } from './WorkplaceNameForm.js';
 import { WorkplaceDeleteScreen } from './WorkplaceDeleteScreen.js';
 import { CopyHealthSection } from './CopyHealthSection.js';
+import { AutoApproveSection } from './AutoApproveSection.js';
 import { PRIVATE_COPY } from '../../../../src/shared/private-copy.js';
 
 /**
@@ -431,6 +432,8 @@ export function OrganizationScreen() {
       ) : null}
       {org ? <CloudSection org={org} onConnected={() => { void refresh(); }} /> : null}
       {org ? <CodeSection org={org} refresh={refresh} /> : null}
+      {/* Auto-approve mode (note #944): what happens to every proposal here. */}
+      {org ? <AutoApproveSection key={orgId} /> : null}
       {org ? <BackupsSection org={org} /> : null}
       {/* A private copy's health and diagnostics, for its admins (note #813). */}
       {org && PRIVATE_COPY && org.role === 'admin' ? <CopyHealthSection /> : null}

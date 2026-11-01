@@ -452,6 +452,13 @@ export interface WorkspaceProposalRow {
   /** Whether THIS viewer decides it; Home's queue lists only those. */
   canDecide: boolean;
   checks?: WorkspaceChecksSummary;
+  /**
+   * Merged by auto-approve mode (note #944), not by a person: the mode's who
+   * and when, which every surface names in place of a decider.
+   */
+  autoApproved?: { at: string; modeOnAt: string; modeOnByName: string };
+  /** Auto-approve was on but did not merge it; it waits, and this says why. */
+  autoApproveFallback?: { at: string; reason: string };
 }
 
 export interface WorkspaceKnowledgeProposalRow {
@@ -1847,6 +1854,23 @@ export interface WorkspaceOrgAgentMachineWritten extends WorkspaceOrgAgentMachin
   /** False when the workplace was already building new agents on it. */
   changed: boolean;
 }
+
+/**
+ * GET / PUT api/org/auto-approve (note #944). Any member reads whether the
+ * workplace merges ready proposals without asking; only an admin turns it
+ * on or off, and every flip is recorded with who and when.
+ */
+export interface WorkspaceOrgAutoApproveAnswer {
+  on: boolean;
+  /** The last flip, absent while nobody has ever touched the switch. */
+  changedAt?: string;
+  changedByName?: string;
+  /** False for a member: they see the switch, an admin flips it. */
+  canChange: boolean;
+  /** Every flip, newest first — what an admin reads as the audit trail. */
+  history?: Array<{ on: boolean; at: string; byName: string }>;
+}
+export interface WorkspaceOrgAutoApproveRequest { on: boolean }
 
 /** GET api/org/spend */
 export interface WorkspaceOrgSpendMachine {

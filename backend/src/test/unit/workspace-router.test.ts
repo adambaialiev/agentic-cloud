@@ -11041,6 +11041,60 @@ describe('the workplace screens (members, seats, invites)', () => {
       expect(res.body).toMatchObject({ current: DEFAULT_AGENT_MACHINE_SIZE_ID, chosen: false });
     });
 
+    /**
+     * NOTE #944. Auto-approve: every member reads whether the workplace
+     * merges ready proposals without asking; only an admin flips it, every
+     * flip is recorded with who and when, and off is the default.
+     */
+    it('auto-approve is off by default, readable by a member, and only an admin turns it on or off — on the record', async () => {
+      const { deps, orgStorage, org } = await buildOrgDeps();
+      const read = getRouteHandler(deps, '/api/org/auto-approve', 'get');
+      const write = getRouteHandler(deps, '/api/org/auto-approve', 'put');
+
+      const before = createMockResponse();
+      await read(mockRequest({ headers: authHeader(43) }), before);
+      expect(before.body).toEqual({ on: false, canChange: false });
+
+      const refused = createMockResponse();
+      await write(mockRequest({ headers: authHeader(43), body: { on: true } }), refused);
+      expect(refused.statusCode).toBe(403);
+      expect((refused.body as { error: string }).error).toContain('Only a workplace admin');
+      expect((await orgStorage.getOrg(org.orgId))!.autoApprove).toBeUndefined();
+
+      const nonsense = createMockResponse();
+      await write(mockRequest({ headers: authHeader(42), body: { on: 'yes' } }), nonsense);
+      expect(nonsense.statusCode).toBe(400);
+
+      const on = createMockResponse();
+      await write(mockRequest({ headers: authHeader(42), body: { on: true } }), on);
+      expect(on.statusCode).toBe(200);
+      expect(on.body).toMatchObject({ ok: true, changed: true, on: true, canChange: true, changedByName: expect.stringContaining('Owner') });
+      const stored = (await orgStorage.getOrg(org.orgId))!.autoApprove!;
+      expect(stored).toMatchObject({ on: true, changedByUserId: 'user-1' });
+      expect(stored.history).toEqual([expect.objectContaining({ on: true, byUserId: 'user-1' })]);
+      // The admin's own "last did" line says it, like any other decision.
+      expect((await orgStorage.getMembership(org.orgId, 'user-1'))!.recap?.text).toContain('auto-approve on');
+
+      // The same answer twice is not a flip: the history keeps meaning flips.
+      const again = createMockResponse();
+      await write(mockRequest({ headers: authHeader(42), body: { on: true } }), again);
+      expect(again.body).toMatchObject({ ok: true, changed: false });
+      expect((await orgStorage.getOrg(org.orgId))!.autoApprove!.history).toHaveLength(1);
+
+      const off = createMockResponse();
+      await write(mockRequest({ headers: authHeader(42), body: { on: false } }), off);
+      expect(off.body).toMatchObject({ ok: true, changed: true, on: false });
+
+      const member = createMockResponse();
+      await read(mockRequest({ headers: authHeader(43) }), member);
+      const answer = member.body as { on: boolean; canChange: boolean; history: Array<{ on: boolean }> };
+      expect(answer.on).toBe(false);
+      expect(answer.canChange).toBe(false);
+      // Newest first, and names only — never a user id.
+      expect(answer.history.map((change) => change.on)).toEqual([false, true]);
+      expect(JSON.stringify(member.body)).not.toContain('user-1');
+    });
+
     it('a hosted workplace has no bill: spend answers that, and never walks our account (note #664)', async () => {
       const { deps } = await buildOrgDeps();
       const report = vi.fn();

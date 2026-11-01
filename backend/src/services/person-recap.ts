@@ -94,6 +94,8 @@ export const personActionLines = {
   /** Put a knowledge page back from its History (note #746). */
   restoredKnowledge: (page: string, number: number): string => personRecapText(`Put knowledge page "${page}" back (change #${number})`),
   wroteNote: (number: number, title: string | undefined): string => personRecapText(`Wrote note #${number}${quoted(title)}`),
+  /** The workplace's auto-approve switch (note #944). */
+  switchedAutoApprove: (on: boolean): string => personRecapText(`Turned auto-approve ${on ? 'on' : 'off'}`),
   handedNote: (number: number, agentName: string | undefined): string => personRecapText(
     `Handed note #${number} to ${agentName || 'an agent'}`,
   ),

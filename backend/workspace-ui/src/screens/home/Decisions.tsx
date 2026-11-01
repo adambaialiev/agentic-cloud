@@ -24,7 +24,7 @@ import { useWorkspace } from '../../workspace/useWorkspace.js';
 // same state.
 import { CheckPip } from '../decisions/Checks.js';
 import { PressableRow } from './PressableRow.js';
-import { KNOWLEDGE_STATE_TEXT, PR_STATE_TEXT } from './proposal-state-words.js';
+import { KNOWLEDGE_STATE_TEXT, PR_STATE_TEXT, prStateKey } from './proposal-state-words.js';
 
 function DiffStat({ stat }: { stat: WorkspaceProposalRow['diffStat'] }) {
   const { insertions, deletions } = stat ?? { insertions: 0, deletions: 0 };
@@ -86,7 +86,7 @@ export function ProposalRow({ pr, branch, outcome, plain }: {
       <div className="main">
         <div className="name plain">{pr.title}</div>
         <div className={outcome ? 'cline' : 'cline by'}>
-          {outcome ? <ProposalState status={pr.status === 'open' && pr.draft ? 'draft' : pr.status} words={PR_STATE_TEXT} /> : null}
+          {outcome ? <ProposalState status={prStateKey(pr)} words={PR_STATE_TEXT} /> : null}
           {!outcome && pr.agentAvatarUrl
             ? (
               <>

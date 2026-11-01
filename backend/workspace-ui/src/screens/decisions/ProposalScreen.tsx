@@ -68,6 +68,7 @@ import { MarginThread } from './MarginThread.js';
 import { ProposalFiles } from './ProposalFiles.js';
 import { warmMediaOrigin } from './proposal-previews.js';
 import { agentSignature, approveHint, decisionWording, runtimeLine, statusPill } from './proposal-words.js';
+import { autoApproveFallbackWords, autoApprovedWords } from '../../../../src/shared/auto-approve.js';
 import {
   SkelDecide, SkelEyebrow, SkelPills, SkelRuntime, SkelSummary, SkelWho, SkelWriteUp,
 } from './Skeleton.js';
@@ -251,6 +252,10 @@ export function ProposalScreen() {
         status: fresh.pr.status,
         decidedAt: fresh.pr.decidedAt,
         decisionNote: fresh.pr.decisionNote,
+        // Who decided, when nobody did (note #944) — it can land under an
+        // open screen exactly as a person's decision can.
+        autoApproved: fresh.pr.autoApproved,
+        autoApproveFallback: fresh.pr.autoApproveFallback,
       },
     } : current));
     if (fresh.pr.status === 'merged' && fresh.delivery) {
@@ -728,6 +733,15 @@ export function ProposalScreen() {
           {/* The reason the user gave — the same words the agent was woken
               with, so this screen stays the complete record of the decision. */}
           {pr.decisionNote ? <div className="hintline">Your note to the agent: {pr.decisionNote}</div> : null}
+          {/* Who decided, when no person did (note #944): the mode that
+              merged it stands where a decider's name would, and a proposal
+              it could not merge says why it is waiting for you after all. */}
+          {pr.autoApproved
+            ? <div className="hintline" id="prAutoApproved">{autoApprovedWords(pr.autoApproved)}. No person read it before it merged.</div>
+            : null}
+          {pr.status === 'open' && pr.autoApproveFallback
+            ? <div className="hintline" id="prAutoFallback">{autoApproveFallbackWords(pr.autoApproveFallback)}</div>
+            : null}
           {refusal ? <div className="hintline" id="prRefusal">{refusal}</div> : null}
           {/* Kept on the screen even when there is nothing to say yet: a
               refresh re-says it, and a proposal decided out from under this

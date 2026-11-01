@@ -1,5 +1,6 @@
 import { CATALOGUE_URL } from '../shared/public-host.js';
 import { harnessName, isHarnessCli } from '../shared/harness-clis.js';
+import { autoApproveChecksBlocker, autoApproveTime, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { memberHasLiveSeat } from '../services/org-seat-signin.js';
 import { agentBroughtInReceipt } from '../shared/first-run.js';
 import { registerDriveRoutes } from './drive.js';
@@ -2613,8 +2614,10 @@ export function agentCliRoutes(deps: RouteDeps): Router {
 
     // "Only after everything is passed": the verdict on the sha the card
     // would describe, read the way the card and the queue pip read it.
+    const verdict = deps.gitCommitStatusStorage
+      ? worstCheckState(await deps.gitCommitStatusStorage.listBySha(repo.id, head), new Date())
+      : null;
     if (deps.gitCommitStatusStorage) {
-      const verdict = worstCheckState(await deps.gitCommitStatusStorage.listBySha(repo.id, head), new Date());
       if (verdict === 'pending') {
         return res.status(409).json({
           error: `Checks are still running on ${head.slice(0, 7)}. Wait for them — \`agentbuilt repo checks --wait\` — then run \`agentbuilt pr ready ${doc.number}\` again. Your user is not invited to a build that has not finished.`,
@@ -2631,6 +2634,41 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     // Who sent the card is recorded with the proposal (note #684): a reviewer
     // readying a colleague's work is told the outcome alongside the proposer.
     await git.prs.update(doc.id, { draft: undefined, readyAt, readyByAgentId: auth.agentId });
+
+    // Auto-approve mode (note #944): when a workplace admin has switched it
+    // on, the proposal is merged now instead of waiting — through the
+    // owner's own merge gate, recorded as automatic. Checks still gate: a
+    // verdict that is not green, or none at all on a repo whose CI is on,
+    // never merges. Anything that stops it leaves the ordinary ask below,
+    // with the reason on the proposal, so nothing is ever silently stuck.
+    let autoFallback: string | null = null;
+    const autoMode = await autoApproveModeFor(auth, repo);
+    if (autoMode) {
+      const blocker = autoApproveChecksBlocker(verdict, repo.ci === true);
+      if (blocker) {
+        autoFallback = blocker;
+        await git.prs.update(doc.id, { autoApproveFallback: { at: new Date().toISOString(), reason: blocker } }).catch(() => false);
+      } else {
+        const outcome = await deps.autoApprovePullRequest!({
+          pullRequestId: doc.id,
+          mode: { onAt: autoMode.changedAt, byUserId: autoMode.changedByUserId, byName: autoMode.changedByName },
+        }).catch((error: unknown) => ({ status: 'fallback' as const, reason: `the merge failed (${(error as Error).message})` }));
+        if (outcome.status === 'merged') {
+          const by = auth.agents[doc.createdByAgentId]?.name;
+          const turnedOn = `turned on by ${autoMode.changedByName} at ${autoApproveTime(autoMode.changedAt)}`;
+          const chiefOfStaff = await chiefOfStaffCard(auth, repo, doc,
+            `${by ? `${by}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — was approved automatically and merged into ${doc.targetBranch} (auto-approve mode on, ${turnedOn}); no person read it first. Its card is in this conversation.`);
+          return res.json({
+            ok: true,
+            askedUser: false,
+            autoApproved: true,
+            message: `Auto-approve mode is on in this workplace (${turnedOn}), so PR #${doc.number} was approved AUTOMATICALLY and ${doc.sourceBranch} is merged into ${doc.targetBranch} — nobody was asked${chiefOfStaff ? '; the card in their Chief of Staff chat says the same' : ''}. When you report it, say it merged automatically, never that your user approved it. Follow up on it as on any merge (its checks and deploys on ${doc.targetBranch}); the outcome also reaches you as a [Platform] message.`,
+          });
+        }
+        autoFallback = outcome.reason;
+      }
+    }
+
     // The ask is best-effort on delivery but never on recording: a proposal
     // shown without a notification can still be found in the Workspace queue,
     // whereas a notification for a proposal that failed to save is a lie.
@@ -2647,15 +2685,34 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     // with no model turn; the conversation itself refuses a second card for
     // a proposal already in front of them. Best effort like the chat card
     // above: the proposal is recorded and in the queue whatever happens here.
-    const chiefOfStaff = await chiefOfStaffCard(auth, repo, doc);
+    const chiefOfStaff = await chiefOfStaffCard(auth, repo, doc, autoFallback
+      ? `${auth.agents[doc.createdByAgentId]?.name ? `${auth.agents[doc.createdByAgentId]!.name}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — is ready for the person's decision: auto-approve is on, but it was not merged automatically because ${autoFallback}. Its card is in this conversation.`
+      : undefined);
+    const autoWords = autoFallback
+      ? `Auto-approve is on in this workplace, but PR #${doc.number} was NOT merged automatically: ${autoFallback}. It waits for your user's decision like any other proposal, and its screen says why. `
+      : '';
     return res.json({
       ok: true,
       askedUser: asked,
-      message: asked
+      ...(autoFallback ? { autoApproveFallback: autoFallback } : {}),
+      message: autoWords + (asked
         ? `PR #${doc.number} is with your user now — they approve or reject it from their Workspace${chiefOfStaff ? ', and its card is in their Chief of Staff chat too' : ''}. Do not wait: end your turn, and you will be messaged with the outcome when they decide.`
-        : `PR #${doc.number} is now in your user's queue${chiefOfStaff ? ' and in their Chief of Staff chat' : ''}, but the chat card could not be delivered. Tell them in your reply that it is waiting for their decision.`,
+        : `PR #${doc.number} is now in your user's queue${chiefOfStaff ? ' and in their Chief of Staff chat' : ''}, but the chat card could not be delivered. Tell them in your reply that it is waiting for their decision.`),
     });
   });
+
+  /**
+   * The workplace's auto-approve switch (note #944), when it is ON and this
+   * backend can act on it — or null. Read from the agent's own workplace,
+   * the one its proposals belong to. An agent can only READ it here: no
+   * route of this router writes it.
+   */
+  const autoApproveModeFor = async (auth: AgentAuth, repo: GitRepoDocument): Promise<WorkplaceAutoApprove | null> => {
+    const orgId = auth.orgId ?? repo.orgId ?? null;
+    if (!orgId || !deps.orgStorage || !deps.autoApprovePullRequest) return null;
+    const org = await deps.orgStorage.getOrg(orgId).catch(() => null);
+    return org?.autoApprove?.on ? org.autoApprove : null;
+  };
 
   /**
    * The card a proposal made ready lands in its owner's Chief of Staff chat
@@ -2663,7 +2720,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
    * and false when there is no conversation to write to: a legacy agent in
    * no workplace, a backend without the conversation, or a write that failed.
    */
-  const chiefOfStaffCard = async (auth: AgentAuth, repo: GitRepoDocument, doc: GitPullRequestDocument): Promise<boolean> => {
+  const chiefOfStaffCard = async (auth: AgentAuth, repo: GitRepoDocument, doc: GitPullRequestDocument, words?: string): Promise<boolean> => {
     const orgId = auth.orgId ?? repo.orgId ?? null;
     if (!orgId || !deps.workspaceAgent?.proposalReady) return false;
     const by = auth.agents[doc.createdByAgentId]?.name;
@@ -2674,7 +2731,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
       // What the conversation's next turn reads (the card replaces these
       // words on the screen): whose proposal, where, and that it is already
       // in front of the person — so the Chief of Staff does not forward it.
-      text: `${by ? `${by}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — is ready for the person's decision; its card is in this conversation.`.slice(0, 2000),
+      text: (words ?? `${by ? `${by}'s ` : ''}PR #${doc.number} in ${repo.name} — ${doc.title} — is ready for the person's decision; its card is in this conversation.`).slice(0, 2000),
     }).catch(() => 'none' as const);
     return landed !== 'none';
   };

@@ -13,6 +13,8 @@ export const PR_STATE_TEXT: Record<string, { label: string; tone: string }> = {
   // is nobody's move, least of all the reader's.
   draft: { label: 'Still being prepared', tone: ' mut' },
   merged: { label: 'Merged', tone: ' ok' },
+  // Merged by auto-approve mode, decided by no person (note #944).
+  mergedAutomatically: { label: 'Merged automatically', tone: ' ok' },
   rejected: { label: 'Rejected', tone: ' mut' },
   withdrawn: { label: 'Withdrawn', tone: ' mut' },
   stale: { label: 'Went stale', tone: ' mut' },
@@ -35,3 +37,15 @@ export const KNOWLEDGE_STATE_TEXT: Record<string, { label: string; tone: string 
   withdrawn: { label: 'Withdrawn', tone: ' mut' },
   conflict: { label: 'Conflict', tone: ' warn' },
 };
+
+/**
+ * Which of the words above one change proposal's row wears: its status,
+ * except a quiet one says so, and a merge no person decided says that too
+ * (note #944) — "Merged" alone over an auto-approved change would read as
+ * the reader's own approval.
+ */
+export function prStateKey(pr: { status: string; draft?: boolean; autoApproved?: unknown }): string {
+  if (pr.status === 'open' && pr.draft) return 'draft';
+  if (pr.status === 'merged' && pr.autoApproved) return 'mergedAutomatically';
+  return pr.status;
+}

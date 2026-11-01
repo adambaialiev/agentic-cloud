@@ -7,6 +7,7 @@
  */
 
 import { COMMENT_HTML_LABELS, validateMarginComment, type MarginComment } from './comment.js';
+import type { PullRequestAutoApproval, PullRequestAutoApproveFallback } from '../shared/auto-approve.js';
 
 export type GitPullRequestStatus =
   | 'open'      // waiting for the user
@@ -114,6 +115,19 @@ export interface GitPullRequestDocument {
   decidedBy?: string;
   /** Optional reason, relayed to the agent: "no" alone makes it retry blindly. */
   decisionNote?: string;
+  /**
+   * Merged by auto-approve mode (note #944), not by a person: `decidedBy`
+   * stays empty, because nobody read it, and this says which mode did —
+   * turned on when, by whom. Every surface that names the decider reads it.
+   */
+  autoApproved?: PullRequestAutoApproval;
+  /**
+   * Auto-approve was on when this was made ready but did not merge it — the
+   * checks held it, or the merge failed — so it waits for its owner like any
+   * other proposal, with the reason shown. Cleared by nothing: a later
+   * decision simply stands beside it.
+   */
+  autoApproveFallback?: PullRequestAutoApproveFallback;
   mergeCommitSha?: string;
   /**
    * The instant the approved merge started, before the target ref moved.
