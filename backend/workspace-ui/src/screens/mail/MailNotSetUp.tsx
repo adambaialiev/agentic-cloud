@@ -26,7 +26,7 @@ export function MailNotSetUp({ setup, domain }: { setup: MailSetupPhase; domain:
     <div className="crow">
       <div className="main">
         <div className="name plain">{started ? 'Email is being set up' : 'Email is not set up yet'}</div>
-        <div className="cline"><span className="ctext">
+        <div className="cline wrapline"><span className="ctext">
           {started
             ? 'An admin has started. It turns on by itself once its DNS records are in.'
             : 'This Workspace was installed without email. Everything else works without it.'}

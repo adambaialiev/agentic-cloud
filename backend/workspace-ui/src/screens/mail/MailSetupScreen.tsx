@@ -36,13 +36,13 @@ function RecordRow({ record }: { record: WorkspaceCopyMailRecord }) {
   const tone = record.ok === true ? 'ok' : record.ok === false ? 'wait' : 'none';
   return <div className="crow mailrecord" data-ok={tone}>
     <div className="main">
-      <div className="cline mailrecord-head">
+      <div className="cline wrapline mailrecord-head">
         <span className="name plain mailrecord-name">{record.name}</span>
         <span className="mailrecord-type">{record.type}</span>
         <span className={`mailrecord-mark ${tone}`}>{mark}</span>
       </div>
-      <div className="cline"><code className="mailrecord-value">{record.priority !== undefined ? `${record.priority} ${record.value}` : record.value}</code></div>
-      <div className="cline"><span className="ctext">{record.why}</span></div>
+      <div className="cline wrapline"><code className="mailrecord-value">{record.priority !== undefined ? `${record.priority} ${record.value}` : record.value}</code></div>
+      <div className="cline wrapline"><span className="ctext">{record.why}</span></div>
     </div>
   </div>;
 }
@@ -138,7 +138,7 @@ export function MailSetupScreen() {
       <div className="crow">
         <div className="main">
           <div className="name plain" id="mailSetupLine">{stateLine(status)}</div>
-          {status.checkedAt ? <div className="cline"><span className="ctext">Checked {relative(status.checkedAt)}</span></div> : null}
+          {status.checkedAt ? <div className="cline wrapline"><span className="ctext">Checked {relative(status.checkedAt)}</span></div> : null}
         </div>
       </div>
     </div> : null}
@@ -151,7 +151,7 @@ export function MailSetupScreen() {
           ? <div className="crow">
             <div className="main">
               <div className="name plain">{status.provider.kind === 'resend' ? 'Resend' : 'SMTP'}</div>
-              <div className="cline"><span className="ctext">{status.provider.line}</span></div>
+              <div className="cline wrapline"><span className="ctext">{status.provider.line}</span></div>
             </div>
           </div>
           : null}
@@ -212,7 +212,7 @@ export function MailSetupScreen() {
           ? <div className="crow">
             <div className="main">
               <div className="name plain">{status.receiver.app}</div>
-              <div className="cline"><span className="ctext">
+              <div className="cline wrapline"><span className="ctext">
                 At {status.receiver.ipv4}, in your Fly organization{status.receiver.adopted ? ' (made by the installer, kept as it is)' : ''}.
                 {' '}{status.certificate === 'issued' ? 'Its certificate is in.' : 'Its certificate comes by itself once its records are in.'}
               </span></div>

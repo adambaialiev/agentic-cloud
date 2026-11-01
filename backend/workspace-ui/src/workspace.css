@@ -7503,7 +7503,11 @@ h2.mailfileshead { margin-top: 16px; }
 .mailsetupform { padding: 4px 0 8px; }
 .mailsetupform .segtabs { margin: 8px 12px; }
 .mailsetupform .actions { padding: 0 12px 4px; }
-#mailNotSetUp .mailnotsetup-what { text-align: left; }
-#mailNotSetUp .ctext { white-space: normal; overflow: visible; text-overflow: clip; display: block; }
-#mailSetupState .name, #screenMailSetup .ctext { white-space: normal; overflow: visible; text-overflow: clip; display: block; }
+/* A row whose second line is a sentence, not a label: the list's fixed
+   one-line box (.crow .cline, 18px) would push a wrapped sentence up into
+   the name above it, so these lines grow with their words instead. */
+.crow .cline.wrapline { height: auto; align-items: flex-start; margin-top: 4px; }
+.crow .cline.wrapline .ctext { white-space: normal; overflow: visible; text-overflow: clip; }
+#mailNotSetUp .mailnotsetup-what { text-align: left; padding-top: 0; }
+#mailSetupState .name { white-space: normal; }
 .mailsetupform .frow .segtabs { margin: 6px 0 2px; }
