@@ -1,0 +1,50 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, linux, x64]
+    name: Deploy to Cloudflare Pages
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build frontend
+        run: npm run build
+        env:
+          # API base URL from GitHub Secrets
+          VITE_API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      
+      # This is the ONLY workflow that deploys the site. ci-cd.yml used to run
+      # a second `pages deploy` against the same project on the same push:
+      # two deployments racing, and whichever Cloudflare promoted last won.
+      # That was survivable only while both jobs built identical bytes — the
+      # asset hashes matched, so a mismatched pair still resolved. Once this
+      # build started passing a build-time env var and the other did not,
+      # the two produced different hashes, and the edge began serving one
+      # deployment's index.html alongside the other's missing assets: a blank
+      # page, from a pipeline reporting success twice.
+      #
+      # --branch is explicit for the same reason: production promotion should
+      # not depend on what wrangler infers from the runner's git state.
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=infinite-agents --branch=main

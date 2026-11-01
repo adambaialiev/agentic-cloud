@@ -1,0 +1,69 @@
+{
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "includeCoAuthoredBy": false
+  },
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/agentbuilt __harness-hook claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^(Bash|TaskStop)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/agentbuilt __harness-hook claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/agentbuilt __harness-hook claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/agentbuilt __harness-hook claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/local/bin/agentbuilt __harness-hook claude",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

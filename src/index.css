@@ -1,0 +1,1314 @@
+@import "tailwindcss";
+
+/* ── The palette ──────────────────────────────────────────────────────────
+   This is the public site's presentation palette: a dark stage around its
+   explanation of the product. It is intentionally no longer a copy of the
+   authenticated Workspace's surface colours. Note #418 moved that working UI
+   to a fixed paper-light palette because it is read for hours; a marketing
+   page and a work surface do different jobs.
+
+   The product semantics still agree. Blue is the one general accent, green
+   means a check passed or a change landed, red means danger, and secondary
+   copy steps back without becoming unreadable. The real Workspace captures
+   are regenerated when its palette changes, so this dark stage must frame a
+   light product honestly rather than recolouring the product to match itself. */
+@theme {
+  /* Ink and dark surfaces */
+  --color-ink: #1c2028;
+  --color-ink-deep: #12161c;
+  /* The public page's dark stage and its softer cards. These no longer mirror
+     the light Workspace's --bg and --card. */
+  --color-panel-deep: #161a20;
+  --color-panel: #1c1f26;
+  --color-panel-soft: #202932;
+  /* Secondary copy on the public page's dark surfaces. */
+  --color-hint: #aab4bf;
+
+  /* Light surfaces */
+  --color-canvas: #f4f6f8;
+  --color-canvas-soft: #e9eef3;
+
+  /* Prose, darkest to lightest. All three clear 4.4:1 on --color-canvas. */
+  --color-prose: #4f5a66;
+  --color-prose-soft: #63707d;
+  --color-faint: #75808c;
+
+  /* The one accent, and its washes */
+  --color-accent: #2373bf;
+  --color-accent-deep: #1c6ba8;
+  --color-accent-bright: #4494e8;
+  /* Deep enough to read as a panel against --color-canvas, which the first
+     pair of these were not — they arrived at almost exactly the page colour. */
+  --color-accent-tint: #dbe8f6;
+  --color-accent-tint-2: #e2e8ef;
+
+  /* Meaning, not decoration */
+  --color-ok: #2f9e44;
+  --color-ok-bright: #2f9e44;
+  --color-warn: #d9822b;
+  --color-danger: #e5484d;
+}
+
+/* The landing changes colour without changing composition. It keeps every
+   existing class, spacing rule and component branch; this scoped token map is
+   the whole visual change. Values are copied from the Workspace's own roles
+   in backend/workspace-ui/src/workspace.css. */
+.landing-page {
+  color-scheme: light;
+  --color-white: #1f1e1d;
+  --color-ink: #1f1e1d;
+  --color-ink-deep: #1f1e1d;
+  --color-panel-deep: #fcfcfb;
+  --color-panel: #fcfcfb;
+  --color-panel-soft: #efefef;
+  --color-hint: #686762;
+  --color-canvas: #fcfcfb;
+  --color-canvas-soft: #efefef;
+  --color-prose: #686762;
+  --color-prose-soft: #686762;
+  --color-faint: #686762;
+  --color-accent: #1a68d8;
+  --color-accent-deep: #1a68d8;
+  --color-accent-bright: #1a68d8;
+  --color-accent-tint: color-mix(in srgb, #1a68d8 12%, #fcfcfb);
+  --color-accent-tint-2: color-mix(in srgb, #1a68d8 7%, #efefef);
+  --color-ok: #1f7834;
+  --color-ok-bright: #1f7834;
+  --color-warn: #8a5312;
+  --color-danger: #d02541;
+}
+
+/* ── The type ─────────────────────────────────────────────────────────────
+   The scale, the tracking, the leading and the weights below are cursor.com's,
+   read off their own stylesheet on 2026-09-07. What makes that page read the
+   way it does is not one choice but four rules, and the four are the whole of
+   what is ported here:
+
+     1. NINE SIZES, and nothing in between. Every line of type on this site
+        picks one of the `type-*` roles below. The pages this replaced set
+        thirty-four different pixel sizes by hand in the markup — 14.5px in one
+        card, 15.5px in the next, 16.5px in a third — differences no reader can
+        see and every editor has to maintain.
+     2. TRACKING IS A FUNCTION OF SIZE: -0.03em at 72px, 0 at 18px, +0.01em at
+        14px. Large type is set tight because at that size the default gaps
+        read as holes, small type loose because at that size they read as
+        crowding. One site-wide letter-spacing — this file set 0.01em on
+        <body> and left it there — is wrong at both ends of the scale.
+     3. LEADING TIGHTENS AS SIZE GROWS: 1.1 at the top of the scale, 1.5 at
+        the bottom.
+     4. DISPLAY TYPE IS SET IN REGULAR. Cursor's headings are weight 400 at
+        72px; the hierarchy is carried by size, never by weight. This is the
+        rule you see first and the one easiest to undo by habit, so
+        `src/typography.test.ts` fails the build if a display role is given
+        `font-semibold`. Semibold belongs to the small furniture — nav,
+        buttons, card titles, labels.
+
+   The roles carry size, leading and tracking, and deliberately not weight: a
+   `type-*` class and Tailwind's `font-semibold` are both single-class
+   utilities, so which one won would have come down to stylesheet order.
+
+   The face is Inter, not Cursor Gothic. Theirs is commissioned from Kimera,
+   all rights reserved, and not ours to serve. Inter is the nearest open
+   equivalent and the measurements agree: x-height 0.546em against Cursor
+   Gothic's 0.535, cap height 0.728 against 0.714, and the same neo-grotesque
+   skeleton on Helvetica's metrics. It is SIL Open Font Licensed — the licence
+   ships beside the file, in public/fonts/. */
+
+/* Self-hosted, one file, and preloaded from index.html. The note this file
+   used to carry said a webfont costs "a render-blocking request to a third
+   party before the first paint", and that is true of Google Fonts and false
+   of this: it is 58 kB of first-party woff2 on the same connection as the
+   page, `font-display: swap` so nothing waits on it, and one variable file
+   covering every weight from 400 to 700 instead of four static ones. */
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/inter-latin-var.woff2') format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* What `swap` swaps FROM. Arial (and Liberation Sans, its metric twin, which
+   is what a Linux screenshot machine actually has) scaled and re-shouldered
+   until its lines sit exactly where Inter's will, so the first paint does not
+   move when the real face arrives. Derived from the two fonts' own tables:
+   size-adjust is Inter's x-height over Arial's, and the ascent and descent
+   overrides are Inter's own divided by that. */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('Helvetica Neue'), local('Liberation Sans');
+  size-adjust: 105.27%;
+  ascent-override: 92.02%;
+  descent-override: 22.91%;
+  line-gap-override: 0%;
+}
+
+:root {
+  --font-ui: 'Inter', 'Inter Fallback', -apple-system, BlinkMacSystemFont,
+    'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+html, body {
+  background-color: #f4f6f8;
+  color: #1c2028;
+  min-height: 100%;
+  font-family: var(--font-ui);
+  /* The `type-base` role, as the document's own default. */
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  /* Inter's optical size axis: the same face drawn with tighter apertures and
+     less spacing as it gets bigger, which is most of what a display cut is. */
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* The nine roles. Sizes in rem so a reader who has changed their browser's
+   text size gets a page that answers. Written as utilities rather than plain
+   classes so they take Tailwind's variants: `type-lg sm:type-xl lg:type-2xl`
+   is how a headline steps up the scale, which is exactly how cursor.com
+   writes its own (`type-xl sm:type-2xl`). */
+@utility type-2xl {
+  font-size: 4.5rem;       /* 72px */
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+@utility type-xl {
+  font-size: 3.25rem;      /* 52px */
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+@utility type-lg {
+  font-size: 2.25rem;      /* 36px */
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+@utility type-md-lg {
+  font-size: 1.625rem;     /* 26px */
+  line-height: 1.25;
+  letter-spacing: -0.0125em;
+}
+@utility type-md {
+  font-size: 1.375rem;     /* 22px */
+  line-height: 1.3;
+  letter-spacing: -0.005em;
+}
+@utility type-md-sm {
+  font-size: 1.125rem;     /* 18px */
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+@utility type-base {
+  font-size: 1rem;         /* 16px */
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+}
+@utility type-sm {
+  font-size: 0.875rem;     /* 14px */
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+@utility type-xs {
+  font-size: 0.75rem;      /* 12px */
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+}
+
+.terminal-chat-textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 0;
+  letter-spacing: 0;
+}
+
+.terminal-chat-textarea::placeholder {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  letter-spacing: 0;
+}
+
+/* The document scrolls, from the first byte. This used to lock body and #root
+   to one viewport (overflow: hidden, height: 100dvh) for the Workspace shell
+   that once lived in this repo, and every public page opted back out of the
+   lock in a useEffect — so the prerendered HTML arrived one screen tall and
+   un-scrollable, and only after hydration did the real document scroller
+   exist. Two scroll models, swapped after first paint: a swipe that landed in
+   the gap left the page sitting a little below its top on the phone, and a
+   reload could not restore its place because the page was still short when
+   the browser tried. The shell is gone, so the lock is too. */
+#root {
+  min-height: 100dvh;
+}
+
+.admin-theme {
+  --admin-canvas: #f6f8f5;
+  --admin-rail: #edf3ef;
+  --admin-panel: #ffffff;
+  --admin-panel-soft: #f8fbf8;
+  --admin-panel-muted: #eef4f0;
+  --admin-selected: #e7f0f7;
+  --admin-chip: #e9eef2;
+  --admin-line: #dce5de;
+  --admin-line-strong: #b9c9c0;
+  --admin-text: #1f332b;
+  --admin-text-strong: #173c32;
+  --admin-muted: #62766d;
+  --admin-faint: #7f8f87;
+  --admin-accent: #0f766e;
+  --admin-accent-soft: #e0f3ee;
+  --admin-danger: #b42318;
+  --admin-danger-soft: #fff1f0;
+  --admin-danger-line: #f2b8b5;
+  --admin-success: #147247;
+  --admin-success-soft: #e5f7ea;
+  --admin-success-line: #a8dbbb;
+  --admin-warning: #8a5a00;
+  --admin-warning-soft: #fff5d8;
+  --admin-warning-line: #e6ca82;
+  color-scheme: light;
+  background: var(--admin-canvas);
+  color: var(--admin-text);
+}
+
+.admin-theme code,
+.admin-theme pre,
+.admin-theme textarea,
+.admin-theme input,
+.admin-theme select {
+  color: var(--admin-text);
+}
+
+.admin-theme [class~="bg-[#0a0a0a]"],
+.admin-theme [class~="bg-[#171717]"] {
+  background-color: var(--admin-panel);
+}
+
+.admin-theme [class~="bg-[#111111]"],
+.admin-theme [class~="bg-[#111111]/80"],
+.admin-theme [class~="bg-[#1f1f1f]"],
+.admin-theme [class~="bg-[#18181b]"] {
+  background-color: var(--admin-panel-soft);
+}
+
+.admin-theme [class~="bg-[#171717]/95"] {
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+.admin-theme [class~="bg-[#1f1f1f]/20"] {
+  background-color: rgba(238, 244, 240, 0.78);
+}
+
+.admin-theme [class~="bg-[#262626]"],
+.admin-theme [class~="bg-[#303030]"],
+.admin-theme [class~="bg-[#404040]"],
+.admin-theme [class~="bg-[#525252]"] {
+  background-color: var(--admin-chip);
+}
+
+.admin-theme [class~="bg-[#14532d]"],
+.admin-theme [class~="bg-[#3f6212]"],
+.admin-theme [class~="bg-[#102017]"] {
+  background-color: var(--admin-success-soft);
+}
+
+.admin-theme [class~="bg-[#7f1d1d]"] {
+  background-color: var(--admin-danger-soft);
+}
+
+.admin-theme [class~="bg-[#78350f]"] {
+  background-color: var(--admin-warning-soft);
+}
+
+.admin-theme [class~="bg-black"] {
+  background-color: var(--admin-panel-soft);
+}
+
+.admin-theme [class*="bg-black/"] {
+  background-color: rgba(31, 51, 43, 0.08);
+}
+
+.admin-theme [class~="bg-black/60"] {
+  background-color: rgba(31, 51, 43, 0.32);
+}
+
+.admin-theme [class*="bg-[radial-gradient"] {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 245, 0.98));
+}
+
+.admin-theme [class~="hover:bg-[#171717]"]:hover,
+.admin-theme [class~="hover:bg-[#1f1f1f]"]:hover,
+.admin-theme [class~="hover:bg-[#ececec]"]:hover,
+.admin-theme [class~="focus:bg-[#1f1f1f]"]:focus,
+.admin-theme [class~="focus:bg-[#f7f7f7]"]:focus,
+.admin-theme [class~="hover:bg-[#f7f7f7]"]:hover {
+  background-color: var(--admin-panel-muted);
+}
+
+.admin-theme [class~="border-[#1f1f1f]"],
+.admin-theme [class~="border-[#262626]"],
+.admin-theme [class~="border-[#2f2f2f]"],
+.admin-theme [class~="border-[#303030]"],
+.admin-theme [class~="border-[#3f3f46]"],
+.admin-theme [class~="border-[#404040]"],
+.admin-theme [class~="border-[#525252]"] {
+  border-color: var(--admin-line);
+}
+
+.admin-theme [class~="border-[#737373]"],
+.admin-theme [class~="border-[#a3a3a3]"],
+.admin-theme [class~="border-[#c7c7c7]"],
+.admin-theme [class~="border-[#d4d4d4]"],
+.admin-theme [class~="hover:border-[#525252]"]:hover,
+.admin-theme [class~="hover:border-[#737373]"]:hover,
+.admin-theme [class~="hover:border-[#a3a3a3]"]:hover,
+.admin-theme [class~="hover:border-[#c7c7c7]"]:hover,
+.admin-theme [class~="hover:border-[#d4d4d4]"]:hover,
+.admin-theme [class~="focus:border-[#737373]"]:focus {
+  border-color: var(--admin-line-strong);
+}
+
+.admin-theme [class~="border-[#14532d]"],
+.admin-theme [class~="border-[#23412d]"],
+.admin-theme [class~="border-[#3f6212]"] {
+  border-color: var(--admin-success-line);
+}
+
+.admin-theme [class~="border-[#7f1d1d]"],
+.admin-theme [class~="hover:border-[#dc2626]"]:hover {
+  border-color: var(--admin-danger-line);
+}
+
+.admin-theme [class*="border-white/"] {
+  border-color: var(--admin-line);
+}
+
+.admin-theme [class~="text-white"],
+.admin-theme [class~="text-[#ffffff]"],
+.admin-theme [class~="text-[#fafafa]"],
+.admin-theme [class~="text-[#f5f5f5]"],
+.admin-theme [class~="text-[#ececec]"],
+.admin-theme [class~="text-[#e4e4e7]"] {
+  color: var(--admin-text);
+}
+
+.admin-theme [class*="text-white/"] {
+  color: var(--admin-text);
+}
+
+.admin-theme [class~="text-[#111111]"],
+.admin-theme [class~="text-[#171717]"],
+.admin-theme [class~="text-[#1f1f1f]"],
+.admin-theme [class~="hover:text-[#171717]"]:hover {
+  color: var(--admin-text-strong);
+}
+
+.admin-theme [class~="text-[#d4d4d4]"],
+.admin-theme [class~="text-[#c7c7c7]"] {
+  color: #40564d;
+}
+
+.admin-theme [class~="text-[#a3a3a3]"],
+.admin-theme [class~="text-[#737373]"],
+.admin-theme [class~="text-[#525252]"] {
+  color: var(--admin-muted);
+}
+
+.admin-theme [class~="text-[#bbf7d0]"],
+.admin-theme [class~="text-[#bef264]"],
+.admin-theme [class~="text-[#d6f5df]"] {
+  color: var(--admin-success);
+}
+
+.admin-theme [class~="text-[#fca5a5]"],
+.admin-theme [class~="text-[#fecaca]"] {
+  color: var(--admin-danger);
+}
+
+.admin-theme [class~="text-[#fde68a]"] {
+  color: var(--admin-warning);
+}
+
+.admin-theme [class~="hover:text-white"]:hover,
+.admin-theme [class~="hover:text-[#ffffff]"]:hover,
+.admin-theme [class~="hover:text-[#ececec]"]:hover,
+.admin-theme [class~="hover:text-[#d4d4d4]"]:hover,
+.admin-theme [class~="hover:text-[#fecaca]"]:hover {
+  color: var(--admin-text-strong);
+}
+
+.admin-theme [class~="disabled:text-[#525252]"]:disabled,
+.admin-theme [class~="disabled:text-[#737373]"]:disabled {
+  color: var(--admin-faint);
+}
+
+.admin-theme [class~="placeholder:text-[#525252]"]::placeholder {
+  color: var(--admin-faint);
+}
+
+.admin-theme [class~="marker:text-[#737373]"]::marker {
+  color: var(--admin-muted);
+}
+
+.admin-theme [class~="decoration-[#737373]"] {
+  text-decoration-color: #8aa098;
+}
+
+.admin-theme [class~="shadow-[0_24px_80px_rgba(0,0,0,0.4)]"] {
+  box-shadow: 0 18px 48px rgba(31, 51, 43, 0.12);
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.markdown-content {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.markdown-content code {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content .katex {
+  white-space: normal !important;
+}
+
+.markdown-content .katex .base {
+  flex-wrap: wrap;
+}
+
+.markdown-content li > p {
+  display: inline;
+}
+
+.markdown-content .markdown-table-wrapper {
+  max-width: 100%;
+}
+
+.markdown-content th p,
+.markdown-content td p {
+  margin-bottom: 0;
+  white-space: normal;
+}
+
+.markdown-content th > :last-child,
+.markdown-content td > :last-child {
+  margin-bottom: 0;
+}
+
+
+/* Tool execution spinner */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin 1.2s linear infinite;
+}
+
+/* Agent pane enter/exit animations */
+@keyframes pane-enter {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pane-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.animate-pane-enter {
+  animation: pane-enter 250ms ease-out both;
+}
+
+.animate-pane-exit {
+  animation: pane-exit 200ms ease-in both;
+  pointer-events: none;
+}
+
+@keyframes chat-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-chat-message-enter {
+  animation: chat-message-enter 220ms ease-out both;
+}
+
+@keyframes tool-step-swap-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-tool-step-swap-enter {
+  animation: tool-step-swap-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pane-enter,
+  .animate-pane-exit,
+  .animate-chat-message-enter,
+  .animate-tool-step-swap-enter {
+    animation: none !important;
+  }
+}
+
+/* Resizable pane width — uses CSS custom property on md+ */
+@media (min-width: 768px) {
+  .pane-resizable {
+    width: var(--pane-w, 600px) !important;
+  }
+}
+
+.landing-shell {
+  color-scheme: light;
+  background-color: #fbfbfd;
+  color: #1d1d1f;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
+  letter-spacing: 0;
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+.landing-shell * {
+  min-width: 0;
+}
+
+.landing-shell h1,
+.landing-shell h2,
+.landing-shell h3,
+.landing-shell p {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------------------
+ * Agentic Cloud Computer landing: quiet product canvas, outcome-first copy,
+ * and small interface fragments that make the promise tangible.
+ * ------------------------------------------------------------------------ */
+.landing-nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  background: rgba(251, 251, 253, 0.82);
+  border-bottom: 1px solid rgba(29, 29, 31, 0.06);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+}
+
+.landing-nav-cta {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: #0071e3;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 160ms ease, transform 160ms ease;
+}
+
+.landing-nav-cta:hover {
+  background: #0077ed;
+}
+
+.landing-nav-cta:active {
+  transform: scale(0.98);
+}
+
+.landing-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 38% at 50% 24%, rgba(232, 243, 255, 0.86) 0%, rgba(251, 251, 253, 0) 72%),
+    linear-gradient(180deg, #fbfbfd 0%, #f5f5f7 100%);
+}
+
+.landing-eyebrow,
+.landing-section-label {
+  color: #0071e3;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.landing-gradient-text {
+  color: #0071e3;
+  background: linear-gradient(105deg, #0071e3 0%, #5b5ff0 52%, #9a4de0 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.landing-primary-cta,
+.landing-final-button {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 23px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.landing-primary-cta {
+  background: #0071e3;
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(0, 113, 227, 0.2);
+}
+
+.landing-primary-cta:hover {
+  background: #0077ed;
+  box-shadow: 0 13px 30px rgba(0, 113, 227, 0.26);
+  transform: translateY(-1px);
+}
+
+.landing-secondary-cta {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  border: 1px solid rgba(29, 29, 31, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #343436;
+  font-size: 15px;
+  font-weight: 600;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.landing-secondary-cta:hover {
+  background: #fff;
+  border-color: rgba(29, 29, 31, 0.2);
+}
+
+.landing-primary-cta:active,
+.landing-final-button:active {
+  transform: scale(0.98);
+}
+
+.landing-diagram-card,
+.landing-task-board,
+.landing-memory-card {
+  overflow: hidden;
+  border: 1px solid rgba(29, 29, 31, 0.08);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow:
+    0 30px 70px rgba(29, 29, 31, 0.08),
+    0 2px 8px rgba(29, 29, 31, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.landing-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #34c759;
+  box-shadow: 0 0 0 4px rgba(52, 199, 89, 0.12);
+}
+
+.landing-proof-stat:not(:last-child) {
+  border-bottom: 1px solid rgba(29, 29, 31, 0.06);
+}
+
+.landing-section {
+  padding-block: 88px;
+}
+
+.landing-section-title {
+  max-width: 780px;
+  color: #1d1d1f;
+  font-size: clamp(34px, 5vw, 58px);
+  font-weight: 600;
+  letter-spacing: -0.052em;
+  line-height: 1.03;
+}
+
+.landing-section-copy {
+  max-width: 680px;
+  color: #6e6e73;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.landing-step-card {
+  min-height: 270px;
+  padding: 26px;
+  border: 1px solid rgba(29, 29, 31, 0.07);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(29, 29, 31, 0.035);
+}
+
+.landing-task-board {
+  background: #f8f8fa;
+}
+
+.landing-task-card {
+  min-height: 164px;
+  padding: 17px;
+  border: 1px solid rgba(29, 29, 31, 0.07);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(29, 29, 31, 0.035);
+}
+
+.landing-agent-avatar {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.landing-agent-avatar-claude {
+  border: 1px solid rgba(217, 119, 87, 0.22);
+  background: rgba(217, 119, 87, 0.1);
+  color: #b45538;
+}
+
+.landing-task-state {
+  max-width: 92px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.landing-task-state-complete {
+  background: #e8f6ed;
+  color: #218447;
+}
+
+.landing-task-state-working {
+  background: #e8f3ff;
+  color: #0067c9;
+}
+
+.landing-memory-card {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.landing-final-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 30px;
+  background: linear-gradient(135deg, #151b2b 0%, #172e58 52%, #2438a3 100%);
+  box-shadow: 0 34px 80px rgba(18, 37, 76, 0.22);
+}
+
+.landing-final-card::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 500px;
+  height: 500px;
+  top: -330px;
+  right: -120px;
+  border-radius: 50%;
+  background: rgba(112, 91, 255, 0.32);
+  filter: blur(20px);
+}
+
+.landing-final-button {
+  background: #fff;
+  color: #1557a4;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.landing-final-button:hover {
+  box-shadow: 0 15px 32px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+
+.landing-shell ::selection {
+  background: rgba(0, 113, 227, 0.18);
+  color: #1d1d1f;
+}
+
+@media (min-width: 640px) {
+  .landing-proof-stat:not(:last-child) {
+    border-right: 1px solid rgba(29, 29, 31, 0.06);
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 639px) {
+  .landing-section {
+    padding-block: 68px;
+  }
+
+  .landing-diagram-card,
+  .landing-task-board,
+  .landing-memory-card {
+    border-radius: 20px;
+  }
+
+  .landing-step-card {
+    min-height: 230px;
+  }
+}
+
+.login-shell {
+  --login-bg: #ffffff;
+  --login-bg-deep: #ffffff;
+  --login-panel: #ffffff;
+  --login-panel-soft: #fcfcfc;
+  --login-line: #dfdfdf;
+  --login-line-strong: #c7c7c7;
+  --login-text: #1f1f1f;
+  --login-muted: #525252;
+  --login-accent: #737373;
+  --login-accent-strong: #d4d4d4;
+  --login-warm: #d4d4d4;
+  --login-display-font: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --login-ui-font: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --login-mono-font: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
+  position: relative;
+  isolation: isolate;
+  color: var(--login-text);
+  overflow-x: hidden;
+  background: linear-gradient(180deg, var(--login-bg) 0%, var(--login-bg-deep) 100%);
+  font-family: var(--login-ui-font);
+}
+
+.login-shell::before {
+  content: none;
+}
+
+.login-shell::after {
+  content: none;
+}
+
+.login-glass {
+  position: relative;
+  background: var(--login-panel);
+  border: 1px solid var(--login-line);
+  box-shadow:
+    0 12px 28px rgba(31, 31, 31, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.login-glass::before {
+  content: none;
+}
+
+.login-muted-panel {
+  position: relative;
+  background: var(--login-panel-soft);
+  border: 1px solid var(--login-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.login-section-label {
+  font-family: var(--login-mono-font);
+}
+
+.login-heading {
+  font-family: var(--login-display-font);
+  letter-spacing: -0.03em;
+}
+
+.login-reveal {
+  animation: login-panel-enter 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--login-delay, 0ms);
+}
+
+@keyframes login-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-reveal {
+    animation: none !important;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .login-reveal {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* ── The product, live on the page ────────────────────────────────────────
+   `.ws-live` is the fence the Workspace stylesheet is scoped under (see
+   scopeWorkspaceCss in vite.config.ts). The app sets these on <body>; the
+   fence carries them instead, minus the body's own column padding. The
+   column is the app's own 640px, and `zoom` is what makes it a poster: the
+   same pixels, the same layout, drawn larger — not a bitmap scaled up. */
+.ws-live {
+  color: var(--text);
+  /* The app's own base role, not a copy of its numbers. `:root` is scoped onto
+     this fence by the plugin, so `--ui-*` are defined on the very element that
+     reads them — and when the app's type moves, the panel moves with it. This
+     line held `16px/1.45`, which is what the app's body said before it was set
+     in Cursor's product scale; a stale copy here would have shown the landing
+     a version of the product that no longer exists. */
+  font-family: var(--ui-font, -apple-system, system-ui, "Segoe UI", Roboto, sans-serif);
+  font-size: var(--ui-base, 13px);
+  line-height: var(--ui-base-leading, 1.35);
+  -webkit-font-smoothing: antialiased;
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: left;
+  /* A grid cell sizes to its content's minimum by default, and a row of
+     nowrap text has a wide one: without this the anatomy cards grew to
+     680px on a 390px phone and the page's overflow clip hid the rest. */
+  min-width: 0;
+  width: 100%;
+}
+.ws-live h2:first-child { margin-top: 0; }
+/* A screen's real title lives in the persistent PageHead, whose bottom
+   hairline separates it from the screen (the proposal's status row, the
+   knowledge page's body). A landing panel has no persistent chrome, so its
+   copied title carries the same edge. */
+.ws-live .landing-page-head {
+  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+/* A poster is the hero; a tile stands in a grid cell beside prose. */
+@media (min-width: 640px) { .ws-poster { zoom: 1.15; } }
+@media (min-width: 1024px) { .ws-poster { zoom: 1.3; } .ws-tile { zoom: 1.1; } }
+/* Chat uses a larger type role than the app's cards and rows. At its tile
+   zoom it read a size above the neighbouring product examples, so the two
+   transcript sections use this matching apparent scale instead. */
+.ws-compact { zoom: .86; }
+/* The proposal's Approve / Reject bar is fixed to the viewport in the app —
+   it is the bottom of the phone. Inside the fence it is the foot of the card. */
+.ws-live .decidebar.decidebar { position: static; padding: 12px 0 0; margin-top: 14px; background: none; backdrop-filter: none; }
+/* The chat's head paints the app's background because in the app it is a
+   sticky bar that bubbles scroll under. Nothing scrolls under it here, and
+   inside a card that paint is a white plate on grey: the hairline is the
+   head, so only the hairline stays. */
+.ws-live .chathead.chathead { background: none; }
+/* Tailwind's base reset takes the markers off every list on the page, and
+   the app never sets them because a browser gives them for free — so inside
+   the fence a bulleted reply and a page's list kept their 22px indent and
+   lost their bullets, which read as words shoved to the right. The browser's
+   own markers, back, on the two reading surfaces. */
+.ws-live .md ul, .ws-live .kpage ul { list-style: disc; }
+.ws-live .md ol, .ws-live .kpage ol { list-style: decimal; }
+/* The new-agent dialog is a card of its own inside the fence, as wide as it. */
+.ws-live .ask { max-width: none; }
+/* One phone: the chat screen as the app draws it on a phone. The fence is
+   the phone's screen — the app's own 16px gutters, no zoom of its own — and
+   the frame around it is zoomed as ONE object on a desk, so the app inside
+   keeps the size it has on a phone rather than being redrawn narrower. The
+   shell is the app's own `body.agent-chat-open` arithmetic: head, pane and
+   compose bar as a column filling the screen. The pane is bottom-aligned and
+   clipped at the top: a chat opened on a phone shows the newest words at the
+   composer and the older ones scrolled up under the head. */
+.ws-phone { padding: 0 16px; max-width: none; }
+.ws-phone .ws-phonescreen { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.ws-phone .chatpane.chatpane { overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.ws-phone .chathead.chathead { background: none; }
+.ws-phone .chatbar.chatbar { --safe-bottom: 8px; }
+/* The browser's bar sits under the app's compose bar, so the app keeps only
+   a small bottom gutter and the home indicator belongs to the browser bar. */
+.landing-phone-browser { border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent); }
+/* The phone shrinks as one object rather than redrawing the app at an
+   invented viewport width. It shares the chat panels' .86 apparent scale,
+   and a 390px viewport still carries the complete 410px frame. */
+.landing-phone { zoom: .86; }
+/* A sideways strip (the seat plates) wants the whole card, not the phone's 640px. */
+.ws-wide { max-width: none; }
+/* One agent's head, drawn to the face: the app's 46px ring becomes ~74px. */
+.ws-face { zoom: 1.3; }
+@media (min-width: 1024px) { .ws-face { zoom: 1.6; } }
+/* The hand row offers the agents; the app's own "Create agent" door at the
+   end of it is the app's, not the section's claim — and at this width it was
+   the thing that got clipped, so the panel ended in half a word ("Creat…")
+   and read as a broken picture rather than as a strip that scrolls. Hidden
+   for the same reason the seat strip's Add door is (see .landing-seats). */
+/* Doubled, like .decidebar below it: the app's own `.ws-live .facerow .hand`
+   carries the same specificity and is appended after this file, so a single
+   class here loses the cascade by one line. */
+.landing-note .ws-live .createhand.createhand { display: none; }
+/* On a phone the strip is still wider than the screen — three cards never fit
+   a 390px viewport, and in the app you scroll it. Here nothing scrolls, so the
+   cut edge fades: a card running out of the picture reads as a strip that
+   continues, which is what it is. On a desk the three cards end before the
+   fade begins, so it costs nothing there. */
+.landing-note .ws-live #noteHands {
+  mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 30px), transparent 100%);
+}
+/* The phone's transcript is clipped at the top on purpose — that is what a
+   chat opened on a phone looks like. What it must not look like is a picture
+   cut in half: the first visible line was sliced through its own descenders
+   under the head. The fence fades the cut instead, so the words read as
+   continuing above rather than as missing. */
+.ws-phone .chatpane.chatpane {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 100%);
+}
+/* The film's window (note #197, the owner): a tap on the silent preview
+   beside the anatomy heading opens the whole film here, with its sound and
+   the browser's controls. As big as the window allows at the film's 4:5,
+   under a row for the close button (2.75rem and its 0.75rem gap, plus a
+   margin), never wider than the master's 1080 px. The page behind dims in
+   its own ink and holds still while the film is open. */
+.landing-film-dialog {
+  width: min(92vw, calc((100dvh - 6rem) * 0.8), 1080px);
+  max-width: none; max-height: none;
+  margin: auto; padding: 0; border: 0;
+  background: transparent; overflow: visible;
+}
+.landing-film-dialog::backdrop { background: rgb(31 30 29 / 0.92); }
+html:has(.landing-film-dialog[open]) { overflow: hidden; }
+/* The hero's moving row (note #185, the owner), under the fourth phase
+   since note #199: one person, his agents and what passes between them,
+   sliding right to left without end (122 s a copy since note #206 cut it
+   from fifteen places to twelve, so it moves at the speed it did). The row
+   is drawn three times and the track moves by exactly one copy, so the loop
+   has no seam; each copy carries its own trailing gap for the same reason.
+   The track stands out from the page's edge by the column's own gutter
+   (--lead, the arithmetic of SECTION in landing-kit) and starts on the
+   middle copy: the first card of the row opens level with the headline, the
+   copy before it fills the gutter, and the copy after it still runs past
+   the right edge when the loop comes round. The edges fade, so cards arrive
+   and leave rather than being cut. A resting pointer holds the row, so a
+   card can be read; a reader who asked for less motion gets that first
+   frame, standing still. The app's type is drawn a step up on a desk, as
+   on the page's other panels; the zoom is on the copies, so the track's own
+   lengths stay the page's. */
+.landing-marquee {
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%);
+}
+/* Doubled with the panel's class: the app's own `* { margin: 0 }` lands in
+   the fence as `.ws-live *`, later in the bundle, and took the gutter away. */
+.landing-marquee .landing-marquee-track {
+  --lead: 20px;
+  display: flex; width: max-content; margin-left: var(--lead);
+  animation: landing-marquee 122s linear infinite;
+}
+@media (min-width: 640px) { .landing-marquee .landing-marquee-track { --lead: max(32px, calc((100vw - 1152px) / 2 + 32px)); } }
+@media (hover: hover) { .landing-marquee:hover .landing-marquee-track { animation-play-state: paused; } }
+@keyframes landing-marquee { from { transform: translateX(calc(-100% / 3)); } to { transform: translateX(calc(-200% / 3)); } }
+@media (prefers-reduced-motion: reduce) { .landing-marquee .landing-marquee-track { animation: none; transform: translateX(calc(-100% / 3)); } }
+@media (min-width: 640px) { .landing-marquee-copy { zoom: 1.1; } }
+@media (min-width: 1024px) { .landing-marquee-copy { zoom: 1.2; } }
+.landing-marquee-copy { display: flex; align-items: stretch; gap: 12px; padding-right: 12px; }
+/* Every place stands as tall as the tallest plate, as plates side by side
+   do on Home. A plate is a deck of one (the app's two columns would halve
+   it); a row Home lists in a card shares its place with another, each card
+   taking half the height with its row centred in it. */
+.landing-marquee-place { flex: none; width: 300px; display: flex; flex-direction: column; gap: 12px; }
+/* A row Home lists wants more width than a plate, but never more than a
+   phone: on one, the wider places stop short of the screen's edge. */
+.landing-marquee-place.is-pair, .landing-marquee-place.is-message { width: 340px; }
+@media (min-width: 640px) { .landing-marquee-place.is-pair, .landing-marquee-place.is-message { width: 420px; } }
+.landing-marquee .ws-live .landing-marquee-place > .plates { display: flex; flex: 1; }
+.landing-marquee .ws-live .landing-marquee-place > .plates > .crow { flex: 1; }
+.landing-marquee .ws-live .landing-marquee-place > .card {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  margin: 0; border: 1px solid var(--border);
+}
+/* The chat is a screen in the app, not a card: its ground is the app's
+   background and its bubbles are cards on it. Drawn the same here, at the
+   chat panels' own smaller scale (.ws-compact): chat type is a size above
+   the cards', and at full size the one exchange stood taller than a plate. */
+.landing-marquee .ws-live .landing-marquee-place > .landing-marquee-chat {
+  justify-content: flex-start; padding: 0 12px 12px; background: var(--bg);
+  zoom: .86;
+}
+/* The social card's fleet: eight agents, fading out before the card's
+   bottom edge cuts them, so the card says the fleet keeps going. */
+.og-fleet .plates {
+  mask-image: linear-gradient(to bottom, #000 0, #000 28%, rgba(0, 0, 0, .5) 42%, rgba(0, 0, 0, .12) 55%, transparent 64%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 28%, rgba(0, 0, 0, .5) 42%, rgba(0, 0, 0, .12) 55%, transparent 64%);
+}
+/* The seat strip on the landing is the seats a workplace already has: the
+   Add sub door at its end is the app's, not the section's claim. */
+.landing-seats .ws-live .seatadd { display: none; }
+/* Four sign-ins, laid out as the two pairs they are (note #143). Home's strip
+   fits as many plates on a line as its width allows — four across in the
+   app's own 640px page — and the columns these panels stand in fit two or
+   three, which left the fourth plate stranded on a line of its own and read
+   as a rendering fault rather than as four subscriptions. Two, wherever the
+   panel appears, so each plan is one line: the Claude seats, then the
+   ChatGPT ones. */
+.landing-seats .ws-live #seatsHome { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* The repository tile is its files: the Overview / Content switch above them
+   is the screen's navigation, and here there is nowhere to switch to; the
+   crumb under it repeats the title at the root of the tree. */
+.landing-files .ws-live .segtabs, .landing-files .ws-live #repoCrumb { display: none; }
+
+/* Generated pixel art (public/landing/*.png) is stored at its real grid and
+   scaled up by the browser; hard cells, never bilinear smear. */
+.pixel-art {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  height: auto;
+}
+
+/* ── The documentation (/docs) ─────────────────────────────────────────────
+   Prose inside a chapter. Sizes come from the type roles set in the markup
+   (the container is `type-base`), so this block is spacing, rules, lists,
+   tables and code — never a font size. A list is a real list, a table is a
+   real table, and the accent is the site's one blue, on links only. */
+.docs-prose ul { list-style: disc; padding-left: 1.4em; }
+.docs-prose ol:not(.docs-plain) { list-style: decimal; padding-left: 1.4em; }
+.docs-prose li + li { margin-top: .35em; }
+.docs-prose li > p + p { margin-top: .5em; }
+.docs-prose table { width: 100%; border-collapse: collapse; }
+.docs-prose th, .docs-prose td { text-align: left; vertical-align: top; padding: .55em .75em .55em 0; border-bottom: 1px solid color-mix(in srgb, var(--color-hint) 16%, transparent); }
+.docs-prose th { color: var(--color-white); font-weight: 600; }
+.docs-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; background: var(--color-panel-soft); padding: .1em .35em; border-radius: .3em; color: var(--color-white); }
+.docs-prose pre { background: var(--color-panel-soft); border-radius: 1rem; padding: 1rem 1.25rem; overflow-x: auto; }
+.docs-prose pre code { background: none; padding: 0; }
+.docs-prose strong { color: var(--color-white); font-weight: 600; }
+.docs-prose h3 { color: var(--color-white); }
+/* A fenced panel inside a chapter: the Workspace's own component at its
+   reading scale, clipped to the card. */
+.docs-panel .ws-live { max-width: none; }
+/* The setup and sign-in screens centre themselves down a viewport; in a
+   chapter they sit at the top of their card like every other panel. */
+.docs-panel .ws-live .requiredsetup, .docs-panel .ws-live #authGate { margin-top: 0; max-width: none; }
+.docs-panel .ws-live .setuphead { margin-bottom: 18px; }
+/* The sign-up fields are cards on the app's page colour; on the panel's own
+   colour they vanished into it, so they get the hairline every other field has. */
+.docs-panel .ws-live .authplates .authfield { border: 1px solid var(--border); }
+/* The chooser is a dialog card in the app; here it is the panel's content. */
+.docs-panel .ws-live .ask { position: static; margin: 0; }
+.docs-contents summary::-webkit-details-marker { display: none; }
+.docs-contents[open] .docs-contents-mark { transform: rotate(180deg); }
+
+/* The app catalogue on the landing (note #756): /apps' own grid, three across
+   on a desk; on a phone the first two only, so the panel stays one screen. */
+@media (max-width: 760px) {
+  .landing-apps .appcard:nth-child(n + 3) { display: none; }
+}
+
+/* The home page's placeholders while the live apps and board are read
+   (note #774): the shape of what is coming, so nothing jumps. */
+.home-skel-founder .home-skel { height: 520px; }
+/* The home page shows only the founder's "This week" (note #832). */
+.home-skel-compact .home-skel { height: 260px; }
+.home-founder-compact #personWeek ~ * { display: none; }
+/* Note #834: the week's figures lead; "1 of 30 agents working now" read as an
+   idle fleet at a quiet moment, so the live line is off here. */
+.home-founder-compact #personWeek .lbnow { display: none; }
+.home-founder-compact #personWeek .lbstats { margin-top: 0; padding-top: 0; border-top: 0; }
+.home-skel { border-radius: 16px; background: color-mix(in srgb, var(--color-hint) 10%, transparent); }
+@media (max-width: 760px) {
+}
+/* On a phone the home page shows the newest three apps, so the board is
+   a short scroll away; "See all apps" carries the rest (note #774). */
+@media (max-width: 760px) {
+}
+
+/* The home page's team view (note #840, LivePeople): the People page's own
+   cards, two teammates side by side at one height on a desk (the People
+   page aligns them to the top), one above the other on a phone. Through
+   .ws-live, the scope the product's own rule is built under: without it the
+   two selectors weigh the same, the product's comes later and wins, and the
+   cards only matched while their words did (note #926). */
+.landing-people .ws-live .plates.peopleplates { align-items: stretch; }
+@media (max-width: 640px) { .landing-people .ws-live .plates.peopleplates { grid-template-columns: minmax(0, 1fr); } }
+
+/* The founder's card on the home page (note #786): the builder page's own
+   head and board, the head a door to that page. */
+.home-founder .home-founder-head { color: inherit; text-decoration: none; margin-top: 0; }
+.home-founder .home-founder-name { display: block; font-size: var(--ui-xl, 22px); line-height: 1.2; font-weight: 500; letter-spacing: -.01em; }
+.home-founder .public-person-who .sub { display: block; }
+@media (hover: hover) { .home-founder a.home-founder-head:hover .home-founder-name { text-decoration: underline; } }
+
+/* The first screen's two agent cards (note #924): nothing on them is cut
+   mid-word. The app's own narrow-plate rule (the tool line goes, the
+   stopwatch stays) holds at every width here, the Now line goes since the
+   recap above it already says what the agent is on, and the recap shows
+   whole. The agent's own screen carries all three in the product. */
+#home-fleet .plates .cline .cactsep, #home-fleet .plates .cline .cact, #home-fleet .plates .ctask { display: none; }
+#home-fleet .plates .cabout { display: block; -webkit-line-clamp: none; overflow: visible; line-height: 17px; }
+
+/* /private-copy's drawings (src/components/CopyArt.tsx, note #827). One
+   moment of motion: as the first drawing scrolls into view, the release draws
+   itself from our update service into your registry, then its arrowhead
+   lands. The line is drawn by default; it starts empty only where the browser
+   ties the animation to scrolling and the reader has not asked for less
+   motion, so nobody ever sees a half-drawn line that stays that way. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .copy-art-sides { view-timeline-name: --copy-art-sides; }
+    .copy-art-draw {
+      stroke-dasharray: 1;
+      animation: copy-art-draw linear both;
+      animation-timeline: --copy-art-sides;
+      animation-range: entry 60% cover 50%;
+    }
+    .copy-art-arrive {
+      animation: copy-art-arrive linear both;
+      animation-timeline: --copy-art-sides;
+      animation-range: entry 60% cover 50%;
+    }
+  }
+}
+@keyframes copy-art-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes copy-art-arrive { 0%, 85% { opacity: 0; } 100% { opacity: 1; } }
+
+/* The page's selection, in its one accent, rather than the browser's own. */
+.copy-page ::selection { background: color-mix(in srgb, #1a68d8 20%, transparent); }

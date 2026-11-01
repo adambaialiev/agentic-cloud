@@ -1,0 +1,22 @@
+# Cloudflare Pages reads this file from the build output (wrangler.toml points
+# Pages at dist/, and Vite copies public/ into it verbatim).
+#
+# The font is the one asset here whose name is stable across builds — Vite
+# hashes what it bundles, but public/ files keep their path — so it is also the
+# one that needs the cache header written by hand. A year, immutable: when the
+# face changes, the file gets a new name.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Everything Vite bundles lands here under a content-hashed name, the two
+# landing scenes included since 2026-09-13 — a changed file is a new URL, so
+# the old one can be held for a year without ever going stale.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The setup guide written for AI agents (note #829). Served as Markdown so an
+# agent's fetch reads it as text, and kept short in caches because its
+# commands must follow the installer.
+/own-cloud.md
+  Content-Type: text/markdown; charset=utf-8
+  Cache-Control: public, max-age=300

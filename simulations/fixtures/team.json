@@ -1,0 +1,196 @@
+{
+  "owner": { "userId": "user_fixture" },
+  "member": {
+    "username": "leo_design",
+    "displayName": "Leo",
+    "firstName": "Leo",
+    "lastName": "Okafor",
+    "mailbox": "leo.okafor",
+    "password": "a-second-strong-password-77",
+    "totpCode": "654321",
+    "userId": "user_leo",
+    "security": { "sessionCookie": "fixture_session_leo", "csrfToken": "fixture_csrf_leo" }
+  },
+  "invite": { "token": "invite_fixture_link", "webOrigin": "https://agenticcloudcomputer.com" },
+  "rooms": [
+    { "roomId": "room_product", "name": "Product", "createdAt": "2026-09-06T07:10:00.000Z" },
+    { "roomId": "room_launch", "name": "Launch", "createdAt": "2026-09-06T08:30:00.000Z" }
+  ],
+  "ruby": {
+    "recap": "Built the one-page site and put it live; now picking up the workplace’s notes.",
+    "version": { "installed": "0.42.0", "turnCount": 14 }
+  },
+  "milo": {
+    "id": "agent_milo",
+    "name": "Milo",
+    "cli": "claude",
+    "model": "opus",
+    "effort": "high",
+    "createdAt": "2026-09-05T16:20:00.000Z",
+    "recap": "Rewrote the homepage headline and the three benefit lines to match the brand-voice page.",
+    "context": { "usedPercent": 34, "tokens": 68000, "window": 200000, "at": "2026-09-06T08:40:00.000Z" },
+    "version": { "installed": "2.1.0", "turnCount": 31 },
+    "chat": [
+      { "role": "owner", "text": "Hi Milo — you keep our words honest. Read the brand-voice page first, then rewrite the homepage headline and the three benefit lines to match it.", "at": "2026-09-06T08:31:00.000Z" },
+      { "role": "agent", "text": "Done. New headline: **Give the job to your AI team. Get the finished work back.**\n\nThe three benefit lines now each name an outcome rather than a feature:\n\n- One shared workspace, not a folder of chats\n- Named coworkers who remember last week\n- An approval card in front of anything that ships\n\nAll three are on the brand-voice page under “Say outcomes”. Ruby can drop them into the site whenever you say.", "at": "2026-09-06T08:44:00.000Z" }
+    ]
+  },
+  "seats": {
+    "claude": {
+      "seatId": "seat_fixture_claude",
+      "provider": "claude",
+      "label": "Claude · signed in 5 Sep",
+      "planText": "Max",
+      "status": "active",
+      "selected": true,
+      "createdAt": "2026-09-05T16:00:00.000Z",
+      "windows": [
+        { "label": "5 hours", "usedPercent": 22, "percentText": "22", "trackText": "5 hours", "windowMins": 300, "elapsedFraction": 0.2 },
+        { "label": "7 days", "usedPercent": 61, "percentText": "61", "trackText": "this week", "windowMins": 10080, "elapsedFraction": 0.35 }
+      ]
+    }
+  },
+  "notes": [
+    {
+      "id": "note_5",
+      "number": 5,
+      "title": "Launch checklist",
+      "text": "Launch checklist\n\n- Domain: northstar.studio (Leo has the registrar login)\n- Contact inbox: hello@northstar.studio\n- Three testimonials before we announce\n- Screenshot of the site for the announcement post",
+      "createdAt": "2026-09-05T18:05:00.000Z",
+      "updatedAt": "2026-09-05T18:05:00.000Z",
+      "work": { "state": "unclaimed" }
+    },
+    {
+      "id": "note_6",
+      "number": 6,
+      "title": "Testimonials to collect",
+      "text": "Testimonials to collect\n\nDraft a two-line email I can send to our first three customers asking for one sentence each. Warm, short, no pressure.",
+      "createdAt": "2026-09-06T08:20:00.000Z",
+      "updatedAt": "2026-09-06T08:35:00.000Z",
+      "work": { "state": "working", "agentName": "Milo", "agentId": "agent_milo", "expiresAt": "2026-09-06T10:35:00.000Z" },
+      "comments": [
+        { "text": "<p>Started — I’ll draft it in the voice of the brand-voice page and put the text back here.</p>", "createdAt": "2026-09-06T08:36:00.000Z", "agentName": "Milo", "agentId": "agent_milo", "agentRuntime": { "cli": "claude", "model": "opus", "effort": "high" } }
+      ]
+    }
+  ],
+  "newNote": {
+    "id": "note_7",
+    "number": 7,
+    "title": "How it works section and a contact form",
+    "text": "How it works section and a contact form\n\nAdd a “How it works” section to the site: three short steps, then a contact form. Keep the placeholders where we still owe you facts, and tell me what to fill in."
+  },
+  "handoff": {
+    "message": "pick up the note #7",
+    "ack": "On it — reading note #7 now. I’ll branch off main, build the section and the form, and ask Milo to check the three step titles against the brand-voice page before I propose it.",
+    "peerMessage": "Message from agent Ruby: I’m adding a “How it works” section to the site for note #7. Can you check these three step titles against the brand-voice page?\n\n1. Tell your team what you need\n2. Watch the work come back\n3. Approve what ships",
+    "peerReply": "Checked against brand-voice. Steps 1 and 3 are fine. Step 2 should be **Get the finished work back**, not “watch” — we promise outcomes, not a show. Telling Ruby now."
+  },
+  "proposal": {
+    "id": "pr_1",
+    "number": 1,
+    "repoName": "northstar-site",
+    "title": "How it works section and a contact form",
+    "from": "n7-how-it-works",
+    "to": "main",
+    "diffStat": { "files": 3, "insertions": 142, "deletions": 6 },
+    "headSha": "7c1f0a9d4b2e8f6a1c3d5e7f9b0a2c4e6d8f0a1b",
+    "body": "Implements note #7.\n\n**What changed**\n\n- A “How it works” section under the hero, three steps: *Tell your team what you need* → *Get the finished work back* → *Approve what ships* (step 2 reworded after Milo checked it against the brand-voice page).\n- A contact form that posts to the placeholder inbox. Swap `hello@example.com` for the real address in `site/contact.js`.\n- The placeholder notes from the first version are kept where we still owe facts.\n\n**Still to fill in:** the real contact address, and one sentence under step 2 once the first testimonial arrives.",
+    "createdAt": "2026-09-06T09:02:00.000Z",
+    "checks": [
+      { "context": "ci", "state": "success", "description": "Build, lint and 12 tests passed", "startedAt": "2026-09-06T09:02:10.000Z", "completedAt": "2026-09-06T09:03:40.000Z" }
+    ],
+    "commits": [
+      { "sha": "3a9e1c2d7b4f5a6e8c0d1f2a3b4c5d6e7f8a9b0c", "subject": "Add the How it works section under the hero", "at": "2026-09-06T08:58:00.000Z" },
+      { "sha": "7c1f0a9d4b2e8f6a1c3d5e7f9b0a2c4e6d8f0a1b", "subject": "Add a contact form that posts to the placeholder inbox", "at": "2026-09-06T09:01:00.000Z" }
+    ],
+    "patch": "diff --git a/site/index.html b/site/index.html\n--- a/site/index.html\n+++ b/site/index.html\n@@ -41,6 +41,38 @@\n     </section>\n \n+    <section id=\"how-it-works\" class=\"steps\">\n+      <h2>How it works</h2>\n+      <ol>\n+        <li>\n+          <h3>Tell your team what you need</h3>\n+          <p>Write it the way you would to a colleague. A note is enough.</p>\n+        </li>\n+        <li>\n+          <h3>Get the finished work back</h3>\n+          <p>Your coworkers build it on their own machines and bring back the result.</p>\n+        </li>\n+        <li>\n+          <h3>Approve what ships</h3>\n+          <p>Nothing lands without your tap. <!-- placeholder: one sentence from the first testimonial --></p>\n+        </li>\n+      </ol>\n+    </section>\n+\n+    <section id=\"contact\">\n+      <h2>Talk to us</h2>\n+      <form data-inbox=\"hello@example.com\">\n+        <label>Your email <input type=\"email\" name=\"email\" required></label>\n+        <label>What are you working on? <textarea name=\"message\" rows=\"4\"></textarea></label>\n+        <button type=\"submit\">Send</button>\n+      </form>\n+    </section>\n+\n     <footer>\n-      <p>Northstar Studio · placeholder address</p>\n+      <p>Northstar Studio · <a href=\"#contact\">Talk to us</a></p>\n     </footer>\ndiff --git a/site/contact.js b/site/contact.js\nnew file mode 100644\n--- /dev/null\n+++ b/site/contact.js\n@@ -0,0 +1,14 @@\n+// Posts the contact form to the inbox named on the form. Placeholder until\n+// the real address is filled in (see PR write-up).\n+document.querySelector('#contact form').addEventListener('submit', async (event) => {\n+  event.preventDefault();\n+  const form = event.currentTarget;\n+  const body = new FormData(form);\n+  body.append('to', form.dataset.inbox);\n+  await fetch('/api/contact', { method: 'POST', body });\n+  form.replaceWith(Object.assign(document.createElement('p'), { textContent: 'Thanks — we will write back.' }));\n+});\n",
+    "card": "PR #1 (\"How it works section and a contact form\") in northstar-site awaits your decision: n7-how-it-works → main. 3 files, +142 −6 · checks passed. Nothing lands on your protected branch until you approve it.",
+    "mergedCard": "Your user APPROVED PR #1 (\"How it works section and a contact form\") in northstar-site: n7-how-it-works is merged into main.",
+    "delivery": {
+      "branch": "main",
+      "checks": [
+        { "context": "deploy", "state": "success", "description": "northstar-fixture.agentbuilt.app", "startedAt": "2026-09-06T09:06:05.000Z", "completedAt": "2026-09-06T09:07:20.000Z" }
+      ]
+    }
+  },
+  "knowledgeProposal": {
+    "id": "kp_2",
+    "number": 2,
+    "title": "Site copy rules",
+    "page": "site-copy-rules",
+    "createdAt": "2026-09-06T08:50:00.000Z",
+    "note": "Three rules that came out of rewriting the homepage, so the next person writing for the site does not have to rediscover them.",
+    "summary": "Creates one page: site-copy-rules.",
+    "description": "The three rules every sentence on the public site follows, and the reason for each.",
+    "html": "<h1>Site copy rules</h1><p>Three rules every sentence on the public site follows. They came out of rewriting the homepage on 6 September.</p><h2>1. Say the outcome, not the feature</h2><p>“Get the finished work back” beats “watch the work come back”. A visitor is buying a result, not a show.</p><h2>2. One promise per sentence</h2><p>If a sentence needs an “and”, it is two sentences.</p><h2>3. Never claim what a reader can check and find false</h2><p>See the brand-voice page for the list of claims we never make. If the honest version is weaker, write the honest version.</p>",
+    "card": "Knowledge proposal #2 (\"Site copy rules\") awaits your decision — creates one page. Nothing changes until you approve.",
+    "approvedCard": "Your user APPROVED knowledge proposal #2 (\"Site copy rules\")."
+  },
+  "knowledgePages": [
+    {
+      "name": "brand-voice",
+      "title": "Brand voice",
+      "description": "How Northstar Studio sounds in writing: warm, plain, outcomes first, and the words we do not use.",
+      "html": "<h1>Brand voice</h1><p>Northstar Studio sounds like a colleague who is glad to see you: warm, plain, and specific.</p><h2>Say outcomes</h2><ul><li>One shared workspace, not a folder of chats</li><li>Named coworkers who remember last week</li><li>An approval card in front of anything that ships</li></ul><h2>Words we do not use</h2><table><tr><th>Instead of</th><th>Say</th></tr><tr><td>leverage</td><td>use</td></tr><tr><td>seamless</td><td>(say what actually happens)</td></tr><tr><td>revolutionary</td><td>(nothing — show it)</td></tr></table><h2>Claims we never make</h2><p>Anything a reader can check and find false. If the honest version is weaker, write the honest version.</p>",
+      "sizeBytes": 1184,
+      "sha": "b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1",
+      "updatedAt": "2026-09-05T17:40:00.000Z"
+    }
+  ],
+  "repo": {
+    "name": "northstar-site",
+    "cloneUrl": "https://git.agentbuilt.app/northstar-studio/northstar-site.git",
+    "sizeBytes": 348160,
+    "protectedBranch": "main",
+    "createdAt": "2026-09-06T08:06:00.000Z",
+    "lastPushAt": "2026-09-06T09:01:00.000Z",
+    "tree": [
+      { "name": "site", "type": "dir" },
+      { "name": ".agentbuilt", "type": "dir" },
+      { "name": "README.md", "type": "file", "sizeBytes": 812 },
+      { "name": "package.json", "type": "file", "sizeBytes": 431 },
+      { "name": "run.sh", "type": "file", "sizeBytes": 96 }
+    ],
+    "readme": "# Northstar Studio — site\n\nThe one-page site, served as static files.\n\n- `site/` is what is deployed.\n- `npm test` runs the 12 checks CI runs.\n- Placeholders are marked `<!-- placeholder -->`; grep for them before announcing.\n",
+    "commits": [
+      { "sha": "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3", "authorName": "Ruby", "at": "2026-09-06T08:07:00.000Z", "subject": "First one-page site with placeholders" },
+      { "sha": "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4", "authorName": "Ruby", "at": "2026-09-06T08:12:00.000Z", "subject": "Put the site live and link it from the README" },
+      { "sha": "a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5", "authorName": "Milo", "at": "2026-09-06T08:46:00.000Z", "subject": "Headline and benefit lines from the brand-voice page" }
+    ]
+  },
+  "site": {
+    "name": "northstar",
+    "url": "https://northstar-fixture.agentbuilt.app",
+    "preset": "static",
+    "kind": "site",
+    "createdAt": "2026-09-06T08:11:00.000Z"
+  },
+  "secrets": [
+    { "name": "RESEND_API_KEY", "maskedValue": "re_••••••••••••••••7Qk", "maskedPreview": "re_…7Qk", "valueLength": 36, "description": "Sends the contact-form email from the site", "scope": "shared", "updatedAt": "2026-09-06T08:58:00.000Z" }
+  ],
+  "drive": {
+    "folders": [
+      { "id": "drv_brand", "parentId": null, "name": "Brand assets", "createdAt": "2026-09-05T17:00:00.000Z", "updatedAt": "2026-09-06T08:50:00.000Z" }
+    ],
+    "files": [
+      { "id": "drv_logo", "parentId": "drv_brand", "name": "northstar-logo.svg", "sizeBytes": 6144, "contentType": "image/svg+xml", "createdAt": "2026-09-05T17:01:00.000Z", "updatedAt": "2026-09-05T17:01:00.000Z" },
+      { "id": "drv_photo", "parentId": "drv_brand", "name": "studio-photo.jpg", "sizeBytes": 2415616, "contentType": "image/jpeg", "createdAt": "2026-09-05T17:03:00.000Z", "updatedAt": "2026-09-05T17:03:00.000Z" },
+      { "id": "drv_checklist", "parentId": null, "name": "Launch checklist.pdf", "sizeBytes": 184320, "contentType": "application/pdf", "createdAt": "2026-09-05T18:10:00.000Z", "updatedAt": "2026-09-05T18:10:00.000Z" }
+    ]
+  },
+  "recap": {
+    "text": "Ruby put the one-page site live yesterday and is picking up the workplace’s notes. Milo rewrote the homepage headline and benefit lines to match the brand-voice page and has one knowledge proposal waiting for you. Note 6 (testimonials email) is with Milo.",
+    "at": "2026-09-06T08:55:00.000Z",
+    "sources": [
+      { "id": "src_kp2", "kind": "proposal", "title": "Site copy rules", "text": "Knowledge proposal #2 awaits your decision.", "at": "2026-09-06T08:50:00.000Z", "room": "Product", "href": "/workspace/decisions/knowledge/kp_2", "status": "open" },
+      { "id": "src_turn_milo", "kind": "turn", "title": "Milo", "text": "Rewrote the homepage headline and the three benefit lines.", "at": "2026-09-06T08:44:00.000Z", "room": "Product", "href": "/workspace/chat/agent_milo" },
+      { "id": "src_note6", "kind": "note", "title": "Testimonials to collect", "text": "Working by Milo.", "at": "2026-09-06T08:35:00.000Z", "room": "Product", "href": "/workspace/notes/6" }
+    ]
+  },
+  "notification": {
+    "notificationId": "ntf_milo_copy",
+    "title": "Milo finished",
+    "body": "New headline and three benefit lines, all from the brand-voice page.",
+    "createdAt": "2026-09-06T08:44:00.000Z"
+  }
+}

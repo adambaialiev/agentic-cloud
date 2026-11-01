@@ -1,0 +1,16 @@
+[Unit]
+Description=Weekly git gc of the internal git host's repositories
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+
+[Timer]
+# Sunday's quiet hour, after the nightly backup window (03:30 + up to 30 min
+# jitter) is long done — a gc racing the bundler is safe but pointless.
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=1800
+# A box that was down on Sunday runs it when it comes back, rather than
+# skipping a whole week in silence.
+Persistent=true
+Unit=agentgit-maintenance.service
+
+[Install]
+WantedBy=timers.target

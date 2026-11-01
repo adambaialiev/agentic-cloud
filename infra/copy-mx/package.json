@@ -1,0 +1,14 @@
+{
+  "name": "copy-mx",
+  "private": true,
+  "type": "module",
+  "description": "A private copy's mail receiver (note #804).",
+  "dependencies": {
+    "acme-client": "5.4.0",
+    "mailauth": "8.0.4",
+    "smtp-server": "3.21.1"
+  },
+  "overrides": {
+    "@peculiar/asn1-schema": "2.11.1"
+  }
+}

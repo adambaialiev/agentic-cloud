@@ -1,0 +1,49 @@
+# Caddy on ia-backend (<backend-host>). THE LIVE COPY IS /etc/caddy/Caddyfile
+# and this file is not deployed by anything — deploy-prod ships the app, never
+# the host's web server. Editing here changes nothing until someone copies it
+# across and reloads (see the runbook at the bottom).
+#
+# Two jobs:
+#   1. api.agenticcloudcomputer.com — the backend itself. Unchanged, and the
+#      block stays FIRST so nothing below can shadow the control plane.
+#   2. Any other hostname — a renamed site's OLD address. `agentbuilt rename`
+#      repoints that record here, and the backend answers it with a 301 to the
+#      site's new address (backend/src/services/site-redirects.ts).
+#
+# The catch-all is why on-demand TLS is on, and on-demand TLS is why `ask` is
+# non-negotiable: without it, anyone who points a DNS record at this IP gets a
+# certificate issued in our name, on request, for free. The ask endpoint says
+# yes ONLY for a hostname some live deployment has been renamed away from.
+
+{
+	on_demand_tls {
+		ask http://localhost:3001/internal/site-tls-ask
+	}
+}
+
+api.agenticcloudcomputer.com {
+	reverse_proxy localhost:3001
+}
+
+# Everything else that resolves here, TLS issued on demand and only with the
+# backend's blessing. A hostname that gets past the ask but is no longer a
+# former name (renamed back while a certificate was live) reaches the backend
+# and falls through to its ordinary 404 — never to another site's content.
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy localhost:3001
+}
+
+# ── Runbook ────────────────────────────────────────────────────────────────
+# Apply:
+#   scp infra/caddy/Caddyfile root@<backend-host>:/tmp/Caddyfile.new
+#   ssh root@<backend-host> 'caddy validate --config /tmp/Caddyfile.new \
+#     --adapter caddyfile && cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak \
+#     && mv /tmp/Caddyfile.new /etc/caddy/Caddyfile && systemctl reload caddy'
+# Roll back:
+#   ssh root@<backend-host> 'cp /etc/caddy/Caddyfile.bak /etc/caddy/Caddyfile \
+#     && systemctl reload caddy'
+# Validate BEFORE reloading, every time: this file fronts the whole control
+# plane, and a Caddyfile that fails to parse takes the API down with it.

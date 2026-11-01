@@ -1,0 +1,29 @@
+# Our update service for private copies (note #811), in our own Fly
+# organization. Secrets: UPSTREAM_TOKEN (a deploy token of acc-copy-releases,
+# which can read its registry). The public half of the signing key ships in
+# the image (infra/copy-release/signing-key.pub). It sleeps between installs
+# and upgrades.
+app = "acc-updates"
+primary_region = "ams"
+
+[env]
+  UPSTREAM_REGISTRY = "https://registry.fly.io"
+  UPSTREAM_REPO = "acc-copy-releases"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

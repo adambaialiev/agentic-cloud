@@ -1,0 +1,17 @@
+[Unit]
+Description=Nightly off-box backup of the platform database
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/db-backup/README.md
+
+[Timer]
+# Between the git bundles (03:30) and the object store (04:30), and well before
+# the Storage Box takes its own 05:00 snapshot — so the day's snapshot always
+# contains a database from that same night rather than the previous one. The
+# jitter is deliberately smaller than the other two jobs' half hour, because
+# this window is only 45 minutes wide.
+OnCalendar=*-*-* 03:45:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=dbbackup.service
+
+[Install]
+WantedBy=timers.target

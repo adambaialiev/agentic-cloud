@@ -1,0 +1,34 @@
+[Unit]
+Description=Intra-day off-box backup of the internal git host's repositories (quiet unless it fails)
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=agentgit-backup-failed@%n.service
+
+[Service]
+Type=oneshot
+User=agentgit
+Group=agentgit
+WorkingDirectory=/opt/agentgit
+EnvironmentFile=-/etc/agentgit/backup.env
+Environment=HOME=/opt/agentgit
+# The same script and target as the nightly run — this IS the same backup,
+# just more often, so a busy repo's exposure is hours instead of a day. The
+# skip-unchanged fingerprint makes the idle case (most repos, most runs) one
+# state-file read. Quiet on success: the operator's contract is ONE green
+# line per day, from the nightly run; failures still notify with full detail.
+Environment=BACKUP_QUIET_OK=1
+ExecStart=/opt/agentgit/backup-repos.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentgit-backup-hot
+TimeoutStartSec=3600
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/var/lib/agentgit

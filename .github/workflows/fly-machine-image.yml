@@ -1,0 +1,186 @@
+name: Build Fly machine image
+
+# Builds the baked image every user's Fly Machine boots from and pushes it to
+# Fly's container registry, from which the Machines API pulls it at create time.
+#
+# SECRETS an operator must add before this can push (Settings -> Secrets -> Actions):
+#   FLY_API_TOKEN  - a Fly.io deploy/org token (`fly tokens create org` or
+#                    `fly tokens create deploy`). Without it the job only
+#                    validates the build.
+#
+# One-time Fly setup: create an app that serves purely as an image namespace,
+#   fly apps create ia-machine-images
+# and set FLY_IMAGE_APP below to match. The resulting image reference the
+# backend passes to the Machines API is:
+#   registry.fly.io/<FLY_IMAGE_APP>:<label>
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/fly-machine-image/**'
+      - '.github/workflows/fly-machine-image.yml'
+  pull_request:
+    paths:
+      - 'infra/fly-machine-image/**'
+      - '.github/workflows/fly-machine-image.yml'
+  workflow_dispatch:
+    inputs:
+      image_label:
+        description: 'Optional explicit image label/tag (defaults to the commit SHA).'
+        required: false
+        type: string
+      # Exact CLI versions to bake (empty = whatever npm `latest` resolves to at
+      # build time). scripts/harness-cli-versions.mjs dispatches with the pinned
+      # versions so the image matches the fleet pin exactly — and so the image's
+      # contents are knowable from its inputs instead of from build-day archaeology.
+      claude_version:
+        description: 'Exact @anthropic-ai/claude-code version to bake (empty = npm latest).'
+        required: false
+        type: string
+      codex_version:
+        description: 'Exact @openai/codex version to bake (empty = npm latest).'
+        required: false
+        type: string
+      kimi_version:
+        description: 'Exact @moonshot-ai/kimi-code version to bake (empty = npm latest).'
+        required: false
+        type: string
+
+env:
+  FLY_IMAGE_APP: ia-machine-images
+  IMAGE_CONTEXT: infra/fly-machine-image
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute image label
+        id: meta
+        run: |
+          label="${{ inputs.image_label }}"
+          if [ -z "${label}" ]; then
+            label="sha-${GITHUB_SHA::12}"
+          fi
+          echo "label=${label}" >> "${GITHUB_OUTPUT}"
+          # Push only on main / manual runs that have a token; PRs validate only.
+          if [ "${GITHUB_EVENT_NAME}" != "pull_request" ] && [ -n "${FLY_API_TOKEN}" ]; then
+            echo "push=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "push=false" >> "${GITHUB_OUTPUT}"
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # Validation build for every trigger (no registry needed). Fails the PR
+      # if the Dockerfile or a baked CLI install breaks.
+      - name: Build image (validation)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.IMAGE_CONTEXT }}
+          push: false
+          load: true
+          tags: ${{ env.FLY_IMAGE_APP }}:${{ steps.meta.outputs.label }}
+          build-args: |
+            CLAUDE_VERSION=${{ inputs.claude_version || '' }}
+            CODEX_VERSION=${{ inputs.codex_version || '' }}
+            KIMI_VERSION=${{ inputs.kimi_version || '' }}
+
+      # Boots the image in docker and exercises the entrypoint contract end to
+      # end: SSH key injection, home seeding + retention across a container
+      # recreation (simulated image roll), baked CLIs, tmux, stable host keys,
+      # and ~/.boot.d boot hooks. Catches PID-1 regressions before they ship.
+      - name: Smoke test (boot the image, exercise the entrypoint)
+        run: ./infra/fly-machine-image/smoke-test.sh
+
+      - name: Set up flyctl
+        if: steps.meta.outputs.push == 'true'
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Authenticate Docker to Fly registry
+        if: steps.meta.outputs.push == 'true'
+        run: flyctl auth docker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Build and push to Fly registry
+        if: steps.meta.outputs.push == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.IMAGE_CONTEXT }}
+          push: true
+          tags: |
+            registry.fly.io/${{ env.FLY_IMAGE_APP }}:${{ steps.meta.outputs.label }}
+            registry.fly.io/${{ env.FLY_IMAGE_APP }}:latest
+          build-args: |
+            CLAUDE_VERSION=${{ inputs.claude_version || '' }}
+            CODEX_VERSION=${{ inputs.codex_version || '' }}
+            KIMI_VERSION=${{ inputs.kimi_version || '' }}
+          labels: |
+            ia.claude-version=${{ inputs.claude_version || '' }}
+            ia.codex-version=${{ inputs.codex_version || '' }}
+            ia.kimi-version=${{ inputs.kimi_version || '' }}
+
+      # A pushed image nobody points at changes nothing: three skel edits sat
+      # unused in the registry on 2026-08-07 for exactly this reason. The
+      # smoke test above already boots the image, exercises the entrypoint, and
+      # recreates it on the same volume, so the gate worth having runs BEFORE
+      # the push — leaving the repoint manual only delays good images.
+      #
+      # Push-to-main only. workflow_dispatch runs (including the CLI-pin
+      # script's) are left alone: that script does its own repoint, and a
+      # hand-triggered build is often a trial, not a release.
+      #
+      # No root key here on purpose. `set-machine-image` is a root-owned
+      # script on the backend host that accepts one tag under a FIXED registry
+      # and nothing else; sudoers lets the deploy user run only that. See
+      # infra/backend-host/.
+      - name: Configure SSH (deploy key + pinned known_hosts)
+        if: steps.meta.outputs.push == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.BACKEND_DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key for ia-backend (avoids TOFU / MITM on first connect).
+          cat > ~/.ssh/known_hosts <<'EOF'
+          ${{ vars.DEPLOY_HOST }} ${{ vars.DEPLOY_HOST_KEY }}
+          EOF
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Point new machines at this image
+        id: repoint
+        if: steps.meta.outputs.push == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          IMAGE_REF="registry.fly.io/${FLY_IMAGE_APP}:${{ steps.meta.outputs.label }}"
+          ssh -i ~/.ssh/deploy_key -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -o ConnectTimeout=15 app@${{ vars.DEPLOY_HOST }} \
+              "sudo /usr/local/bin/set-machine-image '${IMAGE_REF}'"
+
+      - name: Summary
+        if: steps.meta.outputs.push == 'true'
+        run: |
+          {
+            echo "### Fly machine image published"
+            echo ""
+            echo '`registry.fly.io/${{ env.FLY_IMAGE_APP }}:${{ steps.meta.outputs.label }}`'
+            echo ""
+            if [ "${{ steps.repoint.outcome }}" = "success" ]; then
+              echo "New machines now boot from it (FLY_MACHINE_IMAGE repointed)."
+              echo "Existing machines are unaffected until deliberately rolled"
+              echo "(\`backend/scripts/roll-machine-image.mjs\`)."
+            else
+              echo "**Not live yet.** Nothing points at this image — repoint with:"
+              echo ""
+              echo '```'
+              echo "ssh app@${{ vars.DEPLOY_HOST }} sudo /usr/local/bin/set-machine-image registry.fly.io/${{ env.FLY_IMAGE_APP }}:${{ steps.meta.outputs.label }}"
+              echo '```'
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"

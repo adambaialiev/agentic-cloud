@@ -1,0 +1,48 @@
+[Unit]
+Description=Off-box backup of the platform database (ia-backend -> Storage Box)
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/db-backup/README.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=dbbackup-failed@%n.service
+
+[Service]
+Type=oneshot
+User=dbbackup
+Group=dbbackup
+WorkingDirectory=/opt/dbbackup
+# Missing until a target is configured; the job exits 0 doing nothing without
+# one, so this ships before the target exists rather than failing nightly.
+EnvironmentFile=-/etc/dbbackup/backup.env
+Environment=HOME=/opt/dbbackup
+Environment=OPS_NOTIFY_ENV=/etc/dbbackup/ops-notify.env
+Environment=OPS_NOTIFY_MARKER=/var/lib/dbbackup/last-notify
+
+# The `+` runs this one step as root, ignoring User= above. That split is the
+# whole security design of this job: reading a live WAL database needs write
+# access to its -shm, which means privileges, but holding the Storage Box key
+# does not — so the snapshot is taken as root and everything afterwards runs as
+# a user that cannot read the database, cannot reach the backend, and can only
+# see the copy left for it in the spool.
+ExecStartPre=+/opt/dbbackup/snapshot-db.sh
+ExecStart=/opt/dbbackup/backup-db.sh
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dbbackup
+TimeoutStartSec=3600
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# Its own state and spool, and nothing else. The database's own directory is
+# deliberately absent: the privileged pre-step writes the snapshot INTO the
+# spool, so no part of this unit ever holds a writable path to the live
+# database — a bug here cannot damage the thing it is copying.
+ReadWritePaths=/var/lib/dbbackup
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+# Per-org WireGuard tunnels (byo-fly-design slice 4): the backend service
+# (User=app) converges /etc/wireguard/iaorg-*.conf itself when an org admin
+# connects a cloud account from the Workspace. Exactly the argv shapes
+# org-wireguard.ts runs — nothing broader. Root rehearsals never needed
+# this; the first in-process connect (2026-08-24, org "Big Bang") did.
+app ALL=(root) NOPASSWD: /usr/bin/install -m 600 /dev/null /etc/wireguard/iaorg-*.conf
+app ALL=(root) NOPASSWD: /usr/bin/dd of\=/etc/wireguard/iaorg-*.conf status\=none
+app ALL=(root) NOPASSWD: /usr/sbin/ip link show iaorg-*
+app ALL=(root) NOPASSWD: /usr/sbin/ip -6 route show *
+app ALL=(root) NOPASSWD: /usr/bin/wg-quick up iaorg-*
+app ALL=(root) NOPASSWD: /usr/bin/wg-quick down iaorg-*
+app ALL=(root) NOPASSWD: /usr/bin/systemctl enable wg-quick@iaorg-*
+app ALL=(root) NOPASSWD: /usr/bin/systemctl disable --now wg-quick@iaorg-*
+app ALL=(root) NOPASSWD: /usr/bin/rm -f /etc/wireguard/iaorg-*.conf

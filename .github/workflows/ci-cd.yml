@@ -1,0 +1,77 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+# `dev` replaces a stale `develop` entry: no such branch has ever existed here,
+# so PRs into the real integration branch were running no checks at all.
+
+jobs:
+  test-frontend:
+    runs-on: [self-hosted, linux, x64]
+    name: Test Frontend
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install frontend test runner dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Run frontend tests with coverage
+        run: npm run test:frontend:coverage
+
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: Build frontend (test)
+        run: npm run build
+        env:
+          # API base URL for test builds
+          VITE_API_BASE_URL: http://localhost:3001
+
+  test-backend:
+    runs-on: [self-hosted, linux, x64]
+    name: Test Backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Run backend tests
+        run: npm run test:core -- --reporter=dot
+        working-directory: backend
+
+      - name: Run backend coverage
+        run: npm run test:coverage:core
+        working-directory: backend

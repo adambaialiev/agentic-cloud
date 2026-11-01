@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ops · Users</title>
+<!--
+  The ops roster, as a table Telegram can actually draw.
+
+  It cannot be drawn in a message: a Telegram message is text plus a list of
+  ranges (bold from here to here), and the whole set of range types is bold,
+  italic, underline, strikethrough, spoiler, quote, code, pre, link, mention
+  and custom emoji. No table, no cell, no column. A monospace block lining
+  characters up is the closest a message gets, which is what /users sends and
+  why this page exists.
+
+  One file on purpose, like the Workspace app next door: no build step, no
+  framework, nothing to go stale between the backend and the page it serves.
+  Every colour comes from Telegram's own theme variables, so it matches the
+  client it is opened in rather than guessing at light or dark.
+-->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #fff);
+    --card: var(--tg-theme-secondary-bg-color, #f4f6f8);
+    --ink: var(--tg-theme-text-color, #16202b);
+    --quiet: var(--tg-theme-hint-color, #7b8794);
+    --link: var(--tg-theme-link-color, #2f7ddb);
+    --line: color-mix(in srgb, var(--quiet) 24%, transparent);
+    --star: #e2a02b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 12px 10px 32px;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { margin: 4px 2px 2px; font-size: 19px; letter-spacing: .3px; }
+  .tally { margin: 0 2px 14px; color: var(--quiet); font-size: 13px; }
+
+  /* The table itself. The short columns never wrap; the PERSON column
+     takes whatever is left and wraps INSIDE a long handle if it has to.
+     Measured on a 390px phone: without this,
+     @agentic_cloud_computer_support alone pushes the table 124px wider than
+     the screen and "Last seen" spends its life off the edge —
+     the same mistake the monospace table was shaped to avoid. */
+  .scroll { overflow-x: auto; border-radius: 12px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 9px 8px; text-align: left; white-space: nowrap; }
+  th:first-child, td:first-child {
+    width: 100%; white-space: normal; overflow-wrap: anywhere;
+    padding-left: 12px;
+  }
+  /* The same inset on the right, which is also room for the last arrow. */
+  th:last-child, td:last-child { padding-right: 12px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--card);
+    font-size: 10px; letter-spacing: .4px; text-transform: uppercase;
+    color: var(--quiet); font-weight: 600;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer; user-select: none;
+  }
+  /* The sort arrow takes no width of its own: it hangs in the cell's right
+     padding. In the line, four hidden arrows cost the name column ~50px —
+     at 320px, enough to break "PERSON" in two. */
+  thead th .caret { display: inline-block; width: 0; position: relative; left: 1px; opacity: 0; font-size: 9px; }
+  thead th[aria-sort] { color: var(--ink); }
+  thead th[aria-sort] .caret { opacity: 1; }
+  tbody tr + tr td { border-top: 1px solid var(--line); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .who { font-weight: 600; }
+  a.who { color: var(--link); text-decoration: none; }
+  /* The email sits under the name rather than in a column of its own: a
+     column that wide is exactly what pushes "Last seen" off a phone. */
+  .mail { display: block; color: var(--quiet); font-size: 12px; user-select: text; }
+  .gone { display: block; color: var(--quiet); font-size: 11px; }
+  .uid { font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -0.02em; }
+  .star { color: var(--star); }
+  .none { color: var(--quiet); }
+  /* The team's own accounts: present, because the table is everyone, but
+     quieter than the people from outside the roster is really about. */
+  tr.inner td { opacity: .5; }
+  .state { padding: 40px 12px; text-align: center; color: var(--quiet); }
+  .foot { margin: 12px 4px 0; color: var(--quiet); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1 id="head">Users</h1>
+<p class="tally" id="tally">Loading…</p>
+<div class="scroll" hidden id="wrap">
+  <table>
+    <thead><tr id="headrow"></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+</div>
+<div class="state" id="state">Loading…</div>
+<p class="foot" id="foot" hidden>Stage is the last step reached · Agents: every one they made, deleted ones too · ★ admin · dimmed: our own test accounts · tap a name to open their chat</p>
+
+<script>
+const tg = window.Telegram?.WebApp;
+tg?.ready();
+tg?.expand();
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Sorted here rather than on the server: the roster is one screen of rows, and
+// re-sorting without a round trip is the reason a table beats a picture.
+const COLUMNS = [
+  { key: 'name', label: 'Person', cell: (p) => person(p) },
+  // Sorted on the funnel position, not the word: "agent" before "seat" is
+  // the alphabet, and the funnel is the order this column means.
+  { key: 'stageRank', label: 'Stage', cell: (p) => esc(p.stage) },
+  // Every agent they made, deleted ones included and counted underneath.
+  // The Workspace Agent is made FOR each person, so it is never in here.
+  { key: 'agents', label: 'Agents', num: true, cell: (p) => `<span class="${p.agents ? '' : 'none'}">${p.agents}</span>`
+    + (p.agentsDeleted ? `<span class="gone">${p.agentsDeleted} deleted</span>` : '') },
+  { key: 'lastSeenMs', label: 'Last seen', num: true, cell: (p) => `<span class="${p.last === 'never' ? 'none' : ''}">${esc(p.last)}</span>` },
+];
+
+function person(p) {
+  // A non-breaking space: the name column wraps inside long handles, and a
+  // plain space here drops the star onto a line of its own.
+  const star = p.kind === 'admin' ? '&nbsp;<span class="star" title="admin">★</span>' : '';
+  // A handle opens that person's chat — the thing a picture of a table can
+  // never do, and the reason an operator is looking someone up at all.
+  const mail = p.email ? `<span class="mail">${esc(p.email)}</span>` : '';
+  // The account id, for looking someone up elsewhere — unless the name already
+  // is it (a web signup's is).
+  const id = p.userId && p.userId !== p.name ? `<span class="mail uid">${esc(p.userId)}</span>` : '';
+  return (p.username
+    ? `<a class="who" href="https://t.me/${encodeURIComponent(p.username)}">${esc(p.name)}</a>${star}`
+    : `<span class="who">${esc(p.name)}</span>${star}`) + mail + id;
+}
+
+let people = [];
+let sort = { key: 'lastSeenMs', desc: true };
+
+function paint() {
+  const dir = sort.desc ? -1 : 1;
+  const rows = [...people].sort((a, b) => {
+    const l = a[sort.key], r = b[sort.key];
+    if (l === r) return a.name.localeCompare(b.name);
+    if (typeof l === 'number' && typeof r === 'number') return (l - r) * dir;
+    return String(l).localeCompare(String(r)) * dir;
+  });
+
+  $('headrow').innerHTML = COLUMNS.map((c) => {
+    const on = sort.key === c.key;
+    return `<th class="${c.num ? 'num' : ''}" data-key="${c.key}"${on ? ` aria-sort="${sort.desc ? 'descending' : 'ascending'}"` : ''}>`
+      + `${esc(c.label)}<span class="caret">${sort.desc ? '▼' : '▲'}</span></th>`;
+  }).join('');
+  for (const th of $('headrow').children) {
+    th.onclick = () => {
+      const key = th.dataset.key;
+      // A new column starts on the reading most people want: biggest first
+      // for numbers, A–Z for names.
+      sort = sort.key === key
+        ? { key, desc: !sort.desc }
+        : { key, desc: key !== 'name' };
+      paint();
+      tg?.HapticFeedback?.selectionChanged?.();
+    };
+  }
+
+  $('rows').innerHTML = rows.map((p) => `<tr${p.kind ? ' class="inner"' : ''}>${
+    COLUMNS.map((c) => `<td class="${c.num ? 'num' : ''}">${c.cell(p)}</td>`).join('')
+  }</tr>`).join('');
+}
+
+async function load() {
+  try {
+    // Absolute on purpose, and the Workspace app next door carries the same
+    // note: this page is served at /ops with NO trailing slash, so a relative
+    // "api/…" resolves against the site root and 404s. Taken from the path
+    // rather than hardcoded, so moving the mount cannot break it quietly.
+    const root = location.pathname.replace(/\/+$/, '');
+    const response = await fetch(`${root}/api/roster`, {
+      headers: { authorization: `tma ${tg?.initData ?? ''}` },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `The roster could not be read (${response.status})`);
+
+    people = body.people ?? [];
+    $('head').textContent = `Users · ${body.headline.total}`;
+    $('tally').textContent = [`${body.headline.outside} from outside`, body.tally].filter(Boolean).join(' · ');
+    if (!people.length) {
+      $('state').textContent = 'Nobody has started the bot yet.';
+      return;
+    }
+    paint();
+    $('state').hidden = true;
+    $('wrap').hidden = false;
+    $('foot').hidden = false;
+  } catch (error) {
+    $('tally').textContent = '';
+    $('state').textContent = error.message;
+  }
+}
+
+load();
+</script>
+</body>
+</html>

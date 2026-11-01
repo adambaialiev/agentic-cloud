@@ -1,0 +1,50 @@
+# Drop-in sshd config for Fly Machines on the private 6PN network.
+# Installed to /etc/ssh/sshd_config.d/10-fly-machine.conf; overrides the
+# distro defaults in /etc/ssh/sshd_config.
+#
+# The backend (ssh-client.ts) connects with a private key only, as `agent`
+# for development/harness work and `root` for admin. No public IP exists, so
+# sshd is only ever reachable over the machine's private IPv6 (6PN).
+
+# Listen on all addresses, both families. Fly 6PN traffic arrives over IPv6;
+# AddressFamily any keeps IPv4 loopback working for the smoke test too.
+#
+# Port 2222, NOT 22: Fly's init runs its own SSH daemon (hallpass) bound to
+# port 22 on the machine's 6PN IPv6 address before our entrypoint starts, so
+# sshd can never own :22 on the address the backend actually connects to.
+# Verified on a live machine 2026-07-11 (sshd logged "Bind to port 22 on ::
+# failed: Address already in use" and key auth on :22 hit hallpass instead).
+AddressFamily any
+Port 2222
+
+# Key-only auth. The backend authenticates with a private key; there are no
+# passwords on these machines.
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+
+# root is used for admin exec; allow it with a key, never with a password.
+PermitRootLogin prohibit-password
+
+# authorized_keys for both users is written by the entrypoint from the
+# AUTHORIZED_KEYS machine env var at boot.
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Host keys live on the persistent volume (see entrypoint) so the machine's
+# SSH identity is stable across image rolls / reboots, not regenerated each
+# time the ephemeral rootfs resets.
+HostKey /data/ssh/ssh_host_ed25519_key
+HostKey /data/ssh/ssh_host_rsa_key
+
+# Keep long-lived tmux-over-SSH sessions (the executor's model) alive.
+ClientAliveInterval 30
+ClientAliveCountMax 240
+TCPKeepAlive yes
+
+# Pass locale/TERM through so tmux + the CLI TUIs render correctly.
+AcceptEnv LANG LC_* TERM COLUMNS LINES
+
+UsePAM yes
+PrintMotd no

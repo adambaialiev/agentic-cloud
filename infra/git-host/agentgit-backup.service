@@ -1,0 +1,46 @@
+[Unit]
+Description=Off-box backup of the internal git host's repositories (git bundles)
+Documentation=https://github.com/owner/infinite-agents/blob/main/infra/git-host/README.md
+After=network-online.target
+Wants=network-online.target
+# Catches the failures the job cannot report itself: killed by its own timeout,
+# or exited before it reached its summary. The handler stays quiet when the job
+# did manage to send one.
+OnFailure=agentgit-backup-failed@%n.service
+
+[Service]
+Type=oneshot
+User=agentgit
+Group=agentgit
+WorkingDirectory=/opt/agentgit
+# Missing on purpose until the target exists: the script exits 0 when
+# BACKUP_SSH_TARGET is unset, so shipping this before the Storage Box is
+# created is a no-op rather than a nightly failure.
+EnvironmentFile=-/etc/agentgit/backup.env
+# ops-notify.env is deliberately NOT loaded here. notify.sh reads the bot token
+# out of that file itself, as data; putting it in this process's environment
+# would publish it to anything that reads /proc/<pid>/environ, for no gain.
+# ssh reads $HOME for its config; without this it resolves to / and logs noise.
+Environment=HOME=/opt/agentgit
+ExecStart=/opt/agentgit/backup-repos.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentgit-backup
+
+# A bundle of the largest allowed repo is ~300 MB and the upload is the slow
+# part; an hour is generous for the whole fleet and still bounded, so a hung
+# connection cannot leave the lock held until somebody notices.
+TimeoutStartSec=3600
+
+# Same hardening as the service it backs up, minus the ability to change
+# anything: this job only ever reads repos and writes its own state.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# State, the lock and known_hosts. The repos themselves are read-only to this
+# job in every sense that matters — nothing here writes to them.
+ReadWritePaths=/var/lib/agentgit

@@ -1,0 +1,19 @@
+# Only infra/backend-image/Dockerfile builds from the repository root; every
+# other image builds from its own directory. Allowlist, so nothing local
+# (node_modules, dist, env files) is ever sent to a builder.
+*
+!backend/package.json
+!backend/package-lock.json
+!backend/tsconfig.json
+!backend/src
+!backend/workspace-ui
+!backend/assets
+!backend/scripts
+!cli/agentbuilt/agentbuilt.mjs
+!infra/ci-runner/runner-agent.sh
+!public/logo-bw.png
+!public/fonts
+!public/favicon*
+!public/apple-touch-icon.png
+backend/workspace-ui/node_modules
+backend/src/test
