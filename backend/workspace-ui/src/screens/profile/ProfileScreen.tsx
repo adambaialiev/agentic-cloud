@@ -487,6 +487,7 @@ function MailAddressCard() {
 export function ProfileScreen() {
   const { api, refresh, signOut, state: session } = useSession();
   const { state, reload } = useWorkspace();
+  const copyMailOff = Boolean(state?.mailSetup && state.mailSetup.state !== 'on');
   const banner = useBanner();
   const ask = useConfirm();
   const user = state?.user ?? null;
@@ -640,8 +641,12 @@ export function ProfileScreen() {
                       ? browser.recoveryEmail.status === 'verified'
                         ? browser.recoveryEmail.email
                         : `${browser.recoveryEmail.email} — not confirmed yet`
-                      : 'None'}
-                    action={browser.recoveryEmail ? 'Change' : 'Add'}
+                      : copyMailOff
+                        // A copy installed without email (note #946): no
+                        // link can be mailed, so the row says so plainly.
+                        ? 'Not available until an admin sets up email here (Mail). Turn on authenticator security meanwhile: its recovery codes are a way back in.'
+                        : 'None'}
+                    action={copyMailOff ? null : browser.recoveryEmail ? 'Change' : 'Add'}
                     onAction={() => setRecoveryOpen(true)}
                   />
                   {/* An address on our own domain was minted for this account:

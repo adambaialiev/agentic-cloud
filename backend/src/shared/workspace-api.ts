@@ -665,6 +665,13 @@ export interface WorkspaceStateAnswer {
    * usable. Absent when all is well, for members, and off a copy.
    */
   copyLicence?: { state: 'missing' | 'invalid' | 'ending' | 'grace' | 'lapsed' | 'over'; line: string };
+  /**
+   * Email in a private copy (note #946), which installs without it: `off`
+   * until an admin starts setting it up, `provider`/`records` on the way,
+   * `on` once it works. `canSetUp` is there for an admin. Absent off a copy,
+   * where mail is always on.
+   */
+  mailSetup?: { state: WorkspaceCopyMailStatus['state']; canSetUp?: true };
   organizations: WorkspaceOrganizationRow[];
   canCreateOrg: boolean;
   user: WorkspaceUserSummary;
@@ -2685,3 +2692,40 @@ export interface WorkspaceGitAccessAnswer {
 
 /** POST api/repos/:name/ci-secrets/decision */
 export interface WorkspaceRepoCiDecisionRequest { decision: 'approve' | 'reject' }
+
+/** One DNS record email needs in a private copy (note #946). */
+export interface WorkspaceCopyMailRecord {
+  name: string;
+  type: 'A' | 'MX' | 'TXT' | 'CNAME';
+  value: string;
+  priority?: number;
+  why: string;
+  /** As the domain's own name servers answered at the last check; null for a
+   *  record the Workspace cannot check. Absent before any check. */
+  ok?: boolean | null;
+}
+
+/** POST api/copy/mail/provider: how mail goes out. */
+export type WorkspaceCopyMailProviderInput =
+  | { kind: 'resend'; apiKey: string }
+  | { kind: 'smtp'; host: string; port?: number; user?: string; password?: string };
+
+/** GET api/copy/mail: email's setup in a private copy, for its admins. */
+export interface WorkspaceCopyMailStatus {
+  state: 'off' | 'provider' | 'records' | 'on';
+  domain: string;
+  /** Mail was set up by an installer before note #946. */
+  fromInstall?: true;
+  provider?: { kind: 'resend' | 'smtp'; line: string };
+  receiver?: { app: string; ipv4: string; adopted?: true };
+  records: WorkspaceCopyMailRecord[];
+  providerRecordsNote?: string;
+  certificate: 'issued' | 'pending' | 'unknown';
+  providerVerified?: boolean | null;
+  checkedAt?: string;
+  turnedOnAt?: string;
+  /** What the receiver adds to the Fly bill, at Fly's list prices. */
+  monthlyUsd: number;
+  /** Why this Workspace cannot set mail up by itself, when it cannot. */
+  unavailable?: string;
+}

@@ -75,6 +75,7 @@ import { PeopleScreen } from './screens/org/PeopleScreen.js';
 import { OrgCloudScreen } from './screens/org/OrgCloudScreen.js';
 import { UnknownScreen } from './screens/Placeholder.js';
 import { MailScreen } from './screens/mail/MailScreen.js';
+import { MailSetupScreen } from './screens/mail/MailSetupScreen.js';
 import { MailConversationScreen } from './screens/mail/MailConversationScreen.js';
 import { ProfileScreen } from './screens/profile/ProfileScreen.js';
 import { SeatScreen } from './screens/seats/SeatScreen.js';
@@ -297,6 +298,8 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   // Starred (note #666) is the fifth, and a list of letters like Sent: every
   // one its reader starred, wherever it is kept, Trash and Spam apart.
   mailStarred: <MailScreen key="starred" place="starred" />,
+  // Email set up after the install, in a private copy (note #946).
+  mailSetup: <MailSetupScreen />,
   mailMessage: <Keyed screen={MailConversationScreen} />,
   profile: <ProfileScreen />,
   radioLibrary: <RadioLibraryRoute />,

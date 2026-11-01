@@ -6,13 +6,13 @@
  *
  *   node install.mjs install --org <fly organization> --domain <copy's domain> \
  *        [--name <prefix>] [--region <code>] [--release <version|latest>]
- *        [--resend-key-file <file> | --smtp-host <host> [--smtp-port <587|465>]
- *         [--smtp-user <user> --smtp-password-file <file>]]
  *
- * Mail out goes through Resend (its key; the installer registers the domain
- * and waits for it) or through any provider over standard SMTP (the
- * installer stores the settings and names the provider's own records, which
- * only that provider knows).
+ * Email is not part of the install (note #946): nothing here asks for a mail
+ * provider, makes a mail receiver or prints a mail record. People's addresses
+ * are on the domain from the first account, and an admin turns email on later
+ * from the Workspace (Mail): it takes the provider's details, creates the
+ * mail receiver in this same organization, prints its records, checks them
+ * and turns mail on.
  *
  * Licensing is off (the product is free for now): no update key, no licence,
  * and the prefix comes from the domain unless --name gives one. With
@@ -21,11 +21,10 @@
  *
  * `install` builds a whole copy in the organization, start to finish, and can
  * be run again at any point: it carries on from what is already there. It
- * checks the organization's billing, creates the five apps (images, backend,
- * code host, router, mail receiver), the two buckets and the mail address,
- * copies one release into the copy's own registry, makes and stores the keys,
- * deploys, asks for the certificates, prints the DNS records and waits until
- * they, the certificates and (with a sending key) the mail domain check out,
+ * checks the organization's billing, creates the four apps (images, backend,
+ * code host, router) and the two buckets, copies one release into the copy's
+ * own registry, makes and stores the keys, deploys, asks for the certificates,
+ * prints the DNS records and waits until they and the certificates check out,
  * runs a smoke test, and prints the first admin's one-time sign-up link and
  * the master key (once). What it made is recorded in ./<prefix>-copy.json,
  * names and addresses only, which the upgrade command reads.
@@ -33,15 +32,14 @@
  * `install --plan`, with the same flags, changes nothing and costs nothing:
  * it makes every check the install makes before it creates anything (Node,
  * flyctl and its sign-in, the organization and its bill, the domain, the
- * update key and the release it opens, the licence, mail out), and lists
+ * update key and the release it opens, the licence), and lists
  * everything the install would create with Fly's list price, and the DNS
  * records it will ask for. It writes no file, not even its state or a log.
  *
- *   node install.mjs status [--state <file>] [--resend-key-file <file>]
+ *   node install.mjs status [--state <file>]
  *
- * `status` only looks: it asks the domain's own name servers for each record,
- * Fly for each certificate and the mail receiver for its own, and says what
- * is still missing. It never creates, restarts or nudges anything.
+ * `status` only looks: it asks the domain's own name servers for each record
+ * and Fly for each certificate, and says what is still missing. It never creates, restarts or nudges anything.
  *
  * With --json, stdout carries one JSON object per line: progress, then the
  * result, always the last line. The readable lines stay on stderr. No line
@@ -49,8 +47,8 @@
  * key go to ./<prefix>-handover.txt (mode 600) instead of the screen.
  *
  * Exit codes: 0 done, 1 failed, 2 the command was wrong, 3 a person is
- * needed (the result's `reason` says for what), 4 still waiting on Fly, Let's
- * Encrypt or the mail provider, with nothing for anyone to do but run the
+ * needed (the result's `reason` says for what), 4 still waiting on Fly or
+ * Let's Encrypt, with nothing for anyone to do but run the
  * same command again later.
  *
  *   node install.mjs copy --customer <id> --key-file <update key file> \
@@ -101,8 +99,7 @@ export class PersonNeeded extends Error {
   }
 }
 
-/** Not a failure either: Fly, Let's Encrypt or the mail provider is still at
- *  it, and nobody can hurry it. Exit 4: run the same command again later. */
+/** Not a failure either: Fly or Let's Encrypt is still at it, and nobody can hurry it. Exit 4: run the same command again later. */
 export class StillWaiting extends Error {
   constructor(reason, message, details = {}) {
     super(message);
@@ -296,20 +293,15 @@ const PREFIX_NEEDED = '--name is a short lowercase prefix for its app names, lik
 const NO_TOKEN = 'No Fly token: set FLY_API_TOKEN, or sign in with `fly auth login`.';
 const keyForAnotherDomain = (updateKey, domain) => `This update key was issued for ${updateKey.domain}, not ${domain}. Ask us for a key for ${domain}, or use that domain.`;
 
-/** Mail out goes one way or none, and its key is a file the person gives.
- *  Says how mail will go out, or throws what is wrong. */
-export function mailOutProblem(options) {
-  const smtpHost = options['smtp-host'] ? String(options['smtp-host']).trim() : '';
-  const resendFile = options['resend-key-file'];
-  if (smtpHost && resendFile) throw new UsageError('Mail out goes one way: --resend-key-file or --smtp-host, not both.');
-  if (smtpHost && options['smtp-user'] && !options['smtp-password-file']) throw new UsageError('--smtp-user needs --smtp-password-file.');
-  for (const [flag, file] of [['--resend-key-file', resendFile], ['--smtp-password-file', options['smtp-password-file']]]) {
-    if (file === true) throw new UsageError(`${flag} needs a file.`);
-    if (file && !existsSync(file)) throw new PersonNeeded('mail-key', `There is no file at ${file} (${flag}). The mail-sending key is the person's own, from their provider; mail out can also be added later.`);
-  }
-  if (resendFile) return 'through Resend; the install registers the domain there and waits for it';
-  if (smtpHost) return `through ${smtpHost} over SMTP; that provider's own SPF and DKIM records are added by hand`;
-  return 'not set up: everything else works without it, and it can be added later with --resend-key-file or --smtp-host';
+/** What the install says about email, wherever it says it. */
+export const MAIL_LATER = 'Email is not part of the install: once your own Agentic Cloud is up, an admin sets it up in the Workspace, under Mail, with the mail provider\'s details. The Workspace then creates the mail receiver in this same Fly organization and shows the records to add.';
+
+/** The mail flags of installers before note #946. Mail is set up later, in
+ *  the Workspace, so they are refused rather than quietly ignored: whoever
+ *  passed one expects mail to be working at the end. */
+export function refuseMailFlags(options) {
+  const given = ['resend-key-file', 'smtp-host', 'smtp-port', 'smtp-user', 'smtp-password-file'].filter((flag) => options[flag] !== undefined);
+  if (given.length) throw new UsageError(`--${given[0]} is not taken any more. ${MAIL_LATER}`);
 }
 
 /** What an update key says about itself: who it was issued to and for which
@@ -407,6 +399,8 @@ export const SHAPES = {
   backend: { size: 'shared-cpu-2x', cpus: 2, memory: '2gb', mb: 2048, diskGb: 3 },
   git: { size: 'shared-cpu-1x', cpus: 1, memory: '512mb', mb: 512, diskGb: 3 },
   router: { size: 'shared-cpu-1x', cpus: 1, memory: '256mb', mb: 256 },
+  // Only a mail receiver an installer before note #946 made: the upgrade
+  // keeps rolling it. One the Workspace makes is the Workspace's to keep.
   mx: { size: 'shared-cpu-1x', cpus: 1, memory: '256mb', mb: 256, diskGb: 1 },
 };
 
@@ -440,6 +434,8 @@ export function backendEnv({ names, org, region, domain, tags, peerIp, version, 
     FLY_APP_RUNTIME_IMAGE: image('app-runtime'),
     FLY_GIT_HOST_IMAGE: image('git-host'),
     FLY_MSG_HOST_IMAGE: image('msg-host'),
+    // The mail receiver the Workspace makes when an admin sets email up.
+    ...(tags.mx ? { FLY_MX_IMAGE: image('mx') } : {}),
     FLY_IMAGE_APP: names.images,
     WORKSPACE_URL: `https://${domain}`,
     WORKSPACE_COMPATIBLE_ORIGINS: `https://${names.backend}.fly.dev`,
@@ -567,20 +563,17 @@ export function appConfigs({ names, org, region, domain, tags, peerIp, version, 
 }
 
 /** The records the copy's domain needs, all DNS only (never proxied). */
-export function dnsRecords({ domain, names, backendV4, backendV6, mxV4, acmeTarget, gitAcmeTarget, provider = [] }) {
+export function dnsRecords({ domain, names, backendV4, backendV6, acmeTarget, gitAcmeTarget }) {
   return [
     { name: domain, type: 'A', value: backendV4, why: 'the Workspace' },
     { name: domain, type: 'AAAA', value: backendV6, why: 'the Workspace' },
-    { name: domain, type: 'MX', value: `mx.${domain}`, priority: 10, why: 'mail in' },
-    { name: `mx.${domain}`, type: 'A', value: mxV4, why: 'the mail receiver' },
     { name: `git.${domain}`, type: 'CNAME', value: `${names.git}.fly.dev`, why: 'the code host' },
     { name: `*.${domain}`, type: 'CNAME', value: `${names.router}.fly.dev`, why: 'previews and sites' },
     { name: `_acme-challenge.${domain}`, type: 'CNAME', value: acmeTarget, why: 'the certificate for previews and sites' },
     // The code host's certificate can be proved by DNS too, from the start,
     // instead of only through the sleeping code host itself.
     ...(gitAcmeTarget ? [{ name: `_acme-challenge.git.${domain}`, type: 'CNAME', value: gitAcmeTarget, why: 'the certificate for the code host, proved by DNS' }] : []),
-    { name: `_dmarc.${domain}`, type: 'TXT', value: 'v=DMARC1; p=quarantine', why: 'mail that is not ours goes to spam' },
-    ...provider,
+    // No mail records: the Workspace shows those when an admin sets email up.
   ];
 }
 
@@ -720,7 +713,7 @@ export async function checkOrganization(token, org, fetchImpl = fetch) {
   const found = data?.organization;
   if (!found) throw new PersonNeeded('fly-organization', `There is no Fly organization ${org} for this token.`);
   const billing = { billingUrl: `https://fly.io/dashboard/${org}/billing` };
-  if (!found.billable) throw new PersonNeeded('billing', `The organization ${org} has no card on file. Your own Agentic Cloud needs one (its mail address is a dedicated IPv4). Add it at fly.io/dashboard/${org}/billing and run this again.`, billing);
+  if (!found.billable) throw new PersonNeeded('billing', `The organization ${org} has no card on file. Your own Agentic Cloud needs one: Fly bills the organization for its machines. Add it at fly.io/dashboard/${org}/billing and run this again.`, billing);
   if (found.billingStatus !== 'CURRENT') {
     throw new PersonNeeded('billing', `Fly says the organization ${org}'s bill is not paid (${String(found.billingStatus).toLowerCase().replace('_', ' ')}), and it refuses to create anything until it is. Settle it at fly.io/dashboard/${org}/billing and run this again.`, billing);
   }
@@ -763,49 +756,8 @@ export function bucketKeys(output) {
   };
 }
 
-/** The sending provider (Resend): the domain registered, its records, and
- *  whether it has verified them. */
-export function resendProvider({ key, fetchImpl = fetch, base = 'https://api.resend.com' }) {
-  const call = async (method, pathname, body) => {
-    const answer = await fetchImpl(`${base}${pathname}`, {
-      method,
-      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    const parsed = await answer.json().catch(() => ({}));
-    if (!answer.ok) throw new Error(`Resend ${method} ${pathname}: ${answer.status} ${parsed.message ?? ''}`.trim());
-    return parsed;
-  };
-  const records = (domain, list) => (list ?? []).map((record) => ({
-    name: record.name && !record.name.endsWith(domain) ? `${record.name}.${domain}` : (record.name || domain),
-    type: record.type,
-    value: record.value,
-    ...(record.priority !== undefined ? { priority: record.priority } : {}),
-    why: `mail out (${record.record ?? 'sending'})`,
-  }));
-  return {
-    async register(domain) {
-      const listed = await call('GET', '/domains');
-      const existing = (listed.data ?? []).find((entry) => entry.name === domain);
-      const made = existing ? await call('GET', `/domains/${existing.id}`) : await call('POST', '/domains', { name: domain });
-      const id = made.id ?? existing?.id;
-      return { id, records: records(domain, made.records ?? (await call('GET', `/domains/${id}`)).records) };
-    },
-    /** Only reads: unlike verified(), it never asks Resend to check again. */
-    async status(id) {
-      return (await call('GET', `/domains/${id}`)).status;
-    },
-    async verified(id) {
-      const found = await call('GET', `/domains/${id}`);
-      if (found.status === 'verified') return true;
-      await call('POST', `/domains/${id}/verify`).catch(() => {});
-      return false;
-    },
-  };
-}
-
 /** What the copy answers once it is up: every piece, over its own names. */
-export async function smokeTest({ domain, mxV4, fetchImpl = fetch, smtpBanner = readSmtpBanner }) {
+export async function smokeTest({ domain, fetchImpl = fetch }) {
   const results = [];
   const probe = async (what, run) => {
     try {
@@ -842,30 +794,7 @@ export async function smokeTest({ domain, mxV4, fetchImpl = fetch, smtpBanner = 
     if (!health.ok || health.domain !== domain) throw new Error(`router says ${JSON.stringify(health)}`);
     return 'certificate and router fine';
   });
-  await probe(`mail in (mx.${domain}) offers encryption`, async () => {
-    const health = await json(`http://${mxV4}/health`);
-    if (!health.starttls) throw new Error('the mail receiver has no certificate yet');
-    return 'STARTTLS on';
-  });
-  // Port 25 is closed on many home and office networks, so a silent port is
-  // reported, never counted against the copy.
-  const banner = await smtpBanner(mxV4).catch((error) => `not reachable from this computer (${error.message}); many networks close port 25 outbound`);
-  results.push({ what: `mail in (mx.${domain}) port 25`, ok: true, soft: true, detail: banner });
   return results;
-}
-
-export function readSmtpBanner(host, port = 25, timeoutMs = 10_000) {
-  return new Promise((resolve, reject) => {
-    const socket = connect({ host, port });
-    const timer = setTimeout(() => { socket.destroy(); reject(new Error('no answer in 10 s')); }, timeoutMs);
-    socket.once('data', (data) => {
-      clearTimeout(timer);
-      socket.end('QUIT\r\n');
-      const line = String(data).split('\r\n')[0];
-      if (line.startsWith('220')) resolve(line); else reject(new Error(line));
-    });
-    socket.once('error', (error) => { clearTimeout(timer); reject(error); });
-  });
 }
 
 const jsonList = (text) => JSON.parse(text || '[]') ?? [];
@@ -891,8 +820,7 @@ export async function install(options, deps = {}) {
   if (!org) throw new PersonNeeded('fly-organization', ORG_NEEDED);
   if (!DOMAIN_SHAPE.test(domain)) throw new PersonNeeded('domain', DOMAIN_NEEDED);
   const updateKey = releaseAccess(options, domain);
-  const smtpHost = options['smtp-host'] ? String(options['smtp-host']).trim() : '';
-  mailOutProblem(options);
+  refuseMailFlags(options);
   const prefix = String(options.name ?? updateKey.customer).toLowerCase();
   const licence = readLicence(options, domain, { resuming: existsSync(path.resolve(options.state ?? `${prefix}-copy.json`)) });
   const licenceText = licence.text;
@@ -954,9 +882,9 @@ export async function install(options, deps = {}) {
   save();
   emit({ event: 'step', step: 1, of: STEPS, key: 'checks', title: 'Checking the organization, the update key and the release', status: 'done', release: release.version, region: state.region });
 
-  await step('apps', 'Creating the five apps', async () => {
+  await step('apps', 'Creating the four apps', async () => {
     const listed = jsonList(await fly(['apps', 'list', '-o', org, '--json'])).map((app) => app.Name ?? app.name);
-    for (const app of [names.images, names.backend, names.git, names.router, names.mx]) {
+    for (const app of [names.images, names.backend, names.git, names.router]) {
       if (listed.includes(app)) continue;
       try {
         await fly(['apps', 'create', app, '-o', org]);
@@ -999,6 +927,8 @@ export async function install(options, deps = {}) {
       SECRETS_MASTER_KEY: randomBytes(32).toString('base64'),
       GIT_HOST_SECRET: randomBytes(32).toString('hex'),
       CI_STATUS_SECRET: randomBytes(32).toString('hex'),
+      // Kept by the backend for the mail receiver it makes later, if an admin
+      // sets email up: the receiver presents it on every message it hands in.
       MAIL_INGEST_SECRET: randomBytes(32).toString('hex'),
       FIRST_ACCOUNT_CODE: randomBytes(18).toString('base64url'),
     };
@@ -1027,25 +957,22 @@ export async function install(options, deps = {}) {
       BACKUP_S3_SECRET_ACCESS_KEY: p.backups.secretAccessKey,
     });
     await setSecrets(names.git, { GIT_HOST_SECRET: p.GIT_HOST_SECRET, CI_WEBHOOK_SECRET: p.GIT_HOST_SECRET });
-    await setSecrets(names.mx, { MAIL_INGEST_SECRET: p.MAIL_INGEST_SECRET });
     // Stored: from here the file keeps only what the admin is shown at the end.
     state.pending = { SECRETS_MASTER_KEY: p.SECRETS_MASTER_KEY, FIRST_ACCOUNT_CODE: p.FIRST_ACCOUNT_CODE };
   });
 
-  await step('addresses', 'Taking the addresses (the mail receiver\'s own IPv4)', async () => {
+  await step('addresses', 'Taking the addresses (shared, no charge)', async () => {
     for (const app of [names.backend, names.git, names.router]) {
       const have = await ips(app);
       if (!have.some((ip) => ip.Type === 'shared_v4' || ip.Type === 'v4')) await fly(['ips', 'allocate-v4', '--shared', '-a', app, '--yes']);
       if (!have.some((ip) => ip.Type === 'v6')) await fly(['ips', 'allocate-v6', '-a', app]);
     }
-    // Mail cannot share an IPv4 with other Fly apps: a dedicated one, $2 a month.
-    if (!(await ips(names.mx)).some((ip) => ip.Type === 'v4')) await fly(['ips', 'allocate-v4', '-a', names.mx, '--yes']);
   });
 
   const deployApp = (which, peerIp) => deployOne({ fly, state, names, which, release: state.release, peerIp });
 
-  await step('deploy', 'Starting the four apps from your own registry', async () => {
-    for (const which of ['backend', 'git', 'router', 'mx']) {
+  await step('deploy', 'Starting the three apps from your own registry', async () => {
+    for (const which of ['backend', 'git', 'router']) {
       const at = Date.now();
       await deployApp(which);
       log(`        ${names[which].padEnd(22)} up in ${((Date.now() - at) / 1000).toFixed(0)} s`);
@@ -1069,31 +996,8 @@ export async function install(options, deps = {}) {
     const backendIps = await ips(names.backend);
     state.backendV4 = backendIps.find((ip) => ip.Type === 'shared_v4' || ip.Type === 'v4')?.Address;
     state.backendV6 = backendIps.find((ip) => ip.Type === 'v6')?.Address;
-    state.mxV4 = (await ips(names.mx)).find((ip) => ip.Type === 'v4')?.Address;
-    if (!state.acmeTarget || !state.backendV4 || !state.backendV6 || !state.mxV4) throw new Error('Fly did not report every address yet; run again in a minute.');
+    if (!state.acmeTarget || !state.backendV4 || !state.backendV6) throw new Error('Fly did not report every address yet; run again in a minute.');
   });
-
-  const resendKey = options['resend-key-file'] ? readFileSync(options['resend-key-file'], 'utf8').trim() : null;
-  if (smtpHost && !state.sending) {
-    log(`        Sending mail out through ${smtpHost}…`);
-    await setSecrets(names.backend, {
-      SMTP_HOST: smtpHost,
-      SMTP_PORT: String(options['smtp-port'] ?? 587),
-      ...(options['smtp-user']
-        ? { SMTP_USER: String(options['smtp-user']), SMTP_PASSWORD: readFileSync(options['smtp-password-file'], 'utf8').trim() }
-        : {}),
-    });
-    state.sending = { provider: 'smtp', host: smtpHost };
-    save();
-  }
-  const provider = resendKey ? (deps.resendProvider ?? resendProvider)({ key: resendKey, fetchImpl }) : null;
-  if (provider && !state.sending) {
-    log(`        Registering ${domain} with Resend for mail out…`);
-    const { id, records } = await provider.register(domain);
-    await setSecrets(names.backend, { RESEND_API_KEY: resendKey, RESEND_MAIL_API_KEY: resendKey });
-    state.sending = { provider: 'resend', id, records };
-    save();
-  }
 
   // An install begun before the installer asked for it reads it now.
   if (!state.gitAcmeTarget) {
@@ -1102,23 +1006,16 @@ export async function install(options, deps = {}) {
   }
   if (!state.gitAcmeTarget && !state.steps.dns) log(`        Fly gave no DNS-validation record for git.${domain}; its certificate is proved through the code host alone.`);
   const records = dnsRecords({
-    domain, names, backendV4: state.backendV4, backendV6: state.backendV6, mxV4: state.mxV4, acmeTarget: state.acmeTarget, gitAcmeTarget: state.gitAcmeTarget, provider: state.sending?.records,
+    domain, names, backendV4: state.backendV4, backendV6: state.backendV6, acmeTarget: state.acmeTarget, gitAcmeTarget: state.gitAcmeTarget,
   });
-  await step('dns', 'Waiting for the DNS records, the certificates and the mail domain', async () => {
+  await step('dns', 'Waiting for the DNS records and the certificates', async () => {
     log(`\n  Add these ${records.length} records at ${domain}'s DNS provider, all DNS only (not proxied):\n\n${formatRecords(records)}\n`);
-    emit({ event: 'dns-records', domain, records: records.map(publicRecord), ...(state.sending?.provider === 'smtp' ? { alsoFromProvider: state.sending.host } : {}) });
-    if (state.sending?.provider === 'smtp') {
-      log(`  Also add the SPF and DKIM records ${state.sending.host} gives you for ${domain}: only that provider knows`);
-      log('  them, so the installer does not wait for them. Without them mail out goes to spam.\n');
-    }
+    emit({ event: 'dns-records', domain, records: records.map(publicRecord) });
     log('  The installer checks them with the domain\'s own name servers every 15 s. You can stop it and');
     log('  run the same command again later: it carries on from here.\n');
     const { resolver } = await (deps.authoritativeResolver ?? authoritativeResolver)(domain);
     const deadline = Date.now() + Number(options.wait ?? 60) * 60_000;
     let said = '';
-    let mxNamedAt = 0;
-    let mxRestartedAt = 0;
-    let mxRestarts = 0;
     let certsCheckedAt = 0;
     for (;;) {
       const missing = [];
@@ -1128,23 +1025,6 @@ export async function install(options, deps = {}) {
         certs[host] = JSON.parse(await fly(['certs', 'show', host, '-a', app, '--json'])).status;
       }
       const certsWaiting = Object.entries(certs).filter(([, status]) => status !== 'Ready').map(([host]) => host);
-      let mailCert = false;
-      try {
-        mailCert = Boolean((await (await fetchImpl(`http://${state.mxV4}/health`, { signal: AbortSignal.timeout(5000) })).json()).starttls);
-      } catch { /* not up yet */ }
-      const mxNameReady = !missing.some((record) => record.name === `mx.${domain}`);
-      mxNamedAt = mxNameReady ? mxNamedAt || Date.now() : 0;
-      // The receiver asks Let's Encrypt when it starts and twice a day; once its
-      // name points at it, a restart makes it ask now. Not the moment the name
-      // appears (asked within seconds, the proof's first try failed: Let's
-      // Encrypt still saw the old answer), and at most four times, inside Let's
-      // Encrypt's limit of five failures an hour.
-      const settled = mxNamedAt && Date.now() - mxNamedAt >= (deps.settleMs ?? 60_000);
-      if (settled && !mailCert && mxRestarts < 4 && Date.now() - mxRestartedAt > 5 * 60_000) {
-        await fly(['apps', 'restart', names.mx]);
-        mxRestartedAt = Date.now();
-        mxRestarts += 1;
-      }
       if (!missing.length && certsWaiting.length && Date.now() - certsCheckedAt > 60_000) {
         for (const host of certsWaiting) {
           const app = host === domain ? names.backend : host.startsWith('git.') ? names.git : names.router;
@@ -1152,35 +1032,25 @@ export async function install(options, deps = {}) {
         }
         certsCheckedAt = Date.now();
       }
-      const sendingReady = !provider || state.sending?.provider !== 'resend' || (!missing.length && await provider.verified(state.sending.id));
       const line = [
         missing.length ? `${records.length - missing.length} of ${records.length} records right (waiting for ${missing.map((r) => `${r.name} ${r.type}`).join(', ')})` : `all ${records.length} records right`,
         certsWaiting.length ? `certificates waiting: ${certsWaiting.join(', ')}` : 'certificates issued',
-        mailCert ? 'mail certificate issued' : mxRestarts < 4 ? 'mail certificate waiting'
-          : `mail certificate waiting (the receiver asks again by itself every 12 h, or now with: fly apps restart ${names.mx})`,
-        ...(provider && state.sending?.provider === 'resend' ? [sendingReady ? 'mail out verified' : 'mail out waiting for Resend'] : []),
       ].join('; ');
-      const where = {
-        missing: missing.map(publicRecord),
-        certificatesWaiting: certsWaiting,
-        mailCertificate: mailCert,
-        ...(provider && state.sending?.provider === 'resend' ? { mailOut: sendingReady ? 'verified' : 'waiting' } : {}),
-      };
+      const where = { missing: missing.map(publicRecord), certificatesWaiting: certsWaiting };
       if (line !== said) { log(`  ${new Date().toISOString().slice(11, 19)}  ${line}`); said = line; emit({ event: 'waiting', ...where }); }
-      if (!missing.length && !certsWaiting.length && mailCert && sendingReady) break;
+      if (!missing.length && !certsWaiting.length) break;
       if (Date.now() > deadline) {
         if (missing.length) {
           throw new PersonNeeded('dns', `${missing.length} of ${records.length} DNS records are not in place at ${domain}'s name servers yet. Add them, all DNS only, then run the same command again: it carries on from here.`, { domain, records: missing.map(publicRecord), allRecords: records.map(publicRecord) });
         }
-        const reason = certsWaiting.length ? 'certificates' : !mailCert ? 'mail-certificate' : 'mail-out';
-        throw new StillWaiting(reason, `Every DNS record is in; still waiting for ${certsWaiting.length ? `the certificates of ${certsWaiting.join(', ')}` : !mailCert ? 'the mail receiver\'s certificate' : 'Resend to verify the domain'}. Nobody needs to do anything. Run the same command again later: it carries on from here. Fly can take over an hour for one certificate.`, where);
+        throw new StillWaiting('certificates', `Every DNS record is in; still waiting for the certificates of ${certsWaiting.join(', ')}. Nobody needs to do anything. Run the same command again later: it carries on from here. Fly can take over an hour for one certificate.`, where);
       }
       await sleep(deps.pollMs ?? 15_000);
     }
   });
 
   await step('smoke', 'Smoke test', async () => {
-    const results = await (deps.smokeTest ?? smokeTest)({ domain, mxV4: state.mxV4, fetchImpl });
+    const results = await (deps.smokeTest ?? smokeTest)({ domain, fetchImpl });
     for (const result of results) log(`        ${result.ok ? 'ok  ' : 'FAIL'}  ${result.what}: ${result.detail}`);
     if (results.some((result) => !result.ok)) throw new Error('The smoke test failed (above). Run the same command again once it is fixed.');
   });
@@ -1210,7 +1080,7 @@ export async function install(options, deps = {}) {
       log('                    restored into a new install cannot open the keys people saved in it.');
     }
   }
-  if (!state.sending) log(`  Mail out:         not set up. Run again with --resend-key-file <file> or --smtp-host <host> to send as ${domain}.`);
+  log(`  Email:            not set up yet. An admin sets it up in the Workspace, under Mail, when they want it.`);
   log(`  Kept here:        ${stateFile} (names and addresses, no keys); the upgrade command reads it.`);
   state.pending = {};
   save();
@@ -1224,7 +1094,7 @@ export async function install(options, deps = {}) {
     release: state.release?.version ?? null,
     stateFile,
     handoverFile,
-    mailOut: state.sending?.provider ?? null,
+    mail: 'later, from the Workspace',
     person: handoverFile ? [
       `Open ${handoverFile}: the first-admin link in it makes the first admin, once.`,
       'Keep the master key in it offline, then delete the file.',
@@ -1250,6 +1120,8 @@ function handoverText(domain, shown) {
       `  ${shown.SECRETS_MASTER_KEY}`,
       '',
     ] : []),
+    'Email is not set up yet. An admin sets it up in the Workspace, under Mail, when they want it.',
+    '',
     'Delete this file once the master key is kept somewhere safe.',
     '',
   ].join('\n');
@@ -1258,6 +1130,10 @@ function handoverText(domain, shown) {
 /** Which image each app runs, and the order a release rolls through them. */
 const IMAGE_OF = { backend: 'backend', git: 'git-host', router: 'router', mx: 'mx' };
 const ROLL_ORDER = ['backend', 'git', 'router', 'mx'];
+/** The apps this install rolls: the mail receiver only when an installer
+ *  before note #946 made it (its address is in the state file). One the
+ *  Workspace made later, the Workspace keeps on its own release. */
+export const rolledApps = (state) => ROLL_ORDER.filter((which) => which !== 'mx' || Boolean(state.mxV4));
 
 /** One of the copy's four apps, deployed from its own registry at a release. */
 export async function deployOne({ fly, state, names, which, release, peerIp }) {
@@ -1299,8 +1175,8 @@ async function waitHealthy(url, fetchImpl, timeoutMs = 180_000) {
  * run where the installer left <prefix>-copy.json. It copies the new release
  * into the copy's registry, snapshots the database (SQLite's online backup,
  * kept on the backend's disk) and asks Fly for disk snapshots of the backend
- * and code host as a second net, then rolls the backend, code host, router and
- * mail receiver to the new release one by one and runs the smoke test. If
+ * and code host as a second net, then rolls the backend, code host and router
+ * (and a mail receiver an older installer made) to the new release one by one and runs the smoke test. If
  * anything fails from the snapshot on, it rolls every app back to the
  * release it came from and puts the database back as it was at the
  * snapshot. Whatever was written in between is lost, which is why it is
@@ -1364,7 +1240,7 @@ export async function upgrade(options, deps = {}) {
     run.phase = 'rolling-back';
     save();
     log(`\n  ${why}\n  Rolling back to ${run.from.version}, database as it was at ${run.snapshot.at}.`);
-    for (const which of ROLL_ORDER) await timed(`${names[which]} back to ${run.from.version}`, () => deployOne({ fly, state, names, which, release: run.from, peerIp: state.peerIp }));
+    for (const which of rolledApps(state)) await timed(`${names[which]} back to ${run.from.version}`, () => deployOne({ fly, state, names, which, release: run.from, peerIp: state.peerIp }));
     await timed('database back to the snapshot', async () => {
       await sqlite(fly, names, `.restore ${run.snapshot.file}`);
       // The Workspace drops what it held in memory and opens the snapshot.
@@ -1376,7 +1252,7 @@ export async function upgrade(options, deps = {}) {
       if (marks !== '0') throw new Error('The drill\'s mark is still in the database: the snapshot was NOT put back. Look at the backend before anything else.');
       log('  The drill\'s mark, written after the snapshot, is gone: the database is the snapshot.');
     }
-    const results = await smoke({ domain, mxV4: state.mxV4, fetchImpl });
+    const results = await smoke({ domain, fetchImpl });
     for (const result of results) log(`    ${result.ok ? 'ok  ' : 'FAIL'}  ${result.what}: ${result.detail}`);
     if (results.some((result) => !result.ok)) throw new Error(`Rolled back to ${run.from.version}, but the smoke test still fails (above). The snapshot is ${run.snapshot.file} on ${names.backend}.`);
     delete state.upgrade;
@@ -1430,10 +1306,10 @@ export async function upgrade(options, deps = {}) {
   }
 
   try {
-    for (const which of ROLL_ORDER) {
+    for (const which of rolledApps(state)) {
       await timed(`${names[which]} to ${run.to.version}`, () => deployOne({ fly, state, names, which, release: run.to, peerIp: state.peerIp }));
     }
-    const results = await timed('Smoke test', () => smoke({ domain, mxV4: state.mxV4, fetchImpl }));
+    const results = await timed('Smoke test', () => smoke({ domain, fetchImpl }));
     for (const result of results) log(`    ${result.ok ? 'ok  ' : 'FAIL'}  ${result.what}: ${result.detail}`);
     if (results.some((result) => !result.ok)) throw new Error('The smoke test failed on the new release (above).');
     if (run.drill) {
@@ -1523,7 +1399,7 @@ export async function plan(options, deps = {}) {
     });
   }
   if (domainOk) await check('licence', async () => readLicence(options, domain, { resuming: Boolean(state) }).detail);
-  await check('mail-out', async () => mailOutProblem(options));
+  await check('mail', async () => { refuseMailFlags(options); return 'not part of the install: an admin sets it up later in the Workspace, under Mail'; });
 
   const bin = deps.flyctl ?? findFlyctl();
   let token = deps.token ?? process.env.FLY_API_TOKEN ?? '';
@@ -1566,8 +1442,8 @@ export async function plan(options, deps = {}) {
   if (names && orgOk) {
     await check('apps', async () => {
       const listed = jsonList(await fly(['apps', 'list', '-o', org, '--json'])).map((app) => app.Name ?? app.name);
-      existing = [names.images, names.backend, names.git, names.router, names.mx].filter((app) => listed.includes(app));
-      return existing.length ? `already in ${org}, and kept as they are: ${existing.join(', ')}` : `none of the five names is in ${org} yet`;
+      existing = [names.images, names.backend, names.git, names.router].filter((app) => listed.includes(app));
+      return existing.length ? `already in ${org}, and kept as they are: ${existing.join(', ')}` : `none of the four names is in ${org} yet`;
     });
   }
 
@@ -1577,23 +1453,23 @@ export async function plan(options, deps = {}) {
     { kind: 'app', name: names.backend, what: `the Workspace and its database: one ${SHAPES.backend.size} machine with ${SHAPES.backend.mb / 1024} GB of memory, always on`, monthlyUsd: machineMonthlyUsd(SHAPES.backend) },
     { kind: 'app', name: names.git, what: 'the code host: one machine that sleeps when nobody uses it (the price is if it never slept)', monthlyUsd: machineMonthlyUsd(SHAPES.git) },
     { kind: 'app', name: names.router, what: 'the router for previews and sites, always on', monthlyUsd: machineMonthlyUsd(SHAPES.router) },
-    { kind: 'app', name: names.mx, what: 'the mail receiver, always on', monthlyUsd: machineMonthlyUsd(SHAPES.mx) },
     { kind: 'disk', name: `backend_data on ${names.backend}`, what: `${SHAPES.backend.diskGb} GB for the database, with daily snapshots`, monthlyUsd: disk(SHAPES.backend.diskGb) },
     { kind: 'disk', name: `git_data on ${names.git}`, what: `${SHAPES.git.diskGb} GB for the code`, monthlyUsd: disk(SHAPES.git.diskGb) },
-    { kind: 'disk', name: `mx_data on ${names.mx}`, what: `${SHAPES.mx.diskGb} GB for the mail receiver's certificate`, monthlyUsd: disk(SHAPES.mx.diskGb) },
     { kind: 'bucket', name: names.media, what: 'files people and agents attach', monthlyUsd: null },
     { kind: 'bucket', name: names.backups, what: 'database backups', monthlyUsd: null },
-    { kind: 'address', name: `a dedicated IPv4 on ${names.mx}`, what: 'mail cannot run on a shared address', monthlyUsd: PRICE.ipv4 },
     { kind: 'address', name: `shared IPv4 and IPv6 on ${names.backend}, ${names.git} and ${names.router}`, what: 'no charge', monthlyUsd: 0 },
     { kind: 'certificate', name: domainOk ? `${domain}, git.${domain} and *.${domain}` : 'the domain, git. and *.', what: 'from Let\'s Encrypt, through Fly', monthlyUsd: 0 },
     { kind: 'token', name: `${names.backend} (your own Agentic Cloud)`, what: 'an organization token the backend starts agent machines with', monthlyUsd: 0 },
-    { kind: 'secrets', name: `Fly secrets on ${names.backend}, ${names.git} and ${names.mx}`, what: 'keys made on this computer: an SSH key, the master key, shared secrets, the first-admin code', monthlyUsd: 0 },
+    { kind: 'secrets', name: `Fly secrets on ${names.backend} and ${names.git}`, what: 'keys made on this computer: an SSH key, the master key, shared secrets, the first-admin code', monthlyUsd: 0 },
   ].map((item) => ({ ...item, exists: existing.includes(item.name) })) : [];
   const monthlyUsd = cents(creates.reduce((sum, item) => sum + (item.exists ? 0 : item.monthlyUsd ?? 0), 0));
+  // What email adds once an admin sets it up: the receiver's machine, its
+  // certificate disk and the dedicated IPv4 mail needs.
+  const mailMonthlyUsd = cents(machineMonthlyUsd(SHAPES.mx) + disk(SHAPES.mx.diskGb) + PRICE.ipv4);
   const unknown = '(given once the install has it)';
   const records = names && domainOk
     ? dnsRecords({
-      domain, names, backendV4: unknown, backendV6: unknown, mxV4: unknown, acmeTarget: '(given by Fly with the certificate)', gitAcmeTarget: '(given by Fly with the certificate)',
+      domain, names, backendV4: unknown, backendV6: unknown, acmeTarget: '(given by Fly with the certificate)', gitAcmeTarget: '(given by Fly with the certificate)',
     }).map(publicRecord)
     : [];
 
@@ -1605,7 +1481,7 @@ export async function plan(options, deps = {}) {
   const person = [
     ...forPerson.map((item) => item.detail),
     'Read what the install will create and what it costs, and say yes before it runs.',
-    `Add the DNS records the install prints${records.length ? ` (${records.length}${options['resend-key-file'] ? ', plus the mail provider\'s' : ''})` : ''} at the domain's DNS provider, unless whoever runs it can edit that DNS.`,
+    `Add the DNS records the install prints${records.length ? ` (${records.length})` : ''} at the domain's DNS provider, unless whoever runs it can edit that DNS.`,
     'At the end, keep the master key offline and open the first-admin link.',
   ];
 
@@ -1617,6 +1493,7 @@ export async function plan(options, deps = {}) {
     for (const item of creates) log(`  ${usd(item.monthlyUsd).padStart(7)}  ${item.name}: ${item.what}${item.exists ? ' (already there)' : ''}`);
     log(`\n  About $${monthlyUsd.toFixed(2)} a month at Fly's published prices before any agent, plus the buckets' storage by use.`);
     log(`  Each agent machine: about $${PRICE.agentHour.toFixed(2)} an hour while it is awake, plus its disk. Fly's dashboard has the real bill.`);
+    log(`  Email is not in this: ${MAIL_LATER} About $${mailMonthlyUsd.toFixed(2)} a month more once it is on.`);
   }
   if (records.length) log(`\nThe DNS records it will ask for:\n${formatRecords(records)}`);
   if (state) log(`\nAn earlier run is recorded in ${stateFile}: ${INSTALL_STEPS.filter((key) => state.steps?.[key]).join(', ') || 'nothing'} done.`);
@@ -1625,6 +1502,7 @@ export async function plan(options, deps = {}) {
   const result = {
     event: 'result', outcome, exitCode, command: 'plan', reason: forPerson[0]?.reason ?? null, domain: domainOk ? domain : null, org: org || null,
     release: release?.version ?? null, checks, creates, monthlyUsd, agentHourlyUsd: PRICE.agentHour, records,
+    mail: { included: false, laterMonthlyUsd: mailMonthlyUsd, how: MAIL_LATER },
     stepsDone: state ? INSTALL_STEPS.filter((key) => state.steps?.[key]) : [], person,
   };
   emit(result);
@@ -1644,8 +1522,7 @@ function findStateFile(options) {
 /**
  * Where an install stands, only looking: the steps done, every DNS record as
  * the domain's own name servers answer it, each certificate as Fly reports
- * it, the mail receiver's own certificate, mail out (with --resend-key-file)
- * and, once installed, the Workspace's health. It creates, restarts and
+ * it and, once installed, the Workspace's health. It creates, restarts and
  * nudges nothing, so it can be run as often as anyone likes.
  */
 export async function status(options, deps = {}) {
@@ -1671,7 +1548,7 @@ export async function status(options, deps = {}) {
   if (state.upgrade) {
     return finish('continue', EXIT.done, `An upgrade from ${state.upgrade.from?.version} to ${state.upgrade.toVersion} stopped part-way. Run the same upgrade command again: it carries on from where it stopped.`, { next: 'upgrade' });
   }
-  if (!(state.acmeTarget && state.backendV4 && state.backendV6 && state.mxV4)) {
+  if (!(state.acmeTarget && state.backendV4 && state.backendV6)) {
     return finish('continue', EXIT.done, `Nothing for a person yet: the install has not asked for its DNS records. Run the same install command again: it carries on at "${nextStep}".`, { next: 'install' });
   }
 
@@ -1687,11 +1564,9 @@ export async function status(options, deps = {}) {
     names,
     backendV4: state.backendV4,
     backendV6: state.backendV6,
-    mxV4: state.mxV4,
     acmeTarget: state.acmeTarget,
     // Read, never written back: status changes nothing, not even its record.
     gitAcmeTarget: state.gitAcmeTarget || await gitAcmeTargetOf(fly, names, domain),
-    provider: state.sending?.records,
   });
   const { resolver } = await (deps.authoritativeResolver ?? authoritativeResolver)(domain);
   const missing = [];
@@ -1710,30 +1585,13 @@ export async function status(options, deps = {}) {
   }
   const certificatesWaiting = Object.entries(certificates).filter(([, value]) => value !== 'Ready').map(([host]) => host);
   log(`  Certificates: ${certificatesWaiting.length ? `waiting for ${certificatesWaiting.join(', ')}` : 'all issued'}`);
-  let mailCertificate = false;
-  try {
-    mailCertificate = Boolean((await (await fetchImpl(`http://${state.mxV4}/health`, { signal: AbortSignal.timeout(5000) })).json()).starttls);
-  } catch { /* not up, or no answer */ }
-  log(`  Mail receiver's certificate: ${mailCertificate ? 'issued' : 'waiting'}`);
-  let mailOut = state.sending ? state.sending.provider : 'not set up';
-  if (state.sending?.provider === 'resend') {
-    const keyFile = options['resend-key-file'];
-    if (keyFile && keyFile !== true && existsSync(keyFile)) {
-      const provider = (deps.resendProvider ?? resendProvider)({ key: readFileSync(keyFile, 'utf8').trim(), fetchImpl });
-      mailOut = (await provider.status(state.sending.id).catch(() => 'unknown')) === 'verified' ? 'verified' : 'waiting';
-    } else {
-      mailOut = 'not checked (give --resend-key-file to check Resend)';
-    }
-  }
-  log(`  Mail out: ${mailOut}`);
-  const found = { records: missing, certificates, certificatesWaiting, mailCertificate, mailOut };
+  const found = { records: missing, certificates, certificatesWaiting };
 
   if (missing.length) {
     return finish('needs-person', EXIT.person, `A person is needed: ${missing.length} of ${records.length} DNS records are not in place at ${domain}'s name servers. Add them exactly as above, all DNS only, then check again.`, { reason: 'dns', ...found });
   }
-  if (certificatesWaiting.length || !mailCertificate || mailOut === 'waiting') {
-    const reason = certificatesWaiting.length ? 'certificates' : !mailCertificate ? 'mail-certificate' : 'mail-out';
-    return finish('waiting', EXIT.waiting, `Every DNS record is in. Nobody needs to do anything: ${state.steps?.smoke ? 'Fly and the mail receiver renew by themselves.' : 'run the same install command again (with --wait 20). While it waits it nudges Fly and the mail receiver to ask again, which this check never does.'}`, { reason, next: state.steps?.smoke ? null : 'install', ...found });
+  if (certificatesWaiting.length) {
+    return finish('waiting', EXIT.waiting, `Every DNS record is in. Nobody needs to do anything: ${state.steps?.smoke ? 'Fly renews by itself.' : 'run the same install command again (with --wait 20). While it waits it nudges Fly to ask again, which this check never does.'}`, { reason: 'certificates', next: state.steps?.smoke ? null : 'install', ...found });
   }
   if (!state.steps?.smoke) {
     return finish('continue', EXIT.done, 'Every DNS record and certificate is in. Run the same install command again to finish: the smoke test, then the first-admin link.', { next: 'install', ...found });
@@ -1787,9 +1645,8 @@ async function main() {
     say('usage: node install.mjs install --org <fly organization> --domain <domain>');
     say('         [--name <prefix>] [--region <code>] [--release <version>] [--wait <minutes>]');
     say('         [--key-file <update key file> --licence-file <licence file> | --no-licence]  (only with COPY_LICENCE=on)');
-    say('         [--resend-key-file <file> | --smtp-host <host> [--smtp-port <587|465>] [--smtp-user <user> --smtp-password-file <file>]]');
     say('         [--plan] [--json]');
-    say('       node install.mjs status [--state <file>] [--resend-key-file <file>] [--json]');
+    say('       node install.mjs status [--state <file>] [--json]');
     say('       node install.mjs upgrade [--release <version|latest>] [--drill] [--state <file>] [--json] [--key-file <file>]');
     say('       node install.mjs copy --to-app <images app> [--release <version|latest>] [--customer <id> --key-file <file>]');
     say('exit codes: 0 done, 1 failed, 2 wrong command, 3 a person is needed, 4 still waiting (run it again later)');

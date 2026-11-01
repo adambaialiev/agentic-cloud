@@ -292,6 +292,9 @@ const CLI_FILE_CANDIDATES = [
   path.join(moduleDir, '..', '..', '..', 'cli', 'agentbuilt', 'agentbuilt.mjs'),
 ];
 
+
+/** What an agent is told when its copy has no email yet (note #946). */
+export const COPY_MAIL_NOT_SET_UP = 'Email is not set up in this Agentic Cloud yet. An admin sets it up in the Workspace, under Mail; until then there is no inbox and nothing can be sent.';
 export function agentCliRoutes(deps: RouteDeps): Router {
   const router = Router();
 
@@ -6429,6 +6432,18 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     ...(mailPlaceOf(doc) === 'spam' && doc.spamWhy ? { spamWhy: doc.spamWhy } : {}),
     ...(doc.starredAt ? { starred: true } : {}),
     ...(mailStarredBy(doc) ? { starredBy: mailStarredBy(doc) } : {}),
+  });
+
+  /**
+   * A private copy installs without email (note #946). Until an admin sets
+   * it up in the Workspace, every `agentbuilt mail …` answers in one line
+   * that says so, instead of an empty inbox or a send that cannot go.
+   */
+  router.use('/mail', (_req, res, next) => {
+    if (deps.copyMail && !deps.copyMail.isOn()) {
+      return res.status(409).json({ error: COPY_MAIL_NOT_SET_UP, code: 'mail_not_set_up' });
+    }
+    return next();
   });
 
   /**

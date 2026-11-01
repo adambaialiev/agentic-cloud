@@ -496,6 +496,14 @@ export class FlyClient {
     return Array.isArray(payload) ? payload : [];
   }
 
+  /** Restart a running machine in place (same config, same disk). */
+  async restartMachine(appName: string, machineId: string): Promise<void> {
+    await this.request<unknown>(
+      `/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/restart`,
+      { method: 'POST' },
+    );
+  }
+
   async startMachine(appName: string, machineId: string): Promise<void> {
     await this.request<unknown>(
       `/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/start`,
@@ -693,6 +701,26 @@ export class FlyClient {
       }`,
       { input: { appId: appName, type: 'v6' } },
     );
+  }
+
+  /**
+   * Idempotently ensure the app has a DEDICATED IPv4 (Fly bills $2 a month)
+   * and return it. Mail needs one: a shared address cannot carry SMTP, which
+   * is why a copy's mail receiver has its own (note #946).
+   */
+  async ensureDedicatedIpv4(appName: string): Promise<string | undefined> {
+    const find = (ips: FlyAppIpAddresses) => ips.addresses.find((ip) => ip.type === 'v4')?.address;
+    const existing = find(await this.listIpAddresses(appName));
+    if (existing) return existing;
+    await this.graphqlRequest<unknown>(
+      `mutation($input: AllocateIPAddressInput!) {
+        allocateIpAddress(input: $input) {
+          ipAddress { id address type region }
+        }
+      }`,
+      { input: { appId: appName, type: 'v4' } },
+    );
+    return find(await this.listIpAddresses(appName).catch(() => ({ sharedV4: undefined, addresses: [] })));
   }
 
   /** Idempotent counterpart, mirroring {@link ensureSharedIpv4}. */

@@ -158,6 +158,11 @@ import { FlySandboxClient } from './services/fly-sandbox-client.js';
 import { FlyClient } from './services/fly-client.js';
 import { CopyPeerRepin } from './services/copy-peer-repin.js';
 import { SmtpMailSender, SmtpWorkspaceVerificationEmailSender, createSmtpTransport, smtpSettingsFromEnv } from './services/smtp-mail.js';
+import {
+  CopyMailSetup, InMemoryCopyMailSetupStore, SqliteCopyMailSetupStore, type CopyMailSending,
+} from './services/copy-mail-setup.js';
+import type { WorkspaceVerificationEmailSender } from './services/workspace-verification-email.js';
+import type { MailSender } from './services/mail-sender.js';
 import { parseFlySandboxId, parseFlyServerRecordId } from './services/fly-sandbox-id.js';
 import { listAgents } from './types/user.js';
 import { RoutingSandboxClient } from './services/routing-sandbox-client.js';
@@ -650,11 +655,32 @@ const userStorage = sqliteDb
 // each only where no Resend key is set for it. Unset on our platform.
 const SMTP_SETTINGS = smtpSettingsFromEnv(process.env);
 const smtpTransport = SMTP_SETTINGS ? createSmtpTransport(SMTP_SETTINGS) : undefined;
-const workspaceVerificationEmail = RESEND_API_KEY
+const envVerificationEmail = RESEND_API_KEY
   ? new ResendWorkspaceVerificationEmailSender({ apiKey: RESEND_API_KEY, from: WORKSPACE_EMAIL_FROM })
   : smtpTransport
     ? new SmtpWorkspaceVerificationEmailSender({ transport: smtpTransport, from: WORKSPACE_EMAIL_FROM })
     : undefined;
+// What the Workspace's own mail (sign-in links, recovery, notices) goes out
+// through RIGHT NOW. On our platform it is the environment's, for good. A
+// private copy installs without email and an admin turns it on later from the
+// Workspace (note #946): copyMailSetup swaps this in, with no restart.
+let liveVerificationEmail: WorkspaceVerificationEmailSender | undefined = envVerificationEmail;
+const verificationEmailVia = (sending: CopyMailSending): WorkspaceVerificationEmailSender => (sending.kind === 'resend'
+  ? new ResendWorkspaceVerificationEmailSender({ apiKey: sending.apiKey, from: WORKSPACE_EMAIL_FROM })
+  : new SmtpWorkspaceVerificationEmailSender({ transport: createSmtpTransport(sending.settings), from: WORKSPACE_EMAIL_FROM }));
+const noLiveSender = () => new Error('mail is not set up on this Workspace');
+/** One sender the auth service keeps for good, handing each message to
+ *  whichever one is live when it is sent. */
+const workspaceVerificationEmail: WorkspaceVerificationEmailSender | undefined = envVerificationEmail || PRIVATE_COPY
+  ? {
+    sendVerification: async (message) => { if (!liveVerificationEmail) throw noLiveSender(); await liveVerificationEmail.sendVerification(message); },
+    sendPasswordReset: async (message) => { if (!liveVerificationEmail?.sendPasswordReset) throw noLiveSender(); await liveVerificationEmail.sendPasswordReset(message); },
+    sendRecoveryConfirmation: async (message) => { if (!liveVerificationEmail?.sendRecoveryConfirmation) throw noLiveSender(); await liveVerificationEmail.sendRecoveryConfirmation(message); },
+    sendNotice: async (message) => { if (!liveVerificationEmail?.sendNotice) throw noLiveSender(); await liveVerificationEmail.sendNotice(message); },
+  }
+  : undefined;
+/** What a copy says wherever a flow needs mail before an admin set it up. */
+const COPY_MAIL_UNSET = 'Email is not set up in this Workspace yet, so nothing can be sent by email. An admin can set it up under Mail.';
 // Each person's own address on the mail domain (note #509). Signup holds the
 // name, confirming the account's email makes it deliverable, and Settings is
 // where everyone who signed up before this picks theirs.
@@ -678,7 +704,14 @@ const workspaceWebAuth = secretCipher && WORKSPACE_ORIGIN
       userStorage,
       secretCipher,
       undefined,
-      workspaceVerificationEmail ? { sender: workspaceVerificationEmail, workspaceUrl: WORKSPACE_URL } : undefined,
+      workspaceVerificationEmail
+        ? {
+          sender: workspaceVerificationEmail,
+          workspaceUrl: WORKSPACE_URL,
+          available: () => Boolean(liveVerificationEmail),
+          unavailableMessage: COPY_MAIL_UNSET,
+        }
+        : undefined,
       mailboxService,
     )
   : undefined;
@@ -686,9 +719,9 @@ console.log(
   `[config] WORKSPACE_WEB_AUTH=${workspaceWebAuth ? `enabled (${WORKSPACE_URL})` : 'disabled (set SECRETS_MASTER_KEY + WORKSPACE_URL)'}`,
 );
 console.log(
-  `[config] WORKSPACE_EMAIL_VERIFICATION=${workspaceVerificationEmail
+  `[config] WORKSPACE_EMAIL_VERIFICATION=${envVerificationEmail
     ? `enabled (${WORKSPACE_EMAIL_FROM}${RESEND_API_KEY ? '' : ` over SMTP ${SMTP_SETTINGS!.host}:${SMTP_SETTINGS!.port}`})`
-    : 'disabled (set RESEND_API_KEY or SMTP_HOST)'}`,
+    : PRIVATE_COPY ? 'set up from the Workspace (Mail), note #946' : 'disabled (set RESEND_API_KEY or SMTP_HOST)'}`,
 );
 // In-app only: browser (Web Push) notifications were retired by note #477.
 const workspaceNotifications = new WorkspaceNotificationService(
@@ -1068,7 +1101,8 @@ const copyHealth = PRIVATE_COPY
       ...(dbBackupsOn ? { lastDbBackup: () => lastDbBackup, backupEveryHours: DB_BACKUP_EVERY_HOURS } : {}),
       ...(process.env.GIT_HOST_CONTROL_URL ? { gitHealthUrl: `${process.env.GIT_HOST_CONTROL_URL.replace(/\/$/, '')}/health` } : {}),
       ...(process.env.APPS_DOMAIN ? { routerHealthUrl: `https://health-check.${process.env.APPS_DOMAIN}/__router/health` } : {}),
-      ...(copyAppPrefix ? { mailHealthUrl: `http://${copyAppPrefix}-mx.internal:8080/health` } : {}),
+      // Read live: a copy installs without email (note #946).
+      mail: () => ({ phase: copyMailSetup?.phase() ?? 'off', healthUrl: copyMailSetup?.receiverHealthUrl() ?? null }),
       env: process.env,
       ...(copyLicence ? { licence: () => copyLicence.status() } : {}),
     })
@@ -1178,22 +1212,56 @@ console.log(
 // must keep its own reputation, this one sends as the person's own address on
 // the root domain.
 const RESEND_MAIL_API_KEY = process.env.RESEND_MAIL_API_KEY?.trim() || '';
-const mailOutbox = RESEND_MAIL_API_KEY || smtpTransport
-  ? new MailOutboxService({
-    mailboxes: mailboxStorage,
-    messages: mailMessageStorage,
-    sender: RESEND_MAIL_API_KEY ? new ResendMailSender({ apiKey: RESEND_MAIL_API_KEY }) : new SmtpMailSender(smtpTransport!),
-    // Where a file that leaves with a message is kept (slice 12). Without it
-    // mail still goes, words only, and a message with files is refused.
-    ...(mediaStorage ? { media: mediaStorage } : {}),
-  })
+const outboxVia = (sender: MailSender) => new MailOutboxService({
+  mailboxes: mailboxStorage,
+  messages: mailMessageStorage,
+  sender,
+  // Where a file that leaves with a message is kept (slice 12). Without it
+  // mail still goes, words only, and a message with files is refused.
+  ...(mediaStorage ? { media: mediaStorage } : {}),
+});
+// Both are `let`: a copy's admin turns mail on while the Workspace runs
+// (note #946), and the routes read them through getters on deps.
+let mailOutbox = RESEND_MAIL_API_KEY || smtpTransport
+  ? outboxVia(RESEND_MAIL_API_KEY ? new ResendMailSender({ apiKey: RESEND_MAIL_API_KEY }) : new SmtpMailSender(smtpTransport!))
   : undefined;
-const mailApprovals = mailOutbox
+let mailApprovals = mailOutbox
   ? new MailApprovalService(mailApprovalStorage, mailOutbox)
   : undefined;
 console.log(`[config] MAIL_REPLIES=${mailOutbox
   ? (RESEND_MAIL_API_KEY ? 'enabled' : `enabled over SMTP ${SMTP_SETTINGS!.host}:${SMTP_SETTINGS!.port}`)
-  : 'disabled (set RESEND_MAIL_API_KEY or SMTP_HOST)'}`);
+  : PRIVATE_COPY ? 'set up from the Workspace (Mail), note #946' : 'disabled (set RESEND_MAIL_API_KEY or SMTP_HOST)'}`);
+// Email set up after the install (note #946): a copy only. A copy whose
+// installer predates it may carry its provider in the environment, and then
+// mail is on from the start, exactly as before.
+const envSending: CopyMailSending | null = RESEND_MAIL_API_KEY
+  ? { kind: 'resend', apiKey: RESEND_MAIL_API_KEY }
+  : SMTP_SETTINGS ? { kind: 'smtp', settings: SMTP_SETTINGS } : null;
+const copyMailSetup = PRIVATE_COPY
+  ? new CopyMailSetup({
+    store: sqliteDb ? new SqliteCopyMailSetupStore(sqliteDb) : new InMemoryCopyMailSetupStore(),
+    cipher: secretCipher,
+    domain: MAIL_DOMAIN,
+    org: FLY_ORG,
+    region: FLY_REGION,
+    prefix: copyAppPrefix ?? null,
+    mxImage: process.env.FLY_MX_IMAGE?.trim() || null,
+    ingestSecret: MAIL_INGEST_SECRET || null,
+    backendUrl: `http://${process.env.FLY_APP_NAME?.trim() || 'localhost'}.internal:8080`,
+    fly: FLY_API_TOKEN ? new FlyClient(FLY_API_TOKEN) : null,
+    fromInstall: envSending,
+    onSendingChanged: (sending) => {
+      liveVerificationEmail = sending ? verificationEmailVia(sending) : envVerificationEmail;
+      mailOutbox = sending
+        ? outboxVia(sending.kind === 'resend' ? new ResendMailSender({ apiKey: sending.apiKey }) : new SmtpMailSender(createSmtpTransport(sending.settings)))
+        : undefined;
+      mailApprovals = mailOutbox ? new MailApprovalService(mailApprovalStorage, mailOutbox) : undefined;
+      console.log(`[config] mail out ${sending ? `on, through ${sending.kind === 'resend' ? 'Resend' : `SMTP ${sending.settings.host}:${sending.settings.port}`}` : 'off'} (note #946)`);
+    },
+  })
+  : null;
+copyMailSetup?.boot();
+if (copyMailSetup && !copyMailSetup.isOn()) console.log('[config] email is not set up yet: an admin sets it up in the Workspace, under Mail (note #946)');
 const eventEmitter = globalEventEmitter;
 const backgroundRunner = globalBackgroundRunner;
 const userSandboxManager = new UserDevelopmentEnvironmentManager(
@@ -1777,9 +1845,8 @@ const deps: RouteDeps = {
   mailboxes: mailboxService,
   orgHandles: orgHandleService,
   mailMessages: mailMessageStorage,
-  ...(mailOutbox ? { mailOutbox } : {}),
-  ...(mailApprovals ? { mailApprovals } : {}),
   ...(mailIngest ? { mailIngest } : {}),
+  ...(copyMailSetup ? { copyMail: copyMailSetup } : {}),
   ...(MAIL_INGEST_SECRET ? { mailIngestSecret: MAIL_INGEST_SECRET } : {}),
   // Note attachments keep their bytes here; absent → notes are words-only.
   ...(mediaStorage ? { mediaStorage } : {}),
@@ -1915,6 +1982,12 @@ const deps: RouteDeps = {
     resizeAgentMachine: (userId, agentId, size) => agentService.resizeAgentMachineFromMiniApp(userId, agentId, size),
   },
 };
+// Mail out and its approvals are read at each request, never kept: in a
+// private copy an admin turns email on while the Workspace runs (note #946).
+Object.defineProperties(deps, {
+  mailOutbox: { get: () => mailOutbox, enumerable: true, configurable: true },
+  mailApprovals: { get: () => mailApprovals, enumerable: true, configurable: true },
+});
 
 // Deleting a whole workplace (owner, 2026-09-22): an admin's ask locks it and
 // emails every member; this sweep deletes it for good once its three days are up.
@@ -1927,8 +2000,19 @@ const workplaceDeletion = new WorkplaceDeletionService(deps, {
   notices: {
     from: WORKSPACE_EMAIL_FROM,
     ...(mailIngest ? { deliverToInbox: (args: { to: string; from: string; raw: Buffer }) => mailIngest.accept(args) } : {}),
+    // Read when each notice goes: a copy's admin may have turned mail on
+    // since (note #946). Until then a notice reaches the person's inbox here
+    // and their screen, and the outside copy is skipped, said in the log.
     ...(workspaceVerificationEmail
-      ? { sendOutside: (message: Parameters<typeof workspaceVerificationEmail.sendNotice>[0]) => workspaceVerificationEmail.sendNotice(message) }
+      ? {
+        sendOutside: async (message: Parameters<NonNullable<WorkspaceVerificationEmailSender['sendNotice']>>[0]) => {
+          if (!liveVerificationEmail?.sendNotice) {
+            console.log('[workplace-deletion] outside notice not sent: email is not set up in this Workspace yet');
+            return;
+          }
+          await liveVerificationEmail.sendNotice(message);
+        },
+      }
       : {}),
   },
 });

@@ -265,6 +265,12 @@ export interface PendingWorkspaceEmailVerification {
 export interface WorkspaceEmailVerificationConfig {
   workspaceUrl: string;
   sender: WorkspaceVerificationEmailSender;
+  /** Whether mail can go out right now. A private copy installs without
+   *  email and an admin turns it on later (note #946): until then every flow
+   *  that mails answers `verification_unavailable` with `unavailableMessage`.
+   *  Absent means always. */
+  available?: () => boolean;
+  unavailableMessage?: string;
 }
 
 export function normalizeWorkspaceUsername(input: unknown): string | null {
@@ -309,7 +315,7 @@ export class WorkspaceWebAuthService {
     private readonly users: UserStorage,
     private readonly cipher: SecretCipher,
     private readonly now: () => Date = () => new Date(),
-    private readonly emailVerification?: WorkspaceEmailVerificationConfig,
+    private readonly emailVerificationConfig?: WorkspaceEmailVerificationConfig,
     /** Absent on a backend with no mail service: signup then creates the
      *  account without an address, and Settings offers one later. */
     private readonly mailboxes?: MailboxService,
@@ -318,6 +324,20 @@ export class WorkspaceWebAuthService {
   async hasIdentity(userId: string): Promise<boolean> {
     return Boolean(await this.storage.getEmailIdentityByUserId(userId)
       || await this.storage.getIdentityByUserId(userId));
+  }
+
+  /** The mail config while mail can go out; undefined while it cannot. */
+  private get emailVerification(): WorkspaceEmailVerificationConfig | undefined {
+    const config = this.emailVerificationConfig;
+    return config && (config.available?.() ?? true) ? config : undefined;
+  }
+
+  /** Why a flow that mails cannot run: the copy's own words when its email
+   *  is not set up yet (note #946), otherwise the flow's. */
+  private mailUnavailable(fallback: string): WorkspaceWebAuthError {
+    const config = this.emailVerificationConfig;
+    const message = config && config.available && !config.available() && config.unavailableMessage ? config.unavailableMessage : fallback;
+    return new WorkspaceWebAuthError('verification_unavailable', message);
   }
 
   async identityForUser(userId: string): Promise<WorkspaceBrowserIdentity | null> {
@@ -344,10 +364,7 @@ export class WorkspaceWebAuthService {
     userAgent?: string;
   }): Promise<FinishedWorkspaceEmailRegistration> {
     if (!this.emailVerification) {
-      throw new WorkspaceWebAuthError(
-        'verification_unavailable',
-        'Email confirmation is temporarily unavailable. Try again later.',
-      );
+      throw this.mailUnavailable('Email confirmation is temporarily unavailable. Try again later.');
     }
     const userId = args.authenticatedUserId;
     if (!userId) {
@@ -574,7 +591,7 @@ export class WorkspaceWebAuthService {
    */
   async requestPasswordReset(nameInput: unknown): Promise<void> {
     if (!this.emailVerification?.sender.sendPasswordReset) {
-      throw new WorkspaceWebAuthError('verification_unavailable', 'Password reset is temporarily unavailable. Try again later.');
+      throw this.mailUnavailable('Password reset is temporarily unavailable. Try again later.');
     }
     const identity = await this.identityForSignIn(nameInput);
     if (!identity) return;
@@ -627,7 +644,7 @@ export class WorkspaceWebAuthService {
    */
   async requestRecoveryEmail(userId: string, emailInput: unknown): Promise<{ email: string }> {
     if (!this.emailVerification?.sender.sendRecoveryConfirmation) {
-      throw new WorkspaceWebAuthError('verification_unavailable', 'Email delivery is temporarily unavailable. Try again later.');
+      throw this.mailUnavailable('Email delivery is temporarily unavailable. Try again later.');
     }
     const email = normalizeWorkspaceEmail(emailInput);
     if (!email) throw new WorkspaceWebAuthError('invalid_recovery_email', 'Enter a valid email address.');
@@ -716,10 +733,7 @@ export class WorkspaceWebAuthService {
    * without exposing which case applied. */
   async requestEmailVerification(emailInput: unknown, inviteToken?: unknown): Promise<void> {
     if (!this.emailVerification) {
-      throw new WorkspaceWebAuthError(
-        'verification_unavailable',
-        'Email confirmation is temporarily unavailable. Try again later.',
-      );
+      throw this.mailUnavailable('Email confirmation is temporarily unavailable. Try again later.');
     }
     const email = normalizeWorkspaceEmail(emailInput);
     if (!email) return;

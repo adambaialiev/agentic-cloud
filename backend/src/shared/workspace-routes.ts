@@ -90,6 +90,9 @@ export const WORKSPACE_ROUTE_DEFS = {
   mailSent: { screen: 'mailsent', pattern: ['mail', 'sent'], scope: 'account' },
   // Starred (note #666): every letter its reader starred, one row each.
   mailStarred: { screen: 'mailstarred', pattern: ['mail', 'starred'], scope: 'account' },
+  // Email set up after the install, in a private copy (note #946): an
+  // admin's screen for the provider, the receiver and the records.
+  mailSetup: { screen: 'mailsetup', pattern: ['mail', 'setup'], scope: 'account' },
   mailMessage: { screen: 'mailmessage', pattern: ['mail', ':id'], scope: 'account' },
   profile: { screen: 'profile', pattern: ['profile'], scope: 'account' },
   // The work radio's library (note #758): every track, to hear in full and
