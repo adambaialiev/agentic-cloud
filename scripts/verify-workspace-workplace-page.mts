@@ -136,6 +136,8 @@ app.get('/workspace/api/state', (_req, res) => res.json(state));
 app.get('/workspace/api/agents/live', (_req, res) => res.json({ agents: [], recaps: [], sessionLimits: [] }));
 app.get('/workspace/api/notifications', (_req, res) => res.json({ notifications: [], unread: 0, push: { available: false, subscriptions: 0 } }));
 app.get('/workspace/api/org', (_req, res) => res.json({ org: detail }));
+// Auto-approve mode (note #944): the workplace page reads its switch — off.
+app.get('/workspace/api/org/auto-approve', (_req, res) => res.json({ on: false, canChange: true }));
 app.get('/workspace/api/org/seats', (_req, res) => res.json({ seats: [] }));
 app.get('/workspace/api/org/signin', (_req, res) => res.json({ signin: null }));
 app.get('/workspace/api/org/cloud', (_req, res) => res.json({
