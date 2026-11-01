@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -152,16 +153,29 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
   // guide to. Change install.mjs and this fails until the guide names the new
   // file: the values to put in are in the failure. CI publishes the folder,
   // and with it the blob, when the change lands on main.
-  it('pins the installer the guide downloads to this install.mjs', () => {
+  // Since note #941 the guide downloads from the platform's own public
+  // repository, pinned to one COMMIT (a branch would move under it) and to
+  // the file's SHA-256. Change install.mjs and this fails until the guide
+  // prints the new SHA-256 and names a commit that holds the new file. In the
+  // same proposal: commit the installer change first, then the guide naming
+  // that commit's sha (approval lands the branch whole, so it reaches main).
+  it('pins the installer the guide downloads to this install.mjs, at one commit of our own repository', () => {
     const bytes = readFileSync(path.join(ROOT, 'infra/copy-installer/install.mjs'));
-    const blob = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     const downloads = guide.match(/^curl [^\n]*install\.mjs[^\n]*$/gm) ?? [];
-    expect(downloads).toEqual([
-      `curl -fsSL -H 'Accept: application/vnd.github.raw' -o install.mjs https://api.github.com/repos/adambaialiev/private-copy-installer/git/blobs/${blob}`,
-    ]);
+    expect(downloads).toHaveLength(1);
+    const pinned = /^curl -fsSL -o install\.mjs 'https:\/\/agenticcloudcomputer\.com\/workspace\/api\/public\/workplaces\/acc\/repos\/agentic-cloud\/raw\/([0-9a-f]{40})\?path=infra\/copy-installer\/install\.mjs'$/.exec(downloads[0]!);
+    expect(pinned, downloads[0]).not.toBeNull();
     expect(guide).toContain(`must print \`${sha256}\``);
-    expect(guide).not.toMatch(/raw\.githubusercontent\.com/);
+    expect(guide).not.toMatch(/github\.com|githubusercontent/);
+    // Where the history is here (a full clone), the named commit must hold
+    // exactly this file; a shallow CI clone may not have it, and the SHA-256
+    // the agent checks is the guard that always runs.
+    let atPin: Buffer | null = null;
+    try {
+      atPin = execFileSync('git', ['show', `${pinned![1]}:infra/copy-installer/install.mjs`], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch { /* not in this clone */ }
+    if (atPin) expect(createHash('sha256').update(atPin).digest('hex')).toBe(sha256);
   });
 
   it('says the installer is open source and links its code', () => {

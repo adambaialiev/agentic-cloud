@@ -896,7 +896,7 @@ if (recoveryDrillConfigured()) {
 // transient reason (the mirror race, a host briefly down) had no sanctioned
 // re-run short of SSHing into this box and running run-job.sh by hand. A
 // dispatch rebuilds main's HEAD — same guardrails as a push, minus the commit.
-const DISPATCHABLE = new Set(['machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'installer-public', 'deploy-prod', 'deploy-site']);
+const DISPATCHABLE = new Set(['machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'deploy-prod', 'deploy-site']);
 
 /** Head SHA of a branch — a dispatched job builds the same code a push would. */
 async function resolveHeadSha(ref) {
@@ -1025,9 +1025,6 @@ function handleEvent(event, payload, { platform = false } = {}) {
         // A private-copy release (note #811). Self-skips unless
         // infra/copy-release/VERSION changed: a release is cut on purpose.
         q({ kind: 'copy-release', ref: 'main-copy-release', sha, context: 'deploy/copy-release', platform: true });
-        // The installer's public copy (note #816). Self-skips unless armed
-        // (INSTALLER_PUBLIC_REPO) and infra/copy-installer changed.
-        q({ kind: 'installer-public', ref: 'main-installer-public', sha, context: 'deploy/installer-public', platform: true });
       }
       // Every ref move refreshes the read-only GitHub mirror. One collapse
       // key for the whole repo: mirroring pushes every ref anyway, so only
@@ -1092,8 +1089,6 @@ function handleEvent(event, payload, { platform = false } = {}) {
       q({ kind: 'msg-host-image', ref: 'main-msg-host-image', sha, context: 'deploy/msg-host-image' });
       // A private-copy release (note #811), cut only when VERSION changes.
       q({ kind: 'copy-release', ref: 'main-copy-release', sha, context: 'deploy/copy-release' });
-      // The installer's public copy (note #816), armed and changed only.
-      q({ kind: 'installer-public', ref: 'main-installer-public', sha, context: 'deploy/installer-public' });
       return 'main: checks + deploys queued';
     }
     return `push to ${branch} — ignored`;

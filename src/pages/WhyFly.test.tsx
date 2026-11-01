@@ -47,7 +47,7 @@ describe('Why your Agentic Cloud runs on Fly (note #838)', () => {
     expect(firsts).toEqual(SOURCES.map((_, at) => at + 1));
     for (const n of cited) expect(document.querySelector(`#source-${n} a`), String(n)).toBeTruthy();
     for (const source of SOURCES) {
-      expect(new URL(source.url).hostname, source.id).toMatch(/(^|\.)(fly\.io|amazon\.com|google\.com|vercel\.com|github\.com)$/);
+      expect(new URL(source.url).hostname, source.id).toMatch(/(^|\.)(fly\.io|amazon\.com|google\.com|vercel\.com|agenticcloudcomputer\.com)$/);
     }
     expect(SOURCES_READ_ON).toBe('30 October 2026');
   });

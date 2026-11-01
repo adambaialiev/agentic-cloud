@@ -1087,11 +1087,22 @@ function listTree(userId, name, subPath) {
 /** One file of the default branch. Content only for what the app can render:
  *  text, or an image as bytes. Other binaries and oversized blobs answer with
  *  their facts instead. */
-function readBlob(userId, name, subPath) {
+function readBlob(userId, name, subPath, atSha) {
   const dir = repoPath(userId, name);
   const branch = defaultBranchOf(dir);
   if (!branch || !branchExists(dir, branch)) throw new Error('no such file');
-  const spec = `refs/heads/${branch}:${subPath}`;
+  // At one exact commit (note #941: the own-cloud guide pins the installer
+  // that way). Only a commit the default branch already contains: what was
+  // approved, never a work branch, and never a ref expression, because the
+  // caller has checked it is 40 hex and nothing else.
+  if (atSha) {
+    try {
+      git(dir, ['merge-base', '--is-ancestor', atSha, `refs/heads/${branch}`]);
+    } catch {
+      throw new Error('no such file');
+    }
+  }
+  const spec = `${atSha || `refs/heads/${branch}`}:${subPath}`;
   let type;
   try {
     type = git(dir, ['cat-file', '-t', spec]).trim();
@@ -1804,8 +1815,11 @@ const server = createServer(async (req, res) => {
       if (filePath === '' || !isSafeTreePath(filePath)) {
         return json(res, 400, { error: 'invalid path' });
       }
+      if (body.sha !== undefined && (typeof body.sha !== 'string' || !/^[0-9a-f]{40}$/.test(body.sha))) {
+        return json(res, 400, { error: 'invalid sha' });
+      }
       try {
-        return json(res, 200, readBlob(userId, name, filePath));
+        return json(res, 200, readBlob(userId, name, filePath, body.sha));
       } catch (error) {
         return json(res, 404, { error: String(error.message || error) });
       }

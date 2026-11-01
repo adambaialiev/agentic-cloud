@@ -3426,7 +3426,7 @@ self.addEventListener('activate', (event) => {
    * the full repository screen — public or private. A private repository
    * is a 404 to anyone else, identical to one that does not exist.
    */
-  const repoByAddress = async (req: Request, res: Response): Promise<GitRepoDocument | null> => {
+  const repoByAddress = async (req: Request, res: Response, { membersToo = false } = {}): Promise<GitRepoDocument | null> => {
     publicHeaders(res);
     if (typeof res.setHeader === 'function') res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
     const handle = String(req.params.handle ?? '');
@@ -3438,7 +3438,7 @@ self.addEventListener('activate', (event) => {
     if (!repo) { nothingHere(res); return null; }
     const session = await publicViewer(req);
     const member = session ? await deps.orgStorage.getMembership(org.orgId, session.userId).catch(() => null) : null;
-    if (member) { res.json({ member: { orgId: org.orgId } }); return null; }
+    if (member && !membersToo) { res.json({ member: { orgId: org.orgId } }); return null; }
     if (!repo.publicAccess) { nothingHere(res); return null; }
     return repo;
   };
@@ -3484,6 +3484,35 @@ self.addEventListener('activate', (event) => {
     const repo = await repoByAddress(req, res);
     if (!repo) return;
     return answerPublicFile(repo, String(req.query.path ?? ''), res);
+  });
+
+  /**
+   * One text file of a public repository, as its exact bytes, at one exact
+   * commit the default branch contains (note #941). This is what the own-cloud
+   * guide downloads the installer from: `curl -o install.mjs <this>`, then a
+   * SHA-256 the guide prints, so the URL must name a commit, never a branch,
+   * and the answer must be the file itself, not JSON around it. Everyone gets
+   * the same bytes, a member too (no "open the workplace" answer here), and a
+   * private repository stays "Nothing at this address".
+   */
+  router.get('/api/public/workplaces/:handle/repos/:repo/raw/:sha', async (req, res) => {
+    const repo = await repoByAddress(req, res, { membersToo: true });
+    if (!repo) return;
+    const sha = String(req.params.sha ?? '');
+    const path = String(req.query.path ?? '');
+    if (!/^[0-9a-f]{40}$/.test(sha) || !path) {
+      return res.status(404).type('text/plain').send('Name a 40-character commit and a file path.\n');
+    }
+    try {
+      const file = await (await gitHostFor(repo.orgId)).file(repo.userId, repo.name, path, sha);
+      if (typeof file.content !== 'string') {
+        return res.status(404).type('text/plain').send('That file is not text this door serves.\n');
+      }
+      if (typeof res.setHeader === 'function') res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.status(200).type('text/plain; charset=utf-8').send(file.content);
+    } catch {
+      return res.status(404).type('text/plain').send('That file is not in this repository at that commit.\n');
+    }
   });
 
   /**

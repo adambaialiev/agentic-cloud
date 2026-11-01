@@ -5427,6 +5427,34 @@ describe('a workplace’s word and its repositories at their address (slice 6, n
     expect(stranger.statusCode).toBe(404);
   });
 
+  it('serves one text file at one exact commit as its own bytes, to anyone, for the own-cloud guide (note #941)', async () => {
+    const { deps } = await seed();
+    const asked: unknown[] = [];
+    (deps.gitHostClient as unknown as { file: unknown }).file = async (...args: unknown[]) => {
+      asked.push(args);
+      return { branch: 'main', sizeBytes: 12, content: 'export {};\n' };
+    };
+    const sha = 'a'.repeat(40);
+    for (const headers of [undefined, authHeader(42)]) {
+      const res = await call(deps, '/api/public/workplaces/:handle/repos/:repo/raw/:sha', { handle: 'acme', repo: 'site', sha }, headers, { path: 'infra/install.mjs' });
+      expect(res.statusCode).toBe(200);
+      expect(res.contentType).toBe('text/plain; charset=utf-8');
+      expect(res.sentText).toBe('export {};\n');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    }
+    expect(asked[0]).toEqual(['user-1', 'site', 'infra/install.mjs', sha]);
+    // Never a branch name or an expression, and never a private repository.
+    const branch = await call(deps, '/api/public/workplaces/:handle/repos/:repo/raw/:sha', { handle: 'acme', repo: 'site', sha: 'main' }, undefined, { path: 'infra/install.mjs' });
+    expect(branch.statusCode).toBe(404);
+    const secret = await call(deps, '/api/public/workplaces/:handle/repos/:repo/raw/:sha', { handle: 'acme', repo: 'secret', sha }, undefined, { path: 'x' });
+    expect(secret.statusCode).toBe(404);
+    expect(secret.body).toEqual({ error: 'Nothing at this address.' });
+    // A binary or too-large file is not served as text.
+    (deps.gitHostClient as unknown as { file: unknown }).file = async () => ({ branch: 'main', sizeBytes: 4, binary: true });
+    const bin = await call(deps, '/api/public/workplaces/:handle/repos/:repo/raw/:sha', { handle: 'acme', repo: 'site', sha }, undefined, { path: 'blob.bin' });
+    expect(bin.statusCode).toBe(404);
+  });
+
   describe('what happened in it: history, one commit, proposals (the owner, 2026-09-27)', () => {
     const seedHistory = async () => {
       const built = await seed();

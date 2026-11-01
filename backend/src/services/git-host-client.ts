@@ -279,9 +279,11 @@ export class GitHostClient {
   }
 
   /** One file of the default branch: text content, an image's bytes, or its
-   *  facts when the blob is neither or is too large for a phone screen. */
-  async file(userId: string, name: string, path: string): Promise<GitHostFile> {
-    return await this.call('POST', '/internal/repos/file', { userId, name, path }) as GitHostFile;
+   *  facts when the blob is neither or is too large for a phone screen.
+   *  With `sha` (40 hex), the file as it stood at that commit, which the
+   *  default branch must already contain (note #941). */
+  async file(userId: string, name: string, path: string, sha?: string): Promise<GitHostFile> {
+    return await this.call('POST', '/internal/repos/file', { userId, name, path, ...(sha ? { sha } : {}) }) as GitHostFile;
   }
 
   /** Recent commits on the default branch — what HAPPENED in a repo, which

@@ -22,9 +22,10 @@ import installFilmPoster from '../assets/private-copy/install-film-poster-2026-1
  * (note #935).
  */
 
-/* The installer's public repository (note #816), public since 28 Oct 2026.
-   CI publishes infra/copy-installer there whenever it changes on main. */
-export const INSTALLER_SOURCE_URL: string | null = 'https://github.com/adambaialiev/private-copy-installer';
+/* The installer's code, in the platform's own public repository (note #941):
+   agentic-cloud, open source since 1 Nov 2026. Until then it was a GitHub copy
+   CI published (note #816), retired with the switch. */
+export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer';
 
 /* The film of a real install: Iris's clean run of release 2026.10.29.0 in
    the clean organization ia-scratch-client-2 on 29 Oct 2026, 16:15:52 to

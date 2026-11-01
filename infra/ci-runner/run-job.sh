@@ -896,59 +896,6 @@ REMOTE
       ./infra/copy-release/build.sh
     ;;
 
-  installer-public)
-    # The private-copy installer's public copy (note #816). infra/copy-installer
-    # is the source; github.com/$INSTALLER_PUBLIC_REPO is that folder and
-    # nothing else, refreshed one way from main whenever the folder changes,
-    # so a release and the code a customer reads are the same commit's.
-    # Inert until INSTALLER_PUBLIC_REPO is set in /etc/ia-ci/env, which is set
-    # only once publishing is confirmed. An unarmed run records nothing, so
-    # the first armed run (a push, or a dispatch) publishes.
-    if [ -z "${INSTALLER_PUBLIC_REPO:-}" ]; then
-      echo "INSTALLER_PUBLIC_REPO unset — the installer's public copy is not armed"
-      exit 78
-    fi
-    if ! changed_since "$(last_attempted)" '^infra/copy-installer/'; then
-      echo "infra/copy-installer unchanged since the last attempt — nothing to publish"
-      record_attempt
-      exit 78
-    fi
-    record_attempt
-    # Only the files that are meant to be public, and none of the words that
-    # would say something private: a file or a name added here by mistake
-    # turns this red instead of going out.
-    unexpected="$(git ls-tree -r --name-only "$SHA" infra/copy-installer \
-      | grep -v -E '^infra/copy-installer/(install\.mjs|README\.md|LICENSE|NOTICE|package\.json|test/[a-z-]+\.test\.mjs|test/expect\.mjs)$' || true)"
-    if [ -n "$unexpected" ]; then
-      echo "not published — files outside the public list:"; echo "$unexpected"; exit 1
-    fi
-    if git grep -n -I -E 'copy366|test-organization-|BYO_TEST|167\.233\.|ia-ci-runner|COPY_SIGNING_KEY|note #[0-9]' "$SHA" -- infra/copy-installer; then
-      echo "not published — the lines above name something private"; exit 1
-    fi
-    : "${GH_TOKEN:?GH_TOKEN unset in /etc/ia-ci/env — cannot push to GitHub}"
-    PUB_HOME="$(mktemp -d)"
-    trap 'rm -rf "$PUB_HOME"' EXIT
-    # The token as DATA in a private netrc, never on argv.
-    ( umask 077; printf 'machine github.com login x-access-token password %s\n' "$GH_TOKEN" > "$PUB_HOME/.netrc" )
-    PUB_DIR="$PUB_HOME/public"
-    PUB_URL="${INSTALLER_PUBLIC_URL:-https://github.com/$INSTALLER_PUBLIC_REPO.git}"
-    HOME="$PUB_HOME" git clone --quiet "$PUB_URL" "$PUB_DIR"
-    find "$PUB_DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-    git archive "$SHA" infra/copy-installer | tar -x --strip-components=2 -C "$PUB_DIR"
-    cd "$PUB_DIR"
-    git add -A
-    if git diff --cached --quiet; then
-      echo "github.com/$INSTALLER_PUBLIC_REPO already matches infra/copy-installer at ${SHA:0:12}"
-      exit 0
-    fi
-    AUTHOR="${INSTALLER_PUBLIC_AUTHOR:-Agentic Cloud Computer <noreply@agenticcloudcomputer.com>}"
-    git -c user.name="${AUTHOR% <*}" -c user.email="$(printf '%s' "$AUTHOR" | sed -E 's/.*<([^>]+)>.*/\1/')" \
-      commit --quiet -m "Installer update, $(date -u +%F)" -m "Source commit ${SHA:0:12}."
-    git branch -M main
-    HOME="$PUB_HOME" git push --quiet origin main
-    echo "published infra/copy-installer at ${SHA:0:12} to github.com/$INSTALLER_PUBLIC_REPO"
-    ;;
-
   deploy-db-backup)
     # The database's own off-box backup. Same box as the backend but its own
     # job: a backup that fails to install must not roll back a release, and a

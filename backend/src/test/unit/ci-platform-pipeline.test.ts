@@ -71,7 +71,7 @@ describe('the cutover switch', () => {
     handleEvent('push', push('tg_owner', 'infinite-agents', 'main'), { platform: true });
     expect(queued.map((j) => j.kind)).toEqual([
       'ci-script', 'self-update', 'deploy-prod', 'deploy-site',
-      'deploy-git-host', 'deploy-db-backup', 'machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'installer-public', 'mirror-github',
+      'deploy-git-host', 'deploy-db-backup', 'machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'mirror-github',
     ]);
     for (const job of queued) expect(job.platform).toBe(true);
     // Contexts must match what the GitHub path filed, or required-checks and
@@ -115,7 +115,7 @@ describe('the cutover switch', () => {
     handleEvent('push', push('owner', 'infinite-agents', 'main'));
     expect(queued.map((j) => j.kind)).toEqual([
       'self-update', 'checks', 'deploy-prod', 'deploy-site',
-      'deploy-git-host', 'deploy-db-backup', 'machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'installer-public',
+      'deploy-git-host', 'deploy-db-backup', 'machine-image', 'git-host-image', 'msg-host-image', 'copy-release',
     ]);
   });
 });

@@ -57,12 +57,12 @@ Run `fly orgs list` and show your person the organizations it lists. Then ask al
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -H 'Accept: application/vnd.github.raw' -o install.mjs https://api.github.com/repos/adambaialiev/private-copy-installer/git/blobs/abb64bf1118ac58af628ecbde82c8865a880de15
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/27cfa76e16cfbbe2804b7c4084e5ef598840fec4?path=infra/copy-installer/install.mjs'
 ```
 
 Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `251bd22771a668141f30e0e9b9fadb1abe2211776700ccc77ba99d47fde35f09`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
 
-It is one file of plain JavaScript with no packages. Its code and tests are public at https://github.com/adambaialiev/private-copy-installer, so you and your person can read every line first.
+It is one file of plain JavaScript with no packages. Its code and tests are public in the platform's own open-source repository, at https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer, so you and your person can read every line first.
 
 Then run the plan. It changes nothing, costs nothing and writes no file:
 

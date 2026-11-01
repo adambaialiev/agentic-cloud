@@ -1104,6 +1104,21 @@ describe('git-host service', () => {
     // A directory is not a file.
     const asFile = await control('/internal/repos/file', { userId: USER, name: 'browse', path: 'src' });
     expect(asFile.status).toBe(404);
+
+    // At one exact commit (note #941): the file as it stood then, even after
+    // main moves on; never a commit main does not contain; never a ref
+    // expression.
+    const pinned = git(['rev-parse', 'HEAD'], work).trim();
+    writeFileSync(join(work, 'src', 'app.js'), 'console.log("later")\n');
+    git(['commit', '-qam', 'later'], work);
+    git(['push', cloneUrl('browse'), 'HEAD:feature2'], work);
+    const atPin = await control('/internal/repos/file', { userId: USER, name: 'browse', path: 'src/app.js', sha: pinned });
+    expect(atPin.body).toMatchObject({ content: 'console.log("hi")\n' });
+    const unmerged = git(['rev-parse', 'HEAD'], work).trim();
+    const notOnMain = await control('/internal/repos/file', { userId: USER, name: 'browse', path: 'src/app.js', sha: unmerged });
+    expect(notOnMain.status).toBe(404);
+    const expression = await control('/internal/repos/file', { userId: USER, name: 'browse', path: 'src/app.js', sha: 'HEAD~1' });
+    expect(expression.status).toBe(400);
   }, 60_000);
 
   it('hands images back as their own bytes, by name, whatever is inside them', async () => {
