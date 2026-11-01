@@ -2861,6 +2861,13 @@ button.chatmsg.platform.aside:active {
    left the product — note #843.) */
 #agentSwitchList > h2.homehead:first-child + *,
 #agentSwitchList > #unreadMessagesHead[hidden]:first-child + #unreadMessages[hidden] + h2.homehead + * { margin-top: 0; }
+/* The cards straight under the unread strip, with no decision waiting
+   between them (note #947, Adam: "lack of space below new agent message"):
+   no heading stands before the grid there, so nothing gave it the gap a
+   hidden heading's section keeps, and the strip sat on the first row. The
+   gap is the cards' own row gap (`.plates`), so the strip reads as one more
+   row of the list — one unread agent or several, on a phone and at a desk. */
+#agentSwitchList > #unreadMessages:not([hidden]) + #agentSwitchGrid { margin-top: 10px; }
 @media (min-width: 760px) and (min-height: 600px) {
   .scrim.sheetscrim { align-items: flex-start; padding: max(48px, 14vh) 24px 24px; }
   .agentsheet {

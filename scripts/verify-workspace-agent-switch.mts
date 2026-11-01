@@ -46,6 +46,10 @@ import {
   WorkspaceWebAuthService,
 } from '../backend/src/services/workspace-web-auth.js';
 import {
+  InMemoryWorkspaceNotificationStorage,
+  WorkspaceNotificationService,
+} from '../backend/src/services/workspace-notifications.js';
+import {
   harnessEstablishedWorkplace, harnessMailService, harnessSignedIn, harnessWorkplace,
 } from './workspace-harness-auth.mjs';
 
@@ -102,10 +106,15 @@ const agentLifecycle = {
   listManagedJobs: async () => ({ jobs: [], recent: [] }),
 } as unknown as RouteDeps['agentLifecycle'];
 
+/** Unread replies, seeded only in step 9b (note #947): until then the
+ *  sheet opens with no unread strip, as every step before it expects. */
+const workspaceNotifications = new WorkspaceNotificationService(new InMemoryWorkspaceNotificationStorage());
+
 const deps = {
   userStorage,
   workspaceWebAuth,
   mailboxes: mailbox.mailboxes,
+  workspaceNotifications,
   orgStorage,
   orgGit: new OrgGitService({ orgStorage }),
   gitRepoStorage,
@@ -270,7 +279,7 @@ try {
     userId: org.orgId, orgId: org.orgId, name: 'landing', createdByAgentId: 'noah',
     defaultBranch: 'main', sizeBytes: 0, protectDefaultBranch: true,
   } as never);
-  await gitPullRequestStorage.create({
+  const storyboard = await gitPullRequestStorage.create({
     userId: org.orgId, repoId: landingRepo.id, title: 'Storyboard pictures 3 to 12 on the landing page', body: '',
     sourceBranch: 'storyboard', targetBranch: 'main', createdByAgentId: 'noah', createdByUserId: account.userId, status: 'open',
     headSha: 'a'.repeat(40), commitSubjects: ['Storyboard pictures'], diffStat: { files: 3, insertions: 120, deletions: 14 },
@@ -564,6 +573,66 @@ try {
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.getElementById('agentChatTitle')?.textContent?.trim() === 'Willow', { timeout: 10_000 }).catch(() => null);
   check('typing a name and Enter opens that agent', page.url() === `${ORIGIN}/chat/willow`, page.url());
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+
+  // 9b. The unread strip stands off the cards (note #947, Adam: "lack of
+  //     space below new agent message"). Its section heading is hidden, and
+  //     the 26px a hidden heading's section keeps is for a section with a
+  //     heading BEFORE it, so the cards stood glued to the strip. The gap
+  //     under it is the cards' own row gap, with one unread agent and with
+  //     several, on a phone and at a desk.
+  const unreadGap = async () => page.evaluate(() => {
+    const strip = document.getElementById('unreadMessages')!.getBoundingClientRect();
+    const cards = [...document.querySelectorAll('#agentSwitchGrid > *')].map((node) => node.getBoundingClientRect());
+    const firstRow = cards.filter((card) => Math.round(card.top) === Math.round(cards[0]!.top));
+    const nextRow = cards.find((card) => card.top > firstRow[0]!.bottom);
+    return {
+      under: Math.round(cards[0]!.top - strip.bottom),
+      rows: nextRow ? Math.round(nextRow.top - Math.max(...firstRow.map((card) => card.bottom))) : -1,
+      strips: document.querySelectorAll('#unreadMessages .crow').length,
+    };
+  });
+  const openWithUnread = async () => {
+    await page.goto(`${ORIGIN}/chat/alex`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('#agentChatSwitch', { timeout: 10_000 });
+    if (!(await page.$('#agentSwitchSheet'))) await page.click('#agentChatSwitch');
+    await page.waitForSelector('#agentSwitchList #unreadMessages .crow', { timeout: 10_000 });
+    await settled();
+  };
+  const closeSheet = async () => {
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.getElementById('agentSwitchSheet'), { timeout: 10_000 });
+  };
+  // Decided, so nothing waits between the strip and the cards: the case
+  // in Adam's picture. (With a decision waiting, its own hidden heading
+  // keeps the section gap, as before.)
+  await gitPullRequestStorage.update(storyboard.id, { status: 'merged', decidedAt: new Date().toISOString() });
+  const reply = (agentId: string) => workspaceNotifications.notify({
+    userId: account.userId, kind: 'agent_completed', title: 'Reply', body: 'x',
+    url: `/chat/${agentId}`, source: 'direct_agent_chat', dedupeKey: `n947-${agentId}`,
+  });
+  await reply('ada');
+  await openWithUnread();
+  const oneOnPhone = await unreadGap();
+  check('on a phone one unread strip stands off the cards by their own row gap (note #947)',
+    oneOnPhone.strips === 1 && oneOnPhone.under === oneOnPhone.rows && oneOnPhone.under > 0, JSON.stringify(oneOnPhone));
+  await shot('agent-switch-unread-one-phone');
+  await closeSheet();
+  await reply('noah');
+  await openWithUnread();
+  const twoOnPhone = await unreadGap();
+  check('…and with several unread agents stacked in it',
+    twoOnPhone.strips === 2 && twoOnPhone.under === twoOnPhone.rows, JSON.stringify(twoOnPhone));
+  await shot('agent-switch-unread-two-phone');
+  await closeSheet();
+  await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+  await openWithUnread();
+  const twoAtDesk = await unreadGap();
+  check('…and at a desk',
+    twoAtDesk.strips === 2 && twoAtDesk.under === twoAtDesk.rows, JSON.stringify(twoAtDesk));
+  await shot('agent-switch-unread-two-desk');
+  await closeSheet();
+  await workspaceNotifications.markAllRead(account.userId);
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
 
   // 10. The COUNTER still exists where a stack is a census rather than a door
