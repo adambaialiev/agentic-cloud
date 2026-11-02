@@ -276,7 +276,7 @@ describe('Home, the film of the product at work (note #951)', () => {
     expect(video.hasAttribute('controls')).toBe(false);
     expect(video.getAttribute('poster')).toBeTruthy();
     expect(video.querySelector('source')!.getAttribute('src')).toMatch(/^https:\/\/iabkt-[0-9a-f]+\.fly\.storage\.tigris\.dev\/films\/.+\.mp4$/);
-    expect(film.querySelector('figcaption')!.textContent).toMatch(/^Recorded on 2 Nov 2026 and shown in 6\smin 32\ss\./);
+    expect(film.querySelector('figcaption')!.textContent).toMatch(/^Recorded on 2 Nov 2026 and shown in 6\smin 3\ss\./);
     const play = screen.getByRole('button', { name: /^Play the film of the product at work/ });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     fireEvent.click(play);

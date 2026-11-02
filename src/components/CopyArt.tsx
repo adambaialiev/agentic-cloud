@@ -383,7 +383,7 @@ function SidesWide() {
         With us
       </Label>
       <Node x={OURS} y={R1} w={OW} icon="support" title="Support" lines={['calls, and what you send']} />
-      <Node x={OURS} y={R2} w={OW} icon="download" title="Update service" lines={['releases, for your key']} />
+      <Node x={OURS} y={R2} w={OW} icon="download" title="Update service" lines={['releases, no sign-in']} />
       <Node x={OURS} y={R3} w={OW} icon="code" title="Our source code" lines={['and the releases']} />
       <Line d={`M ${OURS + OW / 2} ${R3} V ${R2 + 64 + 2}`} />
       <Head x={OURS + OW / 2} y={R2 + 64 + 2} angle={-90} tone="hint" />
@@ -486,7 +486,7 @@ function SidesTall() {
         With us
       </Label>
       <SmallNode x={L} y={o1} w={W} icon="support" title="Support" line="calls, what you send" />
-      <SmallNode x={R} y={o1} w={W} icon="download" title="Update service" line="releases, for your key" />
+      <SmallNode x={R} y={o1} w={W} icon="download" title="Update service" line="releases, no sign-in" />
       <SmallNode x={L} y={o2} w={318} icon="code" title="Our source code" line="and the releases" />
       <Line d={`M ${R + W / 2} ${o2} V ${o1 + H + 4}`} />
       <Head x={R + W / 2} y={o1 + H + 4} angle={-90} tone="hint" />

@@ -11,7 +11,7 @@ import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
 import { InstallFilm } from '../components/CopyArt';
-import productFilmPoster from '../assets/films/product-film-poster-2026-11-02.jpg';
+import productFilmPoster from '../assets/films/from-an-invite-link-to-a-live-page-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
@@ -60,19 +60,23 @@ export const TEAM_HEADING = 'See what everyone’s agents shipped. Live.';
 const HERO_DOOR: string | null = BUILD_YOURS;
 
 /* The product moving (note #951, the landing piece of the growth note #950):
-   the full film of the real product, take 2 of note #932, recorded by Iris on
-   the founder's own Agentic Cloud on 2 Nov 2026, 13:48 to 14:34 UTC, and cut
-   to 6 min 32 s with every time read off the recording's clock. The words
-   beside it quote no clock time (entry-server.test: no prerendered clock). No sound; the
-   captions are in the picture. The MP4 is in our public bucket site-media
-   beside the install film; the poster is the film's own frame at 3:30 ("Asked
-   at 13:56. The page was live at 13:58"). Iris's publish-ready cut (item 2 of
-   note #950) replaces it here in one place. Null removes the section. */
+   the real product, recorded by Iris on the founder's own Agentic Cloud on
+   2 Nov 2026, 13:48 to 14:34 UTC. Since note #952 it is her publish cut,
+   "From an invite link to a page on the web" (6 min 3 s, note #950): the
+   first cut of note #932 (6 min 32 s) drew a clock that drifted up to 77 s,
+   said 13:58 where the product's stamps say 13:57, and showed the spent
+   Claude sign-in code; this one draws no running clock, checks every time on
+   screen against the recorder's marks and the product's own stamps, and
+   blurs the code. Its audio track is silent (YouTube wants one). The words
+   beside it quote no clock time (entry-server.test: no prerendered clock).
+   The MP4 is in our public bucket site-media beside the install film; the
+   poster is the film's own frame at 2:38 ("Asked at 13:56. Live at 13:57, at
+   its own address."). Null removes the section. */
 export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
-  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/product-film-2026-11-02.mp4',
+  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/from-an-invite-link-to-a-live-page-2026-11-02.mp4',
   poster: productFilmPoster,
   caption:
-    'Recorded on 2 Nov 2026 and shown in 6\u00a0min 32\u00a0s. Every time on screen is read off the recording’s own clock. No sound; the captions are in the picture.',
+    'Recorded on 2 Nov 2026 and shown in 6\u00a0min 3\u00a0s. Every time on screen is checked against the recording and the product’s own timestamps. No sound; the captions are in the picture.',
 };
 export const FILM_HEADING = 'Watch it work, start to finish.';
 
@@ -165,11 +169,11 @@ export default function Home() {
           <ChapterDivider tight />
           <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
           <p className={`mt-4 max-w-[40rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>
-            Forty-six minutes on the founder’s own Agentic Cloud, cut to six and a half. A teammate
-            joins, an agent arrives on a computer of its own, a page is live at its own address two
-            minutes after it was asked for, and a change is approved from a phone.
+            Forty-six minutes on the founder’s own Agentic Cloud, cut to six. A teammate joins, an
+            agent arrives on a computer of its own, a page is live at its own address the minute after
+            it was asked for, and a change is approved from a phone.
           </p>
-          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 6 minutes 32 seconds, no sound" playAt="side" />
+          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 6 minutes 3 seconds, no sound" playAt="side" />
         </section>
       ) : null}
 
