@@ -69,11 +69,13 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     const section = document.querySelector('#give-your-agent')!;
     expect(section.querySelector('code')!.textContent).toBe(AGENT_LINE);
     expect(section.querySelector('button')!.textContent).toBe('Copy');
-    // It opens How to start since note #835; the first screen's text link
-    // jumps there (a "Build yours" button until note #924).
+    // It opens the start section since note #835; the first screen's text
+    // link jumps there (a "Build yours" button until note #924). Since note
+    // #951 link and section carry the action's own name.
     expect(document.querySelector('#start #give-your-agent')).toBeTruthy();
     expect(document.querySelector('#home-top #give-your-agent')).toBeNull();
-    expect(document.querySelector('#home-top a[href="#start"]')?.textContent).toMatch(/^How to start/);
+    expect(document.querySelector('#home-top a[href="#start"]')?.textContent).toMatch(/^Build your own Agentic Cloud/);
+    expect(document.querySelector('#start h2')?.textContent).toBe('Build your own Agentic Cloud.');
     // And it is the first step, not the second: the guide plans before our
     // two files exist, so pasting the line at once works (note #831).
     const steps = [...document.querySelectorAll('#start ol > li')].map((step) => step.textContent ?? '');

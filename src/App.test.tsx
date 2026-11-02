@@ -18,9 +18,10 @@ describe('App routes', () => {
     )
 
     // The copy's door since note #822; nothing on the site sends a stranger
-    // to sign up. Since note #924 the home page's one door is How to start,
-    // a text link to its own section, and the header has none.
-    expect(screen.getAllByRole('link', { name: /How to start/ })
+    // to sign up. Since note #924 the home page's one door is a text link to
+    // its own section (named Build your own Agentic Cloud since note #951),
+    // and the header has none.
+    expect(screen.getAllByRole('link', { name: /Build your own Agentic Cloud/ })
       .every((el) => el.getAttribute('href') === '#start')).toBe(true)
     expect(screen.queryAllByRole('link', { name: /Build yours|Sign in/ })).toEqual([])
     expect(screen.getAllByRole('link').some((el) => el.getAttribute('href') === '/signup'))
@@ -175,9 +176,10 @@ describe('App routes', () => {
     )
 
     // The copy's door since note #822; nothing on the site sends a stranger
-    // to sign up. Since note #924 the home page's one door is How to start,
-    // a text link to its own section, and the header has none.
-    expect(screen.getAllByRole('link', { name: /How to start/ })
+    // to sign up. Since note #924 the home page's one door is a text link to
+    // its own section (named Build your own Agentic Cloud since note #951),
+    // and the header has none.
+    expect(screen.getAllByRole('link', { name: /Build your own Agentic Cloud/ })
       .every((el) => el.getAttribute('href') === '#start')).toBe(true)
     expect(screen.queryAllByRole('link', { name: /Build yours|Sign in/ })).toEqual([])
     expect(screen.getAllByRole('link').some((el) => el.getAttribute('href') === '/signup'))

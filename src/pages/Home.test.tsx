@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import Home, { HOME_HEADLINE, TEAM_HEADING } from './Home';
+import { fireEvent } from '@testing-library/react';
+import Home, { FILM_HEADING, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
 void React;
@@ -29,6 +30,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       .map((node) => node.textContent);
     expect(headings).toEqual([
       HOME_HEADLINE,
+      ...(PRODUCT_FILM ? [FILM_HEADING] : []),
       'Here’s the workplace.',
       TEAM_HEADING,
       'No session starts from zero.',
@@ -36,7 +38,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       'A desk for every agent.',
       'Hand out work from one chat.',
       OWN_CLOUD_HEADING,
-      'How to start.',
+      'Build your own Agentic Cloud.',
       'For your team.',
       'Talk to us.',
     ]);
@@ -119,7 +121,8 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     answer();
     draw();
     const plan = document.querySelector('#workplace')!;
-    expect(plan.previousElementSibling?.id).toBe('home-top');
+    // The film of the product stands between them since note #951.
+    expect(plan.previousElementSibling?.id).toBe(PRODUCT_FILM ? 'film' : 'home-top');
     expect(plan.nextElementSibling?.id).toBe('team');
     expect(plan.querySelectorAll('p')).toHaveLength(0);
     expect(plan.querySelectorAll('img')).toHaveLength(0);
@@ -155,7 +158,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // 31 Oct 2026: "Build yours" read as confusing) no button: one text link
   // to How to start, in a row of its own so the cards stay level with the
   // words.
-  it('opens on the headline, one line, and a text link to How to start', () => {
+  it('opens on the headline, one line, and a text link that names the one action', () => {
     answer();
     draw();
     const top = document.querySelector('#home-top')!;
@@ -163,7 +166,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/^Your Claude Code and Codex agents get what every engineer gets on day one/);
     expect(lines[0]!.split(' ').length).toBeLessThan(40);
-    expect([...top.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()])).toEqual([['#start', 'How to start']]);
+    expect([...top.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()])).toEqual([['#start', 'Build your own Agentic Cloud']]);
     expect(top.querySelector('#home-door')!.className).toMatch(/\blg:col-start-1\b/);
     expect(top.querySelector('a')!.className).not.toMatch(/\bbg-white\b|\brounded-xl\b/);
     expect(document.querySelector('main a[href="/#give-your-agent"]')).toBeNull();
@@ -249,5 +252,34 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     draw();
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
     expect(document.querySelector('[role="status"][aria-label="Loading"]')).toBeNull();
+  });
+});
+
+// Note #951: the product moving, right after the first screen. Every other
+// picture on the page is a still; the film is the real product, recorded on
+// the founder's own Agentic Cloud, and like the install film it never plays
+// by itself, has no sound and shows its own poster until it is pressed.
+describe('Home, the film of the product at work (note #951)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('stands right after the first screen, from our bucket, with its poster and real times', () => {
+    answer();
+    draw();
+    if (!PRODUCT_FILM) return;
+    const film = document.querySelector('#film')!;
+    expect(document.querySelector('#home-top')!.nextElementSibling).toBe(film);
+    expect(film.querySelectorAll('[data-face-words], p:not(figcaption)').length).toBeGreaterThan(0);
+    const video = film.querySelector('video')!;
+    expect(video.autoplay).toBe(false);
+    expect(video.muted).toBe(true);
+    expect(video.getAttribute('preload')).toBe('none');
+    expect(video.hasAttribute('controls')).toBe(false);
+    expect(video.getAttribute('poster')).toBeTruthy();
+    expect(video.querySelector('source')!.getAttribute('src')).toMatch(/^https:\/\/iabkt-[0-9a-f]+\.fly\.storage\.tigris\.dev\/films\/.+\.mp4$/);
+    expect(film.querySelector('figcaption')!.textContent).toMatch(/^Recorded on 2 Nov 2026 and shown in 6\smin 32\ss\./);
+    const play = screen.getByRole('button', { name: /^Play the film of the product at work/ });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    fireEvent.click(play);
+    expect(video.hasAttribute('controls')).toBe(true);
   });
 });

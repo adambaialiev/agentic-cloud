@@ -10,7 +10,9 @@ import LiveFleet from '../components/LiveFleet';
 import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
-import { ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
+import { InstallFilm } from '../components/CopyArt';
+import productFilmPoster from '../assets/films/product-film-poster-2026-11-02.jpg';
+import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
  * The one home page, for a stranger and for a CTO who arrives from a cold
@@ -51,8 +53,28 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
 export const TEAM_HEADING = 'See what everyone’s agents shipped. Live.';
 
 /* The first screen's one door since note #924, a text link like the page's
-   others, to How to start. Null leaves nothing under the line. */
-const HERO_DOOR: string | null = 'How to start';
+   others. Since note #951 it names the page's one action, "Build your own
+   Agentic Cloud", and opens the section headed with the same words (it said
+   "How to start" until then, which did not say what you start). Null leaves
+   nothing under the line. */
+const HERO_DOOR: string | null = BUILD_YOURS;
+
+/* The product moving (note #951, the landing piece of the growth note #950):
+   the full film of the real product, take 2 of note #932, recorded by Iris on
+   the founder's own Agentic Cloud on 2 Nov 2026, 13:48 to 14:34 UTC, and cut
+   to 6 min 32 s with every time read off the recording's clock. The words
+   beside it quote no clock time (entry-server.test: no prerendered clock). No sound; the
+   captions are in the picture. The MP4 is in our public bucket site-media
+   beside the install film; the poster is the film's own frame at 3:30 ("Asked
+   at 13:56. The page was live at 13:58"). Iris's publish-ready cut (item 2 of
+   note #950) replaces it here in one place. Null removes the section. */
+export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
+  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/product-film-2026-11-02.mp4',
+  poster: productFilmPoster,
+  caption:
+    'Recorded on 2 Nov 2026 and shown in 6\u00a0min 32\u00a0s. Every time on screen is read off the recording’s own clock. No sound; the captions are in the picture.',
+};
+export const FILM_HEADING = 'Watch it work, start to finish.';
 
 /* One face of the problem (note #835): the heading promises the answer, the
    paragraph names the problem it answers, and the real panel proves it.
@@ -133,6 +155,23 @@ export default function Home() {
           </div>
         ) : null}
       </section>
+
+      {/* ── The product, moving (note #951) ────────────────────────────── */}
+      {/* Every other picture on the page is a still. Right after the first
+          screen, a founder who has seen many agent demos sees this one work,
+          start to finish, before the page takes it apart face by face. */}
+      {PRODUCT_FILM ? (
+        <section id="film" className={`${SECTION} ${HOME_SECTION_END}`}>
+          <ChapterDivider tight />
+          <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
+          <p className={`mt-4 max-w-[40rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>
+            Forty-six minutes on the founder’s own Agentic Cloud, cut to six and a half. A teammate
+            joins, an agent arrives on a computer of its own, a page is live at its own address two
+            minutes after it was asked for, and a change is approved from a phone.
+          </p>
+          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 6 minutes 32 seconds, no sound" playAt="side" />
+        </section>
+      ) : null}
 
       {/* ── The whole workplace, at a glance (note #841) ──────────────────── */}
       {/* The owner, 30 Oct 2026, 13:31 UTC: "We should have some illustration

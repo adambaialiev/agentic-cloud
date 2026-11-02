@@ -49,6 +49,13 @@ export const INSTALL_FILM: { src: string; poster: string; caption: string } | nu
    #838): its own page, linked from the own-cloud chapter and the footer. */
 export const WHY_FLY_PATH = '/why-fly';
 
+/* The page's one action, in the owner's words of 28 Oct 2026 ("Build your own
+   Agentic Cloud", landing-copy-rules): since note #951 the first screen's text
+   link says it, and the section it opens, How to start until then, is headed
+   with it, so the door lands on its own words. What it hands you is the line
+   below, pointing at the guide. */
+export const BUILD_YOURS = 'Build your own Agentic Cloud';
+
 /* The one line a leader hands to their terminal agent, and where it points. */
 export const AGENT_GUIDE_PATH = '/own-cloud.md';
 export const AGENT_LINE = `Set up our own Agentic Cloud by following https://agenticcloudcomputer.com${AGENT_GUIDE_PATH}`;
@@ -196,10 +203,12 @@ export function OwnCloud() {
    page's main action works the moment it is pasted. The agent stops at the
    plan and says how to ask us for them. Since note #835 the line opens this
    chapter, not the first screen. Since note #924 it is the page's one way to
-   start: no button anywhere jumps here, only the first screen's text link. */
+   start: no button anywhere jumps here, only the first screen's text link.
+   Since note #951 it is headed with the action's own name, which that link
+   says too; it was "How to start." until then. */
 export function HowToStart() {
   return (
-    <Chapter id="start" heading="How to start.">
+    <Chapter id="start" heading={`${BUILD_YOURS}.`}>
       <OwnCloudAction />
       <ol className={`mt-6 grid list-decimal gap-x-10 gap-y-3 pl-5 [text-wrap:pretty] ${BODY} marker:text-hint/70 lg:grid-cols-3`}>
         <li>
