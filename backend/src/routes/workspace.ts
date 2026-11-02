@@ -2256,7 +2256,11 @@ self.addEventListener('activate', (event) => {
     // platform with sign-up closed (note #823) takes the same invite links,
     // into a workplace whose invites are open, and nothing else.
     const gated = Boolean(deps.privateCopy || deps.signupClosed);
-    const admission = gated ? await copyAdmission(req.body) : null;
+    // An invite link admits on every backend (note #949, Adam, 2 Nov 2026):
+    // whoever makes their account through one gets no spare workplace, open
+    // sign-up or not. A link that no longer admits leaves open sign-up as it
+    // was (an ordinary account) and is refused where sign-up is closed.
+    const admission = gated || req.body?.inviteToken ? await copyAdmission(req.body) : null;
     // The licence's people limit, or a lapsed licence, turns the next person
     // away in words (note #814). Never the first account: its admin is who
     // pastes the licence.
@@ -2298,9 +2302,10 @@ self.addEventListener('activate', (event) => {
       // without another form.
       // A workplace that could not be made is not a reason to refuse the
       // account — the founder door still opens one by hand.
-      // Through a copy's invite (note #808) there is no spare workplace: the
-      // request to join is filed with the account, and the request page is
-      // where it starts. A request that could not be filed leaves the link's
+      // Through an invite link there is no spare workplace (a copy since note
+      // #808, every backend since note #949): the request to join is filed
+      // with the account, the request page is where it starts, and once an
+      // admin approves, the team's workplace is the person's only one. A request that could not be filed leaves the link's
       // own Request to join button, one screen on.
       if (deps.orgStorage && admission?.kind === 'invite') {
         try {
@@ -4803,7 +4808,10 @@ self.addEventListener('activate', (event) => {
     // In a private copy (note #808) a newcomer has no workplace at all until
     // the request is decided, and that case is acted on too.
     let joining: { requestId: string; inviteToken: string; orgName: string } | undefined;
-    if (deps.orgStorage && (org?.unnamed || (!org && deps.privateCopy))) {
+    // And an account in no workplace at all: a copy's newcomer (note #808),
+    // and since note #949 anyone who made their account through an invite
+    // link on our own platform too.
+    if (deps.orgStorage && (org?.unnamed || !org)) {
       const pending = (await deps.orgStorage.listJoinRequestsByUser(auth.userId).catch(() => []))
         .find((request) => request.status === 'pending');
       const target = pending ? await deps.orgStorage.getOrg(pending.orgId).catch(() => null) : null;

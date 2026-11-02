@@ -6,12 +6,12 @@
  *
  *   the owner, alone, makes an invite link on Home → the link listed on the
  *   workplace screen → Leo opens it signed out, sees whose door it is →
- *   creates his account there (name, address, password) → is asked to
- *   request access → waits on the admin → the owner finds the request on
+ *   creates his account there (name, address, password), which files his
+ *   request with it (note #949) → waits on the admin → the owner finds the request on
  *   the Workplace window's request card and approves → Leo's page sees it, he is in,
  *   opens the workplace → Home as a member: both people, the team's agents
  *   (in the agents picker), no invite button of his own → and his workplace
- *   list, which also holds the unnamed workplace his account was made with.
+ *   list, which holds the team's alone.
  *
  * Home is the Chief of Staff's conversation, with the door to the Workplace
  * window, the workplace switch and the reader's picture in its header; the
@@ -19,11 +19,10 @@
  * picker by the message box — a room's, one level into it, until rooms left
  * the product (note #843).
  *
- * That last picture is the truth the flow carries today: the register route
- * makes a workplace for EVERY account and knows nothing of the link the
- * person arrived through, so a joiner ends up with a spare one. The fixture
- * models it so the picture shows it, rather than a tidier product than the
- * one that ships.
+ * Until note #949 (Adam, 2 Nov 2026) the register route made a workplace for
+ * every account, so a joiner ended up with a spare one beside the team's.
+ * Now an account made through a live link gets none: the team's workplace is
+ * his only one, and the last picture shows exactly that.
  */
 import assert from 'node:assert/strict';
 import { startMockWorkspace } from './support/mock-workspace.mjs';
@@ -131,20 +130,14 @@ await runBrowserScenario({
     await leo.click('#authEmailButton');
     clock.mark('leo signs up');
 
-    // 3. Signed in, he stays at the door he came through — the setup gate
-    // his own new workplace is behind does not catch him — and the link
-    // becomes a request; access waits on the admin.
+    // 3. Signed in, he stays at the door he came through, and his request is
+    // already filed: making the account through the link did it (note #949),
+    // so there is no Request to join to tap and no workplace of his own.
     await waitVisible(leo, '#inviteScreen');
     assert.equal(await hiddenOrAbsent(leo, '#requiredSetup'), true, 'the setup gate caught a person who came to join');
     assert.equal(await waitForText(leo, '#inviteTitle', app.fixture.organization.name), app.fixture.organization.name);
-    assert.equal(normalizedText(await textOf(leo, '#inviteSub')), 'Join this workplace');
-    await shoot('leo-request-to-join', { page: leo });
-    await tapByText(leo, '.join-actions', 'Request to join');
-    // Redeeming rewrites the address with the new request id, and that
-    // remounts the screen's own read: the pending state paints, blanks back
-    // to "Opening your invite link" while the second read is in flight, and
-    // paints again. Wait for the screen to HOLD the state rather than for
-    // the first frame that shows it.
+    // The screen may paint more than once while its reads land: wait for it
+    // to HOLD the pending state rather than for the first frame that shows it.
     await leo.waitForFunction(() => {
       const sub = (document.querySelector('#inviteSub')?.textContent ?? '').replace(/\s+/g, ' ').trim();
       const status = document.querySelector('.join-status')?.textContent ?? '';
@@ -169,7 +162,8 @@ await runBrowserScenario({
     assert.equal(await waitForText(leo, '#inviteSub', 'Waiting for approval'), 'Waiting for approval');
     assert.equal(await hiddenOrAbsent(leo, '#requiredSetup'), true, 'the front door put a waiting joiner behind the setup gate');
     assert.ok(new URL(leo.url()).pathname.endsWith(`/invite/${invite.token}`), `the front door led to ${leo.url()}`);
-    await waitVisible(leo, '#joinOwnWorkplace');
+    // No workplace of his own, so nothing offers to set one up instead.
+    assert.equal(await hiddenOrAbsent(leo, '#joinOwnWorkplace'), true, 'a joiner with no workplace of his own was offered to set one up');
     await shoot('leo-front-door-while-waiting', { page: leo });
     clock.mark('leo requests access');
 
@@ -217,24 +211,23 @@ await runBrowserScenario({
     await shoot('leo-home-team-agents', { page: leo, fullPage: true });
     clock.mark('leo opens the workplace');
 
-    // 6. His workplace list: the team's, active — and the unnamed one his
-    // account was made with, which nothing removed.
+    // 6. His workplace list: the team's alone (note #949).
     await leo.goto(`${app.origin}/workplaces?org=${app.fixture.organization.id}`, { waitUntil: 'domcontentloaded' });
     await waitVisible(leo, '#orgPickerList');
-    await waitForAll(leo, '#orgPickerList', [app.fixture.organization.name, `${member.firstName}’s workplace`]);
-    assert.equal(await leo.$$eval('#orgPickerList .orgrow', (rows) => rows.length), 2, 'the joiner does not hold two workplaces');
-    await shoot('leo-two-workplaces', { page: leo });
+    await waitForAll(leo, '#orgPickerList', [app.fixture.organization.name]);
+    assert.equal(await leo.$$eval('#orgPickerList .orgrow', (rows) => rows.length), 1, 'the joiner holds a workplace besides the team\'s');
+    await shoot('leo-one-workplace', { page: leo });
 
     // The request contract, so UI/fixture drift is loud.
     assertRequestCount(app, 'POST', '/workspace/api/org/invites', 1);
     assertRequestCount(app, 'GET', `/workspace/auth/invite/${invite.token}`, 1);
     const { firstVisit, ...registered } = assertRequestCount(app, 'POST', '/workspace/auth/email/register', 1)[0].body;
     assert.deepEqual(registered, {
-      mailbox: member.mailbox, password: member.password, firstName: member.firstName, lastName: member.lastName,
+      mailbox: member.mailbox, password: member.password, firstName: member.firstName, lastName: member.lastName, inviteToken: invite.token,
     });
     assert.equal(firstVisit?.from, '', 'where the joiner\'s browser first came from rides along, naming no site');
-    const redeem = assertRequestCount(app, 'POST', `/workspace/api/org/invites/${invite.token}/redeem`, 1);
-    assert.deepEqual(redeem.map((request) => [request.user, request.status]), [[member.username, 201]]);
+    // The request rode in with the account: nothing redeemed the link by hand.
+    assertRequestCount(app, 'POST', `/workspace/api/org/invites/${invite.token}/redeem`, 0);
     const decision = assertRequestCount(app, 'POST', `/workspace/api/org/join-requests/req_${member.username}/decision`, 1);
     assert.deepEqual(decision.map((request) => [request.user, request.body]), [[owner.username, { decision: 'approve' }]]);
     const active = assertRequestCount(app, 'POST', '/workspace/api/org/active', 1);

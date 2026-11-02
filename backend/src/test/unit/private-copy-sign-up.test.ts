@@ -161,20 +161,45 @@ describe('a private copy takes people by invite (note #808)', () => {
     expect(await users.getAllUsers()).toHaveLength(0);
   });
 
-  it('changes nothing on our own platform: open sign-up, a spare workplace, and an invite token ignored', async () => {
-    const { users, orgStorage, post, person } = await start({});
-    const company = await orgStorage.createOrg({ name: 'Theirco', createdByUserId: 'user-a' });
-    await orgStorage.addMember({ orgId: company.orgId, userId: 'user-a', role: 'admin' });
-    const link = await orgStorage.createInvite({ orgId: company.orgId, createdByUserId: 'user-a' });
+  it('on our own platform with open sign-up: a walk-up gets a spare workplace, an invited newcomer none (note #949)', async () => {
+    const { users, orgStorage, notified, post, get, person } = await start({ invitesClosed: true });
+    // A walk-up: an account and its spare workplace, as ever.
     expect(await post('auth/email/register', person('samira')).then((r) => r.status)).toBe(201);
-    expect(await post('auth/email/register', person('omar', { inviteToken: link.token })).then((r) => r.status)).toBe(201);
-    for (const user of await users.getAllUsers()) {
-      const [membership] = await orgStorage.listMembershipsByUser(user.userId);
-      expect(membership?.role).toBe('admin');
-      expect(await orgStorage.getOrg(membership!.orgId)).toMatchObject({ unnamed: true });
-      expect(await orgStorage.listJoinRequestsByUser(user.userId)).toHaveLength(0);
-    }
+    const samira = (await users.getAllUsers()).find((user) => user.email?.startsWith('samira@'))!;
+    const [own] = await orgStorage.listMembershipsByUser(samira.userId);
+    expect(own?.role).toBe('admin');
+    expect(await orgStorage.getOrg(own!.orgId)).toMatchObject({ unnamed: true });
+
+    // A link into an unmarked workplace admits nobody: an ordinary account, with its spare.
+    const plain = await orgStorage.createOrg({ name: 'Plainco', createdByUserId: 'user-p' });
+    await orgStorage.addMember({ orgId: plain.orgId, userId: 'user-p', role: 'admin' });
+    const plainLink = await orgStorage.createInvite({ orgId: plain.orgId, createdByUserId: 'user-p' });
+    expect(await post('auth/email/register', person('omar', { inviteToken: plainLink.token })).then((r) => r.status)).toBe(201);
+    const omar = (await users.getAllUsers()).find((user) => user.email?.startsWith('omar@'))!;
+    expect(await orgStorage.listMembershipsByUser(omar.userId)).toHaveLength(1);
+    expect(await orgStorage.listJoinRequestsByUser(omar.userId)).toHaveLength(0);
+
+    // A marked workplace's link (Adam, 2 Nov 2026): the account, its request
+    // filed with it, and no spare workplace, sign-up open or not.
+    const team = await orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'user-a' });
+    await orgStorage.updateOrg(team.orgId, { invitesAllowed: { at: '2026-11-02T14:12:58Z', by: 'Adam' } });
+    await orgStorage.addMember({ orgId: team.orgId, userId: 'user-a', role: 'admin' });
+    const link = await orgStorage.createInvite({ orgId: team.orgId, createdByUserId: 'user-a' });
+    const lina = await post('auth/email/register', person('lina', { inviteToken: link.token }));
+    expect(lina.status).toBe(201);
+    const linaId = (await users.getAllUsers()).find((user) => user.email?.startsWith('lina@'))!.userId;
+    expect(await orgStorage.listMembershipsByUser(linaId)).toHaveLength(0);
+    const [request] = await orgStorage.listJoinRequestsByUser(linaId);
+    expect(request).toMatchObject({ orgId: team.orgId, status: 'pending', inviteToken: link.token });
+    expect(notified).toEqual([expect.objectContaining({ userId: 'user-a', title: expect.stringContaining('asked to join') })]);
+
+    // Her Workspace stands at her request, not at "not in a workplace yet".
+    const jar = cookieJar(setCookies(lina));
+    const state = await (await get('api/state', jar)).json() as { org: unknown; joining?: { requestId: string; orgName: string } };
+    expect(state.org).toBeNull();
+    expect(state.joining).toMatchObject({ requestId: request!.requestId, orgName: 'Eldiiar' });
   });
+
   // Note #823 (the owner, 2026-10-28): only the private copy is offered, so
   // our own platform takes no new account but through a live invite link
   // into a workplace whose invites are open (a marked one, note #805). Such
@@ -182,7 +207,7 @@ describe('a private copy takes people by invite (note #808)', () => {
   // copy; existing accounts sign in as before; nothing else makes a
   // workplace for an account in none.
   it('closes our own sign-up with SIGNUP_CLOSED: walk-ups and the old authenticator door refused, a marked workplace\'s link still works (note #823)', async () => {
-    const { users, orgStorage, notified, post, person } = await start({ invitesClosed: true, signupClosed: true });
+    const { users, orgStorage, notified, post, get, person } = await start({ invitesClosed: true, signupClosed: true });
 
     // Walking up: refused in words that point at the private copy and hello@.
     const walkUp = await post('auth/email/register', person('mallory'));
@@ -221,6 +246,10 @@ describe('a private copy takes people by invite (note #808)', () => {
     const [request] = await orgStorage.listJoinRequestsByUser(beaId);
     expect(request).toMatchObject({ orgId: marked.orgId, status: 'pending', inviteToken: link.token });
     expect(notified).toEqual([expect.objectContaining({ userId: 'user-m', title: expect.stringContaining('asked to join') })]);
+
+    // Reloading, she stands at her request (note #949: the state carried it in a copy only).
+    const waiting = await (await get('api/state', beaJar)).json() as { org: unknown; joining?: { requestId: string }; canCreateOrg: boolean };
+    expect(waiting).toMatchObject({ org: null, joining: { requestId: request!.requestId }, canCreateOrg: false });
 
     // In no workplace yet, she cannot found one.
     const own = await post('api/org', { name: 'Bea’s side project' }, beaJar);

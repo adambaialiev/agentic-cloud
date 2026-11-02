@@ -106,7 +106,7 @@ export function AuthGate({ initialPanel, inviteToken }: AuthGateProps) {
           onMode={() => setCreating((value) => !value)}
           onForgot={() => setPanel('forgot')}
           invited={Boolean(inviteToken)}
-          {...((PRIVATE_COPY || SIGNUP_CLOSED) && inviteToken ? { inviteToken } : {})}
+          {...(inviteToken ? { inviteToken } : {})}
           {...(firstAccountCode ? { firstAccountCode } : {})}
         />
       ) : null}
@@ -219,8 +219,9 @@ function InvitePreview({ api, token, creating }: { api: WorkspaceApi; token: str
   }, [api, token]);
   const available = status === 'available';
   const title = available ? 'Your invite link is ready' : status === 'loading' ? 'Checking your invite link…' : status === 'error' ? 'We couldn’t check this link' : status === 'closed' ? 'Invites are closed for now' : 'This link is no longer active';
-  // In a private copy the request is sent WITH a new account (note #808).
-  const detail = available ? (creating && (PRIVATE_COPY || SIGNUP_CLOSED)
+  // The request is sent WITH a new account: in a copy since note #808,
+  // everywhere since note #949.
+  const detail = available ? (creating
     ? 'Create your account below and your request to join goes with it. Access starts after admin approval.'
     : `${creating ? 'Create your account' : 'Sign in'} below, then send your request. Access starts after admin approval.`)
     : status === 'loading' ? 'Checking whether this link can accept requests.'
@@ -329,7 +330,7 @@ export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerifi
       // In a private copy the link's token rides the sign-in too: an account
       // that is in no workplace is let back in only through it (note #814).
       const answer = await api.authApi<WorkspaceEmailLoginAnswer>('auth/email/login', jsonBody({
-        email: email.trim().toLowerCase(), password, ...(inviteToken ? { inviteToken } : {}),
+        email: email.trim().toLowerCase(), password, ...(inviteToken && (PRIVATE_COPY || SIGNUP_CLOSED) ? { inviteToken } : {}),
       }));
       if (!answer.authenticated && 'verificationRequired' in answer) { onVerificationRequired(false); return; }
       if (!answer.authenticated) { onSecondFactor(answer.secondFactorToken); return; }

@@ -574,9 +574,9 @@ export async function startMockWorkspace(repoRoot, options = {}) {
     // answer itself; there is nothing to confirm.
     if (req.method === 'POST' && url.pathname === '/workspace/auth/email/register') {
       // A second person arriving through an invite link (the team world's
-      // `invite` stage) makes an account the same way — and, exactly as the
-      // real route does, gets an unnamed workplace of their own with it,
-      // whether or not they came to join somebody else's.
+      // `invite` stage) makes an account the same way, with the link's token.
+      // Exactly as the real route does since note #949, that account gets no
+      // workplace of its own: its request to join is filed with it.
       const joiner = accounts[1];
       if (world && joiner && !joiner.exists && body?.mailbox === team.member.mailbox) {
         expectJson(withoutFirstVisit(body, 'the joiner’s account creation'), {
@@ -584,10 +584,12 @@ export async function startMockWorkspace(repoRoot, options = {}) {
           password: team.member.password,
           firstName: team.member.firstName,
           lastName: team.member.lastName,
+          inviteToken: body?.inviteToken,
         }, 'the joiner’s account creation');
+        if (typeof body?.inviteToken !== 'string' || !body.inviteToken) fault('the joiner’s account was created without the invite link it came through');
         joiner.exists = true;
         joiner.displayName = `${team.member.firstName} ${team.member.lastName}`;
-        world.registered(joiner);
+        world.registered(joiner, body.inviteToken);
         respondJson(201, { authenticated: true, address: `${team.member.mailbox}@agenticcloudcomputer.com` }, sessionHeaders(joiner));
         return true;
       }

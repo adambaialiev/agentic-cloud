@@ -100,11 +100,9 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
   if (!joining) membership.set(member.userId, { role: 'member', joinedAt: '2026-09-06T08:15:00.000Z', invitedByName: owner.name });
   const invites = [];
   const joinRequests = [];
-  // The workplace the joiner's own account came with (the real register
-  // route makes one for every account, unnamed and behind the gate, and
-  // knows nothing of the invite link the person arrived through). Null until
-  // somebody registers in the `invite` stage; then it sits beside the team's
-  // in their workplace list, exactly as it does in production.
+  // A workplace of the joiner's own: only `invite-known`'s, made before the
+  // link reached him. An account made THROUGH the link gets none (note #949),
+  // so after the `invite` stage registers the team's workplace is his only one.
   let spareOrg = null;
   // `invite-known`: Leo already has an account and a workplace of his own,
   // set up and named, when the link reaches him.
@@ -115,13 +113,12 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
       paymentRequiredSeatProviders: [], seatUsage: [], founded: true,
     };
   }
-  function registered(account) {
+  // The real register route, given a live link (note #949): no spare
+  // workplace, and the request to join filed with the account.
+  function registered(account, inviteToken) {
     member.name = account.displayName;
-    spareOrg = {
-      orgId: 'org_leo_spare', name: `${team.member.firstName}’s workplace`, unnamed: true,
-      role: 'admin', members: 1, seats: 0, seatProviders: [], paymentRequiredSeatProviders: [],
-      seatUsage: [],
-    };
+    if (!invites.some((row) => row.token === inviteToken)) throw new Error('the joiner registered with a link that is not live');
+    joinRequests.push({ requestId: `req_${account.username}`, userId: account.userId, name: account.displayName, username: account.username, requestedAt: iso(Date.now()), status: 'pending' });
   }
   const notes = team.notes.map((note) => ({
     ...note,
@@ -728,14 +725,13 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
       ? { orgId: spareOrg.orgId, name: spareOrg.name, role: 'admin', active: false, members: 1, agents: spareOrg.founded ? 1 : 0 }
       : null;
     if (!isMember(account)) {
-      // Before approval the joiner's active workplace is the spare one:
-      // unnamed, its gate pending — which is why the invite door has to
-      // stay open in front of that gate.
-      // …and while a request of theirs is pending, the state says so, as the
-      // real backend does for a person whose active workplace is unnamed.
+      // Before approval the joiner is in no workplace (made through the
+      // link, note #949), or in his own (`invite-known`). While a request of
+      // his is pending the state says so, as the real backend does for a
+      // person in no workplace or only an unnamed one.
       const waiting = joinRequests.find((row) => row.userId === account.userId && row.status === 'pending');
       return {
-        ...(waiting && spareOrg?.unnamed ? { joining: { requestId: waiting.requestId, inviteToken: team.invite.token, orgName: fixture.organization.name } } : {}),
+        ...(waiting && (!spareOrg || spareOrg.unnamed) ? { joining: { requestId: waiting.requestId, inviteToken: team.invite.token, orgName: fixture.organization.name } } : {}),
         org: spareOrg, organizations: spare ? [{ ...spare, active: true }] : [], canCreateOrg: true, rooms: [], user, agents: [], prs: [], knowledgeProposals: [],
         secrets: null, repos: null, sites: null, knowledge: null, notes: null, notesArchived: 0, noteFiles: false,
       };

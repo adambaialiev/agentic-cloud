@@ -120,11 +120,12 @@ describe('the door', () => {
       [`GET api/org/invites/${inviteToken}`]: () => ({ status: 'available', orgId: 'o1', name: 'Nomad' }),
       'GET auth/email/address?local=new.person': () => ({ local: 'new.person', address: 'new.person@agenticcloudcomputer.com', available: true }),
       'POST auth/email/register': (call) => {
-        // No outside email is collected, and no invite rides the body: the
-        // person stays on the invite's own address while they sign up.
+        // No outside email is collected. From a link, the link rides the
+        // body: the account files its request with it and gets no spare
+        // workplace (note #949).
         expect(body(call)).toEqual({
           mailbox: 'new.person', password: PASSWORD, firstName: 'Aigerim', lastName: 'Baialieva',
-          ...(fromInvite ? { firstVisit } : {}),
+          ...(fromInvite ? { firstVisit, inviteToken } : {}),
         });
         return made.then(() => {
           state.signIn();
@@ -138,7 +139,7 @@ describe('the door', () => {
       expect(invite.closest('#authInvite')!.classList.contains('authinvite')).toBe(true);
       expect(document.querySelector('.join-entry-steps')).toBeNull();
       // A join link opens on sign-up, and says so: nothing to tap first.
-      expect(invite.closest('#authInvite')!.textContent).toContain('Create your account below, then send your request.');
+      expect(invite.closest('#authInvite')!.textContent).toContain('Create your account below and your request to join goes with it.');
     }
     expect(await screen.findByRole('heading', { name: 'Create your account' })).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Agentic Cloud Computer' })).toBeTruthy();

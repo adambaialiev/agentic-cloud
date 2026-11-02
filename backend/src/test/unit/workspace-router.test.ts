@@ -8062,7 +8062,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     expect((await invoke('/api/org/invites/:token', 'get', 43, { params: { token: invite.token } })).body).toMatchObject({ status: 'member' });
   });
 
-  it('a private copy (note #808) holds a newcomer with no workplace on the request, and offers no founder door', async () => {
+  it('a newcomer with no workplace is held on the request (note #949), and a private copy (note #808) offers no founder door', async () => {
     const { deps, orgStorage, org, userStorage, webAuthStorage } = await buildOrgDeps();
     // A newcomer who came in through the link: an account, a pending request, no workplace.
     await userStorage.createProfile('user-3', { displayName: 'Pat', email: 'p@example.com' });
@@ -8075,9 +8075,10 @@ describe('the workplace screens (members, seats, invites)', () => {
       await getRouteHandler(deps, '/api/state', 'get')(mockRequest({ headers: authHeader(identity) }), response);
       return response.body as Record<string, unknown>;
     };
-    // Our own platform reads such a person as it always did.
-    expect(await read(44)).toMatchObject({ org: null, canCreateOrg: true });
-    expect(await read(44)).not.toHaveProperty('joining');
+    // Our own platform holds such a person on the request too, since note
+    // #949 (an invited account has no spare workplace there either). With
+    // sign-up open, the founder door stays theirs, as for any new account.
+    expect(await read(44)).toMatchObject({ org: null, canCreateOrg: true, joining: { requestId, orgName: 'Acme Trading' } });
     (deps as { privateCopy?: boolean }).privateCopy = true;
     expect(await read(44)).toMatchObject({ org: null, canCreateOrg: false, joining: { requestId, orgName: 'Acme Trading' } });
     // Anyone already in a workplace of the copy still may found another.
