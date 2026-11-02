@@ -71,12 +71,17 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    beside it quote no clock time (entry-server.test: no prerendered clock).
    The MP4 is in our public bucket site-media beside the install film; the
    poster is the film's own frame at 2:38 ("Asked at 13:56. Live at 13:57, at
-   its own address."). Null removes the section. */
+   its own address."). Since note #954 (the owner, 2 Nov 17:39 UTC: the film
+   must show what the people section pitches) it is Iris's cut with the team
+   chapter (note #953, 7 min 3 s): the same opening, and the 17-second People
+   pitch is now 80 seconds of two people's agents building Bookface 2006 on
+   the same cloud, 18:43 to 19:03 UTC, auto-merge on for both. The poster
+   frame at 2:38 is the same in both cuts. Null removes the section. */
 export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
-  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/from-an-invite-link-to-a-live-page-2026-11-02.mp4',
+  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/home-film-with-team-chapter-2026-11-02.mp4',
   poster: productFilmPoster,
   caption:
-    'Recorded on 2 Nov 2026 and shown in 6\u00a0min 3\u00a0s. Every time on screen is checked against the recording and the product’s own timestamps. No sound; the captions are in the picture.',
+    'Recorded on 2 Nov 2026 and shown in 7\u00a0min 3\u00a0s. Every time on screen is checked against the recording and the product’s own timestamps. No sound; the captions are in the picture.',
 };
 export const FILM_HEADING = 'Watch it work, start to finish.';
 
@@ -169,11 +174,12 @@ export default function Home() {
           <ChapterDivider tight />
           <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
           <p className={`mt-4 max-w-[40rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>
-            Forty-six minutes on the founder’s own Agentic Cloud, cut to six. A teammate joins, an
-            agent arrives on a computer of its own, a page is live at its own address the minute after
-            it was asked for, and a change is approved from a phone.
+            One day on the founder’s own Agentic Cloud, cut to seven minutes. A teammate joins,
+            an agent arrives on a computer of its own, a page is live at its own address the minute
+            after it was asked for, a change is approved from a phone, and two people’s agents build one
+            app side by side while each sees what the other’s shipped.
           </p>
-          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 6 minutes 3 seconds, no sound" playAt="side" />
+          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 7 minutes 3 seconds, no sound" playAt="side" />
         </section>
       ) : null}
 
