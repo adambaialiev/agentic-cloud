@@ -138,28 +138,38 @@ describe('Home cards', () => {
     expect([...strip.children].map((node) => node.className)).toEqual(['seatcard', 'seatadd']);
 
     // The sign-ins above, the SITES (note #566) and the SECRETS (note #783)
-    // belong to the workplace, so they share its half.
+    // belong to the workplace, so they share its window — each a row onto a
+    // screen of its own since note #960.
+    expect(document.getElementById('indexSites')!.textContent).toBe('Sites2 sites on agentbuilt.app');
+    expect(document.getElementById('indexSecrets')!.textContent).toBe('Secrets2 secrets');
+    await homeShelf('sites');
     expect(screen.getByRole('heading', { name: 'Sites' })).toBeTruthy();
-    expect(document.querySelector('#homeWorkplace #sitesCard')).toBeTruthy();
+    expect(document.querySelector('#screenSites #sitesCard')).toBeTruthy();
     const shop = screen.getByText('shop').closest('.crow') as HTMLElement;
     expect(shop.querySelector('.cwhen')!.textContent).toContain('updated');
     const api = screen.getByText('api').closest('.crow') as HTMLElement;
     expect(within(api).getByText('setting up')).toBeTruthy();
     expect(api.querySelector('.cside')!.textContent).toBe('app');
-    expect(screen.getByText(/Each site is at its own name · agentbuilt\.app/)).toBeTruthy();
+    // The domain is the screen's line, not a footer explaining the list.
+    expect(document.getElementById('sitesSub')!.textContent).toBe('2 sites on agentbuilt.app');
+    expect(screen.queryByText(/Each site is at its own name/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
     await homeShelf('secrets');
     expect(screen.getByRole('heading', { name: 'Secrets' })).toBeTruthy();
-    expect(document.querySelector('#homeWorkplace #secrets')).toBeTruthy();
+    expect(document.querySelector('#screenSecrets #secretsList')).toBeTruthy();
     const gh = screen.getByText('GH_TOKEN').closest('.crow') as HTMLElement;
     expect(within(gh).getByText('GitHub pushes')).toBeTruthy();
     expect(screen.getByText('No description yet')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Add a secret/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
-    // The site's row is the Workplace window's: open it again to walk through.
+    // The site's row is the Sites screen's: open it again to walk through.
     await homeShelf('sites');
     fireEvent.click(screen.getByText('shop').closest('.crow') as HTMLElement);
     expect(await screen.findByRole('heading', { name: 'shop' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(document.getElementById('screenSites')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     await homeShelf('secrets');
     fireEvent.click(await screen.findByText('GH_TOKEN'));
@@ -178,12 +188,13 @@ describe('Home cards', () => {
     // pass on any Home at all — including one where the button is standing
     // right there.
     await homeShelf('secrets');
-    expect(await screen.findByText('6 secrets')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Add a secret/ })).toBeNull();
+    expect(document.getElementById('secretsSub')!.textContent).toContain('6 secrets');
+    expect(screen.queryByRole('button', { name: /Add a secret$/ })).toBeNull();
     // With no sign-ins the sentence explaining the empty row stands ABOVE
     // the strip rather than sitting in it as a plate of its own (note #345).
     // The strip is the Workplace window's.
-    await homeShelf('repositories');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await waitFor(() => expect(document.getElementById('seatsHome')).toBeTruthy());
     const strip = document.getElementById('seatsHome')!;
     expect(strip.querySelector('.empty')).toBeNull();
     expect(document.getElementById('seatsHomeSection')!.querySelector('.empty')!.textContent)
@@ -1539,15 +1550,19 @@ describe('organizations', () => {
     });
 
     fireEvent.click(await screen.findByRole('button', { name: /Side Hustle/ }));
+    // The notes are a screen the window's row opens (note #960); the switch
+    // is Home's, so each look goes there and comes Back.
     await homeShelf('notes');
     expect(screen.getByText('Side note cached')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Switch workplace' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch workplace' }));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Nomad Trading/ }));
     await homeShelf('notes');
     expect(screen.getByText('Nomad note cached')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Switch workplace' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch workplace' }));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: /Side Hustle/ }));
     await waitFor(() => expect(releaseSecond).not.toBeNull());
 
@@ -2918,7 +2933,8 @@ describe('a site', () => {
     expect(screen.getByText(/The address stays yours/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Type shop to confirm'), { target: { value: 'shop' } });
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await homeShelf();
+    // Once gone, the reader is on the Sites list it stood in (note #960).
+    await waitFor(() => expect(document.getElementById('screenSites')).toBeTruthy());
     expect(calls.some((call) => call.path === 'api/sites/shop' && call.init?.method === 'DELETE')).toBe(true);
   });
 
@@ -2991,12 +3007,15 @@ describe('a site', () => {
 });
 
 describe('a bucket (note #778)', () => {
-  it('is a door on the Workplace sheet, with no delete on the list (the owner, 2026-10-19)', async () => {
+  it('is a door on the Storage screen the Workplace sheet opens, with no delete on the list (the owner, 2026-10-19)', async () => {
     renderAt('/overview?org=o1&half=workplace', {
       ...workspaceScript(() => orgState({ buckets: [bucket()] })),
       ...quiet,
     });
-    await waitFor(() => expect(document.querySelector('#storageCard [data-bucket="bishkek-3d-tiles"]')).toBeTruthy());
+    await waitFor(() => expect(document.getElementById('indexStorage')).toBeTruthy());
+    expect(document.getElementById('indexStorage')!.textContent).toBe('Storage1 bucket · 1 public');
+    fireEvent.click(document.getElementById('indexStorage')!);
+    await waitFor(() => expect(document.querySelector('#screenStorage #storageCard [data-bucket="bishkek-3d-tiles"]')).toBeTruthy());
     const row = document.querySelector('#storageCard [data-bucket="bishkek-3d-tiles"]') as HTMLElement;
     expect(document.getElementById('storageCard')!.textContent).not.toContain('Delete this bucket');
     expect(document.querySelector('#storageCard .btn')).toBeNull();

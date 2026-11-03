@@ -5,13 +5,14 @@
  * half of Home; the sections, their order and every id inside are kept,
  * because the harnesses, the stylesheet and the simulations key on them.
  *
- * The agent counts (note #614), its people and what their agents are doing
- * (2026-10-28, where it can have a team), the direct channels and join
- * requests (note #606), sign-ins, the notes (note #843), the shared Drive
- * (note #363), repositories, knowledge and sites (note #566), buckets (note
- * #768) and secrets (note #783) — then the Chief of Staff's own cards
- * (machine, versions, context), which stood at the foot of this half when it
- * was that agent's details page.
+ * Since note #960 (Adam, 3 Nov 2026) it is an INDEX: the agent counts (note
+ * #614) and its people with what their agents are doing (2026-10-28) are
+ * drawn in full, then one row per shelf (`WorkplaceIndex`) — direct
+ * messages and mail, notes, Drive, repositories, knowledge, sites, buckets,
+ * secrets, the Chief of Staff's own settings — each opening a screen of its
+ * own, with the reader's auto-merge switch (note #944) and their
+ * subscription plates kept in place. It had stacked every one of those
+ * inline, most with no heading, and scrolled for four screens.
  *
  * There was a ROOM view beside it — a room's messages and decisions, its
  * briefing, and its Agents and Notes shelves under a selector — until rooms
@@ -22,19 +23,13 @@
  * `PersonalPanel` below).
  */
 
-import { useNavigate } from 'react-router-dom';
-import { toFor } from '../../routes.js';
-import { SeatStrip } from '../../ui/SeatStrip.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { workplaceHasTeam } from '../org/org-words.js';
 import { sitesOf } from '../sites/site-words.js';
 import { AgentActivity } from './AgentActivity.js';
 import { Agents } from './Agents.js';
-import { AutoMerge } from './AutoMerge.js';
 import { Decisions } from './Decisions.js';
-import { Drive } from './Drive.js';
 import { HomeJoinRequests } from './HomeJoinRequests.js';
-import { HumanMessages } from './HumanMessages.js';
 import { Knowledge } from './Knowledge.js';
 import { Notes } from './Notes.js';
 import { People } from './People.js';
@@ -42,16 +37,23 @@ import { Repositories } from './Repositories.js';
 import { Secrets } from './Secrets.js';
 import { Sites } from './Sites.js';
 import { UnreadMessages } from './UnreadMessages.js';
-import { WorkspaceAgentCards } from './WorkspaceAgentCards.js';
 import { useWorkspaceAgentDetails } from './workspace-agent-details.js';
 import { Storage } from './Storage.js';
+import { WorkplaceIndex } from './WorkplaceIndex.js';
+import { machineSizeParts } from '../agent/machine-words.js';
+import { agentStateLine } from './agent-words.js';
 
-/** The Workplace window's content. */
+/** The Workplace window's content: the pulse and the people drawn in full,
+ *  then the index of everything else, each row a screen of its own (note
+ *  #960). */
 export function WorkplacePanel({ orgId }: { orgId: string }) {
   const { state } = useWorkspace();
-  const navigate = useNavigate();
+  // The Chief of Staff's own read, for its row's one line: the machine it
+  // runs on. Its screen makes the same read and draws the rest.
   const agent = useWorkspaceAgentDetails(orgId, false);
-  const hasSites = sitesOf(state).length > 0;
+  const machine = agent.data?.machine
+    ? machineSizeParts(agent.data.machine).join(' · ')
+    : agent.data ? agentStateLine(agent.data.agent).text : null;
   return (
     <div id="homeWorkplace">
       {/* How much is running right now is the first question the
@@ -61,35 +63,10 @@ export function WorkplacePanel({ orgId }: { orgId: string }) {
           wherever the workplace can have a team: a workplace of one that
           nobody can join has nobody to list, and makes no read for it. */}
       {workplaceHasTeam(state?.org, state?.invitesClosed) ? <People /> : null}
-      {/* The ways one person reaches another (note #606). */}
-      <HumanMessages />
       {/* A person waiting at the door: absent, not empty, when nobody
           waits. */}
       <HomeJoinRequests />
-      <SeatStrip ids={{ section: 'seatsHomeSection', row: 'seatsHome' }} addIcon={false} />
-      {/* The notes are the workplace's (note #843): one list, which was a
-          room's shelf. Writing one opens the notes screen with the box up,
-          as Add a secret opens the secrets screen with its form: this
-          window has no pages of its own to draw a leaf in. */}
-      <Notes onWrite={() => navigate(toFor({ kind: 'notes', orgId })!, { state: { compose: true } })} />
-      {/* Drive, repositories, knowledge and sites belong to the workplace
-          (notes #363, #566): every agent and every member reach all of
-          them. Sites only once the workplace has one. */}
-      <Drive />
-      <Repositories />
-      {/* The reader's own auto-merge (note #944): what happens to their
-          agents' proposals, beside where those proposals land. */}
-      <AutoMerge />
-      <Knowledge />
-      {hasSites ? <Sites /> : null}
-      {/* Buckets only once the workplace has one (note #768). */}
-      <Storage />
-      {/* Secrets are one set for the workplace (note #783), like
-          repositories: every agent is handed them. */}
-      <Secrets />
-      {/* The Chief of Staff's own cards close it: what the workplace's
-          front door runs on, after what the workplace holds. */}
-      <WorkspaceAgentCards orgId={orgId} details={agent} />
+      <WorkplaceIndex orgId={orgId} agentState={machine} />
     </div>
   );
 }

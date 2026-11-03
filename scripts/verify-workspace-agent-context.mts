@@ -253,13 +253,18 @@ try {
     frames.every((frame) => Math.abs(frame.y - left.y) <= 2), `${JSON.stringify(frames.map((frame) => frame.y))} from ${left.y}`);
   await page.screenshot({ path: path.join(OUT, 'chat-after-back-phone.png') as `${string}.png` });
   // The title is no link since note #715: the details are the agent's own
-  // cards at the foot of Home's Workplace window, which the title (and the
-  // face beside it) opens.
+  // screen, the last row of Home's Workplace window (note #960), which the
+  // title (and the face beside it) opens.
   check('the title is a heading, not a link', await page.$eval('#recapChatTitle', (node) => node.tagName === 'H1' && !node.closest('a')));
+  // Its own screen since note #960, the Chief of Staff row of the window.
+  const homeRing = await page.$eval('#recapChatFace .ctxring', (node) => node.getAttribute('aria-label')).catch(() => null);
   await page.click('#homeWorkplaceDoor');
-  await page.waitForSelector('#homeSheet #homeWorkplace #recapAgentContext .contextrow', { timeout: 10_000 });
-  const details = await page.$eval('#homeSheet #homeWorkplace', (screen) => ({
-    ring: document.querySelector('.ctxring')?.getAttribute('aria-label') ?? null,
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexChiefOfStaff', { timeout: 10_000 });
+  await page.$eval('#homeSheet #indexChiefOfStaff', (node) => (node as HTMLElement).click());
+  await page.waitForSelector('#screenChiefOfStaff #recapAgentContext .contextrow', { timeout: 10_000 });
+  check('the Chief of Staff row opens its own screen', new URL(page.url()).pathname === '/chief-of-staff', page.url());
+  const details = await page.$eval('#screenChiefOfStaff', (screen) => ({
+    ring: null as string | null,
     reading: screen.querySelector('#recapAgentContext .contextrow .ctext')?.textContent?.replace(/\s+/g, ' ').trim(),
     width: (screen.querySelector('#recapAgentContext .contextrow .meter-fill') as HTMLElement | null)?.style.width,
     overflow: document.documentElement.scrollWidth > innerWidth,
@@ -267,7 +272,7 @@ try {
   check('details names the measured 94% and raw token window',
     details.reading?.startsWith('94% used · 940k of 1M tokens') === true,
     JSON.stringify(details));
-  check('…and the header’s ring says the same percentage', details.ring === 'Context window 94% full', JSON.stringify(details));
+  check('…and the header’s ring says the same percentage', homeRing === 'Context window 94% full', JSON.stringify({ homeRing, ...details }));
   check('details draws the meter to the measured percentage', details.width === '94%' && !details.overflow, JSON.stringify(details));
   check('details offers the same explicit reset ask as a room agent',
     await page.$eval('#recapAgentContext .contextreset', (node) => node.textContent?.trim() === 'Ask agent to reset chat'));
@@ -287,8 +292,9 @@ try {
   // Note #732: the person asks, from this screen, how full the chat is. The
   // turn their message starts is told the agent's own reading in CONTEXT —
   // and it is the figure the header's ring is drawing.
-  await page.keyboard.press('Escape');
+  await page.goto(`${new URL(page.url()).origin}/`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#homeSheet', { hidden: true, timeout: 10_000 });
+  await page.waitForSelector('#recapChatFace .ctxring', { timeout: 10_000 });
   const ring = await page.$eval('#recapChatFace .ctxring', (node) => node.getAttribute('aria-label'));
   await page.type('#agentChatText', 'How full is your chat?');
   await page.click('#agentChatSend');

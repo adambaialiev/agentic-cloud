@@ -13,7 +13,7 @@
  * is decided, in the type-the-name gate below.
  */
 
-import { overviewTo } from '../home/home-address.js';
+import { toFor } from '../../routes.js';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { WorkspaceSiteRow } from '../../../../src/shared/workspace-api.js';
@@ -183,7 +183,7 @@ export function SiteScreen() {
               try {
                 await api.api(`api/sites/${encodeURIComponent(site.name)}`, { method: 'DELETE' });
                 banner.show(`Deleted ${site.name} — the slot is back on your plan.`, true);
-                navigate(overviewTo(state?.org?.orgId, { half: 'workplace' }), { replace: true });
+                navigate(toFor({ kind: 'sites', orgId: state?.org?.orgId })!, { replace: true });
                 await reload().catch(() => {});
               } catch (error) { banner.show(errorMessage(error)); setBusy(false); }
             }}

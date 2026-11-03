@@ -217,7 +217,7 @@ const PARITY_BOXES = [
  * card sits higher in the React shell until they do. What must match today is
  * the card's own shape: where its rows sit under its heading.
  */
-const HOME_BOXES = ['#knowledgeHead', '#knowledgeCard', '#knowledge .crow', '#knowledge .crow:last-child'];
+const HOME_BOXES = ['#knowledgeList', '#knowledgeList .crow', '#knowledgeList .crow:last-child'];
 
 const failures: string[] = [];
 const check = (label: string, ok: boolean, detail = '') => {
@@ -332,28 +332,35 @@ try {
   // does, so their addresses name it and no room.
   const scoped = `org=${encodeURIComponent(org.orgId)}`;
 
-  // 2. Home's Workplace window: the glimpse card, six pages and the door to
-  //    the rest. Knowledge belongs to the workplace (note #566), beside Drive.
+  // 2. Home's Workplace window: Knowledge is one row of its index (note
+  //    #960), saying how many pages, onto the Knowledge screen. Knowledge
+  //    belongs to the workplace (note #566), beside Drive.
   await openWorkplaceWindow(page$, ORIGIN);
-  await page$.waitForSelector('#knowledge .crow', { timeout: 10_000 });
-  const homeRows = await texts('#knowledge .crow .name');
-  check('the card is a glimpse: six pages, then the way to all of them',
-    homeRows.length === 7 && homeRows[6] === 'All 7 pages', homeRows.join(' | '));
+  await page$.waitForSelector('#homeSheet #indexKnowledge', { timeout: 10_000 });
+  check('the window’s Knowledge row says how many pages there are',
+    (await text('#indexKnowledge')) === 'Knowledge7 pages', await text('#indexKnowledge'));
+  await tap(page$, '#indexKnowledge');
+  // Thirty, not ten: this wait covers a route change AND the screen's own
+  // read, and CI runs four checks at a time (2026-09-20).
+  await page$.waitForSelector('#screenKnowledge #knowledgeList .crow', { timeout: 30_000 });
+  check('the row opens the list at the workplace-scoped address it would copy',
+    page$.url() === `${ORIGIN}/knowledge?${scoped}`, page$.url());
+  const homeRows = await texts('#knowledgeList .crow .name');
+  check('the screen lists every page', homeRows.length === 7, homeRows.join(' | '));
   check('a row says what the page is FOR, under the agent that landed it',
-    (await text('#knowledge .crow .cline'))
+    (await text('#knowledgeList .crow .cline'))
       === 'Felix·What runs when a change lands on main, and how to tell whether it arrived.',
-    await text('#knowledge .crow .cline'));
+    await text('#knowledgeList .crow .cline'));
   // Note #640: the reader's own agent and a TEAMMATE's are signed the same
   // way. A row that names one and not the other reads as the pages being
   // different rather than whose agent landed them.
-  const faces = await page$.$$eval('#knowledge .crow .cline .keep', (nodes) => nodes.map((node) => node.textContent));
+  const faces = await page$.$$eval('#knowledgeList .crow .cline .keep', (nodes) => nodes.map((node) => node.textContent));
   check('a teammate’s agent signs its page exactly as the reader’s own does',
     faces[0] === 'Felix' && faces[1] === 'Leo'
-    && (await page$.$$('#knowledge .crow .cline img.face')).length === 6,
-    `${faces.join(' | ')} / ${(await page$.$$('#knowledge .crow .cline img.face')).length} faces`);
-  check('the rows stay icon-free and only the door wears the shelf’s mark',
-    (await page$.$$('#knowledge .crow:nth-child(-n+6) .icon')).length === 0
-    && Boolean(await page$.$('#knowledge .crow:last-child .icon.ft-doc')));
+    && (await page$.$$('#knowledgeList .crow .cline img.face')).length === 7,
+    `${faces.join(' | ')} / ${(await page$.$$('#knowledgeList .crow .cline img.face')).length} faces`);
+  check('the rows stay icon-free',
+    (await page$.$$('#knowledgeList .crow .icon')).length === 0);
   const homeReact = await shape(HOME_BOXES);
   await shot('home');
 
@@ -368,7 +375,7 @@ try {
   // there would actually touch before pressing it for real.
   await page$.waitForNetworkIdle({ idleTime: 400, timeout: 10_000 }).catch(() => {});
   const underThumb = await page$.evaluate(() => {
-    const face = document.querySelector('#knowledge .crow:nth-child(2) .cline img.face') as HTMLElement | null;
+    const face = document.querySelector('#knowledgeList .crow:nth-child(2) .cline img.face') as HTMLElement | null;
     if (!face) return 'no face';
     face.scrollIntoView({ block: 'center' });
     const box = face.getBoundingClientRect();
@@ -376,7 +383,7 @@ try {
     return hit?.closest('[data-agent-door]')?.getAttribute('data-agent-door') ?? `${hit?.tagName}.${hit?.className}`;
   });
   check('the teammate’s face is what a thumb lands on', underThumb === 'leo', underThumb);
-  await page$.click('#knowledge .crow:nth-child(2) .cline img.face');
+  await page$.click('#knowledgeList .crow:nth-child(2) .cline img.face');
   await page$.waitForSelector('#screenOtherAgent #otherAgentFacts', { timeout: 30_000 })
     .catch((error: unknown) => { throw new Error(`the face opened ${page$.url()} instead of its agent — ${String(error)}`); });
   check('a teammate\u2019s face opens that agent, not the page under it',
@@ -413,25 +420,9 @@ try {
     otherButtons.length === 1 && otherButtons[0] === 'Dana', otherButtons.join(' | '));
   await shot('agent');
   await page$.goBack();
-  await page$.waitForSelector('#knowledge .crow', { timeout: 30_000 });
+  await page$.waitForSelector('#knowledgeList .crow', { timeout: 30_000 });
 
-  // 3. The door opens the Knowledge screen at its own registered address.
-  // Re-resolved after the picture above, and kept now that `shot` waits the
-  // page out for itself: the viewport is NOT what moves — it measures 420x860
-  // either side of that screenshot — so this wait was never what saved the
-  // click. `scripts/browser-settle.mjs` carries what actually does it.
-  // A plain click here failed both CI attempts on 2026-09-26 with "not
-  // clickable": the row sits below the fold, and the press landed in the gap
-  // the app's scroll restore opens (knowledge page browser-harnesses). `tap`
-  // scrolls with the wheel and waits for the box to hold still.
-  await tap(page$, '#knowledge .crow:last-child');
-  // Thirty, not ten: this wait covers a route change AND the screen's own
-  // read, and CI runs four checks at a time. It has twice gone past ten
-  // seconds there (2026-09-20) on a build that changed nothing near it, both
-  // times passing on a quiet machine — the signature of a budget, not a bug.
-  await page$.waitForSelector('#screenKnowledge', { timeout: 30_000 });
-  check('the door opens the list at the workplace-scoped address it would copy',
-    page$.url() === `${ORIGIN}/knowledge?${scoped}`, page$.url());
+  // 3. The Knowledge screen, back from the agent: every page, and how many.
   check('the screen leaves nothing off, and says how many that is',
     (await page$.$$('#knowledgeList .crow')).length === 7
     && (await text('#knowledgeSub')) === '7 pages, written by the workplace’s agents and shared across it.',
@@ -523,7 +514,7 @@ try {
   };
   check('the page screen says what it should', Object.values(reactSays).every(Boolean), JSON.stringify(reactSays));
 
-  check('Home’s glimpse card lists the pages and keeps its shape', homeRows.length > 0 && Boolean(homeReact), `${homeRows.join(' | ')} / ${homeReact}`);
+  check('the Knowledge screen lists the pages and keeps its shape', homeRows.length > 0 && Boolean(homeReact), `${homeRows.join(' | ')} / ${homeReact}`);
 
   // A signed-out session read is a 401 by design and Chrome asks for a favicon
   // nobody serves; anything else is a real complaint.

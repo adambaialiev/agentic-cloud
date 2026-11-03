@@ -77,9 +77,22 @@ export function SiteRow({ site }: { site: WorkspaceSiteRow }) {
   );
 }
 
-export function Sites() {
+/** `screen`: the Sites screen (note #960) — no heading and no footer
+ *  explaining the list: the screen's title and its line under it say both. */
+export function Sites({ screen = false }: { screen?: boolean } = {}) {
   const { state } = useWorkspace();
   const sites = sitesOf(state);
+  if (screen) {
+    return (
+      <div className="card" id="sitesCard">
+        <div id="sites">
+          {sites.length === 0
+            ? <div className="empty">No sites yet. Ask any agent to deploy one.</div>
+            : sites.map((site) => <SiteRow key={site.name} site={site} />)}
+        </div>
+      </div>
+    );
+  }
   if (sites.length === 0) {
     return (
       <>

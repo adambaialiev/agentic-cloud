@@ -19,7 +19,11 @@ import { GitAccessRow } from '../repos/GitAccessRow.js';
 import { RepoRow } from '../repos/RepoRow.js';
 import { reposByActivity } from '../repos/repo-words.js';
 
-export function Repositories() {
+/** `screen`: drawn on the Repositories screen (note #960) rather than a
+ *  personal workspace's column — no heading (the screen's title is it), and
+ *  the storage line stands under that title, so the card's foot holds only
+ *  the key for cloning. */
+export function Repositories({ screen = false }: { screen?: boolean } = {}) {
   const { state } = useWorkspace();
   const now = useNow(false);
   const repos = state?.repos ?? null;
@@ -30,7 +34,7 @@ export function Repositories() {
   for (const pr of state?.prs ?? []) waiting.set(pr.repoName, (waiting.get(pr.repoName) ?? 0) + 1);
   return (
     <>
-      <h2 className="homehead">Repositories</h2>
+      {screen ? null : <h2 className="homehead">Repositories</h2>}
       <div className="card">
         <div id="repos">
           {!ordered
@@ -59,10 +63,10 @@ export function Repositories() {
             The key is not offered under the EMPTY state: there is nothing to
             clone yet, and a key there answers a question nobody has. The
             storage line still is — an empty shelf has a size. */}
-        {quota || ordered?.length
+        {(quota && !screen) || ordered?.length
           ? (
             <div className="repofoot">
-              {quota
+              {quota && !screen
                 ? (
                   <div className="quota" id="quota">
                     Storage: {bytes(quota.userUsedBytes)} of {bytes(quota.userMaxBytes)} used

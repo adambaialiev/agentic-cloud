@@ -39,10 +39,17 @@ const manyPages = (count: number) => Array.from({ length: count }, (_, i) => kno
   name: `page-${count - i}`, title: `Page ${count - i}`, description: 'What it is for',
 }));
 
-// The Knowledge card is the workplace's (note #566): Home's Workplace window.
-const findHome = () => homeShelf('repositories');
-const card = () => document.getElementById('knowledge')!;
+// Knowledge is the workplace's (note #566): a row of Home's Workplace
+// window, onto the Knowledge screen, whose rows these are (note #960).
+const findHome = () => homeShelf('knowledge');
+const card = () => document.getElementById('knowledgeList')!;
 const rows = () => [...card().querySelectorAll('.crow')];
+// The glimpse — six pages and the door to the rest — is a personal
+// workspace's now: its one column still draws the card.
+const findGlimpse = () => homeShelf();
+const glimpse = () => document.getElementById('knowledge')!;
+const glimpseRows = () => [...glimpse().querySelectorAll('.crow')];
+const inPersonal = (overrides: Partial<WorkspaceStateAnswer> = {}) => emptyState({ ...overrides });
 
 /** The Knowledge screen opened cold, at its own address, once the state it
  *  draws has actually landed. */
@@ -77,7 +84,14 @@ describe('the knowledge rows on home', () => {
   it('keeps individual Knowledge pages icon-free, like Notes', async () => {
     open(inWorkplace({ knowledge: manyPages(7) }));
     await findHome();
-    const list = rows();
+    expect(rows()).toHaveLength(7);
+    expect(rows().every((row) => !row.querySelector('.icon'))).toBe(true);
+  });
+
+  it('the glimpse’s "All pages" door keeps the knowledge mark', async () => {
+    open(inPersonal({ knowledge: manyPages(7) }));
+    await findGlimpse();
+    const list = glimpseRows();
     expect(list.slice(0, 6).every((row) => !row.querySelector('.icon'))).toBe(true);
     // The "All pages" door is not a page row, so it keeps the knowledge mark
     // that tells the reader what opens when they take it — the bulb, drawn
@@ -155,11 +169,13 @@ describe('the knowledge rows on home', () => {
     expect(line.querySelector('[data-agent-door]')).toBeNull();
   });
 
-  it('an empty workplace keeps its Knowledge section and says who builds it (note #175)', async () => {
+  it('an empty workplace keeps its Knowledge row and screen, and says who builds it (note #175)', async () => {
     open(inWorkplace({ knowledge: [] }));
+    await waitFor(() => expect(document.getElementById('homeWorkplaceDoor')).toBeTruthy());
+    fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
+    await waitFor(() => expect(document.getElementById('indexKnowledge')).toBeTruthy());
+    expect(document.getElementById('indexKnowledge')!.textContent).toBe('KnowledgeNone yet');
     await findHome();
-    expect(document.getElementById('knowledgeHead')!.hidden).toBe(false);
-    expect(document.getElementById('knowledgeCard')!.hidden).toBe(false);
     expect(card().querySelector('.roomemptytitle')!.textContent).toBe('Start the workplace’s knowledge');
     expect(card().querySelector('.roomemptybody')!.textContent).toContain('Knowledge pages hold what agents have worked out');
     expect(card().querySelector('.roomemptybody')!.textContent)
@@ -180,15 +196,17 @@ describe('the knowledge rows on home', () => {
 
   it('says nothing at all when this backend has no knowledge base', async () => {
     open(inWorkplace({ knowledge: null }));
-    await findHome();
-    expect(document.getElementById('knowledgeCard')!.hidden).toBe(true);
+    await waitFor(() => expect(document.getElementById('homeWorkplaceDoor')).toBeTruthy());
+    fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
+    await waitFor(() => expect(document.getElementById('indexRepositories')).toBeTruthy());
+    expect(document.getElementById('indexKnowledge')).toBeNull();
   });
 
   describe('the recent few, and the door to the rest (note #48)', () => {
     it('stops at six and offers the rest, saying how many there are in all', async () => {
-      open(inWorkplace({ knowledge: manyPages(11) }));
-      await findHome();
-      const list = rows();
+      open(inPersonal({ knowledge: manyPages(11) }));
+      await findGlimpse();
+      const list = glimpseRows();
       // Six pages and the door: the seventh row is the way to the other five,
       // not a seventh page.
       expect(list).toHaveLength(7);
@@ -205,17 +223,17 @@ describe('the knowledge rows on home', () => {
     });
 
     it('draws no door when the card already holds every page', async () => {
-      open(inWorkplace({ knowledge: manyPages(6) }));
-      await findHome();
-      expect(rows()).toHaveLength(6);
+      open(inPersonal({ knowledge: manyPages(6) }));
+      await findGlimpse();
+      expect(glimpseRows()).toHaveLength(6);
       // A tap that gives nothing back is worse than no tap at all.
-      expect(card().textContent).not.toContain('All 6 pages');
+      expect(glimpse().textContent).not.toContain('All 6 pages');
     });
 
     it('the door opens the screen at its own address, and it leaves nothing off', async () => {
-      open(inWorkplace({ knowledge: manyPages(11) }));
-      await findHome();
-      fireEvent.click(rows()[6]!);
+      open(inPersonal({ knowledge: manyPages(11) }));
+      await findGlimpse();
+      fireEvent.click(glimpseRows()[6]!);
       expect(await screen.findByRole('heading', { name: 'Knowledge' })).toBeTruthy();
       const listed = [...document.getElementById('knowledgeList')!.querySelectorAll('.crow')];
       expect(listed).toHaveLength(11);
@@ -226,11 +244,11 @@ describe('the knowledge rows on home', () => {
     });
 
     it('one page reads the same from either list, at the workplace’s address', async () => {
-      const state = inWorkplace({ knowledge: manyPages(11) });
+      const state = inPersonal({ knowledge: manyPages(11) });
       open(state, knowledgePageScript('page-1', () => ({
         name: 'page-1', html: '<p>Only the screen shows this one.</p>',      })));
-      await findHome();
-      fireEvent.click(rows()[6]!);
+      await findGlimpse();
+      fireEvent.click(glimpseRows()[6]!);
       await screen.findByRole('heading', { name: 'Knowledge' });
       // The eleventh row: a page only the screen shows, which is the whole
       // point of it being here.

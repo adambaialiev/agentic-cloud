@@ -25,7 +25,7 @@ import { copyFromTap, errorMessage } from '../../ui/format.js';
 import { TypeIcon } from '../../ui/icons.js';
 import { relative } from '../../ui/time.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
-import { overviewTo } from '../home/home-address.js';
+import { toFor } from '../../routes.js';
 import { bucketHolds, bucketReach, bucketsOf } from './bucket-words.js';
 
 export function BucketScreen() {
@@ -173,7 +173,7 @@ export function BucketScreen() {
               try {
                 await api.api(`api/storage/${encodeURIComponent(bucket.name)}`, { method: 'DELETE' });
                 banner.show(`Deleted the bucket ${bucket.name}.`, true);
-                navigate(overviewTo(state?.org?.orgId, { half: 'workplace' }), { replace: true });
+                navigate(toFor({ kind: 'storage', orgId: state?.org?.orgId })!, { replace: true });
                 await reload().catch(() => {});
               } catch (error) { banner.show(errorMessage(error)); setBusy(false); }
             }}

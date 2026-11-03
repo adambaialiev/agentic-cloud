@@ -292,6 +292,13 @@ export function pickerPage(): string | null {
  * there were rooms.)
  */
 export async function homeShelf(content: 'agents' | 'notes' | 'repositories' | 'knowledge' | 'secrets' | 'sites' = 'agents'): Promise<HTMLElement> {
+  // A workplace shelf is a screen of its own since note #960: one already
+  // standing is the shelf.
+  const standing = {
+    agents: null, notes: 'screenNotes', repositories: 'screenRepositories', knowledge: 'screenKnowledge', secrets: 'screenSecrets', sites: 'screenSites',
+  } as const;
+  const open = standing[content] ? document.getElementById(standing[content]!) : null;
+  if (open && !document.getElementById('agentsSection')) return open;
   await waitFor(() => {
     if (!document.getElementById('agentsSection') && !document.getElementById('homeWorkplaceDoor')) {
       throw new Error('Home has not read its state');
@@ -315,7 +322,21 @@ export async function homeShelf(content: 'agents' | 'notes' | 'repositories' | '
       fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
       await waitFor(() => { if (!document.querySelector('#homeSheet #homeWorkplace')) throw new Error('the window has not opened'); });
     }
-    return screen.findByRole('heading', { name: new RegExp(`^${labels[content]}`) });
+    // The window is an index since note #960: each shelf is a row onto a
+    // screen of its own, so a shelf is reached the way a reader reaches it —
+    // the row — and what comes back is that screen.
+    const rows = {
+      notes: ['indexNotes', 'screenNotes'], repositories: ['indexRepositories', 'screenRepositories'],
+      knowledge: ['indexKnowledge', 'screenKnowledge'], secrets: ['indexSecrets', 'screenSecrets'], sites: ['indexSites', 'screenSites'],
+    } as const;
+    const [row, shelf] = rows[content];
+    await waitFor(() => { if (!document.getElementById(row)) throw new Error(`no ${labels[content]} row in the window`); });
+    fireEvent.click(document.getElementById(row)!);
+    return waitFor(() => {
+      const found = document.getElementById(shelf);
+      if (!found) throw new Error(`the ${labels[content]} screen has not opened`);
+      return found;
+    });
   }
   await waitFor(() => {
     if (!document.getElementById('agentsSection')) throw new Error('the overview has not read its state');

@@ -74,6 +74,9 @@ export const WORKSPACE_ROUTE_DEFS = {
   // simply does not read it.
   knowledgeList: { screen: 'knowledge', pattern: ['knowledge'], scope: 'org' },
   knowledgePage: { screen: 'kpage', pattern: ['knowledge', ':id'], scope: 'org' },
+  // The Workplace window is an index since note #960: each shelf it held
+  // inline is a screen of its own now, as Notes, Drive and Secrets were.
+  repositories: { screen: 'repos', pattern: ['repositories'], scope: 'org' },
   repo: { screen: 'repo', pattern: ['repositories', ':id'], scope: 'org', query: { path: 'path' } },
   repoFile: { screen: 'file', pattern: ['repositories', ':id', 'file'], scope: 'org', query: { path: 'path' } },
   repoHistory: { screen: 'commits', pattern: ['repositories', ':id', 'history'], scope: 'org' },
@@ -111,6 +114,10 @@ export const WORKSPACE_ROUTE_DEFS = {
    *  address — with its `?half=&room=&content=` — opens Home with the window
    *  it names. Kept because buttons and open tabs still name it. */
   recapAgent: { screen: 'overview', pattern: ['overview'], scope: 'org' },
+  /** The Chief of Staff's own screen (note #960): its state, machine, reach,
+   *  event turns, versions and context, which closed the Workplace window
+   *  until then. */
+  chiefOfStaff: { screen: 'chiefofstaff', pattern: ['chief-of-staff'], scope: 'org' },
   messages: { screen: 'messages', pattern: ['messages'], scope: 'org' },
   directMessage: { screen: 'directMessage', pattern: ['messages', ':id'], scope: 'org' },
   organizationPeople: { screen: 'orgpeople', pattern: ['workplace', 'people'], scope: 'org' },
@@ -124,8 +131,10 @@ export const WORKSPACE_ROUTE_DEFS = {
    *  `chatgpt` or `opencode`. A reload resumes the ceremony the server holds for it. */
   seatSignInProvider: { screen: 'seatsignin', pattern: ['seats', 'sign-in', ':id'], scope: 'org' },
   seat: { screen: 'seat', pattern: ['seats', ':id'], scope: 'org' },
+  sites: { screen: 'sites', pattern: ['sites'], scope: 'org' },
   site: { screen: 'site', pattern: ['sites', ':id'], scope: 'org' },
   /** One object-storage bucket (note #778): a workplace's, like a site. */
+  storage: { screen: 'storage', pattern: ['storage'], scope: 'org' },
   bucket: { screen: 'bucket', pattern: ['storage', ':id'], scope: 'org' },
   // The setup a workplace must finish before it opens (2026-09-22): each step
   // of the gate at its own address. The gate owns them — it moves the reader

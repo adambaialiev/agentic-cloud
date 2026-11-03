@@ -162,11 +162,11 @@ try {
   // Drive's card stands in Home's Workplace window (note #715; the overview's
   // old address opens it), and says it is the whole workplace's.
   await page.goto(`${origin}/overview?org=${org.orgId}&half=workplace`);
-  await page.waitForSelector('#homeSheet #homeWorkplace #driveCard');
-  const homeDrive = await page.$eval('#driveCard', (drive) => drive.textContent?.replace(/\s+/g, ' ').trim() ?? '');
-  assert.match(homeDrive, /Shared across the workplace/); await noOverflow();
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexDrive');
+  const homeDrive = await page.$eval('#indexDrive', (drive) => drive.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+  assert.match(homeDrive, /Files for the whole workplace/); await noOverflow();
   assert.doesNotMatch(homeDrive, /\broom/i, 'Drive names no room: rooms left the product (note #843)');
-  await page.$eval('#driveHead', (element) => element.scrollIntoView({ block: 'start' }));
+  await page.$eval('#indexDrive', (element) => element.scrollIntoView({ block: 'start' }));
   await page.screenshot({ path: path.join(out, 'n363-drive-home-mobile.png') });
   // Home stands its window up again on a reload, so close it first.
   await closeHomeWindow(page);
@@ -339,8 +339,8 @@ try {
   // spent nothing: the single entry Drive made is still standing, at the
   // address its last step wrote.
   await page.goto(`${origin}/overview?org=${org.orgId}&half=workplace`);
-  await page.waitForSelector('#homeSheet #driveCard');
-  assert.equal(await page.$eval('#driveCard .name', (element) => element.textContent), 'Drive');
+  await page.waitForSelector('#homeSheet #indexDrive');
+  assert.equal(await page.$eval('#indexDrive .name', (element) => element.textContent), 'Drive');
   // Every tap in this walk goes through `tap`, because every one of them
   // follows a READ rather than a picture: Home fills in under its own cards,
   // and each Drive screen draws its frame before its contents. CI lost both
@@ -348,17 +348,17 @@ try {
   // card below ("not clickable": the row moved as Home filled in), the second
   // on the file two lines under it ("no element found": the folder's contents
   // had not arrived).
-  await tap(page, '#driveCard a'); await title('Drive');
+  await tap(page, '#indexDrive'); await title('Drive');
   await page.waitForSelector('#driveItems .driverow');
   await tap(page, 'a::-p-text(Brand assets)'); await title('Brand assets');
   // This heading comes from the outline the previous listing already carried
   // (`drive-cache.ts` — the name and trail are never in doubt, only the
   // contents), so waiting for it is NOT waiting for the row below it.
   await tap(page, 'a::-p-text(Profile photo.jpg)'); await title('Profile photo.jpg');
-  await page.click('#pageBack'); await page.waitForSelector('#homeSheet #homeWorkplace #driveCard');
+  await page.click('#pageBack'); await page.waitForSelector('#homeSheet #homeWorkplace #indexDrive');
   assert.equal(new URL(page.url()).pathname, '/', 'one tap of Back leaves Drive for Home’s Workplace window it was opened from');
   await page.goForward(); await title('Profile photo.jpg');
-  await page.goBack(); await page.waitForSelector('#homeSheet #homeWorkplace #driveCard');
+  await page.goBack(); await page.waitForSelector('#homeSheet #homeWorkplace #indexDrive');
   assert.equal(new URL(page.url()).pathname, '/', 'the browser back button leaves Drive by the same entry');
   await open(); await page.waitForSelector('#driveItems .driverow');
   await page.setViewport({ width: 320, height: 700, deviceScaleFactor: 1 }); await noOverflow();

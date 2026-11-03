@@ -38,7 +38,8 @@ function setup(initial: Partial<WorkspaceAgentProactive> = {}, recent: Workspace
       return { orgId: 'o1', settings: stored, recent };
     },
   });
-  render(<MemoryRouter initialEntries={['/overview?org=o1&half=workplace']}><App api={scripted.api} /></MemoryRouter>);
+  // The Chief of Staff's own screen (note #960), where its event turns are set.
+  render(<MemoryRouter initialEntries={['/chief-of-staff?org=o1']}><App api={scripted.api} /></MemoryRouter>);
   return scripted;
 }
 const puts = (calls: ReturnType<typeof setup>['calls']) => calls.filter((c) => c.path === 'api/recap/agent/proactive' && c.init?.method === 'PUT').map((c) => JSON.parse(String(c.init!.body)) as Record<string, unknown>);

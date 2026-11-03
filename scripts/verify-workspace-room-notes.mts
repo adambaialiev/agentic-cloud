@@ -144,18 +144,19 @@ try {
   await openAgentsPicker(page, ORIGIN);
   await page.waitForFunction(() => !document.getElementById('banner'), { timeout: 7_000 });
 
-  // The workplace's notes stand in the Workplace window (note #843), where
-  // a room's Notes shelf stood: both notes are in them.
+  // The workplace's notes are the Workplace window's (note #843), where a
+  // room's Notes shelf stood: one row of its index since note #960, which
+  // counts both notes and opens the one list.
   await openWorkplaceWindow(page, ORIGIN);
-  await page.waitForFunction(() => document.querySelector('#homeWorkplace #notesCard')?.textContent?.includes('Visible sales note'), { timeout: 10_000 }).catch(() => {});
+  await page.waitForSelector('#homeWorkplace #indexNotes', { timeout: 10_000 });
   const workplace = await page.$eval('#homeWorkplace', (node) => ({
-    notes: node.querySelector('#notesCard')?.textContent ?? '',
+    notes: node.querySelector('#indexNotes')?.textContent ?? '',
     privateCard: Boolean(node.querySelector('#workspaceNotesCard')),
     writeDoor: Boolean(node.querySelector('#newWorkspaceNoteBtn')),
     agentDoor: Boolean(node.querySelector('#recapAgentRoom')),
   }));
-  check('the Workplace window shows the workplace’s notes', workplace.notes.includes('Visible sales note'), workplace.notes.slice(0, 160));
-  check('…the Chief of Staff’s own among them, in the one list', workplace.notes.includes('Chief of Staff follow-ups'), workplace.notes.slice(0, 160));
+  check('the Workplace window counts the workplace’s notes, the Chief of Staff’s among them',
+    /^Notes2 notes/.test(workplace.notes), workplace.notes);
   check('the Workplace window has no private Notes shelf', !workplace.privateCard);
   check('the Workplace window has no private writing door', !workplace.writeDoor);
   // The agent's cards carried the one door into its room until rooms left

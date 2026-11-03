@@ -453,9 +453,12 @@ try {
   //    repositories): Add goes to the secrets screen with its form up, and a
   //    secret's address carries the workplace and no room.
   await waitHome('workplace');
-  await page.waitForSelector('#homeSheet #homeWorkplace #secrets', { timeout: 10_000 });
-  // The card sits low in the window's scroll: click it where it stands.
-  await page.$eval('#homeSheet #homeWorkplace #addBtn', (node) => (node as HTMLButtonElement).click());
+  // A row of the window's index since note #960: it opens the secrets
+  // screen, whose Add a secret puts the form up.
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexSecrets', { timeout: 10_000 });
+  await page.$eval('#homeSheet #homeWorkplace #indexSecrets', (node) => (node as HTMLElement).click());
+  await page.waitForSelector('#screenSecrets #secretsAddBtn', { timeout: 10_000 });
+  await page.$eval('#screenSecrets #secretsAddBtn', (node) => (node as HTMLButtonElement).click());
   await page.waitForSelector('#secretName');
   await page.click('#secretName');
   await page.type('#secretName', 'GH_TOKEN');
@@ -750,9 +753,12 @@ try {
   for (const exit of ['the page’s Back', 'saving the note']) {
     await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
     await waitHome('workplace');
-    await page.waitForSelector('#homeSheet #homeWorkplace #notesCard #newNoteBtn', { timeout: 10_000 });
-    // The card sits low in the window's scroll: pressed where it stands.
-    await page.$eval('#homeSheet #homeWorkplace #notesCard #newNoteBtn', (node) => (node as HTMLButtonElement).click());
+    // The notes are a row of the window's index since note #960: it opens
+    // the notes screen, whose Write a note puts the composer up.
+    await page.waitForSelector('#homeSheet #homeWorkplace #indexNotes', { timeout: 10_000 });
+    await page.$eval('#homeSheet #homeWorkplace #indexNotes', (node) => (node as HTMLElement).click());
+    await page.waitForSelector('#screenNotes #notesAddBtn', { timeout: 10_000 });
+    await page.$eval('#screenNotes #notesAddBtn', (node) => (node as HTMLElement).click());
     await page.waitForSelector('#noteForm', { timeout: 10_000 });
     await new Promise((r) => setTimeout(r, 400));
     const inComposer = await headerState();

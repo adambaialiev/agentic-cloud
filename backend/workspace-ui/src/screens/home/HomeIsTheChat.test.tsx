@@ -183,7 +183,8 @@ describe('the Workplace window (note #715)', () => {
     openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    const dialog = await screen.findByRole('dialog', { name: 'Workplace' });
+    // Named for the workplace and its head count (note #960).
+    const dialog = await screen.findByRole('dialog', { name: /^Nomad Trading/ });
     expect(dialog.id).toBe('homeSheet');
     expect(dialog.classList.contains('agentsheet')).toBe(true);
     expect(document.getElementById('homeWorkplaceDoor')!.getAttribute('aria-expanded')).toBe('true');
@@ -192,8 +193,11 @@ describe('the Workplace window (note #715)', () => {
     expect(at()).toBe('/');
     expect(dialog.querySelector('#homeWorkplace #agentActivity')).toBeTruthy();
     expect(dialog.querySelector('#homeWorkplace #seatsHomeSection')).toBeTruthy();
-    expect(dialog.querySelector('#homeWorkplace #knowledgeHead')).toBeTruthy();
-    await waitFor(() => expect(dialog.querySelector('#homeWorkplace #recapAgentFacts')!.textContent).toContain('Not reserved yet'));
+    // An index since note #960: a row per shelf, the agent's own cards one
+    // of them, on a screen of their own.
+    expect(dialog.querySelector('#homeWorkplace #indexRepositories')).toBeTruthy();
+    expect(dialog.querySelector('#homeWorkplace #indexChiefOfStaff')).toBeTruthy();
+    expect(dialog.querySelector('#homeWorkplace #recapAgentFacts')).toBeNull();
     // No agents in it: they are the picker's (and so were the rooms, while
     // there were rooms — note #843).
     expect(dialog.querySelector('.crow[data-agent]')).toBeNull();
@@ -206,7 +210,7 @@ describe('the Workplace window (note #715)', () => {
     openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('recapChatFace')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     expect(levels()).toBe(1);
   });
 
@@ -214,7 +218,7 @@ describe('the Workplace window (note #715)', () => {
     openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     expect(levels()).toBe(1);
     await back();
     await waitFor(() => expect(sheet()).toBeNull());
@@ -227,7 +231,7 @@ describe('the Workplace window (note #715)', () => {
     openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(sheet()).toBeNull());
     expect(levels()).toBe(0);
@@ -239,7 +243,7 @@ describe('the Workplace window (note #715)', () => {
     await home();
     const entry = (window.history.state as { key?: string } | null)?.key;
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     fireEvent.click(document.getElementById('homeSheetClose')!);
     await waitFor(() => expect(sheet()).toBeNull());
     expect(levels()).toBe(0);
@@ -251,17 +255,17 @@ describe('the Workplace window (note #715)', () => {
     const { unmount } = openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     // A reload: the same document address with the same entry state.
     unmount();
     openInBrowser(null);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     expect(levels()).toBe(1);
   });
 
   it('the overview\'s old workplace address opens Home with the window, and its Back closes the window rather than leaving; a bare /overview too', async () => {
     const { unmount } = openInBrowser('/overview?org=o1&half=workplace');
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     expect(at()).toBe('/');
     expect(document.getElementById('screenOverview')).toBeNull();
     expect(levels()).toBe(1);
@@ -271,7 +275,7 @@ describe('the Workplace window (note #715)', () => {
     expect(at()).toBe('/');
     unmount();
     openInBrowser('/overview?org=o1');
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
   });
 
   // Note #717: the window is an entry of Home's own address, so the router
@@ -297,7 +301,7 @@ describe('the Workplace window (note #715)', () => {
     current = usage(32);
     const before = reads();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     await waitFor(() => expect(shownUsage()).toBe('32%'));
     expect(reads()).toBe(before + 1);
     // Closed and opened again: asked again.
@@ -323,13 +327,13 @@ describe('the Workplace window (note #715)', () => {
     current = usage(32);
     const before = reads();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     // The copy in hand stands while the read is out.
     expect(shownUsage()).toBe('12%');
     await back();
     await waitFor(() => expect(sheet()).toBeNull());
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     expect(reads()).toBe(before + 1);
     await act(async () => { gate.release!(); });
     await waitFor(() => expect(shownUsage()).toBe('32%'));
@@ -340,7 +344,7 @@ describe('the Workplace window (note #715)', () => {
     openInBrowser('/');
     await home();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(title()).toBe('Workplace'));
+    await waitFor(() => expect(title()).toBe('Nomad Trading · 3 people'));
     fireEvent.click(sheet()!.parentElement!);
     await waitFor(() => expect(sheet()).toBeNull());
     expect(levels()).toBe(0);

@@ -194,7 +194,7 @@ try {
   await page.screenshot({ path: path.join(OUT, 'n843-recap-nowhere.png') as `${string}.png` });
   await settleAfterShot(page);
   await openWorkplaceWindow(page, ORIGIN);
-  await page.waitForSelector('#homeSheet #homeWorkplace #recapAgentSection', { timeout: 10_000 });
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexChiefOfStaff', { timeout: 10_000 });
   await cardHere('the Workplace window');
   await page.reload({ waitUntil: 'networkidle0' });
   await cardHere('Home after a reload');

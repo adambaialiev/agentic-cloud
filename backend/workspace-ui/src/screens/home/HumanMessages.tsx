@@ -7,7 +7,7 @@ import { useSession } from '../../session/useSession.js';
 import { useMessagePoll } from '../messages/useMessagePoll.js';
 import { MAIL_POLL_MS } from '../mail/MailScreen.js';
 import type { WorkspaceMailUnreadAnswer } from '../../../../src/shared/workspace-mail.js';
-function MessageDoor({ orgId }: { orgId: string }) {
+export function MessageDoor({ orgId }: { orgId: string }) {
   const { api } = useSession();
   const [unread, setUnread] = useState<number | null>(null);
   const read = useCallback(async (alive: () => boolean) => {
@@ -38,7 +38,7 @@ function MessageDoor({ orgId }: { orgId: string }) {
  * addresses existed takes one in Settings, and a door to an empty inbox they
  * cannot receive at would be the wrong invitation.
  */
-function MailDoor({ address }: { address: string }) {
+export function MailDoor({ address }: { address: string }) {
   const { api } = useSession();
   const [unread, setUnread] = useState(0);
   // A COUNT, never the mail itself: this runs every few seconds on Home, and

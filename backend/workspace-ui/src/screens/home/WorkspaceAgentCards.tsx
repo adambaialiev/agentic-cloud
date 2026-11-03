@@ -127,15 +127,8 @@ export function WorkspaceAgentCards({ orgId, details }: { orgId: string; details
   }
   return (
     <section id="recapAgentSection">
-      <h2 className="homehead" id="recapAgentHead">About this agent</h2>
-      {/* What it IS, in the words the person would use about it — this is the
-          one agent whose job is not visible from a repository. */}
-      <div className="hintblock" id="recapAgentAbout">
-        Your own agent across this whole workplace, and the one you talk to on
-        Home. It has a durable machine, can work with files and code, use the
-        web, run services — and it brings agents in, hands work out and
-        follows it up for you.
-      </div>
+      {/* No heading and no paragraph about what the agent is (note #960): the
+          screen's own title names it, and a reader who opened it knows. */}
       <div className="card" id="recapAgentFacts">
         <Fact label="State" value={state.text} />
         {active ? <Fact label="Last request" value={active} /> : null}

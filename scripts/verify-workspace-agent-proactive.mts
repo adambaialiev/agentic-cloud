@@ -162,10 +162,13 @@ try {
   await page.evaluate(() => document.querySelector('.chatlist, #recapChatList, .chatscroll')?.scrollTo?.({ top: 1e6 }));
   await shot('home-event-turn-phone');
 
-  // 2. The Workplace window: off by default, one switch.
+  // 2. The Chief of Staff's own screen, the last row of the Workplace
+  //    window (note #960): off by default, one switch.
   await page.click('#homeWorkplaceDoor');
   await settled();
-  await page.waitForSelector('#homeSheet #recapEventTurns', { timeout: 10_000 });
+  await page.waitForSelector('#homeSheet #indexChiefOfStaff', { timeout: 10_000 });
+  await page.$eval('#homeSheet #indexChiefOfStaff', (node) => (node as HTMLElement).click());
+  await page.waitForSelector('#screenChiefOfStaff #recapEventTurns', { timeout: 10_000 });
   check('event turns start off', (await page.$eval('#recapEventTurns', (node) => node.getAttribute('aria-checked'))) === 'false');
   check('nothing else to set while off', !(await page.$('#recapPermissionsCard')) && !(await page.$('#recapWaitProposal')));
   await page.$eval('#recapProactiveHead', (node) => node.scrollIntoView({ block: 'start' }));
@@ -189,7 +192,7 @@ try {
   check('Noticed lately lists all three turns, quiet ones too, newest first',
     noticed.length === 3 && noticed[0]!.includes('Told you in its chat') && noticed[1]!.includes('Kept quiet') && noticed[1]!.includes('1 action') && noticed[2]!.includes('reference note'), JSON.stringify(noticed));
   const overflow = await page.evaluate(() => {
-    const sheet = document.getElementById('homeSheetBody')!;
+    const sheet = document.getElementById('screenChiefOfStaff')!;
     return [...sheet.querySelectorAll('#recapProactiveCard, #recapPermissionsCard, #recapNoticedCard')].some((node) => node.scrollWidth > node.clientWidth + 1);
   });
   check('nothing overflows its card on a phone', !overflow);
@@ -200,12 +203,8 @@ try {
 
   // 4. At a desk.
   await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
-  await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
-  await page.waitForSelector('#homeWorkplaceDoor', { timeout: 10_000 });
-  // A reload stands an open window up again (note #715); open it only if it is not.
-  if (!(await page.$('#homeSheet'))) await page.click('#homeWorkplaceDoor');
-  await settled();
-  await page.waitForSelector('#homeSheet #recapPermissionsCard', { timeout: 10_000 });
+  await page.goto(`${ORIGIN}/chief-of-staff?org=${encodeURIComponent(org.orgId)}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#screenChiefOfStaff #recapPermissionsCard', { timeout: 10_000 });
   await page.$eval('#recapProactiveHead', (node) => node.scrollIntoView({ block: 'start' }));
   await shot('workplace-on-its-own-desk');
 

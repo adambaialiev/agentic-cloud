@@ -22,9 +22,13 @@ const details = {
   settings: { cli: 'claude' as const, model: 'opus', effort: 'high' },
   machine: { cpuKind: 'shared', cpus: 1, memoryMb: 1024 },
 };
-/** The agent's cards stand at the foot of Home's Workplace window (note
- *  #715), which the overview's old address opens. */
-function setup(over: Record<string, unknown> = {}, entries = ['/overview?org=o1&half=workplace'], extra: Record<string, Answer> = {}) {
+/** The agent's cards are its own screen since note #960, the last row of
+ *  Home's Workplace window; they stood at the foot of that window (note
+ *  #715) until then. */
+const OWN = ['/chief-of-staff?org=o1'];
+/** Home, with the Workplace window the overview's old address opens. */
+const WINDOW = ['/overview?org=o1&half=workplace'];
+function setup(over: Record<string, unknown> = {}, entries = OWN, extra: Record<string, Answer> = {}) {
   const scripted = scriptedApi({
     ...workspaceScript(() => state),
     'GET api/recap/agent': () => ({ ...details, ...over }),
@@ -49,21 +53,20 @@ describe('the Workspace Agent\'s own screen', () => {
   it('says what it is, what it is doing, what it thinks with and what it runs on', async () => {
     const { calls } = setup();
     await waitFor(() => expect(document.getElementById('recapAgentFacts')).toBeTruthy());
-    // Its runtime line is Home's header's, under the window.
-    await waitFor(() => expect(document.getElementById('recapChatRuntime')!.textContent).toBe('opus · high'));
-    expect(document.getElementById('recapChatRuntime')!.getAttribute('aria-label')).toBe('Change Chief of Staff model and effort. Current: opus · high');
+    expect(document.getElementById('screenChiefOfStaff')).toBeTruthy();
     const facts = document.getElementById('recapAgentFacts')!;
     expect(facts.textContent).toContain('Ready');
     expect(facts.textContent).toContain('5m ago');
     expect(facts.textContent).toContain('1 GB');
-    expect(document.getElementById('recapAgentAbout')!.textContent).toMatch(/workplace/);
+    // No paragraph about what it is (note #960): the title names it.
+    expect(document.getElementById('recapAgentAbout')).toBeNull();
     expect(calls.find((c) => c.path === 'api/recap/agent')?.scope).toEqual({ org: 'o1' });
     // The state is the plate's own words, so the two cannot disagree.
     expect(facts.textContent).not.toContain('Idle');
   });
 
   it('its header names the model and effort, never the harness (note #723)', async () => {
-    setup({}, undefined, {
+    setup({}, WINDOW, {
       'GET api/recap/agent/settings': () => ({ orgId: 'o1', settings: { cli: 'codex', model: 'gpt-5.5', effort: 'xhigh' }, models: [] }),
     });
     await waitFor(() => expect(document.getElementById('recapChatRuntime')!.textContent).toBe('gpt-5.5 · xhigh'));
@@ -78,28 +81,42 @@ describe('the Workspace Agent\'s own screen', () => {
       docs: { file: 'CLAUDE.md', version: 129, latest: 129, current: true },
     });
     const models = [{ value: 'opus', label: 'Opus', cli: 'claude', available: true, efforts: [{ value: 'high', label: 'high' }] }];
-    setup({}, undefined, {
+    setup({}, OWN, {
       'GET api/agents/workspace-1/version': version,
       'GET api/recap/agent/settings': () => ({ orgId: 'o1', settings: details.settings, models }),
     });
     await waitFor(() => expect(document.getElementById('recapAgentVersion')!.textContent).toContain('2.1.276 · up to date'));
+    cleanup();
+    setup({}, ['/'], {
+      'GET api/agents/workspace-1/version': version,
+      'GET api/recap/agent/settings': () => ({ orgId: 'o1', settings: details.settings, models }),
+    });
+    await waitFor(() => expect(document.getElementById('recapChatRuntime')).toBeTruthy());
     fireEvent.click(document.getElementById('recapChatRuntime')!);
     await waitFor(() => expect(document.querySelector('#recapRuntimeModels .crow.current')?.textContent).toContain('Opus'));
     cleanup();
 
     const never = () => new Promise<never>(() => {});
-    const again = setup({}, undefined, {
+    const again = setup({}, OWN, {
       'GET api/recap/agent': never,
       'GET api/agents/workspace-1/version': never,
       'GET api/recap/agent/settings': never,
     });
     await waitFor(() => expect(document.getElementById('recapAgentFacts')).toBeTruthy());
     // The first frame, before either read has answered.
-    expect(document.getElementById('recapChatRuntime')!.textContent).toBe('opus · high');
     expect(document.getElementById('recapAgentFacts')!.textContent).toContain('1 GB');
     expect(document.getElementById('recapAgentVersion')!.textContent).toContain('2.1.276 · up to date');
     expect(again.calls.some((call) => call.path === 'api/recap/agent')).toBe(true);
-    // And its model & effort picker opens on the choices it last read.
+    cleanup();
+    // And Home's header, and its model & effort picker, open on what they
+    // last read.
+    setup({}, ['/'], {
+      'GET api/recap/agent': never,
+      'GET api/agents/workspace-1/version': never,
+      'GET api/recap/agent/settings': never,
+    });
+    await waitFor(() => expect(document.getElementById('recapChatRuntime')).toBeTruthy());
+    expect(document.getElementById('recapChatRuntime')!.textContent).toBe('opus · high');
     fireEvent.click(document.getElementById('recapChatRuntime')!);
     await waitFor(() => expect(document.getElementById('screenRecapRuntime')).toBeTruthy());
     expect(document.querySelector('#recapRuntimeModels .crow.current')?.textContent).toContain('Opus');
@@ -275,7 +292,7 @@ describe('the Workspace Agent\'s own screen', () => {
     expect((await screen.findByRole('button', { name: 'Asked — it will answer in its chat' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('its cards stand at the foot of Home\'s Workplace window, opened from its name in the header (note #715)', async () => {
+  it('its cards are its own screen, the last row of Home\'s Workplace window, opened from its name in the header (notes #715, #960)', async () => {
     setup({}, ['/']);
     await waitFor(() => expect(document.getElementById('screenHome')).toBeTruthy());
     // Home is the chat: no Back; the face and the name are the door to the
@@ -286,11 +303,14 @@ describe('the Workspace Agent\'s own screen', () => {
     expect(document.getElementById('homeOrganizations')).toBeTruthy();
     expect(document.getElementById('homeAccount')).toBeTruthy();
     fireEvent.click(document.getElementById('homeWorkplaceDoor')!);
-    await waitFor(() => expect(document.querySelector('#homeSheet #homeWorkplace #recapAgentFacts')).toBeTruthy());
-    expect(document.getElementById('homeWorkplace')!.lastElementChild!.id).toBe('recapAgentSection');
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(document.getElementById('homeSheet')).toBeNull());
-    expect(document.getElementById('screenHome')).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('#homeSheet #homeWorkplace #indexChiefOfStaff')).toBeTruthy());
+    // Its row is the window's last (note #960), and its cards are its own
+    // screen, no longer under the window's shelves.
+    const rows = [...document.querySelectorAll('#homeWorkplace a.indexrow')];
+    expect(rows.at(-1)!.id).toBe('indexChiefOfStaff');
+    expect(document.querySelector('#homeWorkplace #recapAgentSection')).toBeNull();
+    fireEvent.click(document.getElementById('indexChiefOfStaff')!);
+    await waitFor(() => expect(document.querySelector('#screenChiefOfStaff #recapAgentFacts')).toBeTruthy());
   });
 
   // Note #487 gave it a door onto its own room ("Its room", with how many

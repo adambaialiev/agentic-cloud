@@ -83,6 +83,7 @@ import { SeatSignInScreen } from './screens/seats/SeatSignInScreen.js';
 import { SeatsScreen } from './screens/seats/SeatsScreen.js';
 import { SecretScreen } from './screens/secrets/SecretScreen.js';
 import { SecretsScreen } from './screens/secrets/SecretsScreen.js';
+import { ChiefOfStaffScreen, RepositoriesScreen, SitesScreen, StorageScreen } from './screens/workplace/ShelfScreens.js';
 import { SiteScreen } from './screens/sites/SiteScreen.js';
 import { BucketScreen } from './screens/storage/BucketScreen.js';
 import { SessionProvider } from './session/SessionProvider.js';
@@ -279,6 +280,7 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   note: <NoteRoute />,
   knowledgeList: <KnowledgeListScreen />,
   knowledgePage: <KnowledgePageRoute />,
+  repositories: <RepositoriesScreen />,
   repo: <RepoRoute />,
   repoFile: <RepoFileRoute />,
   repoHistory: <RepoHistoryRoute />,
@@ -315,6 +317,7 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   // #715). Its address — every link, button and open tab that still names
   // it — opens Home with the one it names.
   recapAgent: <OverviewRedirect />,
+  chiefOfStaff: <ChiefOfStaffScreen />,
   messages: <MessageRoute inbox />,
   directMessage: <MessageRoute />,
   organizationMember: <Keyed screen={OrgMemberScreen} />,
@@ -322,7 +325,9 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   seatSignIn: <SeatSignInScreen />,
   seatSignInProvider: <SeatSignInScreen />,
   seat: <Keyed screen={SeatScreen} />,
+  sites: <SitesScreen />,
   site: <Keyed screen={SiteScreen} />,
+  storage: <StorageScreen />,
   bucket: <Keyed screen={BucketScreen} />,
   secrets: <SecretsScreen />,
   secret: <Keyed screen={SecretScreen} />,

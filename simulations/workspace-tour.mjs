@@ -130,10 +130,9 @@ await runBrowserScenario({
     await shoot('agents-picker', { fullPage: true });
     // The Workplace window: what belongs to the whole workplace, its notes
     // among them.
+    // An index since note #960: one row per shelf, each a screen of its own.
     await openWorkplace(page);
-    await waitForAll(page, '#notes', [newNote.title, 'Live']);
-    await waitForAll(page, '#sites', [site.name]);
-    await waitForAll(page, '#knowledge', ['Brand voice', knowledgeProposal.title]);
+    await waitForAll(page, '#homeWorkplace', ['Notes', 'Sites', 'Knowledge', '2 pages']);
     await shoot('workplace-window', { fullPage: true });
     // The people moved from a deck on Home into the account menu's People
     // row (note #634), where both still wear their pictures. The menu is in
@@ -299,8 +298,16 @@ await runBrowserScenario({
       'the agents picker draws a shelf that belongs to the workplace',
     );
     await openWorkplace(page);
-    await waitForAll(page, '#homeWorkplace', ['Repositories', repo.name, 'Knowledge', 'Sites', site.name]);
+    await waitForAll(page, '#homeWorkplace', ['Repositories', '1 repository', 'Knowledge', 'Sites', '1 site']);
     await shoot('workplace', { fullPage: true });
+    await page.click('#indexRepositories');
+    await waitForAll(page, '#screenRepositories', [repo.name]);
+    await shoot('repositories', { fullPage: true });
+    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await waitVisible(page, '#homeSheet #indexSites');
+    await page.click('#indexSites');
+    await waitForAll(page, '#screenSites', [site.name]);
+    await shoot('sites', { fullPage: true });
 
     // Nothing was written: the tour reads.
     const writes = app.requests.filter((request) => !['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !request.path.startsWith('/workspace/auth/'));

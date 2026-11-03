@@ -2908,6 +2908,7 @@ button.chatmsg.platform.aside:active {
   text-transform: none; letter-spacing: -.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.homesheetcount { color: var(--hint); font-weight: 400; }
 .homesheetback {
   flex: none; width: 40px; height: 40px; border-radius: 50%; color: var(--text);
   display: flex; align-items: center; justify-content: center;

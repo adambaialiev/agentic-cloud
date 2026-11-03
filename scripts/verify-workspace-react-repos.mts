@@ -203,7 +203,7 @@ const CONTENT_BOXES = [
   '#repoTitle', '#repoTabs', '#repoCrumb', '#repoBar', '#repoHistory',
   '#repoFilesHead', '#repoTree', '#repoTree .trow',
 ];
-const HOME_BOXES = ['#repos', '#repos .crow', '#repos .crow:last-child', '.repofoot', '#quota'];
+const HOME_BOXES = ['#repos', '#repos .crow', '#repos .crow:last-child', '.repofoot'];
 
 /** The one header, measured (note #282). Every detail screen fills the same
  *  block — Back and an optional action, then the screen's own name below —
@@ -301,29 +301,33 @@ try {
   // does, so their addresses name it and no room.
   const scoped = `org=${encodeURIComponent(org.orgId)}`;
 
-  // 2. Home's Workplace window: the card, the activity line and the storage
-  //    the namespace shares. Repositories belong to the workplace (note #566).
+  // 2. Home's Workplace window: Repositories is one row of its index (note
+  //    #960), saying how many and the storage the namespace shares, onto
+  //    the Repositories screen. Repositories belong to the workplace (#566).
   await openWorkplaceWindow(page$, ORIGIN);
-  await page$.waitForSelector('#repos .crow', { timeout: 10_000 });
-  check('the card lists the repository with what happened lately',
+  await page$.waitForSelector('#homeSheet #indexRepositories', { timeout: 10_000 });
+  check('the window’s Repositories row says how many and what they use',
+    /^Repositories1 repository · .+ of .+$/.test(await text('#indexRepositories')), await text('#indexRepositories'));
+  await tap(page$, '#indexRepositories');
+  await page$.waitForSelector('#screenRepositories #repos .crow', { timeout: 30_000 });
+  check('the row opens the list at the workplace-scoped address it would copy',
+    page$.url() === `${ORIGIN}/repositories?${scoped}`, page$.url());
+  check('the screen lists the repository with what happened lately',
     (await text('#repos .crow .name')) === 'infinite-agents'
     && (await text('#repos .crow .cwhen')).startsWith('· pushed'),
     `${await text('#repos .crow .name')} / ${await text('#repos .crow .cwhen')}`);
   check('the branch is named, because the backend saw a landing on it',
     (await text('#repos .crow .bname')) === 'main');
-  check('the storage line says what the whole namespace has used',
-    (await text('#quota')).startsWith('Storage: '), await text('#quota'));
-  // The key is a line of the card's FOOTER, beside the storage it shares a
-  // namespace with — not a row of the list, which is what it used to be
-  // (note #360). Two assertions, because the compaction is exactly the
-  // difference between them: the list holds repositories and nothing else,
-  // and the key sits in the same strip as the storage sentence.
+  check('the screen’s own line says what the whole namespace has used',
+    /^1 repository · .+ of .+ used$/.test(await text('#repositoriesSub')), await text('#repositoriesSub'));
   check('the list holds repositories only — the key is no longer a row of it',
     (await texts('#repos .crow .name')).join(' | ') === 'infinite-agents',
     (await texts('#repos .crow .name')).join(' | '));
-  check('the key is a line of the footer, beside what the namespace has used',
+  // The storage it shared that strip with is the screen's line now (note
+  // #960): the footer holds the key alone.
+  check('the key is the footer’s one line',
     (await text('.repofoot .gitkeytap')) === 'Clone on your computer'
-    && (await page$.$eval('.repofoot', (foot) => Boolean(foot.querySelector('#quota')))),
+    && (await page$.$eval('.repofoot', (foot) => !foot.querySelector('#quota'))),
     await text('.repofoot'));
   // The compaction, measured against the thing it used to imitate. The key
   // was a `.crow` — icon column, title, second line — so it stood as tall as
@@ -357,13 +361,16 @@ try {
   // esbuild's keepNames, which wraps it in a `__name()` that exists in this
   // process and not in the page — a ReferenceError thrown from the browser,
   // pages away from anything the check is about.
-  const edges = await page$.evaluate(() => ({
-    quota: Math.round(document.querySelector('#quota')!.getBoundingClientRect().left),
-    prose: Math.round(document.querySelector('#gitKeyCard .hintline')!.getBoundingClientRect().left),
-  }));
-  check('…and its prose starts where the storage sentence does',
+  const edges = await page$.evaluate(() => {
+    const foot = document.querySelector('.repofoot') as HTMLElement;
+    return {
+      quota: Math.round(foot.getBoundingClientRect().left + parseFloat(getComputedStyle(foot).paddingLeft)),
+      prose: Math.round(document.querySelector('#gitKeyCard .hintline')!.getBoundingClientRect().left),
+    };
+  });
+  check('…and its prose starts on the footer’s own left edge',
     edges.quota === edges.prose,
-    `#quota at ${edges.quota}, the panel's prose at ${edges.prose}`);
+    `the footer's edge at ${edges.quota}, the panel's prose at ${edges.prose}`);
   // The clone address cannot wrap, and a flex item may not be narrower than
   // its own content unless it is told it may. So the panel burst the card
   // and clipped its own prose and button until `min-width: 0` freed it.
@@ -745,7 +752,7 @@ try {
     shape: await shape(CONTENT_BOXES),
   };
   check('the Content panel says what it should', Object.values(reactSays).every(Boolean), JSON.stringify(reactSays));
-  check('Home’s repository card and the Content panel keep their geometry', Boolean(homeReact) && Boolean(contentReact), `${homeReact} / ${contentReact}`);
+  check('the Repositories screen’s card and the Content panel keep their geometry', Boolean(homeReact) && Boolean(contentReact), `${homeReact} / ${contentReact}`);
 
   // A signed-out session read is a 401 by design, a missing folder a 404, and
   // `/checks` is a 503 here on purpose: this fixture has no commit-status

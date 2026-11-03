@@ -835,7 +835,7 @@ describe('the router', () => {
 
     await act(async () => { resolveState(state); await pendingState; });
     // Home, with the Workplace window the overview's old address names.
-    await waitFor(() => expect(document.getElementById('homeSheetTitle')?.textContent).toBe('Workplace'));
+    await waitFor(() => expect(document.getElementById('homeSheetTitle')?.textContent).toBe('Nomad'));
     expect(document.getElementById('workplaceLoadingSkeleton')).toBeNull();
   });
 });

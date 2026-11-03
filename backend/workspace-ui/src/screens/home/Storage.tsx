@@ -50,9 +50,22 @@ function BucketRow({ bucket }: { bucket: WorkspaceBucketRow }) {
   );
 }
 
-export function Storage() {
+/** `screen`: the Storage screen (note #960) — the buckets alone; the count
+ *  and who can read them stand under the screen's title. */
+export function Storage({ screen = false }: { screen?: boolean } = {}) {
   const { state } = useWorkspace();
   const buckets = bucketsOf(state);
+  if (screen) {
+    return (
+      <div className="card" id="storageCard">
+        <div id="storage">
+          {buckets.length === 0
+            ? <div className="empty">No buckets yet. Ask any agent to create one.</div>
+            : buckets.map((bucket) => <BucketRow key={bucket.name} bucket={bucket} />)}
+        </div>
+      </div>
+    );
+  }
   if (buckets.length === 0) return null;
   const publicCount = buckets.filter((b) => b.public).length;
   return (

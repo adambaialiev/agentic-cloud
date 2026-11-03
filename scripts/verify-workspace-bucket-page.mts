@@ -182,21 +182,25 @@ try {
   await make({ name: 'bishkek-3d-tiles', bucket: 'iabkt-547027dcc674', public: true, agentId: 'caleb', agentName: 'Caleb', minutesAgo: 60 * 50 });
   await make({ name: 'demo-files', bucket: 'iabkt-b35c5156de34', public: false, agentId: 'ada', agentName: 'Ada', minutesAgo: 60 * 26 });
 
-  // 2. The Workplace sheet: two rows, each a door, and no delete on either.
+  // 2. The Workplace sheet's Storage row (note #960) opens the Storage
+  //    screen: two rows, each a door, and no delete on either.
   const openList = async () => {
     await page.goto(`${ORIGIN}/overview?org=${org.orgId}&half=workplace`, { waitUntil: 'networkidle0' });
-    await page.waitForSelector('#homeSheet #storageCard [data-bucket="bishkek-3d-tiles"]', { timeout: 10_000 });
+    await page.waitForSelector('#homeSheet #indexStorage', { timeout: 10_000 });
     await page.waitForFunction(() => document.getElementById('homeSheet')!.getAnimations().length === 0, { timeout: 10_000 });
-    await page.$eval('#storageCard', (node) => node.scrollIntoView({ block: 'center' }));
+    check('the Workplace sheet’s Storage row counts the buckets',
+      /2 buckets · 1 public/.test(await text('#indexStorage')), await text('#indexStorage'));
+    await page.$eval('#indexStorage', (node) => (node as HTMLElement).click());
+    await page.waitForSelector('#screenStorage #storageCard [data-bucket="bishkek-3d-tiles"]', { timeout: 10_000 });
     await pause(300);
   };
   await openList();
   const rows = await page.$$eval('#storageCard [data-bucket]', (nodes) => nodes.map((node) => ({
     name: node.getAttribute('data-bucket'), role: node.getAttribute('role') ?? node.tagName, words: (node.textContent ?? '').replace(/\s+/g, ' ').trim(),
   })));
-  check('the Workplace sheet lists both buckets, newest first', rows.map((row) => row.name).join('|') === 'demo-files|bishkek-3d-tiles', JSON.stringify(rows));
+  check('the Storage screen lists both buckets, newest first', rows.map((row) => row.name).join('|') === 'demo-files|bishkek-3d-tiles', JSON.stringify(rows));
   check('…and no delete stands on the list (the owner, 2026-10-19)',
-    !(await text('#homeSheet')).includes('Delete this bucket') && !(await page.$('#storageCard .btn.danger')), await text('#storageCard'));
+    !(await text('#screenStorage')).includes('Delete this bucket') && !(await page.$('#storageCard .btn.danger')), await text('#storageCard'));
   check('…each row is a door', rows.every((row) => row.role === 'button' || row.role === 'A'), JSON.stringify(rows.map((row) => row.role)));
   await shot('bucket-list-phone');
 
@@ -261,8 +265,8 @@ try {
   await page.$$eval('.btns .btn.danger', (nodes) => (nodes.at(-1) as HTMLElement | undefined)?.click());
   await page.waitForFunction(() => !document.getElementById('screenBucket'), { timeout: 10_000 }).catch(() => null);
   await page.waitForFunction(() => !document.querySelector('[data-bucket="bishkek-3d-tiles"]') && Boolean(document.querySelector('[data-bucket="demo-files"]')), { timeout: 10_000 }).catch(() => null);
-  check('…and once answered the bucket is gone and the reader is back on the Workplace sheet',
-    destroyed.includes('addon-bishkek-3d-tiles') && Boolean(await page.$('#homeSheet [data-bucket="demo-files"]'))
+  check('…and once answered the bucket is gone and the reader is back on the Storage screen',
+    destroyed.includes('addon-bishkek-3d-tiles') && Boolean(await page.$('#screenStorage [data-bucket="demo-files"]'))
       && !(await page.$('[data-bucket="bishkek-3d-tiles"]')),
     JSON.stringify({ destroyed, url: page.url() }));
   await shot('bucket-deleted-phone');

@@ -27,6 +27,10 @@ export function HomeSheet({ leaving, still, onGone, onClose }: {
   const { state } = useWorkspace();
   const card = useRef<HTMLDivElement>(null);
   const orgId = state?.org?.orgId ?? null;
+  // The workplace's own name and head count (note #960), where the window
+  // only said "Workplace".
+  const name = state?.org?.name?.trim() || 'Workplace';
+  const members = state?.org?.members ?? 0;
 
   // The card takes the focus, not the first control in it: a window that
   // opens with a door under the focus is one reflex Enter away from a walk
@@ -46,7 +50,10 @@ export function HomeSheet({ leaving, still, onGone, onClose }: {
       cardRef={card}
     >
       <div className="agentsheethead homesheethead">
-        <h2 className="homesheettitle" id="homeSheetTitle">Workplace</h2>
+        <h2 className="homesheettitle" id="homeSheetTitle">
+          <span id="homeSheetName">{name}</span>
+          {members > 1 ? <span className="homesheetcount" id="homeSheetCount">{` · ${members} people`}</span> : null}
+        </h2>
         <button className="agentsheetclose" id="homeSheetClose" type="button" aria-label="Close" onClick={onClose}>
           <Svg name="x" size={18} />
         </button>

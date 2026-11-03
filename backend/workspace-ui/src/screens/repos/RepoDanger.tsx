@@ -17,7 +17,7 @@
  * delete nobody reaches by accident.
  */
 
-import { overviewTo } from '../home/home-address.js';
+import { toFor } from '../../routes.js';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBanner } from '../../chrome/useBanner.js';
@@ -75,7 +75,7 @@ export function RepoDanger({ repoName }: { repoName: string }) {
         // The place itself is gone, so the child address goes with it: the
         // overview's repositories rather than a repository screen that would
         // 404 on its next read.
-        navigate(overviewTo(state?.org?.orgId, { half: 'workplace' }), { replace: true });
+        navigate(toFor({ kind: 'repositories', orgId: state?.org?.orgId })!, { replace: true });
         banner.show(`Deleted ${repoName} — an agent can bring it back for 14 days.`, true);
         await reload();
       } catch (error) {

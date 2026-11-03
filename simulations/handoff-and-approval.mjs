@@ -57,10 +57,14 @@ await runBrowserScenario({
     // 2. The note: written in plain words, from the Workplace window, where
     // the workplace's notes are since rooms left (note #843) — its Write a
     // note opens the notes screen with the box up.
+    // The window is an index since note #960: its Notes row opens the notes
+    // screen, whose Write a note puts the box up.
     await openWorkplace(page);
-    await waitForAll(page, '#notes', ['Launch checklist', 'Working by Milo']);
+    await waitForAll(page, '#indexNotes', ['Notes', ' notes']);
+    await page.click('#indexNotes');
+    await waitForAll(page, '#notesList', ['Launch checklist', 'Working by Milo']);
     await shoot('workplace-notes', { fullPage: true });
-    await page.click('#newNoteBtn');
+    await page.click('#notesAddBtn');
     await waitVisible(page, '#screenNoteNew');
     await page.type('#noteText', newNote.text);
     await shoot('note-composer');
@@ -143,9 +147,14 @@ await runBrowserScenario({
     // the Workplace window. Reached by the overview's old address, which
     // opens Home with its Workplace window (note #715).
     await open(page, app, '/overview', '#homeSheet #homeWorkplace');
-    await waitForAll(page, '#sites', [app.team.site.name]);
-    await waitForAll(page, '#notes', [newNote.title, 'Live']);
+    await waitForAll(page, '#homeWorkplace', ['Sites', 'Notes']);
     await shoot('home-after-merge', { fullPage: true });
+    // Each a screen of its own since note #960.
+    await page.click('#indexSites');
+    await waitForAll(page, '#screenSites #sites', [app.team.site.name]);
+    await open(page, app, '/notes', '#screenNotes');
+    await waitForAll(page, '#notesList', [newNote.title, 'Live']);
+    await open(page, app, '/', '#screenHome');
 
     // 8. Milo's knowledge proposal, from the decisions waiting in the agents
     // picker: read as it will look, then published.

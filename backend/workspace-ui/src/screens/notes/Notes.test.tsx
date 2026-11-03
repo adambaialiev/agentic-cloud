@@ -427,7 +427,7 @@ describe('home’s glimpse of the notes', () => {
   // place while the card was a room's shelf, until rooms left the product
   // (note #843). Now it opens the notes list with the box up — and the note
   // it saves is one Back away from that LIST, not from a second empty box.
-  it('writes from the Workplace window on the notes list, which Back from the saved note lands on', async () => {
+  it('writes from the notes list the Workplace window opens, which Back from the saved note lands on', async () => {
     at('/', emptyState({
       org: { orgId: 'o1', name: 'Nomad', role: 'admin', members: 1, seats: 1, seatProviders: [] },
       notes: [], noteFiles: true,
@@ -436,7 +436,9 @@ describe('home’s glimpse of the notes', () => {
       'GET api/notes/21': () => ({ note: { number: 21, title: 'The wifi code is 4417', html: '<p>The wifi code is 4417</p>', comments: [] } }),
     });
     await findNotes();
-    fireEvent.click(document.getElementById('newNoteBtn')!);
+    // The window's Notes row opens the list (note #960); its Write a note
+    // puts the box up.
+    fireEvent.click(document.getElementById('notesAddBtn')!);
     await screen.findByRole('heading', { name: 'Write a note' });
     expect(address()).toBe('/notes?org=o1');
     fireEvent.change(document.getElementById('noteText')!, { target: { value: 'The wifi code is 4417' } });

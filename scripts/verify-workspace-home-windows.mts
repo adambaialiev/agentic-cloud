@@ -246,18 +246,22 @@ try {
   const rising = await page.$eval('#homeSheet', (node) => node.getAnimations().map((one) => (one as CSSAnimation).animationName).join(','));
   check('Workplace rises with the picker’s own way in', rising.includes('agentsheetup'), rising);
   await settled();
-  check('Workplace is the window’s title', (await title()) === 'Workplace');
+  check('the workplace’s own name is the window’s title (note #960)', (await title()).startsWith('Nomad Trading'), await title());
   check('the name wears the open state', (await page.$eval('#homeWorkplaceDoor', (node) => node.getAttribute('aria-expanded'))) === 'true');
-  check('it holds the Workplace sections and the Chief of Staff’s own cards',
-    Boolean(await page.$('#homeSheet #homeWorkplace #agentActivity')) && Boolean(await page.$('#homeSheet #homeWorkplace #recapAgentSection')),
+  // An index since note #960: the pulse in full, then one row per shelf,
+  // the Chief of Staff's own settings among them, each a screen of its own.
+  check('it holds the pulse and the index, the Chief of Staff a row of it',
+    Boolean(await page.$('#homeSheet #homeWorkplace #agentActivity')) && Boolean(await page.$('#homeSheet #homeWorkplace #indexChiefOfStaff'))
+      && !(await page.$('#homeSheet #homeWorkplace #recapAgentSection')),
     String(await page.$$eval('#homeSheet #homeWorkplace > *', (nodes) => nodes.map((node) => node.id).join(','))));
   check('no room in it', !(await page.$('#homeSheet #homeRoom')));
   // The notes were a room's shelf until rooms left the product (note #843):
-  // the workplace's notes stand in its window, with the way to write one.
-  check('it holds the workplace’s notes, and the way to write one',
-    (await page.$eval('#homeSheet #homeWorkplace', (node) => node.querySelector('#notesCard')?.textContent ?? '')).includes('Launch checklist')
-      && Boolean(await page.$('#homeSheet #homeWorkplace #notesCard #newNoteBtn')),
-    await page.$eval('#homeSheet #homeWorkplace', (node) => node.querySelector('#notesCard')?.textContent?.slice(0, 120) ?? '(no notes card)'));
+  // the workplace's notes are a row of its window (note #960), saying how
+  // many, onto the notes screen.
+  check('it holds the workplace’s notes as one row, onto the notes screen',
+    /^Notes\d+ notes?/.test((await page.$eval('#homeSheet #homeWorkplace #indexNotes', (node) => node.textContent ?? '').catch(() => '')))
+      && new URL(await page.$eval('#homeSheet #indexNotes', (node) => (node as HTMLAnchorElement).href), ORIGIN).pathname === '/notes',
+    await page.$eval('#homeSheet #homeWorkplace #indexNotes', (node) => node.textContent ?? '').catch(() => '(no notes row)'));
   const phoneSheet = await box('#homeSheet');
   check('on a phone it stands on the bottom edge and short of the top',
     phoneSheet.bottom === 844 && phoneSheet.top > 40, JSON.stringify(phoneSheet));
@@ -277,7 +281,7 @@ try {
   // From the face too.
   await page.click('#recapChatFace');
   await settled();
-  check('the face opens Workplace too', (await title()) === 'Workplace' && (await depth()) === 1);
+  check('the face opens Workplace too', (await title()).startsWith('Nomad Trading') && (await depth()) === 1);
   await page.keyboard.press('Escape');
   await gone();
   check('Escape closes it', (await depth()) === 0 && new URL(page.url()).pathname === '/');
@@ -296,7 +300,7 @@ try {
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForSelector('#homeSheet', { timeout: 10_000 });
   check('a reload stands the window up again, without replaying the way in',
-    (await title()) === 'Workplace' && (await page.$eval('#homeSheet', (node) => node.getAnimations().length)) === 0 && (await depth()) === 1);
+    (await title()).startsWith('Nomad Trading') && (await page.$eval('#homeSheet', (node) => node.getAnimations().length)) === 0 && (await depth()) === 1);
   await page.click('#homeSheetClose');
   await gone();
 
@@ -321,20 +325,21 @@ try {
   check('Escape closes the picker and stays on Home', new URL(page.url()).pathname === '/' && Boolean(await page.$('#screenHome')));
 
   // 5. Secrets are the Workplace window's (note #783 — one set per
-  //    workplace, like repositories), and Add a secret goes to the secrets
-  //    screen with its form up.
+  //    workplace, like repositories): a row of its index since note #960,
+  //    onto the secrets screen, where Add a secret puts the form up.
   await page.click('#homeWorkplaceDoor');
-  await page.waitForSelector('#homeSheet #homeWorkplace #secrets', { timeout: 10_000 });
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexSecrets', { timeout: 10_000 });
   await settled();
-  check('the Workplace window carries the Secrets card',
-    Boolean(await page.$('#homeSheet #homeWorkplace #secrets')) && !(await page.$('#roomContentTab-secrets')));
+  check('the Workplace window carries the Secrets row',
+    Boolean(await page.$('#homeSheet #homeWorkplace #indexSecrets')) && !(await page.$('#roomContentTab-secrets')));
+  await page.$eval('#homeSheet #indexSecrets', (node) => (node as HTMLElement).click());
+  await page.waitForSelector('#screenSecrets #secretsAddBtn', { timeout: 10_000 });
   const opened = await page.evaluate(() => {
-    const door = [...document.querySelectorAll<HTMLButtonElement>('#homeSheet #homeWorkplace button')]
-      .find((node) => node.textContent?.trim() === 'Add a secret');
+    const door = document.querySelector<HTMLButtonElement>('#screenSecrets #secretsAddBtn');
     door?.click();
-    return Boolean(door);
+    return Boolean(door && door.textContent?.trim() === 'Add a secret');
   });
-  check('the Secrets card offers Add a secret', opened);
+  check('the secrets screen offers Add a secret', opened);
   await page.waitForSelector('#screenAdd #addForm', { timeout: 10_000 });
   const form = await box('#screenAdd #addForm');
   check('Add a secret opens the secrets screen with the form up, at the workplace\'s address',
@@ -371,7 +376,7 @@ try {
       && (await page.$eval('#screenNotes', (node) => node.textContent ?? '')).includes('Launch checklist'),
     page.url());
   await page.goto(`${ORIGIN}/overview?org=${org.orgId}&half=workplace`, { waitUntil: 'networkidle0' });
-  await page.waitForFunction(() => document.getElementById('homeSheetTitle')?.textContent === 'Workplace', { timeout: 10_000 });
+  await page.waitForFunction(() => document.getElementById('homeSheetTitle')?.textContent?.startsWith('Nomad Trading'), { timeout: 10_000 });
   check('half=workplace opens the Workplace window', new URL(page.url()).pathname === '/');
   await page.goBack();
   await gone();

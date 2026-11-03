@@ -114,14 +114,17 @@ describe('the repository rows on home', () => {
     expect([...card().querySelectorAll('.badge')].map((badge) => badge.textContent)).toEqual(['public']);
   });
 
-  it('closes the card with one footer strip: the storage, then the key beside it', async () => {
+  // The Repositories screen (note #960): the storage is the screen's own
+  // line, so the card's foot holds the key alone.
+  it('says the storage under the title and closes the card with the key alone', async () => {
     open(inWorkplace({
       repos: [repo({ name: 'infinite-agents', cloneUrl: 'https://git.test/ns/infinite-agents.git' })],
       quota: { repoMaxBytes: 1024, userMaxBytes: 1024 * 1024 * 100, userUsedBytes: 1024 * 1024 },
     }));
     await findHome();
+    expect(document.getElementById('repositoriesSub')!.textContent).toBe('1 repository · 1.0 MB of 100.0 MB used');
     const foot = document.querySelector('.repofoot')!;
-    expect(foot.querySelector('#quota')!.textContent).toBe('Storage: 1.0 MB of 100.0 MB used');
+    expect(foot.querySelector('#quota')).toBeNull();
     expect(foot.querySelector('.gitkeytap')!.textContent).toBe('Clone on your computer');
     // The compaction itself (note #360): the key is a line of the footer, not
     // a row of the list wearing a repository's icon column and second line.

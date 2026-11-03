@@ -577,51 +577,49 @@ describe('Home’s two windows (note #715)', () => {
   const node = (id: string) => document.getElementById(id)!;
   const workplaceWindow = openWorkplace;
 
-  it('Workplace holds the workplace’s shelves, and no agents: the fleet is the picker’s', async () => {
+  it('Workplace holds the workplace’s shelves as an index, and no agents: the fleet is the picker’s', async () => {
     home(halved());
     const workplace = await workplaceWindow();
     expect(workplace.closest('#homeSheet')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Drive' })).toBeTruthy();
+    // One row per shelf (note #960), each a link onto its own screen.
+    expect(within(node('indexDrive')).getByText('Drive')).toBeTruthy();
+    expect(node('indexDrive').getAttribute('href')).toMatch(/\/drive\?org=o1$/);
     expect(document.getElementById('homeRoom')).toBeNull();
     expect(screen.queryByRole('heading', { name: /^Agents/ })).toBeNull();
   });
 
   // The notes were a room's shelf, under a tab of the picker, until rooms
-  // left the product (note #843): they are the workplace's one list, in its
-  // window, after the subscriptions and before Drive. The Workspace Agent's
-  // own notes card (note #468) stays gone: its notes are among these.
-  it('holds the workplace’s notes, after the subscriptions and before Drive, and the picker holds none', async () => {
+  // left the product (note #843): they are the workplace's one list, a row
+  // of its window since note #960, saying how many and how many wait — the
+  // notes themselves are on their screen. The Workspace Agent's own notes
+  // card (note #468) stays gone: its notes are among these.
+  it('holds the workplace’s notes as one row before Drive, and the picker holds none', async () => {
     home(halved({ notes: [note({ number: 3, title: 'The pricing page' })] }));
     const workplace = await workplaceWindow();
-    const card = node('notesCard');
-    expect(card.closest('#homeWorkplace')).toBe(workplace);
-    expect(within(card).getByText('The pricing page')).toBeTruthy();
-    expect(within(workplace).getByRole('button', { name: 'Write a note' }).id).toBe('newNoteBtn');
+    const row = node('indexNotes');
+    expect(row.closest('#homeWorkplace')).toBe(workplace);
+    expect(row.textContent).toBe('Notes1 note');
+    expect(within(workplace).queryByText('The pricing page')).toBeNull();
     const before = (a: string, b: string) =>
       Boolean(node(a).compareDocumentPosition(node(b)) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(before('seatsHomeSection', 'notesHead')).toBe(true);
-    expect(before('notesCard', 'driveCard')).toBe(true);
+    expect(before('indexNotes', 'indexDrive')).toBe(true);
     expect(workplace.querySelector('#workspaceNotesCard')).toBeNull();
-    expect(workplace.querySelector('#workspaceNotesHead')).toBeNull();
+    expect(workplace.querySelector('#notesCard')).toBeNull();
     await homeShelf();
     expect(document.querySelector('#agentSwitchSheet #notesCard')).toBeNull();
   });
 
-  it('a note in Workplace opens its own screen', async () => {
-    home(halved({ notes: [note({ number: 3, title: 'The pricing page' })] }), {
-      'GET api/notes/3': () => ({ note: { ...note({ number: 3, title: 'The pricing page' }), html: '<p>The pricing page</p>', comments: [] } }),
-    });
-    const workplace = await workplaceWindow();
-    fireEvent.click(within(workplace).getByText('The pricing page'));
-    await waitFor(() => expect(at()).toBe('/notes/3?org=o1'));
+  it('the Notes row in Workplace opens the notes screen', async () => {
+    home(halved({ notes: [note({ number: 3, title: 'The pricing page' })] }));
+    await workplaceWindow();
+    fireEvent.click(node('indexNotes'));
+    await waitFor(() => expect(at()).toBe('/notes?org=o1'));
   });
 
-  it('“Write a note” in Workplace opens the notes screen with the box up', async () => {
+  it('a workplace with no notes says so on the row', async () => {
     home(halved({ notes: [] }));
-    const workplace = await workplaceWindow();
-    fireEvent.click(within(workplace).getByRole('button', { name: 'Write a note' }));
-    await waitFor(() => expect(at()).toBe('/notes?org=o1'));
-    expect(await waitFor(() => document.getElementById('screenNoteNew')!)).toBeTruthy();
+    await workplaceWindow();
+    expect(node('indexNotes').textContent).toBe('NotesNo notes yet');
   });
 
   it('opens Workplace with the workplace-wide agent counts (note #614)', async () => {
@@ -907,7 +905,7 @@ describe('the shelves', () => {
     ...over,
   });
 
-  it('puts repositories, knowledge and sites in Workplace, below Drive, in that order (note #566)', async () => {
+  it('puts repositories, knowledge and sites in Workplace, below Drive, in that order (note #566), each a row', async () => {
     home(roomState({
       driveAvailable: true,
       sites: [{
@@ -915,15 +913,20 @@ describe('the shelves', () => {
         status: 'live', kind: 'site', createdAt: '2026-09-01T00:00:00.000Z',
       }],
     }));
-    await homeShelf('sites');
+    await openWorkplace();
     const workplace = document.getElementById('homeWorkplace')!;
-    const heads = [...workplace.querySelectorAll('h2.homehead')].map((head) => head.textContent);
-    const at = (name: string) => heads.indexOf(name);
-    expect(at('Drive')).toBeGreaterThanOrEqual(0);
-    expect(at('Repositories')).toBeGreaterThan(at('Drive'));
-    expect(at('Knowledge')).toBeGreaterThan(at('Repositories'));
-    expect(at('Sites')).toBeGreaterThan(at('Knowledge'));
-    expect(workplace.querySelector('#sitesCard')!.textContent).toContain('shop');
+    const rows = [...workplace.querySelectorAll('a.indexrow')].map((row) => row.querySelector('.name')!.textContent);
+    const place = (name: string) => rows.indexOf(name);
+    expect(place('Drive')).toBeGreaterThanOrEqual(0);
+    expect(place('Repositories')).toBeGreaterThan(place('Drive'));
+    expect(place('Knowledge')).toBeGreaterThan(place('Repositories'));
+    expect(place('Sites')).toBeGreaterThan(place('Knowledge'));
+    expect(document.getElementById('indexSites')!.textContent).toBe('Sites1 site on agentbuilt.app');
+    // The row opens the Sites screen, which lists it (note #960).
+    const sites = await homeShelf('sites');
+    expect(sites.querySelector('#sitesCard')!.textContent).toContain('shop');
+    expect(at()).toBe('/sites?org=o1');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     // …and nowhere in the picker (nor in a room, while there were rooms).
     await homeShelf();
     const picker = document.getElementById('agentSwitchSheet')!;
@@ -934,17 +937,17 @@ describe('the shelves', () => {
 
   it('hides Sites in Workplace until the workplace has one', async () => {
     home(roomState({ driveAvailable: true }));
-    await homeShelf('repositories');
-    expect(document.getElementById('sitesCard')).toBeNull();
-    expect(document.querySelector('#homeWorkplace #repos')).toBeTruthy();
+    await openWorkplace();
+    expect(document.getElementById('indexSites')).toBeNull();
+    expect(document.querySelector('#homeWorkplace #indexRepositories')).toBeTruthy();
   });
 
-  it('opens a copied link to a room\'s old Knowledge shelf on Workplace, where knowledge lives now', async () => {
+  it('opens a copied link to a room\'s old Knowledge shelf on Workplace, where knowledge is a row now', async () => {
     const state = roomState();
     const scripted = scriptedApi(workspaceScript(() => state));
     renderAt('/overview?content=knowledge', scripted.api);
-    await waitFor(() => expect(document.getElementById('homeSheetTitle')?.textContent).toBe('Workplace'));
-    expect(document.querySelector('#homeWorkplace #knowledge')).toBeTruthy();
+    await waitFor(() => expect(document.querySelector('#homeSheet #homeWorkplace')).toBeTruthy());
+    expect(document.querySelector('#homeWorkplace #indexKnowledge')).toBeTruthy();
   });
 
   // It opened the picker, in that room, on that shelf, until rooms left the
@@ -971,13 +974,13 @@ describe('the shelves', () => {
   it('keeps workplace-wide Drive in Workplace, and out of the picker', async () => {
     home(emptyState({ org, driveAvailable: true }));
     await openWorkplace();
-    const drive = document.getElementById('driveCard')!;
+    const drive = document.getElementById('indexDrive')!;
     expect(drive.closest('#homeWorkplace')).toBeTruthy();
     expect(drive.querySelector('.name')!.textContent).toBe('Drive');
     // "Shared across all rooms" while there were rooms (note #843).
-    expect(drive.textContent).toContain('Shared across the workplace');
+    expect(drive.textContent).toContain('Files for the whole workplace');
     await homeShelf();
-    expect(document.querySelector('#agentSwitchSheet #driveCard')).toBeNull();
+    expect(document.querySelector('#agentSwitchSheet #indexDrive')).toBeNull();
   });
 
   // The room tabs (note #740), the one-time "Name existing work" door to the

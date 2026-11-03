@@ -557,9 +557,12 @@ try {
   //    repositories): Add goes to the secrets screen with its form up, and a
   //    secret's address carries the workplace and no room.
   await waitHome('workplace');
-  await page.waitForSelector('#homeSheet #homeWorkplace #secrets', { timeout: 10_000 });
-  // The card sits low in the window's scroll: click it where it stands.
-  await page.$eval('#homeSheet #homeWorkplace #addBtn', (node) => (node as HTMLButtonElement).click());
+  // A row of the window's index since note #960: it opens the secrets
+  // screen, whose Add a secret puts the form up.
+  await page.waitForSelector('#homeSheet #homeWorkplace #indexSecrets', { timeout: 10_000 });
+  await page.$eval('#homeSheet #homeWorkplace #indexSecrets', (node) => (node as HTMLElement).click());
+  await page.waitForSelector('#screenSecrets #secretsAddBtn', { timeout: 10_000 });
+  await page.$eval('#screenSecrets #secretsAddBtn', (node) => (node as HTMLButtonElement).click());
   await page.waitForSelector('#secretName');
   await page.click('#secretName');
   check('the shared secret fields lost the same left focus border',
