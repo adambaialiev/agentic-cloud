@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import { toFor } from '../../routes.js';
 import { Icon, TypeIcon, type IconName, type IconTint } from '../../ui/icons.js';
 import { CHIEF_OF_STAFF } from '../../ui/chief-of-staff.js';
+import { AgentFace } from '../../ui/AgentFace.js';
 import { SeatStrip } from '../../ui/SeatStrip.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { secretsOf } from '../secrets/secret-words.js';
@@ -32,17 +33,20 @@ import {
 /** One row of the index: the Direct messages door's own shape. */
 /** Every row's mark the same grey (Adam, 3 Nov 2026: "Notes, sites and
  *  repositories icons are colored. Let them be also grey."). */
-export function IndexRow({ id, to, glyph, tint, name, line }: {
+export function IndexRow({ id, to, glyph, tint, mark, name, line }: {
   id: string;
   to: string;
   glyph: IconName;
   tint?: IconTint;
+  /** A face in place of the glyph (the Chief of Staff's own, Adam's ask of
+   *  3 Nov 2026), in the same 28px column. */
+  mark?: ReactNode;
   name: string;
   line: ReactNode;
 }) {
   return (
     <Link className="crow open indexrow" id={id} to={to}>
-      <TypeIcon glyph={glyph} tint={tint} />
+      {mark ?? <TypeIcon glyph={glyph} tint={tint} />}
       <div className="main">
         <div className="name plain">{name}</div>
         <div className="cline">{line}</div>
@@ -52,7 +56,7 @@ export function IndexRow({ id, to, glyph, tint, name, line }: {
   );
 }
 
-export function WorkplaceIndex({ orgId, agentState }: { orgId: string; agentState: string | null }) {
+export function WorkplaceIndex({ orgId, agentState, agentAvatarUrl }: { orgId: string; agentState: string | null; agentAvatarUrl?: string }) {
   const { state } = useWorkspace();
   const notes = state?.notes ?? null;
   const unclaimed = (notes ?? []).filter((note) => note.work?.state === 'unclaimed').length;
@@ -109,7 +113,7 @@ export function WorkplaceIndex({ orgId, agentState }: { orgId: string; agentStat
         {secrets
           ? <IndexRow id="indexSecrets" to={toFor({ kind: 'secrets', ...scope })!} glyph="key" name="Secrets" line={secrets.length ? counted(secrets.length, 'secret') : 'None yet'} />
           : null}
-        <IndexRow id="indexChiefOfStaff" to={toFor({ kind: 'chiefOfStaff', ...scope })!} glyph="bot" name={CHIEF_OF_STAFF} line={agentState ?? ''} />
+        <IndexRow id="indexChiefOfStaff" to={toFor({ kind: 'chiefOfStaff', ...scope })!} glyph="bot" mark={<AgentFace agent={{ avatarUrl: state?.org?.workspaceAgentAvatarUrl ?? agentAvatarUrl }} />} name={CHIEF_OF_STAFF} line={agentState ?? ''} />
       </div>
     </>
   );

@@ -66,7 +66,9 @@ export function WorkplacePanel({ orgId }: { orgId: string }) {
       {/* A person waiting at the door: absent, not empty, when nobody
           waits. */}
       <HomeJoinRequests />
-      <WorkplaceIndex orgId={orgId} agentState={machine} />
+      {/* The Chief of Staff's face is the header's own source (Home's
+          header draws the same one), so a new picture follows everywhere. */}
+      <WorkplaceIndex orgId={orgId} agentState={machine} agentAvatarUrl={agent.data?.agent.avatarUrl} />
     </div>
   );
 }

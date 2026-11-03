@@ -10,6 +10,7 @@
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { bytes } from '../../ui/file-kind.js';
 import { CHIEF_OF_STAFF } from '../../ui/chief-of-staff.js';
+import { AgentFace } from '../../ui/AgentFace.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { Repositories } from '../home/Repositories.js';
 import { Sites } from '../home/Sites.js';
@@ -63,7 +64,12 @@ export function ChiefOfStaffScreen() {
   const details = useWorkspaceAgentDetails(orgId, false);
   return (
     <div className="screen" id="screenChiefOfStaff">
-      <ScreenTitle title={CHIEF_OF_STAFF} />
+      {/* Its face beside its name, from the same source as Home's header. */}
+      <ScreenTitle
+        mark={<AgentFace agent={{ avatarUrl: state?.org?.workspaceAgentAvatarUrl ?? details.data?.agent.avatarUrl }} />}
+        markId="chiefOfStaffFace"
+        title={CHIEF_OF_STAFF}
+      />
       {/* Not before its first read (or a copy of the last one) is in hand:
           the cards would claim a machine is "not reserved yet" for the
           length of the read. */}
