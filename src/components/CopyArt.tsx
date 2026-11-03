@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { FACES } from './live/fixture';
 
 /**
@@ -943,22 +943,60 @@ export function InstallFilm({
   caption,
   label = 'Play the film of a real install',
   playAt = 'corner',
+  autoplay = false,
+  wide = false,
 }: {
   src: string;
   poster: string;
   caption?: string;
   label?: string;
   playAt?: 'corner' | 'below';
+  /* Since note #965 (the owner, 3 Nov 2026, 18:45 UTC: "This video should be
+     the first thing in the landing page and play automatically") the home
+     film starts by itself: muted, inline on a phone, looping so the page
+     never rests on a dead last frame. It is started from code after the page
+     loads, never by the autoPlay attribute, so a visitor whose system asks
+     for reduced motion gets the poster and our play button instead, and so
+     does one whose browser refuses to start it (a phone in low-power mode).
+     While it is starting neither the button nor controls show; once it
+     plays, the player's own controls come up on a tap or a hover. */
+  autoplay?: boolean;
+  /* The full width of the section rather than 960 px, with no space above:
+     the home film opens the page. */
+  wide?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
+  const [state, setState] = useState<'still' | 'starting' | 'playing'>(autoplay ? 'starting' : 'still');
   const play = () => {
-    setPlaying(true);
+    setState('playing');
     const started = video.current?.play();
     if (started) started.catch(() => undefined);
   };
+  useEffect(() => {
+    if (!autoplay) return;
+    const film = video.current;
+    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let started: Promise<void> | undefined;
+    if (!film || still) {
+      started = Promise.reject(new Error('still'));
+    } else {
+      film.muted = true;
+      try {
+        started = film.play();
+      } catch (refused) {
+        started = Promise.reject(refused);
+      }
+    }
+    let gone = false;
+    Promise.resolve(started).then(
+      () => { if (!gone) setState('playing'); },
+      () => { if (!gone) setState('still'); },
+    );
+    return () => { gone = true; };
+  }, [autoplay]);
+  const playing = state === 'playing';
   return (
-    <figure className="relative mt-8 w-full max-w-[960px]">
+    <figure className={`relative w-full ${wide ? 'm-0' : 'mt-8 max-w-[960px]'}`}>
       <div className="relative">
         <video
           ref={video}
@@ -966,6 +1004,7 @@ export function InstallFilm({
           controls={playing}
           playsInline
           muted
+          loop={autoplay}
           preload="none"
           poster={poster}
           width={1920}
@@ -973,7 +1012,7 @@ export function InstallFilm({
         >
           <source src={src} type="video/mp4" />
         </video>
-        {playing ? null : (
+        {state !== 'still' ? null : (
           <button
             type="button"
             onClick={play}

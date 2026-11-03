@@ -12,7 +12,7 @@ import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
 import { InstallFilm } from '../components/CopyArt';
 import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-built-by-two-peoples-agents-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-hyperframes-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
@@ -74,7 +74,16 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    (entry-server.test: no prerendered clock); since note #958 there are no
    words beside it at all. The MP4's address comes from
    lib/films.ts (note #957), with the install film's; the poster is Iris's own, the site's photo album, with the
-   play button in the empty band under the page. Null removes the section. */
+   play button in the empty band under the page.
+   Since note #965 (the owner, 3 Nov 2026, 18:45 UTC, after Iris's new cut,
+   note #963: "This video should be the first thing in the landing page and
+   play automatically") it is that cut, made with HyperFrames: "Two people.
+   Four agents. One social network, built in under 90 minutes.", 1 min 35 s,
+   silent. It opens the page, above the headline, and plays by itself (muted,
+   inline, looping; never for a visitor who asks for reduced motion), with no
+   heading and no words beside it; its play button, shown only when it is
+   not playing by itself, sits in the poster's empty lower left. Null
+   removes it. */
 export const PRODUCT_FILM: { src: string; poster: string } | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
@@ -85,7 +94,6 @@ export const PRODUCT_FILM: { src: string; poster: string } | null = {
    stranger can look around. Null takes the link off. */
 export const BOOKFACE_URL: string | null = 'https://bookface-2006.agents.bookface.site/';
 export const BOOKFACE_LINK = 'Open the site they built';
-export const FILM_HEADING = 'Watch it work, start to finish.';
 
 /* One face of the problem (note #835): the heading promises the answer, the
    paragraph names the problem it answers, and the real panel proves it.
@@ -118,6 +126,32 @@ export default function Home() {
       style={{ fontFamily: 'var(--font-ui)' }}
     >
       <SiteHeader ctaTarget="none" tone="dark" />
+
+      {/* ── The film, first (note #965) ───────────────────────────────── */}
+      {/* The owner, 3 Nov 2026, 18:45 UTC: "ok this video should be central
+          in our landing page. This video should be the first thing in the
+          landing page and play automatically." The page opens on the product
+          moving, above the headline; everything else keeps its order under
+          it. Until then the film had its own section after the first screen,
+          "Watch it work, start to finish." (notes #951 to #958), which went
+          when the film moved up; its one link moved with it, a plain text
+          link to the site the film is about. No words around the film (note
+          #958). */}
+      {PRODUCT_FILM ? (
+        <section id="film" aria-label="The film" className={`${SECTION} pt-6 sm:pt-10`}>
+          <InstallFilm
+            {...PRODUCT_FILM}
+            autoplay
+            wide
+            label="Play the film of Bookface 2006, built by two people’s agents, 1 minute 35 seconds, no sound"
+          />
+          {BOOKFACE_URL ? (
+            <div id="film-site" className="mt-5 sm:mt-6">
+              <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* ── First screen: the problem, and the product ──────────────────── */}
       {/* Note #835 (the owner, 29 Oct, 18:10 UTC): the page leads with the
@@ -166,27 +200,6 @@ export default function Home() {
           </div>
         ) : null}
       </section>
-
-      {/* ── The product, moving (note #951) ────────────────────────────── */}
-      {/* Every other picture on the page is a still. Right after the first
-          screen, a founder who has seen many agent demos sees this one work,
-          start to finish, before the page takes it apart face by face. */}
-      {PRODUCT_FILM ? (
-        <section id="film" className={`${SECTION} ${HOME_SECTION_END}`}>
-          <ChapterDivider tight />
-          <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
-          {/* Heading, film and one plain link since note #958: the paragraph
-              that told the story ("Two people’s agents built a social
-              network the way Facebook looked in 2006 …") and the caption
-              under the player came off at the owner's word. */}
-          <InstallFilm {...PRODUCT_FILM} label="Play the film of Bookface 2006, built by two people’s agents, 2 minutes 41 seconds, no sound" playAt="below" />
-          {BOOKFACE_URL ? (
-            <div id="film-site" className="mt-6">
-              <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
 
       {/* ── The whole workplace, at a glance (note #841) ──────────────────── */}
       {/* The owner, 30 Oct 2026, 13:31 UTC: "We should have some illustration

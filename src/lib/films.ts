@@ -22,6 +22,13 @@ export function filmUrl(path: string): string {
   return `${FILMS_ORIGIN}/${path.replace(/^\/+/, '')}`;
 }
 
-/* The paths, the same on every host the films have lived on. */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-built-by-two-peoples-agents.mp4';
+/* The paths, the same on every host the films have lived on. A new cut gets
+   a new path, never an overwrite (the objects are cached for a year). */
+/* Since note #965 the home film is Iris's HyperFrames cut (1:35), encoded for
+   the page at 1280x720 (H.264, CRF 20, fast start, no audio track: 4.1 MB
+   against the 19 MB 1080p master, which stays in Drive). Its poster is in
+   the site bundle, as every poster is: a page asks no other address before
+   the visitor's film starts (the browser checks block any). A copy sits in
+   the bucket at films/bookface-2006-home-film-hyperframes-poster.jpg. */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-hyperframes-720p.mp4';
 export const INSTALL_FILM_PATH = 'private-copy/install-film-2026-10-29.mp4';

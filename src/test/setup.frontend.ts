@@ -30,6 +30,11 @@ vi.stubGlobal('Notification', MockNotification);
 vi.spyOn(console, 'log').mockImplementation(() => {});
 window.HTMLElement.prototype.scrollIntoView = vi.fn();
 window.HTMLElement.prototype.scrollTo = vi.fn();
+/* jsdom does not play media; the home film starts itself from code (note
+   #965), so give every test a quiet play() that resolves, as a browser that
+   allows a muted film does. Tests that need another answer spy on it. */
+window.HTMLMediaElement.prototype.play = function play() { return Promise.resolve(); };
+window.HTMLMediaElement.prototype.pause = function pause() {};
 
 afterEach(() => {
   vi.clearAllMocks();

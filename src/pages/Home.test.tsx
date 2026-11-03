@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_HEADING, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
@@ -31,7 +31,6 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       .map((node) => node.textContent);
     expect(headings).toEqual([
       HOME_HEADLINE,
-      ...(PRODUCT_FILM ? [FILM_HEADING] : []),
       'Here’s the workplace.',
       TEAM_HEADING,
       'No session starts from zero.',
@@ -125,8 +124,9 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     answer();
     draw();
     const plan = document.querySelector('#workplace')!;
-    // The film of the product stands between them since note #951.
-    expect(plan.previousElementSibling?.id).toBe(PRODUCT_FILM ? 'film' : 'home-top');
+    // The film stood between them from note #951 until note #965 moved it
+    // above the headline.
+    expect(plan.previousElementSibling?.id).toBe('home-top');
     expect(plan.nextElementSibling?.id).toBe('team');
     expect(plan.querySelectorAll('p')).toHaveLength(0);
     expect(plan.querySelectorAll('img')).toHaveLength(0);
@@ -259,36 +259,92 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   });
 });
 
-// Note #951: the product moving, right after the first screen. Every other
-// picture on the page is a still; the film is the real product, recorded on
-// the founder's own Agentic Cloud, and like the install film it never plays
-// by itself, has no sound and shows its own poster until it is pressed.
-describe('Home, the film of the product at work (note #951)', () => {
-  afterEach(() => vi.unstubAllGlobals());
+// Note #965 (the owner, 3 Nov 2026, 18:45 UTC: "This video should be the
+// first thing in the landing page and play automatically"): the film opens
+// the page, above the headline, and starts by itself, muted, inline and
+// looping. A visitor who asks for reduced motion, or whose browser refuses
+// to start it, gets the poster and our play button. From note #951 to #958
+// it was its own section after the first screen, "Watch it work, start to
+// finish.", and never played by itself.
+describe('Home, the film first and playing by itself (note #965)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
-  it('stands right after the first screen, from our bucket, with its poster and one link to the site', () => {
+  function reduce(wanted: boolean) {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: wanted && query.includes('prefers-reduced-motion: reduce'),
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    })));
+  }
+
+  async function settle() {
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  }
+
+  it('opens the page above the headline, from our bucket, with its poster and one link to the site', async () => {
     answer();
+    reduce(false);
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     draw();
+    await settle();
     if (!PRODUCT_FILM) return;
     const film = document.querySelector('#film')!;
-    expect(document.querySelector('#home-top')!.nextElementSibling).toBe(film);
-    // Heading, film and one plain link since note #958: no paragraph, no
-    // caption, and the link a text link to the site the film is about.
-    expect(film.querySelectorAll('p, figcaption')).toHaveLength(0);
+    expect(document.querySelector('main section')).toBe(film);
+    expect(film.nextElementSibling?.id).toBe('home-top');
+    expect(film.compareDocumentPosition(document.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The old section is gone: no heading, paragraph or caption around the
+    // film, and its one link, a plain text link, came up with it.
+    expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
+    expect(screen.queryByText('Watch it work, start to finish.')).toBeNull();
     const links = [...film.querySelectorAll('a')].map((a) => [a.getAttribute('href'), (a.textContent ?? '').trim()]);
     expect(links).toEqual(BOOKFACE_URL ? [[BOOKFACE_URL, BOOKFACE_LINK]] : []);
     expect(film.querySelector('a')?.className ?? '').not.toMatch(/\bbg-white\b|\brounded-xl\b/);
     const video = film.querySelector('video')!;
+    // Started from code, never by the attribute, so reduced motion holds.
     expect(video.autoplay).toBe(false);
+    expect(play).toHaveBeenCalledTimes(1);
     expect(video.muted).toBe(true);
-    expect(video.getAttribute('preload')).toBe('none');
-    expect(video.hasAttribute('controls')).toBe(false);
-    expect(video.getAttribute('poster')).toBeTruthy();
+    expect(video.loop).toBe(true);
+    expect(video.playsInline ?? video.hasAttribute('playsinline')).toBeTruthy();
+    // The poster comes with the site, so the page asks no other address
+    // until the film itself starts (the browser checks block any).
+    expect(video.getAttribute('poster')).toBe(PRODUCT_FILM.poster);
+    expect(PRODUCT_FILM.poster).not.toMatch(/^https?:/);
     expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
     expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
-    const play = screen.getByRole('button', { name: /^Play the film of Bookface 2006/ });
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
-    fireEvent.click(play);
+    // Playing: the player's own controls come up on a tap, no button over it.
     expect(video.hasAttribute('controls')).toBe(true);
+    expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
+  });
+
+  it('holds still on its poster with a play button when the visitor asks for reduced motion', async () => {
+    answer();
+    reduce(true);
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    draw();
+    await settle();
+    if (!PRODUCT_FILM) return;
+    expect(play).not.toHaveBeenCalled();
+    const video = document.querySelector('#film video')!;
+    expect(video.hasAttribute('controls')).toBe(false);
+    const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents, 1 minute 35 seconds/ });
+    fireEvent.click(button);
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(video.hasAttribute('controls')).toBe(true);
+  });
+
+  it('shows the poster and play button when the browser refuses to start it', async () => {
+    answer();
+    reduce(false);
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.reject(new DOMException('refused', 'NotAllowedError')));
+    draw();
+    await settle();
+    if (!PRODUCT_FILM) return;
+    expect(document.querySelector('#film video')!.hasAttribute('controls')).toBe(false);
+    expect(screen.getByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeTruthy();
   });
 });
