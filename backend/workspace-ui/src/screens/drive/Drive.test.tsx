@@ -498,7 +498,7 @@ describe('Drive screens', () => {
     // mutation that draws the card, before any passive effect can run.
     let tapped = false;
     const tap = new MutationObserver(() => {
-      const link = document.querySelector('#driveCard a');
+      const link = document.querySelector('#indexDrive');
       if (link && !tapped) { tapped = true; fireEvent.click(link); }
     });
     tap.observe(document.body, { childList: true, subtree: true });
@@ -521,9 +521,10 @@ describe('Drive screens', () => {
     // Home calls it by its name, which is also the word on every screen
     // inside it and on the first segment of every trail. (Its line said
     // "Shared across all rooms" until rooms left the product — note #843.)
-    const card = (await screen.findByText('Shared across the workplace')).closest('.card')!;
-    expect(card.querySelector('.name')!.textContent).toBe('Drive');
-    fireEvent.click(card.querySelector('a')!);
+    // A row of the Workplace window's index since note #960.
+    const row = (await screen.findByText('Files for the whole workplace')).closest('a')!;
+    expect(row.querySelector('.name')!.textContent).toBe('Drive');
+    fireEvent.click(row);
     fireEvent.click(await screen.findByRole('link', { name: /Brand assets/ }));
     fireEvent.click(await screen.findByRole('link', { name: /Brief.pdf/ }));
     expect(await screen.findByRole('heading', { name: 'Brief.pdf' })).toBeTruthy();
@@ -532,7 +533,7 @@ describe('Drive screens', () => {
     // it was opened, and the reader is out in a single tap.
     expect(screen.getByRole('navigation', { name: 'Folder path' }).textContent).toContain('Brand assets');
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-    expect(await screen.findByText('Shared across the workplace')).toBeTruthy();
+    expect(await screen.findByText('Files for the whole workplace')).toBeTruthy();
     expect(document.getElementById('screenDriveFile')).toBeNull();
   });
 });
