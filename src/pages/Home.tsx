@@ -11,7 +11,7 @@ import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
 import { InstallFilm } from '../components/CopyArt';
-import productFilmPoster from '../assets/films/from-an-invite-link-to-a-live-page-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-built-by-two-peoples-agents-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
@@ -59,29 +59,25 @@ export const TEAM_HEADING = 'See what everyone’s agents shipped. Live.';
    nothing under the line. */
 const HERO_DOOR: string | null = BUILD_YOURS;
 
-/* The product moving (note #951, the landing piece of the growth note #950):
-   the real product, recorded by Iris on the founder's own Agentic Cloud on
-   2 Nov 2026, 13:48 to 14:34 UTC. Since note #952 it is her publish cut,
-   "From an invite link to a page on the web" (6 min 3 s, note #950): the
-   first cut of note #932 (6 min 32 s) drew a clock that drifted up to 77 s,
-   said 13:58 where the product's stamps say 13:57, and showed the spent
-   Claude sign-in code; this one draws no running clock, checks every time on
-   screen against the recorder's marks and the product's own stamps, and
-   blurs the code. Its audio track is silent (YouTube wants one). The words
-   beside it quote no clock time (entry-server.test: no prerendered clock).
-   The MP4 is in our public bucket site-media beside the install film; the
-   poster is the film's own frame at 2:38 ("Asked at 13:56. Live at 13:57, at
-   its own address."). Since note #954 (the owner, 2 Nov 17:39 UTC: the film
-   must show what the people section pitches) it is Iris's cut with the team
-   chapter (note #953, 7 min 3 s): the same opening, and the 17-second People
-   pitch is now 80 seconds of two people's agents building Bookface 2006 on
-   the same cloud, 18:43 to 19:03 UTC, auto-merge on for both. The poster
-   frame at 2:38 is the same in both cuts. Null removes the section. */
+/* The product moving (note #951, the landing piece of the growth note #950).
+   Since note #956 (the owner, 3 Nov 2026, 05:40 UTC: "I'm not interested in
+   the waitlist. I'm interested in the Facebook 2006 clone. Yes I want a story
+   of Facebook clone") it is Iris's film of Bookface 2006 (note #955, 2 min
+   41 s): about a minute of the site in use (Amy on a desk, Marcus on a phone,
+   filmed 3 Nov 05:44 to 05:48 UTC), then how two people's four agents built
+   it on the founder's own Agentic Cloud on 2 Nov: the ask at 17:50, the
+   handout at 18:45, the first automatic merge at 18:47, 17 merged by 19:12.
+   No waitlist; no code or password in any frame; the audio track is silent.
+   Before it: the waitlist journey (notes #951, #952, #954), in Drive and on
+   notes #932 and #950. The words beside it quote no clock time
+   (entry-server.test: no prerendered clock). The MP4 is in our public bucket
+   site-media; the poster is Iris's own, the site's photo album, with the
+   play button in the empty band under the page. Null removes the section. */
 export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
-  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/home-film-with-team-chapter-2026-11-02.mp4',
+  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/bookface-2006-built-by-two-peoples-agents.mp4',
   poster: productFilmPoster,
   caption:
-    'Recorded on 2 Nov 2026 and shown in 7\u00a0min 3\u00a0s. Every time on screen is checked against the recording and the product’s own timestamps. No sound; the captions are in the picture.',
+    'Recorded on 2 and 3 Nov 2026 and shown in 2\u00a0min\u00a041\u00a0s. Every time on screen is the product’s own. No sound; the captions are in the picture.',
 };
 export const FILM_HEADING = 'Watch it work, start to finish.';
 
@@ -174,12 +170,12 @@ export default function Home() {
           <ChapterDivider tight />
           <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
           <p className={`mt-4 max-w-[40rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>
-            One day on the founder’s own Agentic Cloud, cut to seven minutes. A teammate joins,
-            an agent arrives on a computer of its own, a page is live at its own address the minute
-            after it was asked for, a change is approved from a phone, and two people’s agents build one
-            app side by side while each sees what the other’s shipped.
+            Two people’s agents built a social network the way Facebook looked in 2006, on the
+            founder’s own Agentic Cloud: profiles, friends, walls, pokes and photos. See it in use,
+            then how it was made. Four agents at once, every change merging by itself, seventeen in
+            under half an hour.
           </p>
-          <InstallFilm {...PRODUCT_FILM} label="Play the film of the product at work, 7 minutes 3 seconds, no sound" playAt="side" />
+          <InstallFilm {...PRODUCT_FILM} label="Play the film of Bookface 2006, built by two people’s agents, 2 minutes 41 seconds, no sound" playAt="below" />
         </section>
       ) : null}
 

@@ -934,9 +934,9 @@ export function UpgradeArt() {
    clean, with our own play button in its empty lower left and no browser
    controls, so they never cover the caption in the picture or the terminal
    (note #839). Pressing it shows the controls and plays. The product film on
-   the home page (note #951) uses the same player: its captions sit in the
-   lower left and the product in the middle, so its button sits in the empty
-   margin to the left (playAt). */
+   the home page (note #951) uses the same player; its poster is a page of
+   the site the agents built with an empty band under it, so its button sits
+   there (playAt, note #956). */
 export function InstallFilm({
   src,
   poster,
@@ -948,7 +948,7 @@ export function InstallFilm({
   poster: string;
   caption: string;
   label?: string;
-  playAt?: 'corner' | 'side';
+  playAt?: 'corner' | 'below';
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -978,7 +978,7 @@ export function InstallFilm({
             type="button"
             onClick={play}
             aria-label={label}
-            className={`absolute ${playAt === 'side' ? 'left-[16%] top-[40%] -translate-x-1/2 -translate-y-1/2' : 'bottom-[9%] left-[5%]'} flex h-12 w-12 items-center justify-center rounded-full bg-white text-panel shadow-[0_2px_10px_rgb(31_30_29/0.18)] transition-colors hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-16 sm:w-16`}
+            className={`absolute ${playAt === 'below' ? 'left-1/2 top-[74%] -translate-x-1/2 -translate-y-1/2' : 'bottom-[9%] left-[5%]'} flex h-12 w-12 items-center justify-center rounded-full bg-white text-panel shadow-[0_2px_10px_rgb(31_30_29/0.18)] transition-colors hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-16 sm:w-16`}
           >
             <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" aria-hidden="true">
               <path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
