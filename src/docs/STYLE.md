@@ -59,8 +59,8 @@ like a manual for the agent, not a guide for the person.
 ## Panels available (`src/components/Live*.tsx`)
 
 Before Home and the first run (`LiveSetup.tsx`): `LiveSignUp`, `LiveSignIn`,
-`LiveFirstGreeting` (the Chief of Staff's greeting and the three starter
-answers), `LiveFirstSignIn` (the sign-in ask with the two-row card),
+`LiveFirstGreeting` (Home's empty state: the one line that says what the
+Chief of Staff is, note #967), `LiveFirstSignIn` (the sign-in ask with the two-row card),
 `LiveFirstPlan` (the plan and the progress card while the team is built),
 `LiveClaudeSignIn` (Claude's own sign-in page). There is no setup gate
 since note #726 and no cloud step since note #664.

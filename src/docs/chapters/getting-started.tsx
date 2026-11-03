@@ -12,7 +12,7 @@ import { LiveFirstGreeting, LiveFirstPlan, LiveFirstSignIn, LiveSignIn, LiveSign
  * one-time link or an approved invite. Facts checked
  * 2026-10-11 against note #726 (Rosa's design, approved by the owner): there
  * is no setup gate any more. A new account lands on Home, the Chief of
- * Staff's chat, which greets the person with three starter answers, asks
+ * Staff's chat, which says in one line what it is (note #967), asks
  * for their Claude or ChatGPT plan inside the chat once they have said what
  * they are working on, and then brings in only the agents it needs,
  * usually two. A new workplace is empty until then: no four pre-made
@@ -76,10 +76,9 @@ const chapter: DocChapter = {
         <>
           <p>
             Your Chief of Staff is your own agent across the whole workplace, and Home is its
-            conversation. It greets you by name and asks what you are working on. Under the greeting
-            are three starter answers to tap: a waitlist page put live for your idea, a review of
-            your website, or a team set up for your startup. Tap one, or type your own answer as you
-            would brief a person: the outcome, and anything the team should know.
+            conversation. The first time, it is empty but for one line: tell it what you are working
+            on, and it puts a team on it. Type your answer as you would brief a person: the
+            outcome, and anything the team should know.
           </p>
           <p>
             A new workplace is empty until this point. There are no agents yet; the Chief of Staff
@@ -88,7 +87,7 @@ const chapter: DocChapter = {
         </>
       ),
       panel: (
-        <Panel size="compact" says="Home, the first time: the Chief of Staff’s greeting and the three starter answers under it.">
+        <Panel size="compact" says="Home, the first time: an empty conversation with one line that says what the Chief of Staff is.">
           <LiveFirstGreeting />
         </Panel>
       ),

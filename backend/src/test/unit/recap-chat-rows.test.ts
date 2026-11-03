@@ -184,4 +184,13 @@ describe('how the Chief of Staff\'s rows are shown (note #725)', () => {
   it('leaves out the pre-note-#496 briefing notice but keeps the reaction it opened', () => {
     expect(views(action('A new briefing was written. Reading it.', { kind: 'briefing' }), reply('Two proposals wait for you.'))).toEqual([{ form: 'hidden' }, { form: 'row' }]);
   });
+
+  it('leaves out the founder\'s stored greeting — the pane\'s empty state says it (note #967) — and keeps a joiner\'s welcome and the sign-in ask', () => {
+    expect(views(
+      { ...reply('Hi Samira, I\'m your Chief of Staff.'), kind: 'greeting' },
+      owner('Put a waitlist page live for my idea.'),
+      { ...reply('Got it. Sign it in below, and I\'ll start.'), kind: 'signin-ask' },
+    )).toEqual([{ form: 'hidden' }, { form: 'row' }, { form: 'row' }]);
+    expect(views({ ...reply('Hi Cara, welcome to Acme.'), kind: 'welcome' })).toEqual([{ form: 'row' }]);
+  });
 });

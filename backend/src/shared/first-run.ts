@@ -14,7 +14,11 @@
  * (Growth), and a change to it is hers to make.
  */
 
-/** The greeting, the first time Home opens on a new workplace. */
+/**
+ * The greeting, the first time Home opens on a new workplace: a stored row
+ * the first turn reads as its own earlier words, and the mark of a founder's
+ * first run. The screen draws `CHIEF_OF_STAFF_EMPTY` over it instead (note #967).
+ */
 export function firstRunGreeting(firstName: string | undefined): string {
   const name = firstName?.trim();
   return name
@@ -22,12 +26,15 @@ export function firstRunGreeting(firstName: string | undefined): string {
     : 'Hi, I\'m your Chief of Staff. Tell me what you\'re working on, and I\'ll put a team of agents on it.';
 }
 
-/** The three starter answers under the greeting; a tap sends the text as the person's message. */
-export const FIRST_RUN_STARTERS: readonly string[] = [
-  'Put a waitlist page live for my idea.',
-  'Look at my website and tell me what to fix first.',
-  'Set up a team for my startup.',
-];
+/**
+ * What the Chief of Staff's conversation says while nothing has been said in
+ * it (note #967; Adam, 2026-11-03: "no starters as real buttons. since this
+ * thing is not for consumers. it should be enough just to understand what is
+ * it."). Drawn as the pane's empty state, in the middle of the pane — not as
+ * a message — over a founder's stored `greeting` row and over a conversation
+ * with no rows at all; the greeting's own words are no longer drawn.
+ */
+export const CHIEF_OF_STAFF_EMPTY = 'I run your agents. Tell me what you\'re working on, and I\'ll put a team on it.';
 
 /**
  * The sign-in ask, answering their first message while no plan is signed in.
@@ -58,7 +65,7 @@ export const agentBroughtInReceipt = (name: string) => `Brought in ${name}.`;
  * #820): fixed text the platform writes the first time their Home opens,
  * by their first name, naming the workplace and saying what is already in
  * it — every agent and what it last did, and the newest
- * notes. No starter answers: those are for an empty workplace. The same
+ * notes. Drawn as a message, not as the empty state. The same
  * words on our platform and in a private copy.
  */
 export interface JoinerWelcomeAgent { name: string; owner?: string; doing?: string }

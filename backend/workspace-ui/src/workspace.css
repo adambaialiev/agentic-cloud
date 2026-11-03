@@ -7546,14 +7546,22 @@ h2.mailfileshead { margin-top: 16px; }
 .chatnoticedoor.forwardeddoor {
   margin-top: 2px; padding: 4px 0; border: 0; background: transparent; cursor: pointer; font-family: inherit;
 }
-/* The first run in the Chief of Staff's chat (note #726). The starters are
-   the room chat's pills (note #188), under the greeting rather than in the
-   middle of an empty pane: a tap is the first message. */
-.chatlog .firstrunstarters { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 10px 0 4px; max-width: 86%; }
-.chatlog .firstrunstarters .chatstarter {
-  width: auto; min-height: 0; margin: 0; padding: 10px 16px; border-radius: var(--r-lg);
-  font-size: var(--ui-read); font-weight: 400; line-height: 1.35; text-align: left; white-space: normal;
-  background: color-mix(in srgb, var(--hint) 13%, transparent); color: var(--text);
+/* The Chief of Staff's conversation before anything is said in it (note
+   #967): its face, small, over one line, in the middle of the pane on desk
+   and phone — the pane's empty state, not a message. The pane becomes a
+   column for as long as it is empty and the log fills it, so the words are
+   centred by auto margins in the flow: nothing here is absolutely
+   positioned (the pane's `.sr-only` labels, note #736). */
+.chatpane.isempty { display: flex; flex-direction: column; }
+.chatpane.isempty > .chatlog { flex: 1 0 auto; }
+.chatlog .chatempty.cosempty {
+  margin: auto; padding: 24px 8px 48px; max-width: 30em;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.cosempty .cosemptyface { display: flex; }
+.cosempty .cosemptyface > * { width: 40px; height: 40px; }
+.cosempty .cosemptyline {
+  margin: 0; color: var(--text); font-size: var(--ui-read); line-height: 1.45; text-wrap: balance;
 }
 /* The sign-in card under the ask: the Seats screen's own two rows, and the
    line that says where the sign-in happens. */

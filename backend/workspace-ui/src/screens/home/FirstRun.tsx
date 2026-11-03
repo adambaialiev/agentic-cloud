@@ -1,6 +1,6 @@
 /**
  * The first run, as the Chief of Staff's chat draws it (note #726, Rosa's
- * design): the three starter answers under the platform's greeting, the
+ * design): the pane's empty state while nothing is said (note #967), the
  * sign-in card under its ask, and the team's progress card while the
  * agents it brought in are being built.
  *
@@ -11,7 +11,7 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FIRST_RUN_SIGNIN_WHERE, FIRST_RUN_STARTERS } from '../../../../src/shared/first-run.js';
+import { CHIEF_OF_STAFF_EMPTY, FIRST_RUN_SIGNIN_WHERE } from '../../../../src/shared/first-run.js';
 import { toFor } from '../../routes.js';
 import { arrivingAgents, arrivingLine } from '../../onboarding/arriving.js';
 import { AgentFace } from '../../ui/AgentFace.js';
@@ -19,13 +19,18 @@ import { Icon, TypeIcon } from '../../ui/icons.js';
 import { signInSlug } from '../../ui/seat-words.js';
 import type { HomeAgent } from '../../workspace/live.js';
 
-/** Under the greeting, until the first message: a tap sends the text as the person's message. */
-export function FirstRunStarters({ onPick, disabled = false }: { onPick: (text: string) => void; disabled?: boolean }) {
+/**
+ * The conversation before anything is said in it (note #967; Adam,
+ * 2026-11-03: "no starters as real buttons … it should be enough just to
+ * understand what is it"): its face, small, over one line that says what the
+ * Chief of Staff is, in the middle of the pane. Not a message — no day, no
+ * time, no bubble — and no taps: the person types their own first ask.
+ */
+export function ChiefOfStaffEmpty({ avatarUrl }: { avatarUrl?: string }) {
   return (
-    <div className="firstrunstarters" id="firstRunStarters">
-      {FIRST_RUN_STARTERS.map((starter) => (
-        <button className="btn chatstarter" type="button" key={starter} disabled={disabled} onClick={() => onPick(starter)}>{starter}</button>
-      ))}
+    <div className="chatempty cosempty" id="chiefOfStaffEmpty">
+      <span className="cosemptyface" aria-hidden="true"><AgentFace agent={{ avatarUrl }} /></span>
+      <p className="cosemptyline">{CHIEF_OF_STAFF_EMPTY}</p>
     </div>
   );
 }

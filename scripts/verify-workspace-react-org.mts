@@ -362,16 +362,16 @@ try {
   await signUpWorkspaceByEmail(page, 'saddam@example.com');
   // The workplace comes with the account, and since note #726 there is no
   // gate and nothing furnished in front of it: signing up lands on Home —
-  // the Chief of Staff's conversation — with the platform's greeting and
-  // the three starters under it, and NO room and NO agent made for the
+  // the Chief of Staff's conversation — on its empty state, the one line
+  // that says what it is (note #967), and NO room and NO agent made for the
   // founder. (This fixture stamps a seat at creation, so the sign-in card
   // would not stand here: the first run's ask is the chat's own test.)
   await page.waitForSelector('#screenHome', { timeout: 10_000 });
-  await page.waitForSelector('#firstRunStarters .chatstarter', { timeout: 10_000 }).catch(() => {});
+  await page.waitForSelector('#chiefOfStaffEmpty', { timeout: 10_000 }).catch(() => {});
   check('a brand-new account skips naming and lands on Home at once (note #726)',
     Boolean(await page.$('#screenHome')) && !(await page.$('#nameWorkplaceForm')) && !(await page.$('#requiredSetup')) && !(await page.$('#teamArriving')));
-  check('…on the Chief of Staff\u2019s greeting, with the three starters under it',
-    (await page.$$('#firstRunStarters .chatstarter')).length === 3 && (await text('#recapChatTitle')) === 'Chief of Staff',
+  check('…on the Chief of Staff\u2019s empty state: one line, no starters (note #967)',
+    Boolean(await page.$('#chiefOfStaffEmpty')) && !(await page.$('#recapChatLog .chatmsg, #recapChatLog button')) && (await text('#recapChatTitle')) === 'Chief of Staff',
     await text('#recapChatLog'));
   // It also counted the rooms founding made, until rooms left the product
   // (note #843); an agent is what founding could still furnish.
@@ -1824,7 +1824,7 @@ try {
   await page.type('#orgCreateName', 'Second Shop');
   await shotOrg('second-workplace-named');
   await page.click('#orgCreateBtn');
-  await page.waitForSelector('#screenHome #firstRunStarters .chatstarter', { timeout: 15_000 }).catch(() => {});
+  await page.waitForSelector('#screenHome #chiefOfStaffEmpty', { timeout: 15_000 }).catch(() => {});
   const secondOrg = (await orgStorage.listOrgs()).find((row) => row.name === 'Second Shop');
   if (!secondOrg) throw new Error('Create workplace made no workplace');
   const standing = () => page.evaluate(() => sessionStorage.getItem('acc.standingWorkplace'));
@@ -1832,10 +1832,10 @@ try {
     (await orgStorage.getMembershipByUser(me.userId))?.orgId === secondOrg.orgId);
   check('…and moves THIS tab into it, not only the account (note #670)',
     (await standing()) === secondOrg.orgId, `${await standing()} · first ${firstOrgId}`);
-  check('…where Home opens on the Chief of Staff’s greeting and starters, with no gate and no arriving team (note #726)',
+  check('…where Home opens on the Chief of Staff’s empty state, with no gate and no arriving team (notes #726, #967)',
     Boolean(await page.$('#screenHome')) && !(await page.$('#requiredSetup')) && !(await page.$('#teamArriving'))
       && (await text('#homeOrganizations .orgswapname')) === 'Second Shop'
-      && (await page.$$('#firstRunStarters .chatstarter')).length === 3,
+      && Boolean(await page.$('#chiefOfStaffEmpty')),
     `${page.url()} · ${await text('#homeOrganizations .orgswapname')} · ${await text('#recapChatLog')}`);
   check('…because the subscription came along, and founding furnished nothing',
     (await orgStorage.listSeatsByMember(secondOrg.orgId, me.userId)).length > 0

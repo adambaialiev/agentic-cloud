@@ -22,9 +22,10 @@ await runBrowserScenario({ app, screenshotPath: screenshotPathFor('claude-signin
   await page.type('#authPasswordConfirm', fixture.account.password);
   await page.waitForFunction(() => !document.querySelector('#authEmailButton')?.disabled, { timeout: 10_000 });
   await page.click('#authEmailButton');
-  // Home at once (note #726): a starter tapped, and the sign-in card under the ask.
-  await waitVisible(page, '#firstRunStarters .chatstarter');
-  await page.evaluate((text) => [...document.querySelectorAll('#firstRunStarters .chatstarter')].find((node) => node.textContent?.trim() === text)?.click(), fixture.firstRun.starter);
+  // Home at once (note #726): the first ask typed, and the sign-in card under the ask.
+  await waitVisible(page, '#chiefOfStaffEmpty');
+  await page.type('#agentChatText', fixture.firstRun.firstAsk);
+  await page.click('#agentChatSend');
   await waitVisible(page, '#firstRunSignIn');
   await shoot('sign-in-pick', { fullPage: true });
   await page.click('#firstRunSignIn .crow[data-provider="claude"]');

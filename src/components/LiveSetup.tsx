@@ -4,20 +4,19 @@ import { WORKSPACE_AGENT_CHAT_ID } from '../../backend/src/shared/workspace-reca
 import {
   FIRST_RUN_SIGNIN_ASK,
   agentBroughtInReceipt,
-  firstRunGreeting,
   firstRunSeatReceipt,
 } from '../../backend/src/shared/first-run';
 import type { HomeAgent } from '../../backend/workspace-ui/src/workspace/live';
 import { AuthShell, EmailPanel } from '../../backend/workspace-ui/src/auth/AuthGate';
 import { chatDayLabel } from '../../backend/workspace-ui/src/screens/chat/chat-notice';
 import { ChatMessageRow } from '../../backend/workspace-ui/src/screens/chat/ChatMessageRow';
-import { FirstRunSignIn, FirstRunStarters, TeamArrivingCard } from '../../backend/workspace-ui/src/screens/home/FirstRun';
+import { ChiefOfStaffEmpty, FirstRunSignIn, TeamArrivingCard } from '../../backend/workspace-ui/src/screens/home/FirstRun';
 import { useSession } from '../../backend/workspace-ui/src/session/useSession';
 import { AgentFace } from '../../backend/workspace-ui/src/ui/AgentFace';
 import { CHIEF_OF_STAFF } from '../../backend/workspace-ui/src/ui/chief-of-staff';
 import { ContextRing } from '../../backend/workspace-ui/src/ui/ContextRing';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
-import { FLEET, MINUTE, ORG, ago, useHydrated } from './live/fixture';
+import { FLEET, ORG, ago, useHydrated } from './live/fixture';
 
 /**
  * The screens a person meets first — sign-up, sign-in, and the first run
@@ -28,8 +27,8 @@ import { FLEET, MINUTE, ORG, ago, useHydrated } from './live/fixture';
  * form and Home: "Sign in a subscription", then "Your team is arriving"
  * with four agents and Continue. There is no gate now. A
  * new account lands on Home, the Chief of Staff's conversation, and the
- * first run happens there in three moments this file draws: the greeting
- * with its three starter answers, the sign-in ask with the two-row card,
+ * first run happens there in three moments this file draws: the empty
+ * state that says what the Chief of Staff is (note #967), the sign-in ask with the two-row card,
  * and the plan with the progress card while the team's computers are built.
  * (Before that, note #664 removed a "Connect your Fly cloud" step: every new
  * workplace runs on the cloud with nothing to connect.)
@@ -91,8 +90,9 @@ const CHIEF_FACE = '/agent-avatars/kai.jpg';
 
 /**
  * The Chief of Staff's conversation, as Home draws it: the head with its
- * face and name, the log, whatever stands under the rows (the starters, the
- * sign-in card, the progress card), and the typing bubble while a turn runs.
+ * face and name, the log, whatever stands under the rows (the sign-in card,
+ * the progress card), and the typing bubble while a turn runs. With no rows
+ * it draws the pane's empty state (note #967), as Home does.
  */
 function ChiefOfStaffChat({ rows: build, runtime, under, activity, agents = FLEET, says, className }: {
   rows: () => WorkspaceChatMessage[];
@@ -119,8 +119,9 @@ function ChiefOfStaffChat({ rows: build, runtime, under, activity, agents = FLEE
               <div className="sub chatruntime" id="recapChatRuntime"><span>{runtime}</span></div>
             </div>
           </div>
-          <div className="chatpane" id="recapChatScroll">
+          <div className={rows.length ? 'chatpane' : 'chatpane isempty'} id="recapChatScroll">
             <div id="recapChatLog" className="chatlog">
+              {rows.length ? null : <ChiefOfStaffEmpty avatarUrl={CHIEF_FACE} />}
               {hydrated
                 ? rows.map((row) => {
                   const day = new Date(row.at).toDateString();
@@ -161,26 +162,24 @@ function ChiefOfStaffChat({ rows: build, runtime, under, activity, agents = FLEE
 /** The person's first message: typed, not tapped, so the plan is about their own idea. */
 const FIRST_ASK = 'Put a waitlist page live for my meal planner idea.';
 
-const GREETING_ROWS = (): WorkspaceChatMessage[] => [
-  { seq: 0, role: 'agent', at: ago(MINUTE), text: firstRunGreeting('James') },
-];
-
-/** Home, the first time: the greeting and the three starter answers. */
+/**
+ * Home, the first time (note #967): nothing said yet, so the pane's empty
+ * state — the face, small, over one line that says what the Chief of Staff
+ * is. The platform's stored greeting is not drawn.
+ */
 export function LiveFirstGreeting({ className = '' }: { className?: string }) {
   return (
     <ChiefOfStaffChat
-      rows={GREETING_ROWS}
+      rows={() => []}
       runtime="Model & effort"
-      under={<FirstRunStarters onPick={noop} />}
       agents={[]}
       className={className}
-      says="Home on a new workplace: the Chief of Staff’s greeting, Hi James, I’m your Chief of Staff, tell me what you’re working on, and I’ll put a team of agents on it, with three starter answers to tap under it: put a waitlist page live for my idea, look at my website and tell me what to fix first, set up a team for my startup."
+      says="Home on a new workplace: an empty conversation with the Chief of Staff’s face in the middle and one line under it: I run your agents. Tell me what you’re working on, and I’ll put a team on it."
     />
   );
 }
 
 const SIGN_IN_ROWS = (): WorkspaceChatMessage[] => [
-  ...GREETING_ROWS(),
   { seq: 1, role: 'owner', at: ago(30_000), text: FIRST_ASK },
   { seq: 2, role: 'agent', at: ago(29_000), text: FIRST_RUN_SIGNIN_ASK },
 ];

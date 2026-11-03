@@ -417,16 +417,16 @@ try {
   await signUpWorkspaceByEmail(page, 'saddam@example.com');
   // The workplace comes with the account, and since note #726 there is no
   // gate and nothing furnished in front of it: signing up lands on Home —
-  // the Chief of Staff's conversation — with the platform's greeting and
-  // the three starters under it, and NO room and NO agent made for the
+  // the Chief of Staff's conversation — on its empty state, the one line
+  // that says what it is (note #967), and NO room and NO agent made for the
   // founder. (This fixture stamps a seat at creation, so the sign-in card
   // would not stand here: the first run's ask is the chat's own test.)
   await page.waitForSelector('#screenHome', { timeout: 10_000 });
-  await page.waitForSelector('#firstRunStarters .chatstarter', { timeout: 10_000 }).catch(() => {});
+  await page.waitForSelector('#chiefOfStaffEmpty', { timeout: 10_000 }).catch(() => {});
   check('a brand-new account skips naming and lands on Home at once (note #726)',
     Boolean(await page.$('#screenHome')) && !(await page.$('#nameWorkplaceForm')) && !(await page.$('#requiredSetup')) && !(await page.$('#teamArriving')));
-  check('…on the Chief of Staff\u2019s greeting, with the three starters under it',
-    (await page.$$('#firstRunStarters .chatstarter')).length === 3 && (await text('#recapChatTitle')) === 'Chief of Staff',
+  check('…on the Chief of Staff\u2019s empty state: one line, no starters (note #967)',
+    Boolean(await page.$('#chiefOfStaffEmpty')) && !(await page.$('#recapChatLog .chatmsg, #recapChatLog button')) && (await text('#recapChatTitle')) === 'Chief of Staff',
     await text('#recapChatLog'));
   // It also counted the rooms founding made, until rooms left the product
   // (note #843); an agent is what founding could still furnish.

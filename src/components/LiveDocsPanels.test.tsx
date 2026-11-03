@@ -25,7 +25,7 @@ describe('the documentation’s own live panels', () => {
     ['sign-in', <LiveSignIn />, ['Your Workspace, anywhere.', 'Sign in', 'Forgot your password?']],
     // The first run (note #726): the greeting, the ask and the plan, in the
     // Chief of Staff's own chat; the words are shared/first-run.ts's.
-    ['first greeting', <LiveFirstGreeting />, ['Chief of Staff', 'Hi James, I\'m your Chief of Staff. Tell me what you\'re working on, and I\'ll put a team of agents on it.', 'Put a waitlist page live for my idea.', 'Look at my website and tell me what to fix first.', 'Set up a team for my startup.']],
+    ['first greeting', <LiveFirstGreeting />, ['Chief of Staff', 'I run your agents. Tell me what you\'re working on, and I\'ll put a team on it.']],
     ['first sign-in ask', <LiveFirstSignIn />, ['Put a waitlist page live for my meal planner idea.', 'Got it. Your agents and I run on your own Claude or ChatGPT plan. Sign it in below, and I\'ll start.', 'Claude', 'Claude Pro or Max subscription', 'Codex', 'ChatGPT Plus or Pro subscription', 'You sign in on Claude\'s or OpenAI\'s own page, and your password never touches us.']],
     ['first plan', <LiveFirstPlan />, ['Your Claude plan is signed in.', 'Brought in Juno.', 'Brought in Ivy.', 'Here’s the plan.', 'They’re starting now. I’ll tell you when the page is up.', 'Computer being built…', 'Starting…']],
     ['Claude sign-in', <LiveClaudeSignIn />, ['Sign in to Claude', 'Open and approve', 'Open the Claude sign-in', 'You sign in on Anthropic’s own page, and your password never touches us.', 'Paste the code it gives you', 'Finish sign-in']],

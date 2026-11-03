@@ -168,7 +168,7 @@ try {
     /Agents\s+Juno, Adam's agent: Writing the launch email[^\n]*\s+Ruby, Adam's agent: Put the new pricing page live and checked it on a phone\.\s+Ben, Adam's agent: Fixed the slow image loading/.test(hello));
   check('the latest notes, newest first', /Latest notes\s+Pricing ideas\s+Who we are writing to\s+Launch checklist/.test(hello));
   check('it names no room', !/\broom/i.test(hello));
-  check('no starter answers', !(await page.$('#firstRunStarters')));
+  check('drawn as a message, not as the founder\'s empty state (note #967)', !(await page.$('#chiefOfStaffEmpty')));
   check('it closes on an invitation to ask', hello.endsWith('Ask me about any of it, or tell me what you\'d like to work on.'));
   const bold = (await page.$$eval('#recapChatLog .chatmsg strong', (nodes) => nodes.map((node) => node.textContent))).join('|');
   check('the Agents heading and the agents\' names are bold', bold.split('|').includes('Agents') && bold.split('|').includes('Juno'), bold);

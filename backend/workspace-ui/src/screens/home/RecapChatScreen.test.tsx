@@ -689,7 +689,7 @@ describe('the first run, in the Chief of Staff\'s conversation (note #726)', () 
     render(<MemoryRouter initialEntries={['/']}><Where /><App api={scripted.api} /></MemoryRouter>);
     return scripted;
   }
-  const starters = () => [...document.querySelectorAll<HTMLButtonElement>('#firstRunStarters .chatstarter')];
+  const EMPTY_LINE = 'I run your agents. Tell me what you\'re working on, and I\'ll put a team on it.';
 
   it('draws a joiner\'s welcome as the Chief of Staff\'s own words, with its rooms in bold and its notes as links, and no starters (note #820)', async () => {
     const welcome: RecapChatAnswer['messages'][number] = {
@@ -702,12 +702,12 @@ describe('the first run, in the Chief of Staff\'s conversation (note #726)', () 
     }), () => ({ orgId: 'o1', working: false, waiting: [], messages: [welcome] }));
     await screen.findByText(/Hi Cara, welcome to Acme/);
     expect(document.querySelector('.chatempty')).toBeNull();
-    expect(starters()).toEqual([]);
+    expect(document.getElementById('chiefOfStaffEmpty')).toBeNull();
     expect(screen.getByText('Website').tagName).toBe('STRONG');
     // The workplace stays on the link; the room an older welcome names does not (note #843).
     expect(screen.getByRole('link', { name: 'Launch checklist' }).getAttribute('href')).toBe('/notes/12?org=o1');
   });
-  it('draws the three starters under the greeting while it is all that was said; a tap sends the words, and the sign-in card stands under the first ask', async () => {
+  it('draws a founder\'s greeting as the pane\'s empty state — one line, no day, no time, no bubble, no starters — and the conversation once the first message lands, with the sign-in card under the first ask (note #967)', async () => {
     let answer: RecapChatAnswer = { orgId: 'o1', working: false, waiting: [], messages: [greeting] };
     const { calls } = mountFresh(fresh, () => answer, {
       'POST api/recap/chat': (call) => {
@@ -723,30 +723,30 @@ describe('the first run, in the Chief of Staff\'s conversation (note #726)', () 
         return answer;
       },
     });
-    await screen.findByText(/Hi Saddam, I'm your Chief of Staff/);
+    const empty = await screen.findByText(EMPTY_LINE);
     expect(document.getElementById('screenHome')).toBeTruthy();
-    // No empty-state words over a conversation that has a row.
-    expect(document.querySelector('.chatempty')).toBeNull();
-    expect(starters().map((button) => button.textContent)).toEqual([
-      'Put a waitlist page live for my idea.',
-      'Look at my website and tell me what to fix first.',
-      'Set up a team for my startup.',
-    ]);
-    // Under the greeting, not at the foot of the log or over it.
-    expect(document.querySelector('#recapChatLog .chatmsg + #firstRunStarters')).toBeTruthy();
+    expect(empty.closest('#chiefOfStaffEmpty')).toBeTruthy();
+    expect(document.getElementById('recapChatScroll')!.classList.contains('isempty')).toBe(true);
+    // The stored greeting is not drawn: no message row, no day label, no time, no taps.
+    expect(screen.queryByText(/Hi Saddam/)).toBeNull();
+    expect(document.querySelector('#recapChatLog .chatmsg, #recapChatLog .chatday, #recapChatLog button')).toBeNull();
     expect(document.getElementById('firstRunSignIn')).toBeNull();
 
-    await act(async () => fireEvent.click(starters()[2]!));
+    // The person types their own first ask.
+    fireEvent.change(document.getElementById('agentChatText') as HTMLTextAreaElement, { target: { value: 'Set up a team for my startup.' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send' })));
     const sent = calls.filter((call) => call.path === 'api/recap/chat' && call.init?.method === 'POST').map((call) => JSON.parse(String(call.init!.body)) as { text: string; clientId: string });
     expect(sent).toHaveLength(1);
     expect(sent[0]!.text).toBe('Set up a team for my startup.');
     expect(sent[0]!.clientId).toBeTruthy();
-    // The owner's words, the ask, and the card under the ask — the
-    // starters are spent.
+    // The owner's words, the ask, and the card under the ask — the empty
+    // state is gone, and the greeting is still not drawn.
     await screen.findByText('Set up a team for my startup.');
     await screen.findByText(/Sign it in below, and I'll start\./);
     await waitFor(() => expect(document.getElementById('firstRunSignIn')).toBeTruthy());
-    expect(document.getElementById('firstRunStarters')).toBeNull();
+    expect(document.getElementById('chiefOfStaffEmpty')).toBeNull();
+    expect(document.getElementById('recapChatScroll')!.classList.contains('isempty')).toBe(false);
+    expect(screen.queryByText(/Hi Saddam/)).toBeNull();
     const rows = [...document.querySelectorAll<HTMLButtonElement>('#firstRunSignIn .crow.open')];
     expect(rows.map((row) => row.dataset.provider)).toEqual(['claude', 'codex']);
     expect(rows.map((row) => row.querySelector('.name')?.textContent)).toEqual(['Claude', 'Codex']);
@@ -778,7 +778,7 @@ describe('the first run, in the Chief of Staff\'s conversation (note #726)', () 
     await waitFor(() => expect(document.querySelectorAll('#firstRunSignIn')).toHaveLength(1));
     expect(screen.getByText(/Sign it in below/).closest('.chatmsg')!.nextElementSibling?.id).toBe('firstRunSignIn');
     expect(screen.getByText(/Sign in your plan above/).closest('.chatmsg')!.nextElementSibling?.id).not.toBe('firstRunSignIn');
-    expect(document.getElementById('firstRunStarters')).toBeNull();
+    expect(document.getElementById('chiefOfStaffEmpty')).toBeNull();
     fireEvent.click(document.querySelector<HTMLButtonElement>('#firstRunSignIn .crow[data-provider="codex"]')!);
     expect(await screen.findByRole('heading', { name: 'Sign in to ChatGPT' })).toBeTruthy();
     expect(screen.getByTestId('where').textContent).toBe('/seats/sign-in/chatgpt?org=o1|{"afterSignIn":"/"}');
@@ -797,13 +797,12 @@ describe('the first run, in the Chief of Staff\'s conversation (note #726)', () 
     await screen.findByText('Your Claude plan is signed in.');
     expect(screen.getByText(/Sign it in below/)).toBeTruthy();
     expect(document.getElementById('firstRunSignIn')).toBeNull();
-    expect(document.getElementById('firstRunStarters')).toBeNull();
+    expect(document.getElementById('chiefOfStaffEmpty')).toBeNull();
   });
 
-  it('keeps the old empty-state words for a workplace with no greeting row', async () => {
+  it('draws the same empty state for a conversation with no rows at all', async () => {
     mountFresh(fresh, () => ({ orgId: 'o1', working: false, waiting: [], messages: [] }));
-    await screen.findByText(/This is your Chief of Staff\. Ask it for anything/);
-    expect(document.getElementById('firstRunStarters')).toBeNull();
+    expect((await screen.findByText(EMPTY_LINE)).closest('#chiefOfStaffEmpty')).toBeTruthy();
     expect(document.getElementById('firstRunSignIn')).toBeNull();
   });
 
