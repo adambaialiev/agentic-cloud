@@ -69,7 +69,7 @@ import { RecapRuntimePicker } from './RecapRuntimePicker.js';
 import { recalledRuntime } from '../agent/runtime-memory.js';
 import { AttentionLine, DidLine, NoticedLine, RemoveAgentCard, UnfinishedLine, UnfinishedMark } from './RecapRows.js';
 import { HomeChrome } from './HomeTabs.js';
-import { FirstRunSignIn, FirstRunStarters, TeamArrivingCard } from './FirstRun.js';
+import { ChiefOfStaffEmpty, FirstRunSignIn, TeamArrivingCard } from './FirstRun.js';
 import { CHIEF_OF_STAFF } from '../../ui/chief-of-staff.js';
 
 const WORKSPACE_AGENT = CHIEF_OF_STAFF;
@@ -455,12 +455,14 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // What each row shows (note #725): news to the person or a decision for
   // them; the rest of the platform's narration stays in the agent's record.
   const views = useMemo(() => recapRowViews(answer?.messages ?? []), [answer]);
-  // The first run (note #726). The starters stand under the greeting while
-  // it is the only thing said; the sign-in card under the FIRST ask, for as
+  // The first run (note #726): the sign-in card under the FIRST ask, for as
   // long as no plan is in — a later "I've kept that too" points up at it.
   const messages = answer?.messages ?? [];
-  const startersAfter = messages.length === 1 && messages[0]!.kind === 'greeting' ? 0 : -1;
   const signInAfter = answer?.awaitingSeat ? messages.findIndex((message) => message.kind === 'signin-ask') : -1;
+  // Nothing said yet (note #967): no row drawn — a founder's stored greeting
+  // is not drawn either — and nothing on its way. The pane's empty state
+  // stands in the middle of it until the first real row lands.
+  const empty = Boolean(answer) && !pending.length && views.every((view) => view.form === 'hidden' || view.form === 'remove-room');
 
   /**
    * Send, exactly as the room chat sends (note #423): words alone as JSON,
@@ -658,23 +660,14 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
         </div>
         {home ? <HomeChrome /> : null}
       </div>
-      <div className="chatpane" id="recapChatScroll" ref={pane} onScroll={onScroll}>
+      <div className={empty ? 'chatpane isempty' : 'chatpane'} id="recapChatScroll" ref={pane} onScroll={onScroll}>
         <ChatGalleryProvider>
         {/* The one arrival with no screen of its own to say it — redeeming
             an invitation — lands on Home and says so here, over the log. */}
         {notice ? <div className="card authpanel" role="status" id="homeBanner">{notice}</div> : null}
         <div id="recapChatLog" className="chatlog" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
           {!answer && !error ? <span className="sr-only" role="status">Loading conversation…</span> : null}
-          {answer && !answer.messages.length
-            ? (
-              <div className="chatempty">
-                {home
-                  ? 'This is your Chief of Staff. Ask it for anything — bring an agent in, hand out work, read the mail, write a note — and it runs your fleet for you.'
-                  : 'Nothing here yet — ask about recent work, keep a note, or send one of your agents a request.'}
-                <div className="chatemptyhint">{home ? 'Answers land here. Its face opens the Workplace; the faces by the message box open your agents.' : 'Answers land here.'}</div>
-              </div>
-            )
-            : null}
+          {empty ? <ChiefOfStaffEmpty avatarUrl={workspace?.org?.workspaceAgentAvatarUrl ?? answer?.avatarUrl} /> : null}
           {rows.map((row, at) => {
             const view = views[at] ?? { form: 'row' as const };
             // An old ask to delete a room (note #740) has nothing left to
@@ -704,7 +697,6 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
                             ? <UnfinishedMark unfinished={view.unfinished} busy={sending} onRetry={(retry) => { void send(retry === 'continue' ? 'Continue' : row.text, []); }} />
                             : null}
                         </>}
-              {row.seq === startersAfter ? <FirstRunStarters disabled={sending} onPick={(text) => { void send(text, []); }} /> : null}
               {row.seq === signInAfter ? <FirstRunSignIn orgId={orgId} /> : null}
             </Fragment>;
           })}

@@ -133,6 +133,9 @@ function factOf(message: RecapMessage): Fact {
   const row: Fact = { view: { form: 'row' } };
   const text = message.text;
   if (message.role === 'assistant') {
+    // The founder's stored greeting (note #726) is drawn as the pane's empty
+    // state now, not as a message (note #967): the row stays in the record.
+    if (message.kind === 'greeting') return { view: { form: 'hidden' } };
     if (text === RECAP_TIMED_OUT) return { ...row, failed: { reason: 'Ran out of time — what was done is above', retry: 'continue' } };
     if (text === RECAP_NO_ANSWER) return { ...row, failed: { reason: 'No answer came back', retry: 'resend' } };
     if (text === RECAP_NOT_FINISHED || text === ACCESS_CHANGED) return { ...row, failed: { reason: 'Not finished', retry: 'resend' } };

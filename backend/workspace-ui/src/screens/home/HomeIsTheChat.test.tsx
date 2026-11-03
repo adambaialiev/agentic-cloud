@@ -101,7 +101,7 @@ describe('Home is the Chief of Staff\'s conversation', () => {
     expect(head.querySelector('#homeOrganizations')!.textContent).toContain('Nomad Trading');
     expect(head.querySelector('#homeAccount')).toBeTruthy();
     // It says what it is for before anything has been said to it.
-    expect((await screen.findByText(/This is your Chief of Staff/)).className).toBe('chatempty');
+    expect((await screen.findByText(/^I run your agents\./)).closest('#chiefOfStaffEmpty')?.className).toBe('chatempty cosempty');
     // Nothing of the window or the picker until opened: no fleet, no tabs.
     expect(sheet()).toBeNull();
     expect(picker()).toBeNull();

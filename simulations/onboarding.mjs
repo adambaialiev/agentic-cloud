@@ -5,9 +5,9 @@
  * newcomer walks it, with a picture of every screen on the way:
  *
  *   landing → sign up (name, address, password) → Home at once — the Chief
- *   of Staff's conversation, open on the platform's greeting with three
- *   starter answers under it (a reload lands on the same words) → a starter
- *   tapped: the person's words, the sign-in ask in the agent's voice, and
+ *   of Staff's conversation, open on its empty state: one line that says
+ *   what it is (a reload lands on the same words) → the first ask typed:
+ *   the person's words, the sign-in ask in the agent's voice, and
  *   the Claude / Codex card under it → Codex: ChatGPT's own sign-in page,
  *   the one-time code at once → the plan lands: back on Home, no banner,
  *   "Your ChatGPT plan is signed in." said in the chat → the first turn, by
@@ -100,9 +100,9 @@ await runBrowserScenario({
 
     // 3. Signed in at once — and on Home, the Chief of Staff's conversation,
     // with nothing in front of it (note #726): no gate, no cloud, no
-    // subscription step, no team arriving. The first thing said is the
-    // platform's greeting, in the agent's voice, with three starters under
-    // it; a reload lands on the same words, said once.
+    // subscription step, no team arriving. The platform's greeting is
+    // stored, and the pane says what the Chief of Staff is; a reload lands on
+    // the same words.
     await waitVisible(page, '#screenHome');
     const orgQuery = `?org=${encodeURIComponent(fixture.organization.id)}`;
     const atHome = async () => {
@@ -118,37 +118,33 @@ await runBrowserScenario({
     };
     await noGate('after signing up');
     assert.equal(normalizedText(await textOf(page, '#recapChatTitle')), 'Chief of Staff', 'Home did not open on the Chief of Staff’s conversation');
-    await page.waitForFunction(() => document.querySelectorAll('#firstRunStarters .chatstarter').length === 3, { timeout: 10_000 });
-    assert.ok((await logText(page)).includes(firstRun.greeting), `the greeting is not said: ${await logText(page)}`);
-    assert.equal(await page.$('#screenHome .chatempty'), null, 'the empty-state words stand over a conversation with a row');
+    // The greeting row is stored, and drawn as the pane's empty state (note
+    // #967): one line that says what the Chief of Staff is, in the middle of
+    // the pane — no message row, no day, no time, no starters.
+    await waitVisible(page, '#chiefOfStaffEmpty');
+    assert.equal(normalizedText(await textOf(page, '#chiefOfStaffEmpty .cosemptyline')), firstRun.empty);
+    assert.ok(!(await logText(page)).includes(firstRun.greeting), 'the stored greeting is drawn as a message');
+    assert.equal(await page.$('#recapChatLog .chatmsg, #recapChatLog .chatday, #recapChatLog button'), null, 'the empty state is drawn as a message, or with taps');
     assert.equal(await page.$('#firstRunSignIn'), null, 'the sign-in card is drawn before the person has said anything');
-    const starters = await page.$$eval('#firstRunStarters .chatstarter', (nodes) => nodes.map((node) => node.textContent?.trim()));
-    assert.ok(starters.includes(firstRun.starter), `the starters do not offer "${firstRun.starter}": ${starters.join(' | ')}`);
-    // Under the greeting's own row, not at the foot of the log or over it.
-    assert.ok(await page.$('#recapChatLog .chatmsg + #firstRunStarters'), 'the starters do not stand under the greeting');
     await shoot('home-greeting', { fullPage: true });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitVisible(page, '#screenHome');
-    await page.waitForFunction(() => document.querySelectorAll('#firstRunStarters .chatstarter').length === 3, { timeout: 10_000 });
-    assert.equal((await page.$$('#recapChatLog .chatmsg')).length, 1, 'a reload said the greeting again');
+    await waitVisible(page, '#chiefOfStaffEmpty');
+    assert.equal((await page.$$('#recapChatLog .chatmsg')).length, 0, 'a reload drew the greeting as a message');
     await noGate('after a reload');
 
-    // 4. A starter tapped: the words go as the person's own message. No
+    // 4. The first ask, typed: the words go as the person's own message. No
     // plan is signed in, so the answer is the sign-in ask in the agent's
     // voice, and the picker card under it — the two existing sign-in rows
-    // and the line that says where the sign-in happens. The starters are
-    // spent. A reload keeps all of it.
-    const tapped = await page.evaluate((text) => {
-      const button = [...document.querySelectorAll('#firstRunStarters .chatstarter')].find((node) => node.textContent?.trim() === text);
-      button?.click();
-      return Boolean(button);
-    }, firstRun.starter);
-    assert.ok(tapped, 'the starter could not be tapped');
+    // and the line that says where the sign-in happens. The empty state is
+    // gone. A reload keeps all of it.
+    await page.type('#agentChatText', firstRun.firstAsk);
+    await page.click('#agentChatSend');
     await waitVisible(page, '#firstRunSignIn');
     const asked = await logText(page);
-    assert.ok(asked.includes(firstRun.starter), `the person's words are not in the log: ${asked}`);
+    assert.ok(asked.includes(firstRun.firstAsk), `the person's words are not in the log: ${asked}`);
     assert.ok(asked.includes(firstRun.ask), `the sign-in ask is not said: ${asked}`);
-    assert.equal(await page.$('#firstRunStarters'), null, 'the starters stand after one was tapped');
+    assert.equal(await page.$('#chiefOfStaffEmpty'), null, 'the empty state stands over a conversation with a row');
     const signInRows = await page.$$eval('#firstRunSignIn .crow.open', (rows) => rows.map((row) => ({ provider: row.dataset.provider, name: row.querySelector('.name')?.textContent?.trim() })));
     assert.deepEqual(signInRows, [{ provider: 'claude', name: 'Claude' }, { provider: 'codex', name: 'Codex' }], 'the sign-in card does not offer both plans');
     assert.equal(normalizedText(await textOf(page, '#firstRunSignInWhere')), firstRun.where);
@@ -160,7 +156,7 @@ await runBrowserScenario({
     await shoot('home-ask', { fullPage: true });
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitVisible(page, '#firstRunSignIn');
-    assert.equal(await page.$('#firstRunStarters'), null, 'a reload brought the starters back');
+    assert.equal(await page.$('#chiefOfStaffEmpty'), null, 'a reload brought the empty state back');
     await noGate('after the ask');
 
     // 5. Codex, from the card: ChatGPT's own sign-in page, named for the
@@ -262,11 +258,11 @@ await runBrowserScenario({
     assertRequestCount(app, 'POST', '/workspace/api/org/fly', 0);
     // One tap on Codex, one sign-in: nothing to prepare, nothing to retry.
     assert.deepEqual(assertRequestCount(app, 'POST', '/workspace/api/org/signin', 1)[0].body, { provider: fixture.agent.cli });
-    // One message to the Chief of Staff — the starter, as the person's own
+    // One message to the Chief of Staff — the first ask, as the person's own
     // words, with the client id every send carries — and nothing else
     // written to it: the first turn started by itself when the plan landed.
     const [sent] = assertRequestCount(app, 'POST', '/workspace/api/recap/chat', 1);
-    assert.equal(sent.body?.text, firstRun.starter);
+    assert.equal(sent.body?.text, firstRun.firstAsk);
     assert.ok(typeof sent.body?.clientId === 'string' && sent.body.clientId.length > 0, 'the message carried no client id');
     assert.ok(matchingRequests(app, 'GET', '/workspace/api/recap/chat').length > 0, 'Home never read the Chief of Staff’s conversation');
     const cookies = await page.cookies();
@@ -277,6 +273,6 @@ await runBrowserScenario({
 });
 
 console.log('Onboarding simulation passed:');
-console.log('  landing → sign up (with a name) → Home at once: the Chief of Staff’s greeting and three starters (no gate, no cloud, nothing furnished) → a starter tapped → the sign-in ask and the Claude / Codex card → ChatGPT’s sign-in page → the plan lands: back on Home, said in the chat → the first turn by itself: the room opened, two agents brought in, the team card moving, the plan reply → every agent ready, the two agents in the agents picker');
+console.log('  landing → sign up (with a name) → Home at once: the Chief of Staff’s empty state, one line (no gate, no cloud, nothing furnished) → the first ask typed → the sign-in ask and the Claude / Codex card → ChatGPT’s sign-in page → the plan lands: back on Home, said in the chat → the first turn by itself: the room opened, two agents brought in, the team card moving, the plan reply → every agent ready, the two agents in the agents picker');
 console.log(`  ${app.requests.length} same-origin Workspace requests answered by fixtures`);
 console.log(`  screenshot: ${screenshotPath}`);

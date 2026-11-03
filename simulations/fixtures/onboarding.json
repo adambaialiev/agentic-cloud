@@ -52,7 +52,8 @@
   },
   "firstRun": {
     "greeting": "Hi Samira, I'm your Chief of Staff. Tell me what you're working on, and I'll put a team of agents on it.",
-    "starter": "Set up a team for my startup.",
+    "empty": "I run your agents. Tell me what you're working on, and I'll put a team on it.",
+    "firstAsk": "Set up a team for my startup.",
     "ask": "Got it. Your agents and I run on your own Claude or ChatGPT plan. Sign it in below, and I'll start.",
     "askAgain": "I've kept that too. Sign in your plan above, and I'll start on all of it.",
     "where": "You sign in on Claude's or OpenAI's own page, and your password never touches us.",

@@ -143,7 +143,7 @@ try {
     await page.setViewport({ width, height, deviceScaleFactor: 2 });
     await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
     await page.waitForSelector('#screenHome #recapChatRuntime', { timeout: 15_000 });
-    await page.waitForSelector('#firstRunStarters', { timeout: 15_000 }).catch(() => {});
+    await page.waitForSelector('#chiefOfStaffEmpty', { timeout: 15_000 }).catch(() => {});
     await soon(`document.getElementById('recapChatRuntime')?.textContent === 'opus · high'`);
     await pause(300);
     const header = (await texts('#recapChatRuntime'))[0];

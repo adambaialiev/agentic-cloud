@@ -194,31 +194,37 @@ try {
 
   await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#screenHome #recapChatTitle', { timeout: 15_000 });
-  await page.waitForSelector('#firstRunStarters', { timeout: 15_000 });
+  await page.waitForSelector('#chiefOfStaffEmpty', { timeout: 15_000 });
   check('Home opens at once: no setup gate', !(await page.$('#requiredSetup')) && new URL(page.url()).pathname === '/');
-  check('the greeting, by first name', (await rows())[0] === 'Hi Samira, I\'m your Chief of Staff. Tell me what you\'re working on, and I\'ll put a team of agents on it.', (await rows())[0]);
-  check('the three starter answers', (await texts('#firstRunStarters .chatstarter')).join('|') === 'Put a waitlist page live for my idea.|Look at my website and tell me what to fix first.|Set up a team for my startup.');
+  // The greeting is stored (the first run's mark) but drawn as the pane's
+  // empty state: one line, no message row, no starters (note #967).
+  check('the empty state says what the Chief of Staff is, and nothing is drawn as a message',
+    (await texts('#chiefOfStaffEmpty .cosemptyline'))[0] === 'I run your agents. Tell me what you\'re working on, and I\'ll put a team on it.'
+      && (await rows()).length === 0 && !(await page.$('#recapChatLog .chatday, #recapChatLog button')), JSON.stringify(await rows()));
+  const stored = await page.evaluate(async () => (await (await fetch('/workspace/api/recap/chat', { credentials: 'include' })).json()) as { messages: Array<{ kind?: string; text: string }> });
+  check('the greeting row is still stored, by first name', stored.messages[0]?.kind === 'greeting' && stored.messages[0]?.text.startsWith('Hi Samira, I\'m your Chief of Staff.'), JSON.stringify(stored.messages[0]));
   check('no agents were made', Object.keys((await userStorage.getProfile(account.userId))?.telegram?.agents ?? {}).length === 0);
   const state = await page.evaluate(async () => (await (await fetch('/workspace/api/state', { credentials: 'include' })).json()) as { org: { setupRequired?: boolean; founded?: boolean } });
   check('the state says nothing is required', !state.org.setupRequired, JSON.stringify(state.org));
   await shot('1-first-screen-phone');
 
-  // 2. A starter tapped: the message, the ask, the card; no turn.
-  await page.click('#firstRunStarters .chatstarter');
+  // 2. The first ask typed: the message, the ask, the card; no turn.
+  await page.type('#agentChatText', 'Put a waitlist page live for my idea.');
+  await page.click('#agentChatSend');
   await page.waitForSelector('#firstRunSignIn', { timeout: 15_000 });
   await pause(300);
   const afterTap = await rows();
-  check('the tap sent the words, and the fixed ask answered them',
-    afterTap[1] === 'Put a waitlist page live for my idea.' && afterTap[2] === 'Got it. Your agents and I run on your own Claude or ChatGPT plan. Sign it in below, and I\'ll start.', JSON.stringify(afterTap));
-  check('the starters are gone, the card stands with its two rows and its line',
-    !(await page.$('#firstRunStarters')) && (await texts('#firstRunSignIn .crow .name')).join('|') === 'Claude|Codex'
+  check('the words were sent, and the fixed ask answered them',
+    afterTap[0] === 'Put a waitlist page live for my idea.' && afterTap[1] === 'Got it. Your agents and I run on your own Claude or ChatGPT plan. Sign it in below, and I\'ll start.', JSON.stringify(afterTap));
+  check('the empty state is gone, the card stands with its two rows and its line',
+    !(await page.$('#chiefOfStaffEmpty')) && (await texts('#firstRunSignIn .crow .name')).join('|') === 'Claude|Codex'
       && (await texts('#firstRunSignInWhere'))[0] === 'You sign in on Claude\'s or OpenAI\'s own page, and your password never touches us.');
   check('no turn ran', firstTurn === null && !(await page.$eval('#recapChatLive', (node) => !(node as HTMLElement).hidden)));
   await shot('2-sign-in-when-needed-phone');
   // A second message before signing in.
   await page.type('#agentChatText', 'Also a logo, later.');
   await page.click('#agentChatSend');
-  await page.waitForFunction(() => document.querySelectorAll('#recapChatLog .chatmsg').length >= 5, { timeout: 10_000 });
+  await page.waitForFunction(() => document.querySelectorAll('#recapChatLog .chatmsg').length >= 4, { timeout: 10_000 });
   const kept = await rows();
   check('another message is kept, and the reply points at the card above', kept.at(-1) === 'I\'ve kept that too. Sign in your plan above, and I\'ll start on all of it.' && Boolean(await page.$('#firstRunSignIn')), JSON.stringify(kept.slice(-2)));
   // The card's Claude row opens the sign-in page, with the way back to Home.
@@ -278,9 +284,10 @@ try {
   await orgStorage.setActiveOrg(two.userId, org2.orgId);
   await userStorage.updateProfile(two.userId, { person: { firstName: 'Noor', lastName: 'Ali' } } as never);
   await page2.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
-  await page2.waitForSelector('#firstRunStarters', { timeout: 15_000 });
+  await page2.waitForSelector('#chiefOfStaffEmpty', { timeout: 15_000 });
   await page2.screenshot({ path: path.join(OUT, '1-first-screen-desk.png') });
-  await page2.click('#firstRunStarters .chatstarter:nth-child(3)');
+  await page2.type('#agentChatText', 'Set up a team for my startup.');
+  await page2.click('#agentChatSend');
   await page2.waitForSelector('#firstRunSignIn', { timeout: 15_000 });
   await pause(300);
   await page2.screenshot({ path: path.join(OUT, '2-sign-in-when-needed-desk.png') });
