@@ -23,7 +23,8 @@ function SiteMark({ site }: { site: WorkspaceSiteRow }) {
   const iconUrl = live && site.iconUrl ? site.iconUrl : null;
   const [proven, setProven] = useState(() => Boolean(iconUrl && loadedSiteIcons.has(iconUrl)));
   const [failed, setFailed] = useState(false);
-  const globe = <TypeIcon glyph="globe" tint={live ? 'dir' : ''} />;
+  // Grey like the Workplace window's rows (Adam, 3 Nov 2026).
+  const globe = <TypeIcon glyph="globe" />;
   if (!iconUrl || failed) return globe;
   return (
     <>

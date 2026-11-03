@@ -38,7 +38,7 @@ export function SecretsScreen() {
         {canAdd
           ? (
             <button className="addrow" id="secretsAddBtn" type="button" onClick={() => setAdding(true)}>
-              <TypeIcon glyph="key" tint="secret" /><span>{canAddShared ? 'Add a secret' : 'Add a secret for one of your agents'}</span>
+              <TypeIcon glyph="key" /><span>{canAddShared ? 'Add a secret' : 'Add a secret for one of your agents'}</span>
             </button>
           )
           : null}

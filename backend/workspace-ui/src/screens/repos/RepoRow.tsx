@@ -35,7 +35,7 @@ export function RepoRow({ repo, waiting, now }: {
   const faces = repo.contributors ?? [];
   return (
     <PressableRow className="crow open" onPress={() => { if (to) navigate(to); }}>
-      <TypeIcon glyph="folder" tint="dir" />
+      <TypeIcon glyph="folder" />
       <div className="main">
         <div className="name">{repo.name}</div>
         <div className="cline">

@@ -36,7 +36,7 @@ export function Secrets({ onAdd }: { onAdd?: () => void }) {
         {canAdd
           ? (
             <button className="addrow" id="addBtn" type="button" onClick={onAdd ?? (() => navigate(listTo, { state: { add: true } }))}>
-              <TypeIcon glyph="key" tint="secret" /><span>Add a secret</span>
+              <TypeIcon glyph="key" /><span>Add a secret</span>
             </button>
           )
           : null}

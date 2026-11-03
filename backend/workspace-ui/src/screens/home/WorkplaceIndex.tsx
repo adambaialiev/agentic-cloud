@@ -30,6 +30,8 @@ import {
 } from './workplace-index-words.js';
 
 /** One row of the index: the Direct messages door's own shape. */
+/** Every row's mark the same grey (Adam, 3 Nov 2026: "Notes, sites and
+ *  repositories icons are colored. Let them be also grey."). */
 export function IndexRow({ id, to, glyph, tint, name, line }: {
   id: string;
   to: string;
@@ -78,17 +80,17 @@ export function WorkplaceIndex({ orgId, agentState }: { orgId: string; agentStat
       <h2 className="indexhead" id="workplaceWorkHead">Work</h2>
       <div className="card" id="workplaceWorkCard">
         {notes
-          ? <IndexRow id="indexNotes" to={toFor({ kind: 'notes', ...scope })!} glyph="note" tint="note" name="Notes" line={notesLine(notes.length, unclaimed)} />
+          ? <IndexRow id="indexNotes" to={toFor({ kind: 'notes', ...scope })!} glyph="note" name="Notes" line={notesLine(notes.length, unclaimed)} />
           : null}
         {state?.driveAvailable
           ? <IndexRow id="indexDrive" to={toFor({ kind: 'drive', ...scope })!} glyph="drive" name="Drive" line="Files for the whole workplace" />
           : null}
-        <IndexRow id="indexRepositories" to={toFor({ kind: 'repositories', ...scope })!} glyph="git" tint="code" name="Repositories" line={repositoriesLine(repos ? repos.length : null, state?.quota)} />
+        <IndexRow id="indexRepositories" to={toFor({ kind: 'repositories', ...scope })!} glyph="git" name="Repositories" line={repositoriesLine(repos ? repos.length : null, state?.quota)} />
         {knowledge
-          ? <IndexRow id="indexKnowledge" to={toFor({ kind: 'knowledgeList', ...scope })!} glyph="bulb" tint="doc" name="Knowledge" line={knowledge.length ? counted(knowledge.length, 'page') : 'None yet'} />
+          ? <IndexRow id="indexKnowledge" to={toFor({ kind: 'knowledgeList', ...scope })!} glyph="bulb" name="Knowledge" line={knowledge.length ? counted(knowledge.length, 'page') : 'None yet'} />
           : null}
         {sites.length
-          ? <IndexRow id="indexSites" to={toFor({ kind: 'sites', ...scope })!} glyph="globe" tint="dir" name="Sites" line={sitesLine(sites.map((site) => site.url ?? ''))} />
+          ? <IndexRow id="indexSites" to={toFor({ kind: 'sites', ...scope })!} glyph="globe" name="Sites" line={sitesLine(sites.map((site) => site.url ?? ''))} />
           : null}
         {buckets.length
           ? <IndexRow id="indexStorage" to={toFor({ kind: 'storage', ...scope })!} glyph="database" name="Storage" line={storageLine(buckets)} />
@@ -105,7 +107,7 @@ export function WorkplaceIndex({ orgId, agentState }: { orgId: string; agentStat
       <h2 className="indexhead" id="workplaceSettingsHead">Settings</h2>
       <div className="card" id="workplaceSettingsCard">
         {secrets
-          ? <IndexRow id="indexSecrets" to={toFor({ kind: 'secrets', ...scope })!} glyph="key" tint="secret" name="Secrets" line={secrets.length ? counted(secrets.length, 'secret') : 'None yet'} />
+          ? <IndexRow id="indexSecrets" to={toFor({ kind: 'secrets', ...scope })!} glyph="key" name="Secrets" line={secrets.length ? counted(secrets.length, 'secret') : 'None yet'} />
           : null}
         <IndexRow id="indexChiefOfStaff" to={toFor({ kind: 'chiefOfStaff', ...scope })!} glyph="bot" name={CHIEF_OF_STAFF} line={agentState ?? ''} />
       </div>
