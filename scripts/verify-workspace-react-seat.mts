@@ -405,7 +405,8 @@ try {
     const handles = await page.$$(selector);
     for (const handle of handles) {
       const t = await handle.evaluate((node) => node.textContent ?? '');
-      if (want.test(t)) { await handle.click(); return true; }
+      // A plate stands low in the window (note #960): pressed where it is.
+      if (want.test(t)) { await handle.evaluate((node) => (node as HTMLElement).click()); return true; }
     }
     return false;
   };
@@ -633,7 +634,7 @@ try {
     await waitHome('workplace');
     await page.waitForFunction(() => document.querySelector('#seatsHome .seatcard') !== null, { timeout: 10_000 }).catch(() => {});
     if (!(await page.$('#seatsHome .seatcard'))) return false;
-    await page.click('#seatsHome .seatcard');
+    await page.$eval('#seatsHome .seatcard', (node) => (node as HTMLElement).click());
     await page.waitForSelector('#seatCard', { timeout: 10_000 }).catch(() => {});
     return Boolean(await page.$('#seatCard'));
   };
@@ -813,6 +814,10 @@ try {
   await waitHome('workplace');
   await page.waitForFunction(() => document.querySelector('#seatsHome .seatcard') !== null, { timeout: 10_000 }).catch(() => {});
   const card = (await page.$$('#seatsHome .seatcard'))[0]!;
+  // Low in the window since note #960: brought to the middle first, so the
+  // two real taps land on it.
+  await card.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+  await new Promise((r) => setTimeout(r, 300));
   await card.click();
   await card.click().catch(() => {});
   await page.waitForSelector('#seatCard', { timeout: 10_000 });

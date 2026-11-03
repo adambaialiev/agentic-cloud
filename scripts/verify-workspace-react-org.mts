@@ -687,7 +687,7 @@ try {
     recap: node.querySelector('.cabout')?.textContent ?? '',
     width: Math.round(node.getBoundingClientRect().width),
   })));
-  check('the reader leads, here now, with a live dot', plates[0]?.name === 'saddam Harness' && plates[0]?.facts === 'saddam HarnessYouAdmin' && plates[0]?.state === 'Here now' && plates[0]?.live === true, JSON.stringify(plates[0]));
+  check('the reader leads, here now, with a live dot', plates[0]?.name === 'saddam Harness' && plates[0]?.facts === 'saddam HarnessYou · Admin' && plates[0]?.state === 'Here now' && plates[0]?.live === true, JSON.stringify(plates[0]));
   check('the teammate says when she was last here and what she last drove',
     plates[1]?.name === 'Mira Chen' && plates[1]?.facts === 'Mira Chen' && plates[1]?.agentLines === 3 && plates[1]?.state === 'Active 2h ago'
     && plates[1]?.recap === 'Approved proposal #12: Pricing page redesign', JSON.stringify(plates[1]));
@@ -1231,13 +1231,20 @@ try {
     const row = document.getElementById('seatsHome')!;
     const plates = [...row.children] as HTMLElement[];
     const tops = new Set(plates.map((node) => Math.round(node.getBoundingClientRect().top)));
-    const heights = new Set(plates.map((node) => Math.round(node.getBoundingClientRect().height)));
+    // Plates only, and level along each line: the door is a link at the
+    // strip's end since note #960, not a plate of the set.
+    const rows = new Map<number, Set<number>>();
+    for (const node of plates.filter((plate) => plate.classList.contains('seatcard'))) {
+      const box = node.getBoundingClientRect();
+      const top = Math.round(box.top);
+      rows.set(top, (rows.get(top) ?? new Set()).add(Math.round(box.height)));
+    }
     const box = row.getBoundingClientRect();
     return {
       wrapped: tops.size > 1,
       // Equal height: a plate is a plate whether it carries three readings
       // or none, so the wrapped set cannot look ragged.
-      levelled: heights.size === 1,
+      levelled: rows.size > 0 && [...rows.values()].every((row) => row.size === 1),
       noSideways: row.scrollWidth <= row.clientWidth + 1,
       // Home's strip stays inside the reading column rather than pulling
       // itself to the phone edges.

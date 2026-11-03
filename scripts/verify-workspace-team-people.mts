@@ -310,7 +310,7 @@ try {
     const mono = [...document.querySelectorAll('#homePeople .crow *')].filter((node) => /mono/i.test(getComputedStyle(node).fontFamily)).length;
     return {
       initials: me.querySelector('.personhead .avatar.initials')?.textContent ?? '',
-      badges: [...me.querySelectorAll('.personname .badge')].map((badge) => badge.textContent).join('|'),
+      badges: me.querySelector('.personname .personrole')?.textContent ?? '',
       doorTitle: door?.getAttribute('title') ?? '',
       doorLevel: doorBox ? Math.abs((doorBox.top + doorBox.bottom) / 2 - (name.top + name.bottom) / 2) < 14 : false,
       noDoorOnOwn: !me.querySelector('[data-row-door]'),
@@ -321,7 +321,7 @@ try {
     };
   }, me.userId);
   check('a person with no picture wears their initials', card.initials === 'SB', card.initials);
-  check('“You” and “Admin” stand beside the name as quiet words', card.badges === 'You|Admin', card.badges);
+  check('“You · Admin” stands beside the name as one quiet label (note #960)', card.badges === 'You · Admin', card.badges);
   check('a teammate’s send mark stands level with their name, with its tooltip', card.doorLevel && card.doorTitle === 'Message Dana Ives', JSON.stringify(card));
   check('…and the reader’s own card has none', card.noDoorOnOwn);
   check('nothing on a person’s card is in monospace', card.mono === 0, `${card.mono} nodes`);
@@ -332,14 +332,17 @@ try {
   const statsOf = (userId: string) => page.$eval(`#homePeople .crow[data-person="${userId}"] .pcontrib`, (block) => [
     ...block.querySelectorAll('.pcstats > div')].map((node) => `${node.querySelector('b')?.textContent} ${node.querySelector('span')?.textContent?.replace(/\u00a0/g, ' ')}`).join('|'));
   check('Dana’s card says her week here: hours, merges, tokens per provider',
-    await statsOf('dana') === '3h agent hours|2 changes merged|182K tokens · Claude Code|41K tokens · Codex', await statsOf('dana'));
-  check('…and the title of the latest change merged',
-    (await texts('#homePeople .crow[data-person="dana"] .pclatest'))[0] === 'Merged: Live van map with ETAs on the dispatcher screen · 2h ago',
-    (await texts('#homePeople .crow[data-person="dana"] .pclatest'))[0]);
+    await statsOf('dana') === '2.7 agent hours|2 changes merged|182K tokens · Claude Code|41K tokens · Codex', await statsOf('dana'));
+  // ONE latest line per person (note #960): hers is newer than her agents'
+  // last merge, so the card says hers and no second "Merged:" line.
+  check('…and one latest line, the newer of hers and her agents’ last merge',
+    (await texts('#homePeople .crow[data-person="dana"] .personlatest'))[0]?.startsWith('Approved proposal #12')
+      && (await page.$$('#homePeople .crow[data-person="dana"] .pclatest')).length === 0,
+    (await texts('#homePeople .crow[data-person="dana"] .personlatest'))[0]);
   check('another workplace’s hours, tokens and change are not counted',
     !(await page.evaluate(() => document.body.textContent?.includes('Secret change'))));
-  check('the reader’s own card says zero as zero',
-    await statsOf(me.userId) === '0h agent hours|0 changes merged|0 tokens written', await statsOf(me.userId));
+  check('the reader’s own empty week is one line (note #960)',
+    (await page.$eval(`#homePeople .crow[data-person="${me.userId}"] .pcontrib`, (block) => block.textContent)) === 'Nothing this week');
   const block = await page.$eval('#homePeople .crow[data-person="dana"]', (plate) => {
     const order = [...plate.children].map((child) => child.className.split(' ')[0]);
     const box = plate.getBoundingClientRect();
@@ -387,12 +390,12 @@ try {
   // take a tick and a half.
   await merge('Driver ETAs in the customer text', 0);
   const landed = await page.waitForFunction(
-    () => document.querySelector('#homePeople .crow[data-person="dana"] .pctitle')?.textContent === 'Driver ETAs in the customer text'
+    () => (document.querySelector('#homePeople .crow[data-person="dana"] .personlatest')?.textContent ?? '').startsWith('Merged: Driver ETAs in the customer text')
       && document.querySelector('#homePeople .crow[data-person="dana"] [data-stat="merged"] b')?.textContent === '3',
     { timeout: 25_000 },
   ).then(() => true).catch(() => false);
   check('a change merged while the reader looks lands on the card by the tick', landed,
-    (await texts('#homePeople .crow[data-person="dana"] .pcontrib')).join('|'));
+    (await texts('#homePeople .crow[data-person="dana"] .personlatest, #homePeople .crow[data-person="dana"] .pcontrib')).join('|'));
   check('…still without a full people read', peopleReads === 0, `${peopleReads} people reads`);
 
   // 5. A press on an agent's line opens that agent; elsewhere, the person.
@@ -436,9 +439,9 @@ try {
   const memberStats = (selector: string) => page.$eval(selector, (block) => [
     ...block.querySelectorAll('.pcstats > div')].map((node) => `${node.querySelector('b')?.textContent} ${node.querySelector('span')?.textContent?.replace(/\u00a0/g, ' ')}`).join('|'));
   check('her screen says this week',
-    await memberStats('#orgMemberWeek') === '3h agent hours|3 changes merged|182K tokens · Claude Code|41K tokens · Codex', await memberStats('#orgMemberWeek'));
+    await memberStats('#orgMemberWeek') === '2.7 agent hours|3 changes merged|182K tokens · Claude Code|41K tokens · Codex', await memberStats('#orgMemberWeek'));
   check('…and all time',
-    await memberStats('#orgMemberWorked') === '3h agent hours|3 changes merged|182K tokens · Claude Code|41K tokens · Codex', await memberStats('#orgMemberWorked'));
+    await memberStats('#orgMemberWorked') === '2.7 agent hours|3 changes merged|182K tokens · Claude Code|41K tokens · Codex', await memberStats('#orgMemberWorked'));
   const changes = await texts('#orgMemberMerged .memberchange .mctitle');
   check('…and lists this week’s merged changes, newest first',
     changes.join('|') === 'Driver ETAs in the customer text|Live van map with ETAs on the dispatcher screen|Footer links point at the new pricing page', changes.join('|'));

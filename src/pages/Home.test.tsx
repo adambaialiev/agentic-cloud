@@ -88,7 +88,8 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(document.querySelector('#team .badge')).toBeNull();
     expect(cards.map((card) => card.querySelector('.personstate')?.textContent)).toEqual(['Here now', 'Active 6m ago']);
     expect(cards.map((card) => (card.querySelector('.personlatest')?.textContent ?? '').replace(/\u00a0/g, ' '))).toEqual([
-      'Handed Ruby the batch route optimiser · 40m ago',
+      // One latest line (note #960): her agents' merge is newer than her own.
+      'Merged: Route optimiser, first cut · 6m ago',
       'Approved Ruby’s proposal: route optimiser, first cut · 6m ago',
     ]);
     expect(document.querySelector('#team')!.textContent).not.toMatch(/Priya|Admin/);
@@ -103,10 +104,12 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(weeks.map((week) => week.querySelector('.pchead')?.textContent)).toEqual(['This week', 'This week']);
     // One grammar since note #928: every figure a cell, tokens one per provider.
     expect(weeks.map((week) => [...week.querySelectorAll('.pcstats > div')].map((stat) => (stat.textContent ?? '').replace(/\u00a0/g, ' ')))).toEqual([
-      ['34hagent hours', '11changes merged', '2.1Mtokens · Claude Code'],
-      ['19hagent hours', '6changes merged', '860Ktokens · Codex'],
+      ['34agent hours', '11changes merged', '2.1Mtokens · Claude Code'],
+      ['19agent hours', '6changes merged', '860Ktokens · Codex'],
     ]);
-    expect(weeks.map((week) => (week.querySelector('.pclatest .pctitle')?.textContent))).toEqual(['Route optimiser, first cut', 'Retries for dropped pings']);
+    // The latest change is the card's one latest line when it is the newest
+    // thing there (note #960), never a second line inside the week.
+    expect(weeks.every((week) => !week.querySelector('.pclatest'))).toBe(true);
     // The block sits between the latest line and the agents, as in the product.
     for (const card of cards) expect(card.querySelector('.pcontrib + .cagents, .pcontrib ~ .cagents'), 'agents under the week').toBeTruthy();
     expect(document.querySelector('#computers #agentFacts')).toBeTruthy();

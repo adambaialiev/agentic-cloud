@@ -9,6 +9,7 @@ import { AddSecretForm } from './AddSecretForm.js';
 import { SecretsEmpty, SecretsList } from './SecretRows.js';
 import { SECRETS_LIST_AT, canAddSharedSecrets, secretTo, secretsOf } from './secret-words.js';
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
+import { bucketsOf } from '../storage/bucket-words.js';
 
 export function SecretsScreen() {
   const { state, agents } = useWorkspace();
@@ -32,7 +33,7 @@ export function SecretsScreen() {
         <div id="secretsList">
           {secrets.length === 0
             ? <SecretsEmpty canAddShared={canAddShared} canAddPrivate={canAdd} />
-            : <SecretsList secrets={secrets} searchable={secrets.length >= SECRETS_LIST_AT} onOpen={(secret) => navigate(secretTo(secret, org?.orgId))} />}
+            : <SecretsList secrets={secrets} buckets={bucketsOf(state)} searchable={secrets.length >= SECRETS_LIST_AT} onOpen={(secret) => navigate(secretTo(secret, org?.orgId))} />}
         </div>
         {canAdd
           ? (

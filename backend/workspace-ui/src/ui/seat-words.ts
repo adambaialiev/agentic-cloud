@@ -154,3 +154,15 @@ export function seatsEmptyState(orgName: string, available: number): SeatsEmptyS
     body: `Sign in a Claude, ChatGPT or OpenCode subscription and the agents in ${orgName} can start work on it. It stays yours: teammates and admins never see its credentials or usage.`,
   };
 }
+
+/** A reading's window as a plate says it, after the figure (note #960):
+ *  "of the weekly limit", "of the 5-hour limit", or "used" for a reading
+ *  with no window named. */
+export function plateWindowWords(trackText: string | undefined): string {
+  const track = (trackText ?? '').trim();
+  if (!track || track === 'usage') return 'used';
+  if (/week/i.test(track)) return 'of the weekly limit';
+  const hours = /^(\d+)\s*hours?$/i.exec(track);
+  if (hours) return `of the ${hours[1]}-hour limit`;
+  return `of ${track}`;
+}

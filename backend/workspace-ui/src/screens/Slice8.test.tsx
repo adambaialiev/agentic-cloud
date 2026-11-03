@@ -2025,7 +2025,7 @@ describe('organizations', () => {
     });
     expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
     // All time, since note #925: the hours lead the contribution's figures.
-    expect(document.querySelector('#orgMemberWorked [data-stat="hours"]')!.textContent).toBe('3hagent hours');
+    expect(document.querySelector('#orgMemberWorked [data-stat="hours"]')!.textContent).toBe('3.3agent hours');
     expect(document.querySelector('#orgMemberWorked .cago')!.textContent).toBe('including Ruby 50m, no longer here');
   });
 
@@ -2046,7 +2046,7 @@ describe('organizations', () => {
     // How long her agents have worked here (note #644), now All time's
     // first figure (note #925): zero said as zero, and no former agent is
     // named when there is none.
-    expect(document.querySelector('#orgMemberWorked [data-stat="hours"]')!.textContent).toBe('0hagent hours');
+    expect(document.querySelector('#orgMemberWorked [data-stat="hours"]')!.textContent).toBe('0agent hours');
     expect(document.querySelector('#orgMemberWorked .cago')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Make admin' }));
     await answerAsk('Make an admin');

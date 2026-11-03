@@ -16,7 +16,7 @@ import type {
   WorkspacePersonLive,
 } from '../../../../src/shared/workspace-api.js';
 import { durationWords, relative } from '../../ui/time.js';
-import { formatHours, formatTokens } from '../people/board-words.js';
+import { formatTokens } from '../people/board-words.js';
 
 /** The state line: here right now, else when they were last, else when they
  *  joined — a fact in every case, never filler. */
@@ -252,11 +252,13 @@ export interface ContributionStat {
  */
 export function contributionStats(numbers: WorkspaceContributionNumbers): ContributionStat[] {
   const stats: ContributionStat[] = [
-    { key: 'hours', value: formatHours(numbers.workingMs), label: 'agent hours' },
+    { key: 'hours', value: hoursFigure(numbers.workingMs), label: 'agent hours' },
     { key: 'merged', value: String(numbers.merged), label: numbers.merged === 1 ? 'change merged' : 'changes merged' },
   ];
   const providers = TOKEN_PROVIDERS.filter((provider) => (numbers.tokens[provider] ?? 0) > 0);
-  if (providers.length === 0) stats.push({ key: 'tokens', value: '0', label: 'tokens written' });
+  // One label for every token figure (note #960): "tokens · Claude Code"
+  // when a provider wrote any, plain "tokens" at zero.
+  if (providers.length === 0) stats.push({ key: 'tokens', value: '0', label: 'tokens' });
   for (const provider of providers) {
     stats.push({ key: provider, value: formatTokens(numbers.tokens[provider]!), label: `tokens\u00a0· ${harnessName(provider).replace(/ /g, '\u00a0')}` });
   }
@@ -274,4 +276,39 @@ export function contributionChangeAgo(change: Pick<WorkspaceContributionChange, 
 export function contributionChangeFacts(change: WorkspaceContributionChange): string {
   const where = change.repo ? `${change.repo} #${change.number}` : `#${change.number}`;
   return change.agentName ? `${change.agentName} · ${where}` : where;
+}
+
+/** Agent time as a figure in HOURS, the unit its label names (note #960:
+ *  "0h" stood beside "31min" over the same "agent hours"): "0", "0.5",
+ *  "2.1", and whole hours from ten up. */
+export function hoursFigure(ms: number): string {
+  const hours = ms / 3_600_000;
+  if (hours <= 0) return '0';
+  if (hours < 0.05) return '<0.1';
+  if (hours < 10) return (Math.round(hours * 10) / 10).toFixed(1).replace(/\.0$/, '');
+  return String(Math.round(hours));
+}
+
+/** Whether a week has nothing in it at all: a card says so in one line
+ *  rather than six zeros (note #960). */
+export function weekIsEmpty(numbers: WorkspaceContributionNumbers): boolean {
+  return numbers.workingMs <= 0 && numbers.merged <= 0
+    && TOKEN_PROVIDERS.every((provider) => (numbers.tokens[provider] ?? 0) <= 0);
+}
+
+/** A person's ONE latest line (note #960): their own latest, or their
+ *  agents' latest merged change, whichever is newer — never both, in two
+ *  places on the card. */
+export function personLatestLine(
+  person: Pick<WorkspaceOrgMember, 'recap' | 'recapAt' | 'contribution'>,
+  now = Date.now(),
+): { text: string; ago: string } | null {
+  const merged = person.contribution?.latest;
+  const recapAt = person.recap && person.recapAt ? Date.parse(person.recapAt) : NaN;
+  const mergedAt = merged ? Date.parse(merged.at) : NaN;
+  if (merged && (!person.recap || !(recapAt >= mergedAt))) {
+    return { text: `Merged: ${merged.title}`, ago: contributionChangeAgo(merged, now) };
+  }
+  if (person.recap) return { text: person.recap, ago: personRecapAgo(person, now) };
+  return null;
 }

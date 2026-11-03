@@ -68,7 +68,8 @@ describe('the People page', () => {
 
     const saddam = rows[1]!;
     expect((saddam.querySelector('img.avatar') as HTMLImageElement).getAttribute('src')).toBe('/faces/saddam.png');
-    expect([...saddam.querySelectorAll('.personname .badge')].map((badge) => badge.textContent)).toEqual(['You', 'Admin']);
+    // One quiet label, "You · Admin" (note #960), not two tags.
+    expect(saddam.querySelector('.personname .personrole')!.textContent).toBe('You · Admin');
     expect(saddam.querySelector('.cline .livedot')).toBeNull();
     expect(saddam.querySelector('.cline .ctext')!.textContent).toBe('Active 2h ago');
     expect(saddam.querySelector('.cabout')!.textContent).toBe('Approved proposal #634: Subscription item active dot');
@@ -263,23 +264,24 @@ describe('the People page', () => {
     expect(block('u2').querySelector('.pchead')!.textContent).toBe('This week');
     // One grammar (note #928): every figure a number over its label, tokens
     // one cell per provider that wrote any.
-    expect(stats('u2')).toEqual(['4h agent hours', '2 changes merged', '182K tokens · Claude Code', '41K tokens · Codex']);
+    expect(stats('u2')).toEqual(['4 agent hours', '2 changes merged', '182K tokens · Claude Code', '41K tokens · Codex']);
     expect(block('u2').querySelector('[data-stat="codex"]')!.getAttribute('title')).toBe('Tokens written: what their agents wrote, not what they read.');
-    expect(block('u2').querySelector('.pclatest b, .pclatest strong')).toBeNull();
-    expect(block('u2').querySelector('.pclatest')!.textContent).toBe('Merged: Live van map with ETAs on the dispatcher screen\u00a0·\u00a02h\u00a0ago');
-    // Between the latest line and the agents, as the brief placed it.
+    // The latest merged change is the card's ONE latest line (note #960),
+    // under the head, where it is newer than anything the person did.
+    const latestLine = (userId: string) => (document.querySelector(`#people .crow[data-person="${userId}"] .personlatest`)?.textContent ?? '');
+    expect(latestLine('u2')).toBe('Merged: Live van map with ETAs on the dispatcher screen\u00a0·\u00a02h\u00a0ago');
+    expect(block('u2').querySelector('.pclatest')).toBeNull();
     const card = document.querySelector('#people .crow[data-person="u2"]')!;
-    expect([...card.children].map((child) => child.className)).toEqual(['personhead', 'pcontrib']);
-    // Nothing yet is a row of zeros, never a missing block.
-    expect(stats('u1')).toEqual(['0h agent hours', '0 changes merged', '0 tokens written']);
-    expect(block('u1').querySelector('.pclatest')).toBeNull();
+    expect([...card.children].map((child) => child.className)).toEqual(['personhead', 'personlatest', 'pcontrib']);
+    // A week with nothing in it is one line, not a row of zeros (note #960).
+    expect(block('u1').textContent).toBe('Nothing this week');
+    expect(block('u1').querySelector('.pcstats')).toBeNull();
     // No rank, no medal: the deck keeps its order (here now leads).
     expect([...document.querySelectorAll('#people .crow')].map((row) => row.getAttribute('data-person'))).toEqual(['u2', 'u1']);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(PEOPLE_POLL_MS + 20); });
-    expect(stats('u2')).toEqual(['5h agent hours', '3 changes merged', '190K tokens · Claude Code', '41K tokens · Codex']);
-    expect(block('u2').querySelector('.pctitle')!.textContent).toBe('Driver ETAs in the customer text');
-    expect(block('u2').querySelector('.cago')!.textContent).toBe('just\u00a0now');
+    expect(stats('u2')).toEqual(['5 agent hours', '3 changes merged', '190K tokens · Claude Code', '41K tokens · Codex']);
+    expect(latestLine('u2')).toBe('Merged: Driver ETAs in the customer text\u00a0·\u00a0just\u00a0now');
   });
 
   it('the member’s screen reads their whole contribution: this week, all time, and each change a door (note #925)', async () => {
@@ -304,8 +306,8 @@ describe('the People page', () => {
     const stats = (selector: string) => [...document.querySelectorAll(`${selector} .pcstats > div`)]
       .map((stat) => `${stat.querySelector('b')!.textContent} ${stat.querySelector('span')!.textContent!.replace(/\u00a0/g, ' ')}`);
     await screen.findByText('Driver ETAs in the customer text');
-    expect(stats('#orgMemberWeek')).toEqual(['4h agent hours', '2 changes merged', '41K tokens · Codex']);
-    expect(stats('#orgMemberWorked')).toEqual(['30h agent hours', '17 changes merged', '2.4M tokens · Claude Code', '610K tokens · Codex']);
+    expect(stats('#orgMemberWeek')).toEqual(['4 agent hours', '2 changes merged', '41K tokens · Codex']);
+    expect(stats('#orgMemberWorked')).toEqual(['30 agent hours', '17 changes merged', '2.4M tokens · Claude Code', '610K tokens · Codex']);
     expect([...document.querySelectorAll('#orgMemberWorked .cago')].map((line) => line.textContent))
       .toEqual(['including Ruby 50m, no longer here', 'Tokens counted since Oct 10, 2026.']);
     const changes = [...document.querySelectorAll('#orgMemberMerged .memberchange')] as HTMLElement[];

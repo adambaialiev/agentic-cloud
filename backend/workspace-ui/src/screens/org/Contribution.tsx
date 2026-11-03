@@ -9,7 +9,7 @@
  */
 
 import type { WorkspaceContributionNumbers, WorkspaceMemberContribution } from '../../../../src/shared/workspace-api.js';
-import { CONTRIBUTION_TOKENS_HINT, contributionChangeAgo, contributionStats } from './people-words.js';
+import { CONTRIBUTION_TOKENS_HINT, contributionStats, weekIsEmpty } from './people-words.js';
 
 /** The figures: equal cells in one grid, each the number over what it
  *  counts, the same size and weight for every one (note #928). */
@@ -31,23 +31,16 @@ export function ContributionStats({ numbers }: { numbers: WorkspaceContributionN
  * week, the latest change's title — what their agents shipped, not only how
  * much. Under the latest line, before the agents.
  */
-export function PersonContribution({ contribution, now }: { contribution: WorkspaceMemberContribution; now: number }) {
-  const latest = contribution.latest;
+export function PersonContribution({ contribution }: { contribution: WorkspaceMemberContribution; now?: number }) {
+  // A week with nothing in it is one line, not six zeros (note #960). The
+  // latest merged change is the card's one latest line, above (note #960).
+  if (weekIsEmpty(contribution.week)) {
+    return <div className="pcontrib pcempty" aria-label="This week"><div className="pchead">Nothing this week</div></div>;
+  }
   return (
     <div className="pcontrib" aria-label="This week">
       <div className="pchead">This week</div>
       <ContributionStats numbers={contribution.week} />
-      {latest
-        ? (
-          <div className="pclatest">
-            {/* The person's latest line's own style (note #928): one weight,
-                the stamp in grey riding the last word. */}
-            Merged: <span className="pctitle">{latest.title}</span>
-            <span className="csep" aria-hidden="true">{'\u00a0·\u00a0'}</span>
-            <span className="cago">{contributionChangeAgo(latest, now).replace(/ /g, '\u00a0')}</span>
-          </div>
-        )
-        : null}
     </div>
   );
 }

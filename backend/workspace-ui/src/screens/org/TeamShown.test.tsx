@@ -156,7 +156,7 @@ describe('the team shows wherever the workplace can have one (2026-10-28)', () =
     renderAt('/workplace/people?org=o1', script(true, true, true));
     expect(await screen.findByText('Mira Chen')).toBeTruthy();
     // The admin is named so; a member wears no role word (note #833).
-    expect(document.querySelector('#people [data-person="u1"] .personname')!.textContent).toBe('Adam BYouAdmin');
+    expect(document.querySelector('#people [data-person="u1"] .personname')!.textContent).toBe('Adam BYou · Admin');
     expect(document.querySelector('#people [data-person="u2"] .personname')!.textContent).toBe('Mira Chen');
     expect(document.getElementById('peopleSub')!.textContent).toContain('2 people');
   });

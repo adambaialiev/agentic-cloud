@@ -40,7 +40,7 @@ import { AGENT_DOOR_ATTR, ROW_DOOR_ATTR } from '../../ui/FaceDoor.js';
 import { Icon, Svg } from '../../ui/icons.js';
 import { PressableRow } from '../home/PressableRow.js';
 import { PersonContribution } from './Contribution.js';
-import { personAgentsInOrder, personAgentStateLine, personRecapAgo, personStatusLine } from './people-words.js';
+import { personAgentsInOrder, personAgentStateLine, personLatestLine, personStatusLine } from './people-words.js';
 
 /** Agents on a plate before the rest become a count: three lines with a
  *  recap each keep a card a glance, not a page. */
@@ -58,7 +58,8 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
 }) {
   const here = Boolean(person.here);
   // WHEN the latest line happened (note #385), after it on the same line.
-  const ago = personRecapAgo(person, now);
+  // ONE latest line (note #960): theirs or their agents' latest merge.
+  const latest = personLatestLine(person, now);
   const agents = personAgentsInOrder(person.agentFaces ?? []);
   const shown = agents.slice(0, PERSON_AGENTS_SHOWN);
   const more = agents.length - shown.length;
@@ -70,8 +71,11 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
         <div className="personwho">
           <div className="personname">
             <span className="name plain">{person.name}</span>
-            {person.you ? <span className="badge mut">You</span> : null}
-            {admin ? <span className="badge mut">Admin</span> : null}
+            {/* One quiet label, "You · Admin", where two grey tags side by
+                side read as one word (note #960). */}
+            {person.you || admin
+              ? <span className="personrole">{[person.you ? 'You' : '', admin ? 'Admin' : ''].filter(Boolean).join(' · ')}</span>
+              : null}
           </div>
           <div className={here ? 'cline personstate here' : 'cline personstate'}>
             {here ? <span className="livedot" /> : null}
@@ -80,23 +84,24 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
         </div>
         {messageTo
           ? (
-            <span className="iconbox cmsgdoor" title={`Message ${person.name}`} aria-hidden="true" {...{ [ROW_DOOR_ATTR]: messageTo }}>
-              <Svg name="send" size={15} />
+            // Says what it opens (note #960): the mark alone gave no hint.
+            <span className="cmsgdoor" title={`Message ${person.name}`} aria-hidden="true" {...{ [ROW_DOOR_ATTR]: messageTo }}>
+              <Svg name="send" size={14} /><span>Message</span>
             </span>
           )
           : null}
       </div>
-      {person.recap
+      {latest
         ? (
           <div className="personlatest">
             {/* The stamp rides the last word (a no-break space before the
                 dot), so it never opens a line of its own. */}
-            <span className="cabout">{person.recap}</span>
-            {ago ? <><span className="csep" aria-hidden="true">{'\u00a0·\u00a0'}</span><span className="cago">{ago.replace(/ /g, '\u00a0')}</span></> : null}
+            <span className="cabout">{latest.text}</span>
+            {latest.ago ? <><span className="csep" aria-hidden="true">{'\u00a0·\u00a0'}</span><span className="cago">{latest.ago.replace(/ /g, '\u00a0')}</span></> : null}
           </div>
         )
         : null}
-      {person.contribution ? <PersonContribution contribution={person.contribution} now={now} /> : null}
+      {person.contribution ? <PersonContribution contribution={person.contribution} /> : null}
       {shown.length
         ? (
           <ul className="cagents" aria-label={`${person.you ? 'Your' : `${person.name}’s`} agents`}>
@@ -110,10 +115,15 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
                   {/* Working is the blue dot alone (Adam, 31 Oct 2026: "Blue
                       dot is enough"); Idle keeps its word. The dot carries
                       the word for a screen reader and a resting mouse. */}
+                  {/* The blue dot when it works, and no word at all when it
+                      does not (Adam, 31 Oct 2026: "Blue dot is enough"; note
+                      #960 took "Idle" off too). The chevron says the line
+                      opens the agent. */}
                   <span className={agent.working ? 'castate busy' : 'castate'}>
                     {agent.working
                       ? <span className="livedot" role="img" aria-label={personAgentStateLine(agent)} title={personAgentStateLine(agent)} />
-                      : personAgentStateLine(agent)}
+                      : <span className="sr-only">{personAgentStateLine(agent)}</span>}
+                    <Icon name="chev" size={14} />
                   </span>
                 </span>
                 {agent.recap ? <span className="carecap">{agent.recap}</span> : null}

@@ -25,7 +25,7 @@
 import { useNavigate } from 'react-router-dom';
 import type { WorkspaceSeatUsage } from '../../../src/shared/workspace-api.js';
 import { Icon } from './icons.js';
-import { seatHasCurrentUsage, seatStatusWords, subscriptionName, usageSeverity } from './seat-words.js';
+import { plateWindowWords, seatHasCurrentUsage, seatStatusWords, subscriptionName, usageSeverity } from './seat-words.js';
 import { SeatUseDot } from './SeatUse.js';
 import { toFor } from '../routes.js';
 import { useWorkspace } from '../workspace/useWorkspace.js';
@@ -59,9 +59,11 @@ function SeatPlate({ seat, seats, onOpen }: {
             {windows.map((window, index) => {
               const sev = usageSeverity(window.usedPercent);
               return (
+                // Plain words (note #960): "61% of the weekly limit", where
+                // the plate said "this week 61%".
                 <span className="seatstat" key={index}>
-                  <span className="track">{window.trackText || 'usage'}</span>
                   <span className={`pct${sev ? ` ${sev}` : ''}`}>{window.percentText}%</span>
+                  <span className="track">{plateWindowWords(window.trackText)}</span>
                 </span>
               );
             })}

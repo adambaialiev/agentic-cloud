@@ -33,11 +33,14 @@ export function AgentActivity() {
       <div className="card agentactivitycard" role="status" aria-label={label}>
         <div className={`agentactivitymetric${working ? ' active' : ''}`}>
           <strong className="agentactivitynumber">{working}</strong>
-          <span className="agentactivitylabel">working now</span>
+          {/* Whose: the reader's own, never their teammates' (2026-09-23) —
+              said on the band, since the cards under it list teammates'
+              agents too (note #960). */}
+          <span className="agentactivitylabel">{working === 1 ? 'of your agents is working' : 'of your agents working'}</span>
         </div>
         <div className="agentactivitymetric">
           <strong className="agentactivitynumber">{total}</strong>
-          <span className="agentactivitylabel">{agentNoun(total)} total</span>
+          <span className="agentactivitylabel">{total === 1 ? 'agent of yours' : 'agents of yours'}</span>
         </div>
       </div>
     </section>

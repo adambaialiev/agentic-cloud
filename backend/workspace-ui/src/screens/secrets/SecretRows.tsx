@@ -5,7 +5,7 @@
  */
 
 import { Fragment, useState } from 'react';
-import type { WorkspaceSecretRow } from '../../../../src/shared/workspace-api.js';
+import type { WorkspaceBucketRow, WorkspaceSecretRow } from '../../../../src/shared/workspace-api.js';
 import { Icon, TypeIcon } from '../../ui/icons.js';
 import { relative } from '../../ui/time.js';
 import { VoiceField } from '../../voice/VoiceField.js';
@@ -43,10 +43,47 @@ export function SecretRow({ secret, onOpen }: { secret: WorkspaceSecretRow; onOp
   );
 }
 
-export function SecretsList({ secrets, searchable, onOpen }: { secrets: WorkspaceSecretRow[]; searchable: boolean; onOpen: (secret: WorkspaceSecretRow) => void }) {
+/** A bucket's keys, as one line each under the bucket (note #960): what
+ *  they are for and who they reach is said once, on the group, rather than
+ *  four times. */
+function BucketSecrets({ bucket, secrets, onOpen }: { bucket: WorkspaceBucketRow; secrets: WorkspaceSecretRow[]; onOpen: (secret: WorkspaceSecretRow) => void }) {
+  const reach = secrets[0]?.scope === 'shared' && secrets[0].audience ? reachesWords(secrets[0]) : '';
+  return (
+    <div className="secretgroup" data-bucket-keys={bucket.name}>
+      <div className="secretgrouphead">
+        <TypeIcon glyph="database" />
+        <div className="main">
+          <div className="name plain">{bucket.name} bucket</div>
+          <div className="cline"><span className="ctext">{`${secrets.length} ${secrets.length === 1 ? 'key' : 'keys'}${reach ? ` · ${reach}` : ''}`}</span></div>
+        </div>
+      </div>
+      {secrets.map((secret) => (
+        <button className="crow open secretkey" type="button" key={secret.name} onClick={() => onOpen(secret)}>
+          <div className="main"><SecretName name={secret.name} /></div>
+          <div className="cside">{secret.updatedAt ? relative(secret.updatedAt) : ''}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function SecretsList({ secrets, searchable, onOpen, buckets = [] }: {
+  secrets: WorkspaceSecretRow[];
+  searchable: boolean;
+  onOpen: (secret: WorkspaceSecretRow) => void;
+  /** The workplace's buckets: a bucket's four keys are grouped under it. */
+  buckets?: WorkspaceBucketRow[];
+}) {
   const [filter, setFilter] = useState('');
   const needle = searchable ? filter.trim().toLowerCase() : '';
   const shown = needle ? secrets.filter((s) => `${s.name} ${s.description ?? ''}`.toLowerCase().includes(needle)) : secrets;
+  const groups = buckets
+    .map((bucket) => ({
+      bucket,
+      secrets: shown.filter((secret) => secret.scope === 'shared' && (bucket.secretNames ?? []).includes(secret.name)),
+    }))
+    .filter((group) => group.secrets.length > 1);
+  const grouped = new Set(groups.flatMap((group) => group.secrets));
   return (
     <>
       {searchable
@@ -62,7 +99,12 @@ export function SecretsList({ secrets, searchable, onOpen }: { secrets: Workspac
       <div>
         {shown.length === 0
           ? <div className="empty">Nothing matches “{filter.trim()}”.</div>
-          : shown.map((secret) => <SecretRow key={`${secret.scope}/${secret.agentId ?? ''}/${secret.name}`} secret={secret} onOpen={() => onOpen(secret)} />)}
+          : (
+            <>
+              {shown.filter((secret) => !grouped.has(secret)).map((secret) => <SecretRow key={`${secret.scope}/${secret.agentId ?? ''}/${secret.name}`} secret={secret} onOpen={() => onOpen(secret)} />)}
+              {groups.map((group) => <BucketSecrets key={group.bucket.name} bucket={group.bucket} secrets={group.secrets} onOpen={onOpen} />)}
+            </>
+          )}
       </div>
     </>
   );
