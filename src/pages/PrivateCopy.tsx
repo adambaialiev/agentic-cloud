@@ -28,6 +28,15 @@ import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
    CI published (note #816), retired with the switch. */
 export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer';
 
+/* The whole platform is open source (note #959, the owner, 3 Nov 2026, 12:18
+   UTC: "The whole platform is open source, we should talk about it in the
+   landing page"): the public repository agentic-cloud, answering signed out
+   since 1 Nov 2026, under the GNU AGPL-3.0 (its LICENSE; the README says the
+   name and the logo are not under it). The home page links the repository
+   and the licence; the installer's folder stays for /why-fly. */
+export const PLATFORM_SOURCE_URL = 'https://agenticcloudcomputer.com/acc/agentic-cloud';
+export const PLATFORM_LICENSE_URL = `${PLATFORM_SOURCE_URL}?path=LICENSE&file=1`;
+
 /* The film of a real install: Iris's clean run of release 2026.10.29.0 in
    the clean organization ia-scratch-client-2 on 29 Oct 2026, 16:15:52 to
    16:29:16 UTC, 13 min 24 s from one command to ready, every certificate
@@ -161,8 +170,8 @@ export function OwnCloudAction() {
    so great ... and then wow it also will run on my own cloud"). Note #830's
    data line, which opened the page until then, leads it; the drawing of what
    runs on whose side (note #827) moved here from "For your team", under
-   "Nothing of yours stays with us" with the open-source installer as the
-   proof. The drawing is not on a phone: the engineers it is for
+   "Nothing of yours stays with us" with the open-source platform as the
+   proof (the installer alone until note #959). The drawing is not on a phone: the engineers it is for
    read it on a laptop, and its labels are too small there (note #834). */
 export const OWN_CLOUD_HEADING = 'And all of it runs in your company’s own cloud.';
 
@@ -178,15 +187,15 @@ export function OwnCloud() {
         <div id="with-us">
           <h3 className={H3}>Nothing of yours stays with us.</h3>
           <p className={`mt-3 max-w-[640px] [text-wrap:pretty] ${BODY}`}>
-            We keep our source code and the releases. Your messages, code, files, mail, keys and logs
-            never reach us. The installer is open source, so anyone on your team can read exactly what
-            it creates and what it sends.
+            Your messages, code, files, mail, keys and logs never reach us. And the whole platform is
+            open source under the AGPL-3.0, the installer included, so your team can read every line of
+            it before they say yes.
           </p>
-          {/* The installer's code, and why it is Fly (note #838). */}
+          {/* The platform's code and its licence (note #959; the installer's code
+              until then), and why it is Fly (note #838). */}
           <div className="mt-5 flex flex-wrap items-center gap-x-7 gap-y-4">
-            {INSTALLER_SOURCE_URL ? (
-              <SecondaryLink href={INSTALLER_SOURCE_URL}>Read the installer’s code</SecondaryLink>
-            ) : null}
+            <SecondaryLink href={PLATFORM_SOURCE_URL}>Read the code</SecondaryLink>
+            <SecondaryLink href={PLATFORM_LICENSE_URL}>The AGPL-3.0 licence</SecondaryLink>
             <SecondaryLink href={WHY_FLY_PATH}>Why it runs on Fly</SecondaryLink>
           </div>
         </div>

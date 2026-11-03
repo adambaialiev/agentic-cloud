@@ -6,7 +6,7 @@ import React from 'react';
 import { fireEvent, render as renderBare, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_GUIDE_PATH, AGENT_LINE, INSTALLER_SOURCE_URL, INSTALL_FILM, OWN_CLOUD_HEADING } from './PrivateCopy';
+import { AGENT_GUIDE_PATH, AGENT_LINE, INSTALL_FILM, OWN_CLOUD_HEADING, PLATFORM_LICENSE_URL, PLATFORM_SOURCE_URL } from './PrivateCopy';
 import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
 import Home, { HOME_HEADLINE } from './Home';
 import { ROLLED_APPS } from '../components/CopyArt';
@@ -184,13 +184,22 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     if (atPin) expect(createHash('sha256').update(atPin).digest('hex')).toBe(sha256);
   });
 
-  it('says the installer is open source and links its code', () => {
+  // Note #959: the whole platform is open source (the public repository,
+  // AGPL-3.0), not only the installer, and nothing says we keep the source.
+  it('says the whole platform is open source under the AGPL-3.0 and links the code and the licence', () => {
     render(<PrivateCopy />);
 
     const section = document.querySelector('#with-us')!;
-    expect(section.textContent).toMatch(/The installer is open source/);
-    const links = [...section.querySelectorAll('a')].map((link) => link.getAttribute('href'));
-    expect(links).toEqual(INSTALLER_SOURCE_URL ? [INSTALLER_SOURCE_URL, '/why-fly'] : ['/why-fly']);
+    const words = (section.textContent ?? '').replace(/\s+/g, ' ');
+    expect(words).toMatch(/the whole platform is open source under the AGPL-3\.0, the installer included/);
+    expect(words).not.toMatch(/We keep our source code/);
+    const links = [...section.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()]);
+    expect(links).toEqual([
+      [PLATFORM_SOURCE_URL, 'Read the code'],
+      [PLATFORM_LICENSE_URL, 'The AGPL-3.0 licence'],
+      ['/why-fly', 'Why it runs on Fly'],
+    ]);
+    expect(PLATFORM_LICENSE_URL).toBe('https://agenticcloudcomputer.com/acc/agentic-cloud?path=LICENSE&file=1');
   });
 
   // Note #827: the drawing and the film stay; since note #835 the drawing of
