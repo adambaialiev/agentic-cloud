@@ -36,13 +36,14 @@ export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer
    Fly sat on the code host's certificate. The MP4's address comes from
    lib/films.ts (note #957), with the home film's; the poster is the ready frame, both secrets
    masked, and ships in the site bundle. Source and MP4: Drive, "Install
-   film, clean run 29 Oct 2026 (note 834)". Null removes it; the page reads
-   the same without it. */
-export const INSTALL_FILM: { src: string; poster: string; caption: string } | null = {
+   film, clean run 29 Oct 2026 (note 834)". Its caption under the player ("A
+   real install on 29 Oct 2026: one command, 13 min 24 s …") came off with
+   note #958 (the owner: "remove helper texts"); the film's own captions and
+   What it takes above say it. Null removes it; the page reads the same
+   without it. */
+export const INSTALL_FILM: { src: string; poster: string } | null = {
   src: filmUrl(INSTALL_FILM_PATH),
   poster: installFilmPoster,
-  caption:
-    'A real install on 29 Oct 2026: one command, 13 min 24 s from a clean Fly organization to ready, shown in 1 min 47 s. No sound; the captions are in the picture.',
 };
 
 

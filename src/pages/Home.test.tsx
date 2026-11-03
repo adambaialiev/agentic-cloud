@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { FILM_HEADING, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_HEADING, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
@@ -263,13 +263,18 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
 describe('Home, the film of the product at work (note #951)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it('stands right after the first screen, from our bucket, with its poster and real times', () => {
+  it('stands right after the first screen, from our bucket, with its poster and one link to the site', () => {
     answer();
     draw();
     if (!PRODUCT_FILM) return;
     const film = document.querySelector('#film')!;
     expect(document.querySelector('#home-top')!.nextElementSibling).toBe(film);
-    expect(film.querySelectorAll('[data-face-words], p:not(figcaption)').length).toBeGreaterThan(0);
+    // Heading, film and one plain link since note #958: no paragraph, no
+    // caption, and the link a text link to the site the film is about.
+    expect(film.querySelectorAll('p, figcaption')).toHaveLength(0);
+    const links = [...film.querySelectorAll('a')].map((a) => [a.getAttribute('href'), (a.textContent ?? '').trim()]);
+    expect(links).toEqual(BOOKFACE_URL ? [[BOOKFACE_URL, BOOKFACE_LINK]] : []);
+    expect(film.querySelector('a')?.className ?? '').not.toMatch(/\bbg-white\b|\brounded-xl\b/);
     const video = film.querySelector('video')!;
     expect(video.autoplay).toBe(false);
     expect(video.muted).toBe(true);
@@ -278,7 +283,6 @@ describe('Home, the film of the product at work (note #951)', () => {
     expect(video.getAttribute('poster')).toBeTruthy();
     expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
     expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
-    expect(film.querySelector('figcaption')!.textContent).toMatch(/^Recorded on 2 and 3 Nov 2026 and shown in 2\smin\s41\ss\./);
     const play = screen.getByRole('button', { name: /^Play the film of Bookface 2006/ });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     fireEvent.click(play);

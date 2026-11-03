@@ -946,7 +946,7 @@ export function InstallFilm({
 }: {
   src: string;
   poster: string;
-  caption: string;
+  caption?: string;
   label?: string;
   playAt?: 'corner' | 'below';
 }) {
@@ -986,7 +986,9 @@ export function InstallFilm({
           </button>
         )}
       </div>
-      <figcaption className={`mt-3 max-w-[36rem] [text-wrap:pretty] type-sm text-hint`}>{caption}</figcaption>
+      {/* No caption under either film since note #958 (the owner, 3 Nov 2026:
+          "remove helper texts"); the captions in the picture speak for it. */}
+      {caption ? <figcaption className={`mt-3 max-w-[36rem] [text-wrap:pretty] type-sm text-hint`}>{caption}</figcaption> : null}
     </figure>
   );
 }

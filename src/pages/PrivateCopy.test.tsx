@@ -236,7 +236,8 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(video.getAttribute('poster')).toBeTruthy();
     expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(INSTALL_FILM_PATH));
     expect(filmUrl('private-copy/x.mp4')).toMatch(/^https:\/\/[^/]+\/private-copy\/x\.mp4$/);
-    expect(document.querySelector('#install figcaption')!.textContent).toMatch(/^A real install on 29 Oct 2026: one command, 13 min 24 s from a clean Fly organization to ready, shown in 1 min 47 s\./);
+    // No caption under the player since note #958 ("remove helper texts").
+    expect(document.querySelector('#install figcaption')).toBeNull();
   });
 
   // The close is the founder's own address (note #832); the keys still come

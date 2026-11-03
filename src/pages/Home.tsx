@@ -71,15 +71,20 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    No waitlist; no code or password in any frame; the audio track is silent.
    Before it: the waitlist journey (notes #951, #952, #954), in Drive and on
    notes #932 and #950. The words beside it quote no clock time
-   (entry-server.test: no prerendered clock). The MP4's address comes from
+   (entry-server.test: no prerendered clock); since note #958 there are no
+   words beside it at all. The MP4's address comes from
    lib/films.ts (note #957), with the install film's; the poster is Iris's own, the site's photo album, with the
    play button in the empty band under the page. Null removes the section. */
-export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
+export const PRODUCT_FILM: { src: string; poster: string } | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  caption:
-    'Recorded on 2 and 3 Nov 2026 and shown in 2\u00a0min\u00a041\u00a0s. Every time on screen is the product’s own. No sound; the captions are in the picture.',
 };
+/* The site the film is about, live and public (note #958, the owner, 3 Nov
+   2026, 12:06 UTC: "remove helper texts and put the link to the bookface
+   clone site"). Its front page offers sign-up and prints a demo login, so a
+   stranger can look around. Null takes the link off. */
+export const BOOKFACE_URL: string | null = 'https://bookface-2006.agents.bookface.site/';
+export const BOOKFACE_LINK = 'Open the site they built';
 export const FILM_HEADING = 'Watch it work, start to finish.';
 
 /* One face of the problem (note #835): the heading promises the answer, the
@@ -170,13 +175,16 @@ export default function Home() {
         <section id="film" className={`${SECTION} ${HOME_SECTION_END}`}>
           <ChapterDivider tight />
           <h2 className={`[text-wrap:balance] ${H2}`}>{FILM_HEADING}</h2>
-          <p className={`mt-4 max-w-[40rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>
-            Two people’s agents built a social network the way Facebook looked in 2006, on the
-            founder’s own Agentic Cloud: profiles, friends, walls, pokes and photos. See it in use,
-            then how it was made. Four agents at once, every change merging by itself, seventeen in
-            under half an hour.
-          </p>
+          {/* Heading, film and one plain link since note #958: the paragraph
+              that told the story ("Two people’s agents built a social
+              network the way Facebook looked in 2006 …") and the caption
+              under the player came off at the owner's word. */}
           <InstallFilm {...PRODUCT_FILM} label="Play the film of Bookface 2006, built by two people’s agents, 2 minutes 41 seconds, no sound" playAt="below" />
+          {BOOKFACE_URL ? (
+            <div id="film-site" className="mt-6">
+              <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
