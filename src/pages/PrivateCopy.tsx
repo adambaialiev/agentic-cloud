@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { BODY, CARD, ChapterDivider, H2, H3, HOME_SECTION_END, LEAD, PrimaryLink, SECTION, SecondaryLink } from '../components/landing-kit';
 import { InstallFilm, SidesArt } from '../components/CopyArt';
 import installFilmPoster from '../assets/private-copy/install-film-poster-2026-10-29.jpg';
+import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
 
 /**
  * Your own Agentic Cloud: the parts of the one home page (note #832, the
@@ -32,13 +33,13 @@ export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer
    16:29:16 UTC, 13 min 24 s from one command to ready, every certificate
    issued, cut to 1 min 47 s (note #834, fix 1). It replaced Ada's 28 Oct
    recording (note #827), a 68-minute run that ended before "ready" because
-   Fly sat on the code host's certificate. The MP4 and the poster are in our
-   public bucket site-media; the poster is the ready frame, both secrets
+   Fly sat on the code host's certificate. The MP4's address comes from
+   lib/films.ts (note #957), with the home film's; the poster is the ready frame, both secrets
    masked, and ships in the site bundle. Source and MP4: Drive, "Install
    film, clean run 29 Oct 2026 (note 834)". Null removes it; the page reads
    the same without it. */
 export const INSTALL_FILM: { src: string; poster: string; caption: string } | null = {
-  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/private-copy/install-film-2026-10-29.mp4',
+  src: filmUrl(INSTALL_FILM_PATH),
   poster: installFilmPoster,
   caption:
     'A real install on 29 Oct 2026: one command, 13 min 24 s from a clean Fly organization to ready, shown in 1 min 47 s. No sound; the captions are in the picture.',

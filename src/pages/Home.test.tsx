@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
 import Home, { FILM_HEADING, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
+import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
 void React;
@@ -275,7 +276,8 @@ describe('Home, the film of the product at work (note #951)', () => {
     expect(video.getAttribute('preload')).toBe('none');
     expect(video.hasAttribute('controls')).toBe(false);
     expect(video.getAttribute('poster')).toBeTruthy();
-    expect(video.querySelector('source')!.getAttribute('src')).toMatch(/^https:\/\/iabkt-[0-9a-f]+\.fly\.storage\.tigris\.dev\/films\/.+\.mp4$/);
+    expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
+    expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
     expect(film.querySelector('figcaption')!.textContent).toMatch(/^Recorded on 2 and 3 Nov 2026 and shown in 2\smin\s41\ss\./);
     const play = screen.getByRole('button', { name: /^Play the film of Bookface 2006/ });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());

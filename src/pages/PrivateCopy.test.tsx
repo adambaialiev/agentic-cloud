@@ -7,6 +7,7 @@ import { fireEvent, render as renderBare, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AGENT_GUIDE_PATH, AGENT_LINE, INSTALLER_SOURCE_URL, INSTALL_FILM, OWN_CLOUD_HEADING } from './PrivateCopy';
+import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
 import Home, { HOME_HEADLINE } from './Home';
 import { ROLLED_APPS } from '../components/CopyArt';
 
@@ -233,7 +234,8 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(video.muted).toBe(true);
     expect(video.getAttribute('preload')).toBe('none');
     expect(video.getAttribute('poster')).toBeTruthy();
-    expect(video.querySelector('source')!.getAttribute('src')).toMatch(/^https:\/\/iabkt-[0-9a-f]+\.fly\.storage\.tigris\.dev\/private-copy\/.+\.mp4$/);
+    expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(INSTALL_FILM_PATH));
+    expect(filmUrl('private-copy/x.mp4')).toMatch(/^https:\/\/[^/]+\/private-copy\/x\.mp4$/);
     expect(document.querySelector('#install figcaption')!.textContent).toMatch(/^A real install on 29 Oct 2026: one command, 13 min 24 s from a clean Fly organization to ready, shown in 1 min 47 s\./);
   });
 

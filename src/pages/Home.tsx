@@ -11,6 +11,7 @@ import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
 import { InstallFilm } from '../components/CopyArt';
+import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
 import productFilmPoster from '../assets/films/bookface-2006-built-by-two-peoples-agents-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
@@ -70,11 +71,11 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    No waitlist; no code or password in any frame; the audio track is silent.
    Before it: the waitlist journey (notes #951, #952, #954), in Drive and on
    notes #932 and #950. The words beside it quote no clock time
-   (entry-server.test: no prerendered clock). The MP4 is in our public bucket
-   site-media; the poster is Iris's own, the site's photo album, with the
+   (entry-server.test: no prerendered clock). The MP4's address comes from
+   lib/films.ts (note #957), with the install film's; the poster is Iris's own, the site's photo album, with the
    play button in the empty band under the page. Null removes the section. */
 export const PRODUCT_FILM: { src: string; poster: string; caption: string } | null = {
-  src: 'https://iabkt-bd72d0602f96.fly.storage.tigris.dev/films/bookface-2006-built-by-two-peoples-agents.mp4',
+  src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
   caption:
     'Recorded on 2 and 3 Nov 2026 and shown in 2\u00a0min\u00a041\u00a0s. Every time on screen is the product’s own. No sound; the captions are in the picture.',
