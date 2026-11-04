@@ -4,8 +4,8 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-sixth-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-sixth-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-seventh-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-seventh-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -102,7 +102,16 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    (wide 12.5 / 53.8 / 78.8 s, tall 12.5 / 61.1 / 86.1 s) are each
    crossfade's middle, so the jumps use the first clean frame after it,
    read the same way; the close fades through the blank page first, so its
-   jump lands on the settled "Two people. Four agents." card. */
+   jump lands on the settled "Two people. Four agents." card.
+   Since note #990 the film is the seventh cut, narrated (from "Let's watch
+   two people and four agents build a social network in under 90
+   minutes."), with the same four acts and names: the opening card is
+   inside "One person"; "Two people" from "Maya joins."; "What they built"
+   from "Here's Bookface: profiles, friends, walls and pokes."; "Your cloud"
+   from "Your team." Iris's starts (wide 17.5 / 49.8 / 75.7 s, tall 17.5 /
+   57.1 / 83.0 s) are again each crossfade's middle, read the same way; the
+   close's words come in one by one, so its jump lands once "Your team."
+   is fully drawn. */
 export const FILM_SECTION_NAMES = ['One person', 'Two people', 'What they built', 'Your cloud'] as const;
 /* On a phone the four share one row, two lines at most. The sixth cut's
    names are short enough to read there whole, so they are the same. */
@@ -111,14 +120,14 @@ const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at,
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  length: 92.37,
-  sections: sectionsAt([0, 12.9, 54.3, 79.5]),
+  length: 84.73,
+  sections: sectionsAt([0, 17.9, 50.2, 76.4]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
-  length: 99.67,
-  sections: sectionsAt([0, 12.9, 61.6, 86.8]),
+  length: 92.07,
+  sections: sectionsAt([0, 18.0, 57.5, 83.7]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface
