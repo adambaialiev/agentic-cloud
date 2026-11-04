@@ -958,8 +958,14 @@ export function InstallFilm({
      loads, never by the autoPlay attribute, so a visitor whose system asks
      for reduced motion gets the poster and our play button instead, and so
      does one whose browser refuses to start it (a phone in low-power mode).
-     While it is starting neither the button nor controls show; once it
-     plays, the player's own controls come up on a tap or a hover. */
+     While it is starting neither the button nor controls show. Since note
+     #970 (the owner, 4 Nov 2026, 06:27 UTC: "remove controls from the video
+     player") a film that plays by itself never shows the browser's controls,
+     not on a hover, not on a tap, nor from the right-click menu's "Show
+     controls", nor picture-in-picture or cast buttons: it is a moving
+     picture, not a player. Where it holds still (reduced motion, or a
+     browser that refuses), our own play button is the one way to start it;
+     once pressed it plays, muted and looping, with no controls either. */
   autoplay?: boolean;
   /* The full width of the section rather than 960 px, with no space above:
      the home film opens the page. */
@@ -1001,7 +1007,10 @@ export function InstallFilm({
         <video
           ref={video}
           className="block aspect-video w-full rounded-[20px] bg-panel-soft shadow-[0_0_0_1px_rgb(31_30_29/0.1)]"
-          controls={playing}
+          controls={playing && !autoplay}
+          disablePictureInPicture={autoplay || undefined}
+          disableRemotePlayback={autoplay || undefined}
+          onContextMenu={autoplay ? (event) => event.preventDefault() : undefined}
           playsInline
           muted
           loop={autoplay}

@@ -29,6 +29,10 @@ export function filmUrl(path: string): string {
    against the 19 MB 1080p master, which stays in Drive). Its poster is in
    the site bundle, as every poster is: a page asks no other address before
    the visitor's film starts (the browser checks block any). A copy sits in
-   the bucket at films/bookface-2006-home-film-hyperframes-poster.jpg. */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-hyperframes-720p.mp4';
+   the bucket at films/bookface-2006-home-film-hyperframes-poster.jpg.
+   Since note #970 it is Iris's fourth cut (note #969, 1:26), encoded the
+   same way: 2.7 MB against the 12 MB master in Drive. Its poster is the
+   same picture as the HyperFrames cut's, byte for byte, so the bundled
+   poster did not change. */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-fourth-720p.mp4';
 export const INSTALL_FILM_PATH = 'private-copy/install-film-2026-10-29.mp4';

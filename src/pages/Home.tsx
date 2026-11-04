@@ -82,8 +82,13 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    silent. It opens the page, above the headline, and plays by itself (muted,
    inline, looping; never for a visitor who asks for reduced motion), with no
    heading and no words beside it; its play button, shown only when it is
-   not playing by itself, sits in the poster's empty lower left. Null
-   removes it. */
+   not playing by itself, sits in the poster's empty lower left.
+   Since note #970 (the owner, 4 Nov 2026, 06:27 UTC, after Iris's fourth
+   cut, note #969: "Yes replace with the new one. Also remove controls from
+   the video player") it is the fourth cut, 1 min 26 s, same poster, and the
+   player never shows its controls (InstallFilm autoplay). The install film
+   lower down keeps its player as it was: his words were about this one.
+   Null removes it. */
 export const PRODUCT_FILM: { src: string; poster: string } | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
@@ -143,7 +148,7 @@ export default function Home() {
             {...PRODUCT_FILM}
             autoplay
             wide
-            label="Play the film of Bookface 2006, built by two people’s agents, 1 minute 35 seconds, no sound"
+            label="Play the film of Bookface 2006, built by two people’s agents, 1 minute 26 seconds, no sound"
           />
           {BOOKFACE_URL ? (
             <div id="film-site" className="mt-5 sm:mt-6">

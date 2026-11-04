@@ -316,12 +316,19 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     expect(PRODUCT_FILM.poster).not.toMatch(/^https?:/);
     expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
     expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
-    // Playing: the player's own controls come up on a tap, no button over it.
-    expect(video.hasAttribute('controls')).toBe(true);
+    // Playing, and never the browser's controls (note #970, the owner:
+    // "remove controls from the video player"): not on a hover, a tap, the
+    // right-click menu, picture-in-picture or cast; no button over it.
+    expect(video.hasAttribute('controls')).toBe(false);
+    expect(video.hasAttribute('disablepictureinpicture')).toBe(true);
+    expect(video.hasAttribute('disableremoteplayback')).toBe(true);
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    video.dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
     expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
   });
 
-  it('holds still on its poster with a play button when the visitor asks for reduced motion', async () => {
+  it('holds still on its poster for reduced motion, and our play button starts it without controls', async () => {
     answer();
     reduce(true);
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
@@ -331,10 +338,13 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     expect(play).not.toHaveBeenCalled();
     const video = document.querySelector('#film video')!;
     expect(video.hasAttribute('controls')).toBe(false);
-    const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents, 1 minute 35 seconds/ });
+    // Our own play button is the one way to start it; pressed, it plays
+    // with no controls either (note #970).
+    const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents, 1 minute 26 seconds/ });
     fireEvent.click(button);
     expect(play).toHaveBeenCalledTimes(1);
-    expect(video.hasAttribute('controls')).toBe(true);
+    expect(video.hasAttribute('controls')).toBe(false);
+    expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
   });
 
   it('shows the poster and play button when the browser refuses to start it', async () => {
