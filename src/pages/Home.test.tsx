@@ -3,8 +3,9 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { BOOKFACE_LINK, BOOKFACE_URL, HOME_HEADLINE, PRODUCT_FILM, TEAM_HEADING } from './Home';
-import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL, TEAM_HEADING } from './Home';
+import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
+import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
 void React;
@@ -259,22 +260,23 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   });
 });
 
-// Note #965 (the owner, 3 Nov 2026, 18:45 UTC: "This video should be the
-// first thing in the landing page and play automatically"): the film opens
-// the page, above the headline, and starts by itself, muted, inline and
-// looping. A visitor who asks for reduced motion, or whose browser refuses
-// to start it, gets the poster and our play button. From note #951 to #958
-// it was its own section after the first screen, "Watch it work, start to
-// finish.", and never played by itself.
-describe('Home, the film first and playing by itself (note #965)', () => {
+// The home film (HomeFilm.tsx). Note #965: it opens the page, above the
+// headline, and starts by itself, muted, inline and looping; a visitor who
+// asks for reduced motion, or whose browser refuses, gets the poster and our
+// play button. Note #970: never the browser's controls. Note #971: a click,
+// tap, Space or Enter pauses and resumes it, with a mark that goes. Note #973
+// (the owner, 4 Nov 2026, 07:48 UTC: "Can we make vertical version of the
+// video? For phones"): a phone (TALL_FILM_QUERY) gets the tall cut in a tall
+// frame, a desk the wide one, and only one film is ever asked for.
+describe('Home, the film first and playing by itself (notes #965, #970, #971, #973)', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
-  function reduce(wanted: boolean) {
+  function screenIs({ still = false, phone = false }: { still?: boolean; phone?: boolean }) {
     vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
-      matches: wanted && query.includes('prefers-reduced-motion: reduce'),
+      matches: (still && query.includes('prefers-reduced-motion: reduce')) || (phone && query === TALL_FILM_QUERY),
       media: query,
       addEventListener() {},
       removeEventListener() {},
@@ -282,12 +284,12 @@ describe('Home, the film first and playing by itself (note #965)', () => {
   }
 
   async function settle() {
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    await act(async () => { for (let i = 0; i < 4; i += 1) await Promise.resolve(); });
   }
 
-  it('opens the page above the headline, from our bucket, with its poster and one link to the site', async () => {
+  it('opens the page above the headline, plays the wide film on a desk, with one link to the site and no controls', async () => {
     answer();
-    reduce(false);
+    screenIs({});
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     draw();
     await settle();
@@ -296,8 +298,7 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     expect(document.querySelector('main section')).toBe(film);
     expect(film.nextElementSibling?.id).toBe('home-top');
     expect(film.compareDocumentPosition(document.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // The old section is gone: no heading, paragraph or caption around the
-    // film, and its one link, a plain text link, came up with it.
+    // No heading, paragraph or caption around it; its one link is plain.
     expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
     expect(screen.queryByText('Watch it work, start to finish.')).toBeNull();
     const links = [...film.querySelectorAll('a')].map((a) => [a.getAttribute('href'), (a.textContent ?? '').trim()]);
@@ -309,16 +310,23 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     expect(play).toHaveBeenCalledTimes(1);
     expect(video.muted).toBe(true);
     expect(video.loop).toBe(true);
+    expect(video.getAttribute('preload')).toBe('none');
     expect(video.playsInline ?? video.hasAttribute('playsinline')).toBeTruthy();
-    // The poster comes with the site, so the page asks no other address
-    // until the film itself starts (the browser checks block any).
-    expect(video.getAttribute('poster')).toBe(PRODUCT_FILM.poster);
-    expect(PRODUCT_FILM.poster).not.toMatch(/^https?:/);
-    expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
+    // One film: the wide one, and no other source in the markup.
+    expect(video.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
+    expect(video.querySelectorAll('source')).toHaveLength(0);
     expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
-    // Playing, and never the browser's controls (note #970, the owner:
-    // "remove controls from the video player"): not on a hover, a tap, the
-    // right-click menu, picture-in-picture or cast; no button over it.
+    // The poster comes with the site, one picture whose source the browser
+    // picks by the same query, so it fetches one poster.
+    const poster = film.querySelector('picture')!;
+    expect(poster.querySelector('img')!.getAttribute('src')).toBe(PRODUCT_FILM.poster);
+    expect(PRODUCT_FILM.poster).not.toMatch(/^https?:/);
+    if (PRODUCT_FILM_TALL) {
+      const tall = poster.querySelector('source')!;
+      expect(tall.getAttribute('media')).toBe(TALL_FILM_QUERY);
+      expect(tall.getAttribute('srcset')).toBe(PRODUCT_FILM_TALL.poster);
+    }
+    // Never the browser's controls (note #970).
     expect(video.hasAttribute('controls')).toBe(false);
     expect(video.hasAttribute('disablepictureinpicture')).toBe(true);
     expect(video.hasAttribute('disableremoteplayback')).toBe(true);
@@ -326,11 +334,31 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     video.dispatchEvent(menu);
     expect(menu.defaultPrevented).toBe(true);
     expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Pause the film of Bookface 2006/ })).toBeTruthy();
+  });
+
+  it('plays the tall film in a tall frame on a phone, and only that one', async () => {
+    answer();
+    screenIs({ phone: true });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    draw();
+    await settle();
+    if (!PRODUCT_FILM || !PRODUCT_FILM_TALL) return;
+    const video = document.querySelector('#film video')!;
+    expect(video.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_TALL_PATH));
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(video.hasAttribute('controls')).toBe(false);
+    // The frame is the film's own shape: tall under sm, wide from sm up,
+    // and never taller than leaves the headline's first line in view.
+    const frame = document.querySelector('#film [data-film-frame]')!;
+    expect(frame.className).toMatch(/\baspect-\[9\/16\]/);
+    expect(frame.className).toMatch(/\bsm:aspect-video\b/);
+    expect(frame.className).toMatch(/max-w-\[max\(200px,calc\(\(100svh_-_215px\)\*9\/16\)\)\]/);
   });
 
   it('holds still on its poster for reduced motion, and our play button starts it without controls', async () => {
     answer();
-    reduce(true);
+    screenIs({ still: true });
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     draw();
     await settle();
@@ -338,26 +366,20 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     expect(play).not.toHaveBeenCalled();
     const video = document.querySelector('#film video')!;
     expect(video.hasAttribute('controls')).toBe(false);
-    // Our own play button is the one way to start it; pressed, it plays
-    // with no controls either (note #970).
-    const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents, 1 minute 26 seconds/ });
+    expect(document.querySelector('#film picture img')).toBeTruthy();
+    const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents/ });
     button.focus();
     fireEvent.click(button);
     expect(play).toHaveBeenCalledTimes(1);
     expect(video.hasAttribute('controls')).toBe(false);
     expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
-    // Started, the same tap pauses and resumes it (note #971).
     // A keyboard that pressed our button lands on the film's own button.
     expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Pause the film of Bookface 2006/ }));
   });
 
-  // Note #971 (the owner, 4 Nov 2026, 07:46 UTC: "Yes agree with tap to
-  // pause"): the film is its own button. A click or tap pauses it, another
-  // resumes it; a keyboard reaches it as a button named for what it will do;
-  // a mark shows at the tap and goes; never the browser's controls.
   it('pauses on a tap and resumes on the next, with no controls and no mark left behind', async () => {
     answer();
-    reduce(false);
+    screenIs({});
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
     const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
     let paused = false;
@@ -367,8 +389,6 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     if (!PRODUCT_FILM) return;
     const video = document.querySelector('#film video')!;
     const toggle = screen.getByRole('button', { name: /^Pause the film of Bookface 2006, built by two people’s agents/ });
-    // The whole picture is the button, and it is a real button, so Space and
-    // Enter work and it takes focus.
     expect(toggle.tagName).toBe('BUTTON');
     expect(toggle.className).toMatch(/\binset-0\b/);
     expect(toggle.className).toMatch(/focus-visible:outline/);
@@ -397,12 +417,13 @@ describe('Home, the film first and playing by itself (note #965)', () => {
 
   it('shows the poster and play button when the browser refuses to start it', async () => {
     answer();
-    reduce(false);
+    screenIs({ phone: true });
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.reject(new DOMException('refused', 'NotAllowedError')));
     draw();
     await settle();
     if (!PRODUCT_FILM) return;
     expect(document.querySelector('#film video')!.hasAttribute('controls')).toBe(false);
+    expect(document.querySelector('#film picture img')).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeTruthy();
   });
 });

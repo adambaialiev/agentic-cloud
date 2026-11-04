@@ -35,4 +35,8 @@ export function filmUrl(path: string): string {
    same picture as the HyperFrames cut's, byte for byte, so the bundled
    poster did not change. */
 export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-fourth-720p.mp4';
+/* Since note #973 a phone gets the tall cut of the same film (Iris, note
+   #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
+   4.9 MB. Its poster is in the site bundle, as every poster is. */
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-720x1280.mp4';
 export const INSTALL_FILM_PATH = 'private-copy/install-film-2026-10-29.mp4';

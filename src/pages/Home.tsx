@@ -10,9 +10,10 @@ import LiveFleet from '../components/LiveFleet';
 import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
-import { InstallFilm } from '../components/CopyArt';
-import { filmUrl, PRODUCT_FILM_PATH } from '../lib/films';
+import HomeFilm from '../components/HomeFilm';
+import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import productFilmPoster from '../assets/films/bookface-2006-home-film-hyperframes-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
@@ -86,12 +87,22 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    Since note #970 (the owner, 4 Nov 2026, 06:27 UTC, after Iris's fourth
    cut, note #969: "Yes replace with the new one. Also remove controls from
    the video player") it is the fourth cut, 1 min 26 s, same poster, and the
-   player never shows its controls (InstallFilm autoplay). The install film
-   lower down keeps its player as it was: his words were about this one.
-   Null removes it. */
+   player never shows its controls. The install film lower down keeps its
+   player as it was: his words were about this one. Since note #971 a tap
+   pauses and resumes it.
+   Since note #973 (the owner, 4 Nov 2026, 07:48 UTC: "Can we make vertical
+   version of the video? For phones") a phone gets Iris's tall cut of it
+   (note #972, 1 min 28 s) in a tall frame, and a desk the wide one as
+   before; HomeFilm.tsx picks one by the page's width and fetches only it.
+   Null removes the film; a null PRODUCT_FILM_TALL gives a phone the wide
+   one. */
 export const PRODUCT_FILM: { src: string; poster: string } | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
+};
+export const PRODUCT_FILM_TALL: { src: string; poster: string } | null = {
+  src: filmUrl(PRODUCT_FILM_TALL_PATH),
+  poster: productFilmTallPoster,
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface
@@ -144,11 +155,10 @@ export default function Home() {
           #958). */}
       {PRODUCT_FILM ? (
         <section id="film" aria-label="The film" className={`${SECTION} pt-6 sm:pt-10`}>
-          <InstallFilm
-            {...PRODUCT_FILM}
-            autoplay
-            wide
-            label="Play the film of Bookface 2006, built by two people’s agents, 1 minute 26 seconds, no sound"
+          <HomeFilm
+            wide={PRODUCT_FILM}
+            tall={PRODUCT_FILM_TALL}
+            label="Play the film of Bookface 2006, built by two people’s agents, no sound"
           />
           {BOOKFACE_URL ? (
             <div id="film-site" className="mt-5 sm:mt-6">
@@ -176,7 +186,7 @@ export default function Home() {
           button off: the page has no call to action, and its one way to
           start is the How to start section. HERO_DOOR is the plain text link
           offered in its place. */}
-      <section id="home-top" className={`${SECTION} grid gap-10 pb-10 pt-14 sm:pb-12 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7`}>
+      <section id="home-top" className={`${SECTION} grid gap-10 pb-10 pt-10 sm:pb-12 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7`}>
         <div>
           {/* One sentence a line, so a phone never breaks "Give" from its
               sentence; the space between keeps the heading's name whole. */}
