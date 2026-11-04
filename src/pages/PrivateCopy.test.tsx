@@ -25,40 +25,30 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
 
   // Note #829 (the owner, 2026-10-28): for the CTO or founder who decides,
   // not the engineer; the company's data is the reason, and it comes first.
-  it('speaks to the leader: why first, what stays with us, what it takes and who does it', () => {
+  it('speaks to the leader in headings, panels and links, no description (note #978)', () => {
     render(<PrivateCopy />);
 
     // Since note #835 the page leads with the product; the own cloud is the
-    // second chapter of the story, and the data reason leads it.
+    // second chapter of the story. Since note #978 (the owner, 4 Nov 2026,
+    // 13:26 UTC: "each section should be without description text") it is
+    // its heading, "Nothing of yours stays with us.", its links and the
+    // drawing: the data lead, the open-source paragraph, the three steps,
+    // "What it takes" and the qualifier came off.
     expect(screen.getByRole('heading', { level: 1, name: HOME_HEADLINE })).toBeTruthy();
     expect([...document.querySelectorAll('h1')].filter((node) => !node.closest('.ws-live'))).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 2, name: OWN_CLOUD_HEADING })).toBeTruthy();
-    const lead = (document.querySelector('#own-cloud #own-cloud-lead')!.textContent ?? '').replace(/\s+/g, ' ');
-    expect(lead).toMatch(/^What makes your agents good stays yours: your code, their conversations, your knowledge, your keys and your decisions\./);
-    expect(lead).toMatch(/your own cloud account, on your domain\./);
     expect(screen.getByRole('heading', { level: 3, name: 'Nothing of yours stays with us.' })).toBeTruthy();
-    // What it takes, inside "How to start" since note #834; since note #924
-    // a short box of five one-line items in the paragraph's words, nothing
-    // dropped.
-    const items = [...document.querySelectorAll('#start #takes li')].map((item) => (item.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(document.querySelector('#start #takes h3')?.textContent).toBe('What it takes');
-    expect(items).toHaveLength(5);
-    expect(items[0]).toMatch(/^A Fly account that pays for the machines\. Fly bills it directly; nothing of ours is on that bill\.$/);
-    expect(items[1]).toMatch(/^One domain of your own, such as agents\.yourcompany\.com\.$/);
-    // The real figure first (the owner, 29 Oct, 17:00 UTC), the certificate wait second.
-    expect(items[2]).toMatch(/^One command your agent runs\. In our clean run on 29 October it went from a new Fly organization to ready in 13 min 24 s\.$/);
-    expect(items[3]).toMatch(/one has taken over an hour before/);
-    // Free for now, with no licence (the owner, 1 Nov 2026, note #935).
-    expect(items[4]).toMatch(/^Free for now: no licence, no key and no charge from us\.$/);
-    const takes = items.join(' ');
-    expect(takes).not.toMatch(/usually|always|guarantee/i);
+    expect(document.querySelector('#own-cloud-lead')).toBeNull();
+    expect(document.querySelector('#takes')).toBeNull();
+    expect(document.querySelector('#start ol')).toBeNull();
+    expect(document.querySelector('#qualifier')).toBeNull();
+    for (const id of ['#own-cloud', '#start', '#for-your-team', '#contact']) {
+      const shown = [...document.querySelector(id)!.querySelectorAll('p, li')].filter((node) => !node.closest('.ws-live, figure, svg, [role="img"]') && !node.classList.contains('sr-only'));
+      expect(shown.map((node) => node.textContent), id).toEqual([]);
+    }
     const body = document.body.textContent ?? '';
-    // The time beside a 68-minute film: the work, and the wait said aloud.
-    expect(document.querySelector('#takes')!.textContent).toMatch(/certificates in under a minute that time/);
     expect(body).not.toMatch(/About fifteen minutes\./);
-    expect(body).toMatch(/Free for now: no licence, no key and no charge from us/);
     expect(body).not.toMatch(/free trial|first month/i);
-    expect(body).toMatch(/Company single sign-on is not built\s+yet/);
   });
 
   // The page's main action: one line for the leader's own terminal agent.
@@ -77,14 +67,11 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(document.querySelector('#home-top #give-your-agent')).toBeNull();
     expect(document.querySelector('#home-top a[href="#start"]')?.textContent).toMatch(/^Build your own Agentic Cloud/);
     expect(document.querySelector('#start h2')?.textContent).toBe('Build your own Agentic Cloud.');
-    // And it is the first step, not the second: the guide plans before our
-    // two files exist, so pasting the line at once works (note #831).
-    const steps = [...document.querySelectorAll('#start ol > li')].map((step) => step.textContent ?? '');
-    expect(steps[0]).toMatch(/^Give your agent the line above\./);
-    // Nothing to ask us for (note #935): the agent builds it on the person's yes.
-    expect(steps[1]).toMatch(/^Say yes, and your agent builds your own Agentic Cloud\. Nothing is needed from us: no key, no licence\.$/);
     for (const section of document.querySelectorAll('main > section')) expect(section.innerHTML, section.id).not.toContain('hello@agenticcloudcomputer.com');
-    expect(section.textContent).toMatch(/Paste it into Claude Code, Codex or any agent that works in a terminal\./);
+    // The paste hint under it came off with note #978; the phone keeps its
+    // two doors.
+    expect(section.textContent).not.toMatch(/Paste it into/);
+    expect([...section.querySelectorAll('#on-a-phone a')].map((link) => (link.textContent ?? '').trim())).toEqual(['Send me the line', 'Write to the founder']);
   });
 
   // The guide is what an agent runs from: every flag and every message it
@@ -186,13 +173,13 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
 
   // Note #959: the whole platform is open source (the public repository,
   // AGPL-3.0), not only the installer, and nothing says we keep the source.
-  it('says the whole platform is open source under the AGPL-3.0 and links the code and the licence', () => {
+  it('links the open-source code and its AGPL-3.0 licence under its heading', () => {
     render(<PrivateCopy />);
 
     const section = document.querySelector('#with-us')!;
-    const words = (section.textContent ?? '').replace(/\s+/g, ' ');
-    expect(words).toMatch(/the whole platform is open source under the AGPL-3\.0, the installer included/);
-    expect(words).not.toMatch(/We keep our source code/);
+    // Since note #978 the sentence that said it came off; the heading and
+    // the links to the code and its licence say it.
+    expect(section.querySelector('p')).toBeNull();
     const links = [...section.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()]);
     expect(links).toEqual([
       [PLATFORM_SOURCE_URL, 'Read the code'],
@@ -255,7 +242,9 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     render(<PrivateCopy />);
 
     const contact = document.querySelector('#contact')!;
-    expect(contact.textContent).toMatch(/adam@agenticcloudcomputer\.com/);
+    // The address is the link's (note #978 took off the paragraph that
+    // spelled it out).
+    expect((contact.textContent ?? '').trim()).toMatch(/^Talk to us\.\s*Write to the founder/);
     expect([...contact.querySelectorAll('a')].every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
     expect(document.querySelector('#start')!.textContent).not.toMatch(/update key|licence from us/);
   });

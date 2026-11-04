@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 /**
  * The landing page's design language, in one module.
  *
@@ -24,6 +25,49 @@ export const SECTION = 'mx-auto w-full max-w-6xl px-5 sm:px-8';
    whole width of the window, with the page's side padding and nothing else.
    Every other page keeps SECTION's centred column. */
 export const HOME_SECTION = 'w-full px-5 sm:px-8 lg:px-12';
+
+/* Since note #978 (the owner, 4 Nov 2026, 13:23 UTC: "we should think in
+   terms of sections. Each section should take the whole space horizontally
+   and vertically. For extra large displays, we should have max width and max
+   height") every home section is one screen: the whole width and at least
+   the whole height of the window (svh, the height with a phone's bars
+   showing), its content centred inside it, a hairline between screens.
+   Inside, the content has ONE pair of caps for the whole page:
+   SCREEN_MAX_WIDTH (1280 px) and SCREEN_MAX_HEIGHT (900 px). Beyond them it
+   is centred with even space around it, so a 2940 px display shows a large
+   laptop's composition. The height cap sizes what can be sized (the film);
+   a screen whose words and panels genuinely need more than the window
+   grows, never clips. No scroll snapping. */
+export const SCREEN_MAX_WIDTH = 1280;
+export const SCREEN_MAX_HEIGHT = 900;
+export function Screen({
+  id,
+  label,
+  first = false,
+  pad = 'py-12 sm:py-16',
+  className = '',
+  children,
+}: {
+  id: string;
+  label?: string;
+  /** The page's first screen draws no hairline above it. */
+  first?: boolean;
+  pad?: string;
+  /** Classes for the content box (a grid, its gaps). */
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      aria-label={label}
+      data-screen
+      className={`flex min-h-[100svh] w-full flex-col justify-center px-5 sm:px-8 lg:px-12 ${pad} ${first ? '' : 'border-t border-hint/16'}`}
+    >
+      <div data-screen-content className={`mx-auto w-full max-w-[1280px] ${className}`}>{children}</div>
+    </section>
+  );
+}
 
 /* The page carries a lot of the product at full reading size. Whitespace alone
    lets those interfaces run together, so every substantial section after the

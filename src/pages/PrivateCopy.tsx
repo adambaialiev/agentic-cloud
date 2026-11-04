@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { BODY, CARD, ChapterDivider, H2, H3, HOME_SECTION_END, LEAD, PrimaryLink, HOME_SECTION, SecondaryLink } from '../components/landing-kit';
+import { CARD, H2, H3, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
 import { InstallFilm, SidesArt } from '../components/CopyArt';
 import installFilmPoster from '../assets/private-copy/install-film-poster-2026-10-29.jpg';
 import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
@@ -108,11 +108,10 @@ export function AgentLine() {
 
 export function Chapter({ id, heading, children }: { id: string; heading: string; children: ReactNode }) {
   return (
-    <section id={id} className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
-      <ChapterDivider tight />
+    <Screen id={id}>
       <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
       {children}
-    </section>
+    </Screen>
   );
 }
 
@@ -128,7 +127,6 @@ const FOUNDER_MAILTO = `mailto:${FOUNDER_EMAIL}?subject=${encodeURIComponent('Ou
    send to themselves for the laptop. No address: theirs goes in the To. */
 export const SEND_ME_THE_LINE = `mailto:?subject=${encodeURIComponent('Set up our own Agentic Cloud')}&body=${encodeURIComponent(`Paste this into Claude Code, Codex or any agent with a terminal:\n\n${AGENT_LINE}\n`)}`;
 
-const INLINE_LINK = 'text-white underline decoration-white/35 underline-offset-2 hover:decoration-white';
 
 /* The page's action, at the top of How to start since note #835 (on the first
    screen before it). On a laptop, the line and its Copy button; on a phone,
@@ -145,23 +143,14 @@ export function OwnCloudAction() {
         </div>
         {/* Since note #835 the steps below say what the agent does with it, so
             the paragraph that said it here first is gone. */}
-        <p className={`mt-3 [text-wrap:pretty] ${BODY}`}>
-          Paste it into Claude Code, Codex or any agent that works in a terminal.
-        </p>
       </div>
       <div className="sm:hidden" id="on-a-phone">
         <h3 className="type-md-sm font-semibold text-white">Your agent sets it up from a laptop</h3>
-        <p className={`mt-2 [text-wrap:pretty] ${BODY}`}>
-          Send yourself the one line it needs, or ask the founder anything first.
-        </p>
         <div className="mt-5 flex flex-col items-start gap-4">
           <PrimaryLink href={SEND_ME_THE_LINE}>Send me the line</PrimaryLink>
           <SecondaryLink href={FOUNDER_MAILTO}>Write to the founder</SecondaryLink>
         </div>
       </div>
-      <p id="qualifier" className="mt-6 type-sm font-semibold text-white">
-        Runs in your own Fly account. Free for now.
-      </p>
     </div>
   );
 }
@@ -178,22 +167,12 @@ export const OWN_CLOUD_HEADING = 'And all of it runs in your company’s own clo
 export function OwnCloud() {
   return (
     <Chapter id="own-cloud" heading={OWN_CLOUD_HEADING}>
-      <div className="mt-5 grid gap-8 lg:grid-cols-2 lg:gap-14">
-        <p id="own-cloud-lead" className={`[text-wrap:pretty] ${LEAD}`}>
-          What makes your agents good stays yours: your code, their conversations, your knowledge,
-          your keys and your decisions. The whole system runs in your own cloud account, on your
-          domain.
-        </p>
+      <div className="mt-6 sm:mt-8">
         <div id="with-us">
           <h3 className={H3}>Nothing of yours stays with us.</h3>
-          <p className={`mt-3 [text-wrap:pretty] ${BODY}`}>
-            Your messages, code, files, mail, keys and logs never reach us. And the whole platform is
-            open source under the AGPL-3.0, the installer included, so your team can read every line of
-            it before they say yes.
-          </p>
           {/* The platform's code and its licence (note #959; the installer's code
               until then), and why it is Fly (note #838). */}
-          <div className="mt-5 flex flex-wrap items-center gap-x-7 gap-y-4">
+          <div className="mt-4 flex flex-wrap items-center gap-x-7 gap-y-4">
             <SecondaryLink href={PLATFORM_SOURCE_URL}>Read the code</SecondaryLink>
             <SecondaryLink href={PLATFORM_LICENSE_URL}>The AGPL-3.0 licence</SecondaryLink>
             <SecondaryLink href={WHY_FLY_PATH}>Why it runs on Fly</SecondaryLink>
@@ -221,39 +200,13 @@ export function HowToStart() {
   return (
     <Chapter id="start" heading={`${BUILD_YOURS}.`}>
       <OwnCloudAction />
-      <ol className={`mt-6 grid list-decimal gap-x-10 gap-y-3 pl-5 [text-wrap:pretty] ${BODY} marker:text-hint/70 lg:grid-cols-3`}>
-        <li>
-          Give your agent the line above. It checks your computer and your Fly account, and shows
-          you everything it will create and what Fly will bill for it. Nothing is created yet.
-        </li>
-        <li>
-          Say yes, and your agent builds your own Agentic Cloud. Nothing is needed from us: no key,
-          no licence.
-        </li>
-        <li>
-          Open the first admin link it hands you. You are the first admin; everyone after you joins
-          by an invite link, and an admin approves each person. Company single sign-on is not built
-          yet.
-        </li>
-      </ol>
-      {/* What it takes (note #834 folded the four cards of "What it takes
-          from you." into one paragraph here; note #924 set that paragraph's
-          nine lines as five, one thing each, in the same words). The clock
-          (the owner, 29 Oct, 17:00 UTC) leads with the clean run of 29 Oct,
-          13 min 24 s from one command to ready, and keeps the certificate
-          wait honest and second: in that run Fly issued them in 45 s, but on
-          28 Oct the code host's took over an hour. Three runs are too few for
-          "usually" (claims-we-never-make). */}
-      <div id="takes" className="mt-6 sm:mt-8 rounded-2xl border border-hint/20 px-4 py-4 sm:px-6 sm:py-5">
-        <h3 className={H3}>What it takes</h3>
-        <ul className={`mt-2 grid list-disc gap-1 pl-4 [text-wrap:pretty] ${BODY} marker:text-hint/70 sm:pl-5`}>
-          <li>A Fly account that pays for the machines. Fly bills it directly; nothing of ours is on that bill.</li>
-          <li>One domain of your own, such as agents.yourcompany.com.</li>
-          <li>One command your agent runs. In our clean run on 29 October it went from a new Fly organization to ready in 13 min 24 s.</li>
-          <li>Fly issued the certificates in under a minute that time; one has taken over an hour before, and then your agent simply waits.</li>
-          <li>Free for now: no licence, no key and no charge from us.</li>
-        </ul>
-      </div>
+      {/* Since note #978 (the owner, 4 Nov 2026, 13:26 UTC: "in the landing
+          page each section should be without description text") the section
+          is its heading and its action: the line with Copy on a laptop, the
+          two doors on a phone. The three steps, "What it takes" (the clean
+          run's 13 min 24 s, the certificate wait), the paste hint and the
+          qualifier "Runs in your own Fly account. Free for now." came off;
+          they live in git history and in /own-cloud.md. */}
     </Chapter>
   );
 }
@@ -270,11 +223,7 @@ export function ForYourTeam() {
           alone over an empty gap). */}
       <div className="mt-5">
         <div>
-          <p className={`[text-wrap:pretty] ${LEAD}`}>
-            What your engineers will want to see before they say yes. The steps your agent follows are
-            one page of plain text they can read first.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-7">
+          <div className="flex flex-wrap items-center gap-7">
             <PrimaryLink href={AGENT_GUIDE_PATH}>Read the guide your agent follows</PrimaryLink>
           </div>
         </div>
@@ -289,20 +238,15 @@ export function ForYourTeam() {
 /* The close: the founder's own address (note #832). */
 export function TalkToUs() {
   return (
-    <section id="contact" className={`${HOME_SECTION} pb-16 sm:pb-20`}>
-      <ChapterDivider tight />
+    <Screen id="contact">
       {/* The card reaches past the column by its own padding, so its words
           line up with every other section's (note #839). */}
       <div className={`${CARD} -mx-5 max-sm:rounded-none sm:-mx-7 lg:-mx-8 lg:p-8`}>
         <h2 className={`[text-wrap:balance] ${H2}`}>Talk to us.</h2>
-        <p className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
-          Write to Adam, who built it, at <a href={FOUNDER_MAILTO} className={INLINE_LINK}>{FOUNDER_EMAIL}</a>.
-          Questions before you decide are welcome.
-        </p>
         <div className="mt-7">
           <PrimaryLink href={FOUNDER_MAILTO}>Write to the founder</PrimaryLink>
         </div>
       </div>
-    </section>
+    </Screen>
   );
 }

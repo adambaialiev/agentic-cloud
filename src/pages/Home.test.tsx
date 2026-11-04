@@ -6,6 +6,7 @@ import { fireEvent } from '@testing-library/react';
 import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL, TEAM_HEADING } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
+import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 
 void React;
@@ -49,12 +50,16 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
 
   // One paragraph per face, the problem named before the answer
   // (landing-copy-rules), beside the product's own panel.
-  it('answers each face with one paragraph and the product’s own panel', () => {
+  it('answers each face with its heading and the product’s own panel, no paragraph (note #978)', () => {
     answer();
     draw();
     const faces = ['#team', '#memory', '#keys', '#computers', '#work'].map((id) => document.querySelector(id)!);
-    for (const face of faces) expect(face.querySelectorAll('[data-face-words] > p').length, face.id).toBe(1);
-    const paragraph = (id: string) => (document.querySelector(`${id} [data-face-words] > p`)!.textContent ?? '').replace(/\s+/g, ' ');
+    // Since note #978 (the owner, 4 Nov 2026, 13:26 UTC: "each section
+    // should be without description text") a face is its heading and its
+    // panel: the paragraph under the heading came off.
+    // (A panel's own words, and its one sentence for a screen reader, stay.)
+    const shown = (root: Element) => [...root.querySelectorAll('p')].filter((p) => !p.closest('.ws-live') && !p.classList.contains('sr-only'));
+    for (const face of faces) expect(shown(face), face.id).toHaveLength(0);
     // Note #839: the rhythm varies, the panel on the left every other
     // section. Since note #924 the chat sits beside its words too, as the
     // other four panels do, instead of wide under them.
@@ -64,19 +69,9 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       expect(grid.className, id).toMatch(/lg:grid-cols-/);
       expect(grid.querySelector('.ws-live'), id).toBeTruthy();
     }
-    expect(paragraph('#team')).toMatch(/^One Claude Code per engineer is a dozen private silos/);
-    expect(paragraph('#team')).toMatch(/Never the chat behind it\.$/);
-    expect(paragraph('#memory')).toMatch(/knowledge pages and read them before every job/);
-    expect(paragraph('#keys')).toMatch(/nobody pastes it anywhere\.$/);
     // Note #924: a sentence the plan's caption or the heading already says
     // came out of three of them; no claim did.
-    expect(paragraph('#memory')).not.toMatch(/starts where the last one stopped/);
-    expect(paragraph('#work')).toMatch(/get back only what needs your yes\. You give it from your phone\.$/);
     // The workplace, not the laptop (the owner, 29 Oct, 18:59 UTC).
-    expect(paragraph('#computers')).toMatch(/^A new engineer gets a desk on day one\. Your agent gets a terminal tab\./);
-    expect(paragraph('#computers')).toMatch(/already set up with git, CI and hosting\. Nothing depends on your laptop\.$/);
-    expect(paragraph('#computers')).not.toMatch(/sleeps|close the laptop|beyond the laptop/i);
-    expect(paragraph('#work')).toMatch(/Chief of Staff/);
     // The panels: the Workspace's own screens, the People page's cards first.
     for (const id of ['#team', '#memory', '#keys', '#computers', '#work']) expect(document.querySelector(`${id} .ws-live`), id).toBeTruthy();
     // Note #840 (the owner, 30 Oct, 13:30 UTC): two teammates, neither "You"
@@ -98,8 +93,6 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     // says only what the product's This week block shows (note #925), and
     // each card carries that block, with figures that differ.
     expect(TEAM_HEADING).toBe('See what everyone’s agents shipped. Live.');
-    expect(paragraph('#team')).toMatch(/each person’s agents sit under their name/);
-    expect(paragraph('#team')).toMatch(/agent hours, changes merged, tokens written and the latest change\. Live, for every member of the workplace, not only the lead\./);
     const weeks = cards.map((card) => card.querySelector('.pcontrib')!);
     expect(weeks.map((week) => week.querySelector('.pchead')?.textContent)).toEqual(['This week', 'This week']);
     // One grammar since note #928: every figure a cell, tokens one per provider.
@@ -163,14 +156,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // 31 Oct 2026: "Build yours" read as confusing) no button: one text link
   // to How to start, in a row of its own so the cards stay level with the
   // words.
-  it('opens on the headline, one line, and a text link that names the one action', () => {
+  it('opens on the headline and a text link that names the one action', () => {
     answer();
     draw();
     const top = document.querySelector('#home-top')!;
-    const lines = [...top.querySelectorAll(':scope > div > p')].map((node) => (node.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^Your Claude Code and Codex agents get what every engineer gets on day one/);
-    expect(lines[0]!.split(' ').length).toBeLessThan(40);
+    // Since note #978 the headline stands without the line under it.
+    expect(top.querySelector('#homeWhat')).toBeNull();
+    expect([...top.querySelectorAll('p')].filter((p) => !p.closest('.ws-live') && !p.classList.contains('sr-only'))).toHaveLength(0);
     expect([...top.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()])).toEqual([['#start', 'Build your own Agentic Cloud']]);
     expect(top.querySelector('#home-door')!.className).toMatch(/\blg:col-start-1\b/);
     expect(top.querySelector('a')!.className).not.toMatch(/\bbg-white\b|\brounded-xl\b/);
@@ -180,7 +172,8 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(top.querySelector('#home-fleet .ws-live')).toBeTruthy();
     expect(top.querySelector('code')).toBeNull();
     expect(document.querySelector('#start #give-your-agent code')?.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
-    expect(document.querySelector('#start #qualifier')?.textContent?.trim()).toBe('Runs in your own Fly account. Free for now.');
+    // The qualifier under the action came off with note #978.
+    expect(document.querySelector('#start #qualifier')).toBeNull();
   });
 
   // Note #832: a cold email is read on a phone, where the line cannot run.
@@ -217,8 +210,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     answer();
     draw();
     const close = document.querySelector('#contact')!;
-    expect(close.textContent).toMatch(/adam@agenticcloudcomputer\.com/);
-    expect([...close.querySelectorAll('a')].every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
+    // Since note #978 the close is its heading and one link, to the
+    // founder's own address; the paragraph that spelled the address out
+    // came off with every section's description.
+    expect(close.querySelectorAll('p')).toHaveLength(0);
+    const links = [...close.querySelectorAll('a')];
+    expect(links.map((link) => (link.textContent ?? '').trim())).toEqual(['Write to the founder']);
+    expect(links.every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
   });
 
   // Note #791 (the owner, 2026-10-25): the apps people built here are off
@@ -490,6 +488,38 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     }
     const capped = [...document.querySelectorAll('main h1, main h2, main p')].filter((node) => !node.closest('.ws-live, figure, svg') && /max-w-\[/.test(node.className));
     expect(capped).toEqual([]);
+  });
+
+  // Note #978 (the owner, 4 Nov 2026, 13:23 UTC: "Each section should take
+  // the whole space horizontally and vertically. For extra large displays,
+  // we should have max width and max height").
+  it('makes every section one screen, its content under one width cap, the film sized to fit one screen', () => {
+    answer();
+    draw();
+    const screens = [...document.querySelectorAll('main > section')];
+    expect(screens.map((section) => section.id)).toEqual([
+      ...(PRODUCT_FILM ? ['film'] : []), 'home-top', 'workplace', 'team', 'memory', 'keys', 'computers', 'work', 'own-cloud', 'start', 'for-your-team', 'contact',
+    ]);
+    for (const section of screens) {
+      expect(section.hasAttribute('data-screen'), section.id).toBe(true);
+      expect(section.className, section.id).toMatch(/\bmin-h-\[100svh\]/);
+      expect(section.className, section.id).toMatch(/\bjustify-center\b/);
+      expect(section.className, section.id).not.toMatch(/(^|\s)(h-\[|max-h-|overflow-hidden|snap-)/);
+      const content = section.querySelector(':scope > [data-screen-content]')!;
+      expect(content.className, section.id).toMatch(/\bmx-auto\b.*\bmax-w-\[1280px\]/);
+    }
+    // A hairline between screens, none above the first.
+    expect(screens.map((section) => /\bborder-t\b/.test(section.className))).toEqual(screens.map((_, i) => i > 0));
+    expect(SCREEN_MAX_WIDTH).toBe(1280);
+    expect(SCREEN_MAX_HEIGHT).toBe(900);
+    if (!PRODUCT_FILM) return;
+    // The film, its timeline and its link in one screen: as wide as the
+    // screen allows, unless that is taller than min(screen, 900 px) leaves.
+    const box = document.querySelector('#film [data-film-box]')!;
+    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_175px\)\*9\/16\)\)\]/);
+    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_250px\)\*16\/9\)\)\]/);
+    expect(box.querySelector('[data-film-timeline]')).toBeTruthy();
+    expect(box.querySelector('#film-site a')).toBeTruthy();
   });
 
   it('shows the poster and play button when the browser refuses to start it', async () => {

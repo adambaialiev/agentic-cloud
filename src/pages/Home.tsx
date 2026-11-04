@@ -4,7 +4,7 @@ import { FOOTER_PITCH } from '../lib/product-copy';
 import LiveChief from '../components/LiveChief';
 import LiveAgent from '../components/LiveAgent';
 import { LiveKnowledge, LiveSecrets } from '../components/LiveSurfaces';
-import { ChapterDivider, H2, HOME_SECTION_END, LEAD, PrimaryLink, HOME_SECTION } from '../components/landing-kit';
+import { H2, PrimaryLink, Screen } from '../components/landing-kit';
 import LiveFleet from '../components/LiveFleet';
 import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
@@ -140,18 +140,18 @@ export const BOOKFACE_LINK = 'Open the site they built';
    wide under them, centred, with blank space to its right. A phone reads
    every one words first. */
 type FaceSide = 'right' | 'left';
-function Face({ id, heading, children, panel, side = 'right' }: { id: string; heading: string; children: string; panel: ReactNode; side?: FaceSide }) {
+/* Since note #978 (the owner, 4 Nov 2026, 13:26 UTC: "in the landing page
+   each section should be without description text") a face is its heading
+   and its panel; the paragraph that named the problem came off (git history
+   keeps the words). */
+function Face({ id, heading, panel, side = 'right' }: { id: string; heading: string; panel: ReactNode; side?: FaceSide }) {
   return (
-    <section id={id} className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
-      <ChapterDivider tight />
-      <div className={`grid gap-6 sm:gap-7 lg:items-center lg:gap-14 ${side === 'left' ? 'lg:grid-cols-[1.2fr_0.8fr]' : 'lg:grid-cols-[0.8fr_1.2fr]'}`}>
-        <div data-face-words className={side === 'left' ? 'lg:order-2' : undefined}>
-          <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
-          <p className={`mt-4 [text-wrap:pretty] sm:mt-5 ${LEAD}`}>{children}</p>
-        </div>
-        <div className={`min-w-0 ${side === 'left' ? 'lg:order-1' : ''}`}>{panel}</div>
+    <Screen id={id} className={`grid gap-6 sm:gap-7 lg:items-center lg:gap-14 ${side === 'left' ? 'lg:grid-cols-[1.2fr_0.8fr]' : 'lg:grid-cols-[0.8fr_1.2fr]'}`}>
+      <div data-face-words className={side === 'left' ? 'lg:order-2' : undefined}>
+        <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
       </div>
-    </section>
+      <div className={`min-w-0 ${side === 'left' ? 'lg:order-1' : ''}`}>{panel}</div>
+    </Screen>
   );
 }
 
@@ -178,18 +178,31 @@ export default function Home() {
           link to the site the film is about. No words around the film (note
           #958). */}
       {PRODUCT_FILM ? (
-        <section id="film" aria-label="The film" className={`${HOME_SECTION} pt-5 sm:pt-8 lg:pt-12`}>
-          <HomeFilm
-            wide={PRODUCT_FILM}
-            tall={PRODUCT_FILM_TALL}
-            label="Play the film of Bookface 2006, built by two people’s agents, no sound"
-          />
-          {BOOKFACE_URL ? (
-            <div id="film-site" className="mt-5 sm:mt-6">
-              <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
-            </div>
-          ) : null}
-        </section>
+        <Screen id="film" label="The film" first pad="py-5 sm:py-8 lg:py-12">
+          {/* One screen holds the film, its timeline and its link (note
+              #978): the film is as wide as the screen allows, unless that
+              makes it taller than the room left in min(screen, 900 px), and
+              then it is sized by that height and centred. On a phone the
+              tall cut is sized the same way, so the film and its timeline
+              are always the first screen (note #973's judgement). What the
+              film leaves for its timeline and link: 175 px on a phone,
+              250 px from sm up. */}
+          <div
+            data-film-box
+            className="mx-auto w-[min(100%,calc((100svh_-_175px)*9/16))] sm:w-[min(100%,calc((min(100svh,900px)_-_250px)*16/9))]"
+          >
+            <HomeFilm
+              wide={PRODUCT_FILM}
+              tall={PRODUCT_FILM_TALL}
+              label="Play the film of Bookface 2006, built by two people’s agents, no sound"
+            />
+            {BOOKFACE_URL ? (
+              <div id="film-site" className="mt-5 sm:mt-6">
+                <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
+              </div>
+            ) : null}
+          </div>
+        </Screen>
       ) : null}
 
       {/* ── First screen: the problem, and the product ──────────────────── */}
@@ -210,7 +223,7 @@ export default function Home() {
           button off: the page has no call to action, and its one way to
           start is the How to start section. HERO_DOOR is the plain text link
           offered in its place. */}
-      <section id="home-top" className={`${HOME_SECTION} grid gap-10 pb-10 pt-10 sm:pb-12 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7`}>
+      <Screen id="home-top" className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7">
         <div>
           {/* One sentence a line, so a phone never breaks "Give" from its
               sentence; the space between keeps the heading's name whole. */}
@@ -218,11 +231,6 @@ export default function Home() {
             <span className="block">{HEADLINE_FIRST}</span>{' '}
             <span className="block">{HEADLINE_SECOND}</span>
           </h1>
-          <p id="homeWhat" className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
-            Your Claude Code and Codex agents get what every engineer gets on day one: a team that
-            sees their work, a memory, the keys, a computer of their own and a lead who hands out
-            the jobs.
-          </p>
         </div>
         <div id="home-fleet" className="hidden min-w-0 lg:block">
           <LiveFleet
@@ -238,7 +246,7 @@ export default function Home() {
             <PrimaryLink href="#start">{HERO_DOOR}</PrimaryLink>
           </div>
         ) : null}
-      </section>
+      </Screen>
 
       {/* ── The whole workplace, at a glance (note #841) ──────────────────── */}
       {/* The owner, 30 Oct 2026, 13:31 UTC: "We should have some illustration
@@ -248,13 +256,12 @@ export default function Home() {
           heading is the section's only words: the plan's own labels carry the
           rest, and its two lines carry the rule (jobs out, proposals back to
           your yes). */}
-      <section id="workplace" className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
-        <ChapterDivider tight />
+      <Screen id="workplace">
         <h2 className={`[text-wrap:balance] ${H2}`}>Here’s the workplace.</h2>
         <div className="mt-8 min-w-0 sm:mt-10">
           <WorkplaceArt />
         </div>
-      </section>
+      </Screen>
 
       {/* ── The five faces of the problem (the owner's list, 29 Oct) ──────── */}
       {/* Each is one paragraph, problem then answer (landing-copy-rules), beside
@@ -272,31 +279,11 @@ export default function Home() {
         id="team"
         heading={TEAM_HEADING}
         panel={<LivePeople />}
-      >
-        One Claude Code per engineer is a dozen private silos. Here each person’s agents sit under
-        their name, and the whole team sees who is driving what, what each agent is on, and what
-        their agents shipped this week: agent hours, changes merged, tokens written and the latest
-        change. Live, for every member of the workplace, not only the lead. Never the chat behind it.
-      </Face>
-      <Face id="memory" side="left" heading="No session starts from zero." panel={<LiveKnowledge />}>
-        A terminal session forgets everything when it closes, so every job begins with you
-        explaining it all again. Here agents write what they learn into knowledge pages and read
-        them before every job.
-      </Face>
-      <Face id="keys" heading="Add a key once. Every agent can use it." panel={<LiveSecrets />}>
-        Today a key gets pasted into a chat or left in a file on somebody’s laptop. Here your agents
-        use it by name, and nobody pastes it anywhere.
-      </Face>
-      <Face id="computers" side="left" heading="A desk for every agent." panel={<LiveAgent size="tile" showSoftware={false} />}>
-        A new engineer gets a desk on day one. Your agent gets a terminal tab. Here every agent
-        arrives on a cloud computer of its own, already set up with git, CI and hosting. Nothing
-        depends on your laptop.
-      </Face>
-      <Face id="work" heading="Hand out work from one chat." panel={<LiveChief />}>
-        A terminal agent works only while you sit and type to it. Here you write a job down once and
-        hand it to an agent, or tell your Chief of Staff what you want and get back only what needs
-        your yes. You give it from your phone.
-      </Face>
+      />
+      <Face id="memory" side="left" heading="No session starts from zero." panel={<LiveKnowledge />} />
+      <Face id="keys" heading="Add a key once. Every agent can use it." panel={<LiveSecrets />} />
+      <Face id="computers" side="left" heading="A desk for every agent." panel={<LiveAgent size="tile" showSoftware={false} />} />
+      <Face id="work" heading="Hand out work from one chat." panel={<LiveChief />} />
 
       {/* ── The second wow: all of it in your own cloud ─────────────────── */}
       <OwnCloud />
