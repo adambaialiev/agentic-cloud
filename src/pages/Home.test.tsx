@@ -269,6 +269,9 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect(frame.className).not.toMatch(/max-w-/);
     // The timeline follows the tall film's own section starts.
     expect([...document.querySelectorAll('[data-film-section]')].map((b) => b.querySelector('.sm\\:hidden')?.textContent)).toEqual([...FILM_SECTION_SHORT_NAMES]);
+    // and the names share the phone's row equally, one column per name.
+    const names = document.querySelector('#film [data-film-timeline] ol') as HTMLElement;
+    expect(names.style.getPropertyValue('--film-names')).toBe(`repeat(${FILM_SECTION_SHORT_NAMES.length}, minmax(0, 1fr))`);
   });
 
   it('holds still on its poster for reduced motion, and our play button starts it without controls', async () => {
@@ -332,7 +335,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
 
   // Note #977 (the owner, 4 Nov 2026, 12:43 UTC: "below the video player,
   // let's implement switcher to different sections of the video. Timeline").
-  it('names the film’s five sections under it, fills the played part and jumps on a click', async () => {
+  it('names the film’s sections under it, fills the played part and jumps on a click', async () => {
     answer();
     screenIs({});
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
@@ -345,12 +348,12 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const timeline = document.querySelector('#film [data-film-timeline]')!;
     expect(timeline.getAttribute('role')).toBe('group');
     expect(timeline.getAttribute('aria-label')).toBe('Sections of the film');
-    // Five buttons, in order, named from the film's captions; the first is
-    // the current one.
+    // One button per act (four since note #988), in order, named from the
+    // film's captions; the first is the current one.
     const names = [...timeline.querySelectorAll<HTMLButtonElement>('[data-film-section]')];
-    expect(names.map((b) => b.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'BUTTON']);
+    expect(names.map((b) => b.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON']);
     expect(names.map((b) => b.querySelector('.hidden')?.textContent)).toEqual([...FILM_SECTION_NAMES]);
-    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual(['step', null, null, null, null]);
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual(['step', null, null, null]);
     // The bar: one segment per section, proportional to its length, hidden
     // from a screen reader (the names are its buttons) and out of the tab order.
     const bar = timeline.querySelector('[aria-hidden="true"]') as HTMLElement;
@@ -362,16 +365,16 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const video = document.querySelector('#film video')!;
     paused = true;
     play.mockClear();
-    fireEvent.click(names[3]!);
-    expect(video.currentTime).toBe(starts[3]);
+    fireEvent.click(names[2]!);
+    expect(video.currentTime).toBe(starts[2]);
     expect(play).toHaveBeenCalledTimes(1);
     paused = false;
     // The played part fills and the current section moves with the film.
     fireEvent(video, new Event('seeked'));
     await settle();
-    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, 'step', null]);
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual([null, null, 'step', null]);
     expect(bar.querySelectorAll('[data-film-played]')[0]!.getAttribute('data-film-played')).toBe('1.00');
-    expect(bar.querySelectorAll('[data-film-played]')[4]!.getAttribute('data-film-played')).toBe('0.00');
+    expect(bar.querySelectorAll('[data-film-played]')[3]!.getAttribute('data-film-played')).toBe('0.00');
     // Still no browser controls.
     expect(video.hasAttribute('controls')).toBe(false);
   });

@@ -41,7 +41,7 @@ import { useEffect, useRef, useState } from 'react';
  */
 
 /** A section of a film: where it starts (seconds), its name, and a shorter
- *  name for a phone, where five share one row. */
+ *  name for a phone, where they all share one row. */
 export type Section = { at: number; label: string; short?: string };
 
 export const TALL_FILM_QUERY = '(max-width: 639px)';
@@ -313,8 +313,8 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
           {/* The names: under their own segments on a desk; on a phone the
               width shared equally, two lines at most. */}
           <ol
-            className="mt-1 grid grid-cols-5 gap-x-1 sm:mt-1.5 sm:gap-x-1.5 sm:[grid-template-columns:var(--film-sections)]"
-            style={{ ['--film-sections' as string]: columns }}
+            className="mt-1 grid [grid-template-columns:var(--film-names)] gap-x-1 sm:mt-1.5 sm:gap-x-1.5 sm:[grid-template-columns:var(--film-sections)]"
+            style={{ ['--film-names' as string]: `repeat(${parts.length}, minmax(0, 1fr))`, ['--film-sections' as string]: columns }}
           >
             {parts.map((part, i) => (
               <li key={part.at} className="min-w-0">

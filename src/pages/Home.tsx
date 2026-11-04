@@ -4,8 +4,8 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-fifth-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-fifth-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-sixth-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-sixth-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -87,23 +87,38 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    Since note #985 the starts are the fifth cut's, read the same way (Iris's
    marks 9.0 / 20.7 / 47.0 or 55.0 / 67.2 or 75.2 s are each fade's start;
    the first clean frame is 0.2 s later). The ask beat's caption is still
-   "One message.", so the names stay. */
-export const FILM_SECTION_NAMES = ['Two people, four agents', 'One message', 'Four agents at once', 'What they built', 'Your cloud'] as const;
-/* On a phone the five share one row, so each name is cut to its caption's
-   first words, two lines at most. */
-export const FILM_SECTION_SHORT_NAMES = ['Two people', 'One message', 'Four agents', 'What they built', 'Your cloud'] as const;
+   "One message.", so the names stay.
+   Since note #988 the film is the sixth cut, in a new order (one person
+   starts, then two, then what they built, then the close), so the sections
+   are its acts: "One person" (from "One person. One message."), "Two
+   people" (from "Then two. Each hands out the work.", through the merges,
+   Maya's photo message and the contributors page), "What they built" (from
+   "Profiles, friends, walls, pokes and photos.") and "Your cloud" (from
+   "Two people. Four agents." to the mark). The note offered a fifth stop,
+   "Seventeen merges", inside the second act, with four as the fallback if
+   five crowd a phone: "Seventeen" is one word 61 px wide at the phone's
+   type, so it touched its neighbour on a 430x744 iPhone and ran into it on
+   a 375 px one, and the film has four stops on every screen. Iris's starts
+   (wide 12.5 / 53.8 / 78.8 s, tall 12.5 / 61.1 / 86.1 s) are each
+   crossfade's middle, so the jumps use the first clean frame after it,
+   read the same way; the close fades through the blank page first, so its
+   jump lands on the settled "Two people. Four agents." card. */
+export const FILM_SECTION_NAMES = ['One person', 'Two people', 'What they built', 'Your cloud'] as const;
+/* On a phone the four share one row, two lines at most. The sixth cut's
+   names are short enough to read there whole, so they are the same. */
+export const FILM_SECTION_SHORT_NAMES = FILM_SECTION_NAMES;
 const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at, label: FILM_SECTION_NAMES[i]!, short: FILM_SECTION_SHORT_NAMES[i]! }));
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  length: 81.27,
-  sections: sectionsAt([0, 9.2, 20.9, 47.2, 67.4]),
+  length: 92.37,
+  sections: sectionsAt([0, 12.9, 54.3, 79.5]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
-  length: 89.27,
-  sections: sectionsAt([0, 9.2, 20.9, 55.2, 75.4]),
+  length: 99.67,
+  sections: sectionsAt([0, 12.9, 61.6, 86.8]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface
