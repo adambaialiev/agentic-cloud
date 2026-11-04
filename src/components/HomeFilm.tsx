@@ -23,16 +23,30 @@ import { useEffect, useRef, useState } from 'react';
  *   fetches one poster; and the film's address is set from code only once
  *   the query has been read, so it fetches one film. Turning the phone
  *   round swaps the film (and only then fetches the other).
- * - The tall frame uses the phone's width but never so much height that the
- *   headline under it leaves the first screen: its width is capped at
- *   (100svh - 215px) x 9/16, which keeps the headline's first line in view
- *   with the browser's bars showing (svh), down to 375 x 629. No stretching
- *   and no letterboxing: the frame is always the film's own shape.
+ * - The frame is always the film's own shape, never stretched or
+ *   letterboxed. From note #973 to #977 the tall frame was capped at
+ *   (100svh - 215px) x 9/16 to keep the headline's first line on a phone's
+ *   first screen; since note #977 (the owner: "all content should be end to
+ *   end wide") it takes the phone's whole width, so the film and its
+ *   timeline are a phone's first screen and the headline follows.
+ * - Under the picture, a timeline of the film's sections (note #977: "below
+ *   the video player, let's implement switcher to different sections of the
+ *   video. Timeline"): a bar with one segment per section, proportional to
+ *   its length, the played part filled, and under it the sections' names,
+ *   the current one marked. A click, a tap, Enter or Space on a name (or a
+ *   click or tap on the bar) jumps the film to that section's first clean
+ *   frame and plays on. Each film carries its own starts, read off its
+ *   frames. On a desk the names sit under their own segments; on a phone
+ *   they share the width equally, in two lines at most, never scrolling.
  */
+
+/** A section of a film: where it starts (seconds), its name, and a shorter
+ *  name for a phone, where five share one row. */
+export type Section = { at: number; label: string; short?: string };
 
 export const TALL_FILM_QUERY = '(max-width: 639px)';
 
-export type Film = { src: string; poster: string };
+export type Film = { src: string; poster: string; length?: number; sections?: Section[] };
 type Shape = 'wide' | 'tall';
 type State = 'still' | 'starting' | 'playing' | 'paused';
 
@@ -132,12 +146,56 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
     if (started) started.catch(() => go('still'));
   };
 
+  /* Where the film is, for the timeline: read each frame while it plays,
+     and on every seek. */
+  const [time, setTime] = useState(0);
+  useEffect(() => {
+    if (state !== 'playing') return;
+    let frameId = 0;
+    const tick = () => {
+      if (video.current) setTime(video.current.currentTime);
+      frameId = window.requestAnimationFrame(tick);
+    };
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, [state]);
+  /* A jump before the film has loaded (preload is none) waits for its
+     length to be known, then lands. */
+  const pendingJump = useRef<number | null>(null);
+  const jump = (at: number) => {
+    const film = video.current;
+    if (!film) return;
+    setTime(at);
+    if (film.readyState >= 1) film.currentTime = at;
+    else pendingJump.current = at;
+    if (film.paused) {
+      film.muted = true;
+      go('playing');
+      let started: Promise<void> | undefined;
+      try {
+        started = film.play();
+      } catch (refused) {
+        started = Promise.reject(refused);
+      }
+      Promise.resolve(started).catch(() => go('paused'));
+    }
+  };
+
   const what = label.replace(/^Play /, '');
   const src = shape === 'tall' && tall ? tall.src : shape === 'wide' ? wide.src : undefined;
   /* The tall frame on a phone, the wide one from sm up (TALL_FILM_QUERY). */
-  const frame = tall
-    ? 'mx-auto aspect-[9/16] w-full max-w-[max(200px,calc((100svh_-_215px)*9/16))] sm:aspect-video sm:max-w-none'
-    : 'aspect-video w-full';
+  const frame = tall ? 'aspect-[9/16] w-full sm:aspect-video' : 'aspect-video w-full';
+  /* The timeline of the film being shown (the wide one until the page has
+     read the screen). */
+  const film = shape === 'tall' && tall ? tall : wide;
+  const sections = film.sections ?? [];
+  const length = film.length ?? 0;
+  const parts = sections.map((section, i) => {
+    const end = i + 1 < sections.length ? sections[i + 1]!.at : length;
+    return { ...section, end, span: Math.max(end - section.at, 0.001) };
+  });
+  const current = parts.reduce((found, part, i) => (time >= part.at ? i : found), 0);
+  const columns = parts.map((part) => `${part.span}fr`).join(' ');
 
   return (
     <figure className="relative m-0 w-full">
@@ -156,7 +214,14 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
           onPlay={() => go('playing')}
           onPause={() => { if (latest.current === 'playing') go('paused'); }}
           onPlaying={() => setDrawn(true)}
-          onEmptied={() => setDrawn(false)}
+          onEmptied={() => { setDrawn(false); setTime(0); }}
+          onSeeked={(event) => setTime(event.currentTarget.currentTime)}
+          onLoadedMetadata={(event) => {
+            if (pendingJump.current !== null) {
+              event.currentTarget.currentTime = pendingJump.current;
+              pendingJump.current = null;
+            }
+          }}
         />
         {drawn ? null : (
           <picture>
@@ -217,6 +282,61 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
           </button>
         ) : null}
       </div>
+      {parts.length > 1 && length > 0 ? (
+        <div data-film-timeline role="group" aria-label="Sections of the film" className="mt-3 sm:mt-4">
+          {/* The bar: one segment per section, as long as the section, the
+              played part filled. For a pointer; the names under it are the
+              buttons a keyboard and a screen reader use. */}
+          <div className="grid gap-x-1 sm:gap-x-1.5" style={{ gridTemplateColumns: columns }} aria-hidden="true">
+            {parts.map((part, i) => {
+              const filled = Math.min(Math.max((time - part.at) / part.span, 0), 1);
+              return (
+                <button
+                  key={part.at}
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => jump(part.at)}
+                  data-film-segment={i}
+                  className="group block w-full cursor-pointer py-2 [-webkit-tap-highlight-color:transparent]"
+                >
+                  <span className="relative block h-1 overflow-hidden rounded-full bg-hint/25 transition-colors group-hover:bg-hint/40 sm:h-1.5">
+                    <span
+                      data-film-played={filled.toFixed(2)}
+                      className="absolute inset-y-0 left-0 block rounded-full bg-white"
+                      style={{ width: `${filled * 100}%` }}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* The names: under their own segments on a desk; on a phone the
+              width shared equally, two lines at most. */}
+          <ol
+            className="mt-1 grid grid-cols-5 gap-x-1 sm:mt-1.5 sm:gap-x-1.5 sm:[grid-template-columns:var(--film-sections)]"
+            style={{ ['--film-sections' as string]: columns }}
+          >
+            {parts.map((part, i) => (
+              <li key={part.at} className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => jump(part.at)}
+                  aria-current={i === current ? 'step' : undefined}
+                  data-film-section={i}
+                  className={`block min-h-6 w-full cursor-pointer py-1 text-left type-xs leading-[1.25] [text-wrap:balance] transition-colors focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:type-sm ${i === current ? 'font-semibold text-white' : 'text-hint hover:text-white'}`}
+                >
+                  {part.short ? (
+                    <>
+                      <span className="sm:hidden">{part.short}</span>
+                      <span className="hidden sm:inline">{part.label}</span>
+                    </>
+                  ) : part.label}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </figure>
   );
 }

@@ -19,6 +19,11 @@ export const BODY = 'type-sm text-hint';
 /* The app's card: its --card colour, 16px corners, no border, no shadow. */
 export const CARD = 'min-w-0 rounded-2xl bg-panel-deep p-5 sm:p-7';
 export const SECTION = 'mx-auto w-full max-w-6xl px-5 sm:px-8';
+/* The home page's sections since note #977 (the owner, 4 Nov 2026, 12:43
+   UTC: "in the landing page all content should be end to end wide"): the
+   whole width of the window, with the page's side padding and nothing else.
+   Every other page keeps SECTION's centred column. */
+export const HOME_SECTION = 'w-full px-5 sm:px-8 lg:px-12';
 
 /* The page carries a lot of the product at full reading size. Whitespace alone
    lets those interfaces run together, so every substantial section after the

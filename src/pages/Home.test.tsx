@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { BOOKFACE_LINK, BOOKFACE_URL, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL, TEAM_HEADING } from './Home';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL, TEAM_HEADING } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
@@ -229,18 +229,19 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // 2026-10-28): only the private copy is offered, so the header's second
   // door was Build yours (Get a copy until the offer was named), and nothing
   // leads to sign-up. Note #924 (the owner, 31 Oct 2026) took both doors off.
-  it('shows no catalogue, no page links in the header, and sends nobody to sign up', () => {
+  it('shows no catalogue, no header, and sends nobody to sign up', () => {
     answer();
     draw();
     expect(document.querySelector('#home-apps')).toBeNull();
     expect(document.querySelector('#homeApps')).toBeNull();
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url)).some((url) => url.endsWith('/apps'))).toBe(false);
     expect(screen.queryAllByRole('link', { name: /See all/ })).toEqual([]);
-    // Since note #924 the header is the mark and the name: no Sign in, no
-    // Build yours.
-    const header = document.querySelector('header')!;
-    expect([...header.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()]))
-      .toEqual([['/', 'Agentic Cloud Computer']]);
+    // Since note #924 the header was the mark and the name alone; since
+    // note #977 (the owner: "Remove header") there is none: the film is the
+    // first thing, and the footer carries the name.
+    expect(document.querySelector('header')).toBeNull();
+    expect(document.querySelector('main')!.firstElementChild?.id).toBe(PRODUCT_FILM ? 'film' : 'home-top');
+    expect(document.querySelector('footer')!.textContent).toMatch(/Agentic Cloud Computer/);
     expect(screen.queryAllByRole('link', { name: /Sign up/ })).toEqual([]);
     expect(document.querySelector('a[href="/signup"]')).toBeNull();
     expect(document.body.textContent).not.toMatch(/\bour cloud|on us\b|at no charge|thirty live sites/i);
@@ -353,7 +354,10 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const frame = document.querySelector('#film [data-film-frame]')!;
     expect(frame.className).toMatch(/\baspect-\[9\/16\]/);
     expect(frame.className).toMatch(/\bsm:aspect-video\b/);
-    expect(frame.className).toMatch(/max-w-\[max\(200px,calc\(\(100svh_-_215px\)\*9\/16\)\)\]/);
+    // Edge to edge since note #977: the phone's whole width, no cap.
+    expect(frame.className).not.toMatch(/max-w-/);
+    // The timeline follows the tall film's own section starts.
+    expect([...document.querySelectorAll('[data-film-section]')].map((b) => b.querySelector('.sm\\:hidden')?.textContent)).toEqual([...FILM_SECTION_SHORT_NAMES]);
   });
 
   it('holds still on its poster for reduced motion, and our play button starts it without controls', async () => {
@@ -413,6 +417,79 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  // Note #977 (the owner, 4 Nov 2026, 12:43 UTC: "below the video player,
+  // let's implement switcher to different sections of the video. Timeline").
+  it('names the film’s five sections under it, fills the played part and jumps on a click', async () => {
+    answer();
+    screenIs({});
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockImplementation(() => 4);
+    let paused = false;
+    vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(() => paused);
+    draw();
+    await settle();
+    if (!PRODUCT_FILM?.sections) return;
+    const timeline = document.querySelector('#film [data-film-timeline]')!;
+    expect(timeline.getAttribute('role')).toBe('group');
+    expect(timeline.getAttribute('aria-label')).toBe('Sections of the film');
+    // Five buttons, in order, named from the film's captions; the first is
+    // the current one.
+    const names = [...timeline.querySelectorAll<HTMLButtonElement>('[data-film-section]')];
+    expect(names.map((b) => b.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON', 'BUTTON']);
+    expect(names.map((b) => b.querySelector('.hidden')?.textContent)).toEqual([...FILM_SECTION_NAMES]);
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual(['step', null, null, null, null]);
+    // The bar: one segment per section, proportional to its length, hidden
+    // from a screen reader (the names are its buttons) and out of the tab order.
+    const bar = timeline.querySelector('[aria-hidden="true"]') as HTMLElement;
+    const starts = PRODUCT_FILM.sections.map((section) => section.at);
+    const ends = [...starts.slice(1), PRODUCT_FILM.length!];
+    expect(bar.style.gridTemplateColumns).toBe(starts.map((at, i) => `${ends[i]! - at}fr`).join(' '));
+    expect([...bar.querySelectorAll('button')].every((b) => b.tabIndex === -1)).toBe(true);
+    // A click on a name jumps to that section's first frame and plays on.
+    const video = document.querySelector('#film video')!;
+    paused = true;
+    play.mockClear();
+    fireEvent.click(names[3]!);
+    expect(video.currentTime).toBe(starts[3]);
+    expect(play).toHaveBeenCalledTimes(1);
+    paused = false;
+    // The played part fills and the current section moves with the film.
+    fireEvent(video, new Event('seeked'));
+    await settle();
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual([null, null, null, 'step', null]);
+    expect(bar.querySelectorAll('[data-film-played]')[0]!.getAttribute('data-film-played')).toBe('1.00');
+    expect(bar.querySelectorAll('[data-film-played]')[4]!.getAttribute('data-film-played')).toBe('0.00');
+    // Still no browser controls.
+    expect(video.hasAttribute('controls')).toBe(false);
+  });
+
+  it('lands a jump made before the film has loaded once its length is known', async () => {
+    answer();
+    screenIs({ still: true });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    draw();
+    await settle();
+    if (!PRODUCT_FILM?.sections) return;
+    const video = document.querySelector('#film video')!;
+    // Reduced motion: nothing has loaded (readyState 0); a click on a
+    // section still starts it there.
+    fireEvent.click(document.querySelectorAll('[data-film-section]')[2]!);
+    expect(play).toHaveBeenCalledTimes(1);
+    fireEvent(video, new Event('loadedmetadata'));
+    expect(video.currentTime).toBe(PRODUCT_FILM.sections[2]!.at);
+    expect(screen.getByRole('button', { name: /^Pause the film of Bookface 2006/ })).toBeTruthy();
+  });
+
+  it('runs every section edge to edge, with no column and no line caps', () => {
+    answer();
+    draw();
+    for (const section of document.querySelectorAll('main > section')) {
+      expect(section.className).not.toMatch(/\bmax-w-6xl\b|\bmx-auto\b/);
+    }
+    const capped = [...document.querySelectorAll('main h1, main h2, main p')].filter((node) => !node.closest('.ws-live, figure, svg') && /max-w-\[/.test(node.className));
+    expect(capped).toEqual([]);
   });
 
   it('shows the poster and play button when the browser refuses to start it', async () => {

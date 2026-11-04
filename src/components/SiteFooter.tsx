@@ -54,10 +54,13 @@ function FooterColumn({ title, children, tone }: { title: string; children: Reac
  * row went on 2026-09-14 with that page, whose two load-bearing sentences are
  * now Terms section 3.
  */
-export default function SiteFooter({ pitch, tone = 'light' }: { pitch: string; tone?: Tone }) {
+/* `wide` (the home page, note #977): the whole width of the window with the
+   page's side padding, as every section above it; every other page keeps the
+   centred column. */
+export default function SiteFooter({ pitch, tone = 'light', wide = false }: { pitch: string; tone?: Tone; wide?: boolean }) {
   return (
     <footer className={tone === 'dark' ? 'border-t border-hint/16 bg-panel' : 'border-t border-black/[0.08] bg-white'}>
-      <div className="mx-auto w-full max-w-6xl px-5 py-12 sm:px-8">
+      <div className={wide ? 'w-full px-5 py-12 sm:px-8 lg:px-12' : 'mx-auto w-full max-w-6xl px-5 py-12 sm:px-8'}>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
           <div className="lg:pr-6">
             <p className={`type-base font-semibold ${tone === 'dark' ? 'text-white' : 'text-ink'}`}>

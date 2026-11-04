@@ -1,16 +1,15 @@
 import type { ReactNode } from 'react';
-import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 import { FOOTER_PITCH } from '../lib/product-copy';
 import LiveChief from '../components/LiveChief';
 import LiveAgent from '../components/LiveAgent';
 import { LiveKnowledge, LiveSecrets } from '../components/LiveSurfaces';
-import { ChapterDivider, H2, HOME_SECTION_END, LEAD, PrimaryLink, SECTION } from '../components/landing-kit';
+import { ChapterDivider, H2, HOME_SECTION_END, LEAD, PrimaryLink, HOME_SECTION } from '../components/landing-kit';
 import LiveFleet from '../components/LiveFleet';
 import LivePeople from '../components/LivePeople';
 import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
-import HomeFilm from '../components/HomeFilm';
+import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import productFilmPoster from '../assets/films/bookface-2006-home-film-framed-poster.jpg';
 import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-framed-poster.jpg';
@@ -100,13 +99,30 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    screens whole inside phone frames; the rule and the player are as before.
    Null removes the film; a null PRODUCT_FILM_TALL gives a phone the wide
    one. */
-export const PRODUCT_FILM: { src: string; poster: string } | null = {
+/* The film's five sections (note #977: "switcher to different sections of
+   the video. Timeline"), named from the film's own captions: the hook ("Two
+   people. Four agents."), the ask ("17:50 One message."), the swarm (from
+   "18:45 Two people hand out the work."), the result ("Profiles, friends,
+   walls, pokes and photos.") and the payoff (from "Everyone's agents, on one
+   page." to "Your cloud."). Each starts at the first clean frame after its
+   crossfade, read off the encoded files frame by frame (every 0.2 s): the
+   brief's marks (0:09, 0:22, 0:52 or 0:56, 1:11 or 1:14) land mid-fade. */
+export const FILM_SECTION_NAMES = ['Two people, four agents', 'One message', 'Four agents at once', 'What they built', 'Your cloud'] as const;
+/* On a phone the five share one row, so each name is cut to its caption's
+   first words, two lines at most. */
+export const FILM_SECTION_SHORT_NAMES = ['Two people', 'One message', 'Four agents', 'What they built', 'Your cloud'] as const;
+const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at, label: FILM_SECTION_NAMES[i]!, short: FILM_SECTION_SHORT_NAMES[i]! }));
+export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
+  length: 85.0,
+  sections: sectionsAt([0, 9.2, 22.6, 53.0, 71.6]),
 };
-export const PRODUCT_FILM_TALL: { src: string; poster: string } | null = {
+export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
+  length: 88.1,
+  sections: sectionsAt([0, 9.2, 22.6, 56.2, 74.8]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface
@@ -126,12 +142,12 @@ export const BOOKFACE_LINK = 'Open the site they built';
 type FaceSide = 'right' | 'left';
 function Face({ id, heading, children, panel, side = 'right' }: { id: string; heading: string; children: string; panel: ReactNode; side?: FaceSide }) {
   return (
-    <section id={id} className={`${SECTION} ${HOME_SECTION_END}`}>
+    <section id={id} className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
       <ChapterDivider tight />
       <div className={`grid gap-6 sm:gap-7 lg:items-center lg:gap-14 ${side === 'left' ? 'lg:grid-cols-[1.2fr_0.8fr]' : 'lg:grid-cols-[0.8fr_1.2fr]'}`}>
         <div data-face-words className={side === 'left' ? 'lg:order-2' : undefined}>
           <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
-          <p className={`mt-4 max-w-[30rem] [text-wrap:pretty] sm:mt-5 ${LEAD}`}>{children}</p>
+          <p className={`mt-4 [text-wrap:pretty] sm:mt-5 ${LEAD}`}>{children}</p>
         </div>
         <div className={`min-w-0 ${side === 'left' ? 'lg:order-1' : ''}`}>{panel}</div>
       </div>
@@ -145,7 +161,11 @@ export default function Home() {
       className="landing-page copy-page min-h-dvh overflow-x-clip bg-panel text-white"
       style={{ fontFamily: 'var(--font-ui)' }}
     >
-      <SiteHeader ctaTarget="none" tone="dark" />
+      {/* No header since note #977 (the owner, 4 Nov 2026, 12:43 UTC: "Remove
+          header"): the film is the first thing. The bar carried only the
+          mark and the name, a link to this same page (sign-in left it with
+          note #924, and /login still answers); the footer carries the name.
+          Every other page keeps its header. */}
 
       {/* ── The film, first (note #965) ───────────────────────────────── */}
       {/* The owner, 3 Nov 2026, 18:45 UTC: "ok this video should be central
@@ -158,7 +178,7 @@ export default function Home() {
           link to the site the film is about. No words around the film (note
           #958). */}
       {PRODUCT_FILM ? (
-        <section id="film" aria-label="The film" className={`${SECTION} pt-6 sm:pt-10`}>
+        <section id="film" aria-label="The film" className={`${HOME_SECTION} pt-5 sm:pt-8 lg:pt-12`}>
           <HomeFilm
             wide={PRODUCT_FILM}
             tall={PRODUCT_FILM_TALL}
@@ -190,15 +210,15 @@ export default function Home() {
           button off: the page has no call to action, and its one way to
           start is the How to start section. HERO_DOOR is the plain text link
           offered in its place. */}
-      <section id="home-top" className={`${SECTION} grid gap-10 pb-10 pt-10 sm:pb-12 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7`}>
+      <section id="home-top" className={`${HOME_SECTION} grid gap-10 pb-10 pt-10 sm:pb-12 sm:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:items-center lg:gap-x-14 lg:gap-y-7`}>
         <div>
           {/* One sentence a line, so a phone never breaks "Give" from its
               sentence; the space between keeps the heading's name whole. */}
-          <h1 className={`max-w-[1000px] [text-wrap:balance] ${H2}`}>
+          <h1 className={`[text-wrap:balance] ${H2}`}>
             <span className="block">{HEADLINE_FIRST}</span>{' '}
             <span className="block">{HEADLINE_SECOND}</span>
           </h1>
-          <p id="homeWhat" className={`mt-5 max-w-[640px] [text-wrap:pretty] ${LEAD}`}>
+          <p id="homeWhat" className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
             Your Claude Code and Codex agents get what every engineer gets on day one: a team that
             sees their work, a memory, the keys, a computer of their own and a lead who hands out
             the jobs.
@@ -228,7 +248,7 @@ export default function Home() {
           heading is the section's only words: the plan's own labels carry the
           rest, and its two lines carry the rule (jobs out, proposals back to
           your yes). */}
-      <section id="workplace" className={`${SECTION} ${HOME_SECTION_END}`}>
+      <section id="workplace" className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
         <ChapterDivider tight />
         <h2 className={`[text-wrap:balance] ${H2}`}>Here’s the workplace.</h2>
         <div className="mt-8 min-w-0 sm:mt-10">
@@ -284,7 +304,7 @@ export default function Home() {
       <ForYourTeam />
       <TalkToUs />
 
-      <SiteFooter pitch={FOOTER_PITCH} tone="dark" />
+      <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide />
     </main>
   );
 }

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { BODY, CARD, ChapterDivider, H2, H3, HOME_SECTION_END, LEAD, PrimaryLink, SECTION, SecondaryLink } from '../components/landing-kit';
+import { BODY, CARD, ChapterDivider, H2, H3, HOME_SECTION_END, LEAD, PrimaryLink, HOME_SECTION, SecondaryLink } from '../components/landing-kit';
 import { InstallFilm, SidesArt } from '../components/CopyArt';
 import installFilmPoster from '../assets/private-copy/install-film-poster-2026-10-29.jpg';
 import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
@@ -108,9 +108,9 @@ export function AgentLine() {
 
 export function Chapter({ id, heading, children }: { id: string; heading: string; children: ReactNode }) {
   return (
-    <section id={id} className={`${SECTION} ${HOME_SECTION_END}`}>
+    <section id={id} className={`${HOME_SECTION} ${HOME_SECTION_END}`}>
       <ChapterDivider tight />
-      <h2 className={`max-w-[760px] [text-wrap:balance] ${H2}`}>{heading}</h2>
+      <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
       {children}
     </section>
   );
@@ -137,7 +137,7 @@ const INLINE_LINK = 'text-white underline decoration-white/35 underline-offset-2
    before the steps. */
 export function OwnCloudAction() {
   return (
-    <div id="give-your-agent" className="mt-8 max-w-[1040px] scroll-mt-20">
+    <div id="give-your-agent" className="mt-8 scroll-mt-20">
       <div className="hidden sm:block">
         <h3 className="type-md-sm font-semibold text-white">Give this to your agent</h3>
         <div className="mt-3">
@@ -145,7 +145,7 @@ export function OwnCloudAction() {
         </div>
         {/* Since note #835 the steps below say what the agent does with it, so
             the paragraph that said it here first is gone. */}
-        <p className={`mt-3 max-w-[36rem] [text-wrap:pretty] ${BODY}`}>
+        <p className={`mt-3 [text-wrap:pretty] ${BODY}`}>
           Paste it into Claude Code, Codex or any agent that works in a terminal.
         </p>
       </div>
@@ -179,14 +179,14 @@ export function OwnCloud() {
   return (
     <Chapter id="own-cloud" heading={OWN_CLOUD_HEADING}>
       <div className="mt-5 grid gap-8 lg:grid-cols-2 lg:gap-14">
-        <p id="own-cloud-lead" className={`max-w-[640px] [text-wrap:pretty] ${LEAD}`}>
+        <p id="own-cloud-lead" className={`[text-wrap:pretty] ${LEAD}`}>
           What makes your agents good stays yours: your code, their conversations, your knowledge,
           your keys and your decisions. The whole system runs in your own cloud account, on your
           domain.
         </p>
         <div id="with-us">
           <h3 className={H3}>Nothing of yours stays with us.</h3>
-          <p className={`mt-3 max-w-[640px] [text-wrap:pretty] ${BODY}`}>
+          <p className={`mt-3 [text-wrap:pretty] ${BODY}`}>
             Your messages, code, files, mail, keys and logs never reach us. And the whole platform is
             open source under the AGPL-3.0, the installer included, so your team can read every line of
             it before they say yes.
@@ -244,7 +244,7 @@ export function HowToStart() {
           wait honest and second: in that run Fly issued them in 45 s, but on
           28 Oct the code host's took over an hour. Three runs are too few for
           "usually" (claims-we-never-make). */}
-      <div id="takes" className="mt-6 max-w-[1040px] sm:mt-8 rounded-2xl border border-hint/20 px-4 py-4 sm:px-6 sm:py-5">
+      <div id="takes" className="mt-6 sm:mt-8 rounded-2xl border border-hint/20 px-4 py-4 sm:px-6 sm:py-5">
         <h3 className={H3}>What it takes</h3>
         <ul className={`mt-2 grid list-disc gap-1 pl-4 [text-wrap:pretty] ${BODY} marker:text-hint/70 sm:pl-5`}>
           <li>A Fly account that pays for the machines. Fly bills it directly; nothing of ours is on that bill.</li>
@@ -270,7 +270,7 @@ export function ForYourTeam() {
           alone over an empty gap). */}
       <div className="mt-5">
         <div>
-          <p className={`max-w-[36rem] [text-wrap:pretty] ${LEAD}`}>
+          <p className={`[text-wrap:pretty] ${LEAD}`}>
             What your engineers will want to see before they say yes. The steps your agent follows are
             one page of plain text they can read first.
           </p>
@@ -289,13 +289,13 @@ export function ForYourTeam() {
 /* The close: the founder's own address (note #832). */
 export function TalkToUs() {
   return (
-    <section id="contact" className={`${SECTION} pb-16 sm:pb-20`}>
+    <section id="contact" className={`${HOME_SECTION} pb-16 sm:pb-20`}>
       <ChapterDivider tight />
       {/* The card reaches past the column by its own padding, so its words
           line up with every other section's (note #839). */}
       <div className={`${CARD} -mx-5 max-sm:rounded-none sm:-mx-7 lg:-mx-8 lg:p-8`}>
-        <h2 className={`max-w-[700px] [text-wrap:balance] ${H2}`}>Talk to us.</h2>
-        <p className={`mt-5 max-w-[640px] [text-wrap:pretty] ${LEAD}`}>
+        <h2 className={`[text-wrap:balance] ${H2}`}>Talk to us.</h2>
+        <p className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
           Write to Adam, who built it, at <a href={FOUNDER_MAILTO} className={INLINE_LINK}>{FOUNDER_EMAIL}</a>.
           Questions before you decide are welcome.
         </p>
