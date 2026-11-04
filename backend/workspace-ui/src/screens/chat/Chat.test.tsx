@@ -2858,7 +2858,9 @@ describe('the recap line under the latest turn (note #945)', () => {
   const reply = chatMessage({ seq: 2, text: 'Paused on DNS: add the 17 records.', at: '2026-09-02T10:00:11Z' });
   const ended = { startedAt: '2026-09-02T10:00:00Z', endedAt: '2026-09-02T10:00:12Z' };
   const line = () => document.getElementById('agentChatRecap');
-  const recapWords = () => line()?.querySelector('.turnrecaptext')?.textContent ?? null;
+  // One sentence a line (note #976): the recap's words, read back sentence by sentence.
+  const recapWords = () => { const text = line()?.querySelector('.turnrecaptext'); return text ? [...text.querySelectorAll('p')].map((p) => p.textContent).join(' | ') : null; };
+  const chip = () => line()?.querySelector('.turnfacts .recaptag')?.textContent ?? null;
 
   it('appears under the turn once it is over, with how long it worked and when it finished', async () => {
     open(() => ({
@@ -2867,9 +2869,12 @@ describe('the recap line under the latest turn (note #945)', () => {
     }));
     await head();
     await waitFor(() => expect(line()).toBeTruthy());
-    const facts = line()!.querySelector('.turnfacts')!.textContent!;
+    const facts = line()!.querySelector('.turnfacts .turnfactswords')!.textContent!;
     expect(facts.startsWith('Worked for 12s · done ')).toBe(true);
-    expect(recapWords()).toBe('Recap: We set up DNS and it is paused. Next, add the 17 records and reply "done".');
+    // The label is a chip on the facts line, not a prefix inside the words;
+    // the words are unchanged, a sentence a line, upright behind the rule.
+    expect(chip()).toBe('Recap');
+    expect(recapWords()).toBe('We set up DNS and it is paused. | Next, add the 17 records and reply "done".');
     // It stands after the transcript, not inside a row, and is not a message.
     expect(log().contains(line())).toBe(false);
     expect(line()!.closest('.chatpane')).toBeTruthy();
@@ -2881,6 +2886,7 @@ describe('the recap line under the latest turn (note #945)', () => {
     await head();
     await waitFor(() => expect(line()).toBeTruthy());
     expect(recapWords()).toBeNull();
+    expect(chip()).toBeNull();
     expect(line()!.getAttribute('data-recap')).toBe('none');
     expect(line()!.querySelector('.tdots, [role="progressbar"]')).toBeNull();
     expect(line()!.textContent).not.toMatch(/recap|…|loading/i);
@@ -2895,11 +2901,11 @@ describe('the recap line under the latest turn (note #945)', () => {
     expect(recapWords()).toBeNull();
     answer = { messages: [], working: false, lastTurn: { ...ended, recap: 'Checkpoint: DNS records drafted.' } };
     await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(recapWords()).toBe('Recap: Checkpoint: DNS records drafted.'));
+    await waitFor(() => expect(recapWords()).toBe('Checkpoint: DNS records drafted.'));
     const first = line();
     answer = { messages: [], working: false, lastTurn: { ...ended, recap: 'DNS is paused. Next, add the 17 records.' } };
     await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(recapWords()).toBe('Recap: DNS is paused. Next, add the 17 records.'));
+    await waitFor(() => expect(recapWords()).toBe('DNS is paused. | Next, add the 17 records.'));
     // The same line, rewritten — not a second one under it.
     expect(line()).toBe(first);
     expect(document.querySelectorAll('.turnrecap')).toHaveLength(1);

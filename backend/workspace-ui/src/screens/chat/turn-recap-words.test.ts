@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { doneAt, showsTurnRecap, turnFacts, workedFor } from './turn-recap-words.js';
+import { doneAt, recapSentences, showsTurnRecap, turnFacts, workedFor } from './turn-recap-words.js';
 
 describe('the recap line\'s words (note #945)', () => {
   it('says how long a turn worked the way the terminal does', () => {
@@ -37,5 +37,23 @@ describe('the recap line\'s words (note #945)', () => {
     expect(showsTurnRecap(turn, { busy: false, last: { role: 'owner', at: '2026-11-01T20:39:00Z' } })).toBe(false);
     // A reply newer than the turn on record belongs to a turn not stamped yet.
     expect(showsTurnRecap(turn, { busy: false, last: reply, lastReplyAt: '2026-11-01T20:40:00Z' })).toBe(false);
+  });
+});
+
+describe('the recap, a sentence a line (note #976)', () => {
+  it('splits where a sentence ends and keeps every word', () => {
+    const recap = "Iris's phone-framed films are live on the agenticcloudcomputer.com home page, verified live. Waiting on you: pick the opening frame! \"Done\" when it lands? (Maybe today.)";
+    const sentences = recapSentences(recap);
+    expect(sentences).toEqual([
+      "Iris's phone-framed films are live on the agenticcloudcomputer.com home page, verified live.",
+      'Waiting on you: pick the opening frame!',
+      '"Done" when it lands?',
+      '(Maybe today.)',
+    ]);
+    expect(sentences.join(' ')).toBe(recap);
+  });
+  it('leaves a version, a file name or a lower-case run alone', () => {
+    expect(recapSentences('Shipped v1.2 of app.ts to main. e.g. the fix.')).toEqual(['Shipped v1.2 of app.ts to main. e.g. the fix.']);
+    expect(recapSentences('One line only')).toEqual(['One line only']);
   });
 });

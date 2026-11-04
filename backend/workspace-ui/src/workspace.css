@@ -1595,20 +1595,27 @@ button.chatmsg.platform.aside:active {
    finished rising: two entrances in one frame read as a jumble, one after
    the other reads as cause and effect, which is what they are. */
 /* The recap line under the latest completed turn (note #945, the owner: "recap
-   line like in terminal claude code"): two muted lines centred in the
-   conversation column — the turn's facts, then the recap in italics. The
-   pane already carries the column's gutters on a desk and the phone's 16 on
-   a phone, so centring inside it is centring in the column. It fades in
-   rather than rising: it is a caption arriving under words already read, not
-   a message, and it must not move the reply above it. */
-.turnrecap {
-  margin: 14px auto 6px; max-width: 560px; padding: 0 8px;
-  text-align: center; color: var(--hint);
-  font-size: var(--ui-sm); line-height: 1.45;
-  overflow-wrap: anywhere;
-}
+   line like in terminal claude code"), made readable by note #976 (Adam,
+   2026-11-04, the thin-rule mock-up he picked). The facts line stays small
+   and muted, with the RECAP chip the fresh-chat row's "on its own" wears;
+   the recap under it is upright, in the body face and colour, left in the
+   reply's column at about 60 characters, a sentence a line, behind a thin
+   rule in the hint colour that says "summary" without a bubble. It fades in
+   rather than rising: it arrives under words already read, and it must not
+   move the reply above it. One look in every conversation. */
+.turnrecap { margin: 16px 0 6px; text-align: left; overflow-wrap: break-word; }
 .turnrecap p { margin: 0; }
-.turnrecap .turnrecaptext { font-style: italic; margin-top: 2px; animation: turnrecapin .4s ease-out; }
+/* Inline, not a flex row: a facts line that wraps on a phone keeps the chip
+   at the head of its words rather than leaving it alone on a line. */
+.turnrecap .turnfacts { color: var(--hint); font-size: var(--ui-sm); line-height: 1.6; }
+.turnrecap .recaptag { font-size: calc(var(--ui-sm) - 1px); }
+.turnrecap .turnrecaptext {
+  max-width: 60ch; margin-top: 6px; padding-left: 12px;
+  border-left: 2px solid color-mix(in srgb, var(--hint) 45%, transparent);
+  color: var(--text); font-size: var(--ui-read); line-height: 1.5;
+  animation: turnrecapin .4s ease-out;
+}
+.turnrecap .turnrecaptext p + p { margin-top: 2px; }
 @keyframes turnrecapin { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .turnrecap .turnrecaptext { animation: none; } }
 .chatlive { display: flex; align-items: center; gap: 10px; margin: 8px 0 6px; }

@@ -1551,11 +1551,13 @@ describe('the recap line under its latest request (note #945)', () => {
   };
   const line = () => document.getElementById('recapChatRecap');
 
-  it('stands under the request once it is over, centred in the column, saying whose answer it still waits for', async () => {
+  it('stands under the request once it is over, in the reply\'s column, saying whose answer it still waits for — the same look as an agent\'s chat (note #976)', async () => {
     mount({ ...asked, waiting: ['Theo'], lastTurn: { ...ended, recap: 'Theo is shipping the booking page. Nothing for you until he reports.' } });
     await waitFor(() => expect(line()).toBeTruthy());
-    expect(line()!.querySelector('.turnfacts')!.textContent).toMatch(/^Worked for 1m 4s · done .+ · waiting on Theo$/);
-    expect(line()!.querySelector('.turnrecaptext')!.textContent).toBe('Recap: Theo is shipping the booking page. Nothing for you until he reports.');
+    expect(line()!.querySelector('.turnfacts .turnfactswords')!.textContent).toMatch(/^Worked for 1m 4s · done .+ · waiting on Theo$/);
+    expect(line()!.querySelector('.turnfacts .recaptag')!.textContent).toBe('Recap');
+    expect([...line()!.querySelectorAll('.turnrecaptext p')].map((p) => p.textContent)).toEqual(['Theo is shipping the booking page.', 'Nothing for you until he reports.']);
+    expect(line()!.className).toBe('turnrecap');
     // In the conversation's scroller, after its log: the column's own child.
     expect(line()!.parentElement!.id).toBe('recapChatScroll');
     expect(document.getElementById('recapChatLog')!.contains(line())).toBe(false);
@@ -1566,8 +1568,9 @@ describe('the recap line under its latest request (note #945)', () => {
     mount(answer, undefined, { 'GET api/recap/chat': () => answer });
     await waitFor(() => expect(line()).toBeTruthy());
     expect(line()!.querySelector('.turnrecaptext')).toBeNull();
+    expect(line()!.querySelector('.recaptag')).toBeNull();
     answer = { ...asked, lastTurn: { ...ended, recap: 'Theo is on it.' } };
-    await waitFor(() => expect(line()!.querySelector('.turnrecaptext')?.textContent).toBe('Recap: Theo is on it.'), { timeout: 5000 });
+    await waitFor(() => expect(line()!.querySelector('.turnrecaptext')?.textContent).toBe('Theo is on it.'), { timeout: 5000 });
   });
 
   it('is absent while a request runs and under the person\'s own newest words', async () => {

@@ -69,3 +69,12 @@ export function showsTurnRecap(
   const replied = Date.parse(conversation.lastReplyAt ?? '');
   return !Number.isFinite(replied) || replied <= ended;
 }
+
+/**
+ * One sentence a line (note #976): the recap's own words, unchanged, split
+ * where a sentence ends — a stop, then a space, then what starts a sentence.
+ * "agenticcloudcomputer.com" or "v1.2" has no space after its dot and stays whole.
+ */
+export function recapSentences(recap: string): string[] {
+  return recap.split(/(?<=[.!?…])\s+(?=[A-Z0-9"“'‘(])/).map((sentence) => sentence.trim()).filter(Boolean);
+}

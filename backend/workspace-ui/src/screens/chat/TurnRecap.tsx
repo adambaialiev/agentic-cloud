@@ -2,11 +2,20 @@
  * The recap line under a conversation's latest completed turn (note #945).
  *
  * The owner, 2026-11-01, with a screenshot of his terminal Claude Code: "recap
- * line like in terminal claude code." Two muted lines under the end of the
- * turn — the platform's facts about it, then the recap in italics:
+ * line like in terminal claude code." Since note #976 (Adam, 2026-11-04: "in
+ * the chief of staff chat recaps should be more readable"; he chose the thin
+ * left rule from three mock-ups) it reads as news, not as a caption: the
+ * facts line small and muted, wearing a RECAP chip once there is a recap,
+ * then the recap itself upright in the body face and colour, left in the
+ * reply's column at about 60 characters, one sentence a line, behind a thin
+ * rule in the hint colour:
  *
- *   Worked for 12s · done 8:38 PM · 1 background job still running
- *   Recap: We're setting up … Next, add the 17 records, then reply "done".
+ *   [RECAP] Worked for 12s · done 8:38 PM · 1 background job still running
+ *   | We're setting up …
+ *   | Next, add the 17 records, then reply "done".
+ *
+ * One look in every conversation that draws it: the Chief of Staff's and
+ * every agent's.
  *
  * The recap is the agent row's own (agent-row-recap-design, one source), and
  * it arrives after the reply, when the summary does: until then the facts
@@ -21,15 +30,29 @@
  */
 
 import type { WorkspaceTurnRecap } from '../../../../src/shared/turn-recap.js';
-import { turnFacts } from './turn-recap-words.js';
+import { recapSentences, turnFacts } from './turn-recap-words.js';
 
 export function TurnRecap({ id, turn, jobs, waiting }: { id: string; turn: WorkspaceTurnRecap; jobs?: number; waiting?: string[] }) {
   const facts = turnFacts(turn, { jobs, waiting });
   return (
     <div className="turnrecap" id={id} data-recap={turn.recap ? 'arrived' : 'none'}>
-      {facts ? <p className="turnfacts">{facts}</p> : null}
+      {facts || turn.recap
+        ? (
+          <p className="turnfacts">
+            {/* The label once there is something it labels: never over a missing recap. */}
+            {turn.recap ? <span className="recaptag">Recap</span> : null}
+            {facts ? <span className="turnfactswords">{facts}</span> : null}
+          </p>
+        )
+        : null}
       {/* Keyed on its words: a rewrite arrives as the first one did. */}
-      {turn.recap ? <p className="turnrecaptext" key={turn.recap}>Recap: {turn.recap}</p> : null}
+      {turn.recap
+        ? (
+          <div className="turnrecaptext" key={turn.recap}>
+            {recapSentences(turn.recap).map((sentence, at) => <p key={at}>{sentence}</p>)}
+          </div>
+        )
+        : null}
     </div>
   );
 }

@@ -1,10 +1,13 @@
 /**
  * Note #945, in real Chrome: the recap line under the latest completed turn,
  * in an agent's chat and in the Chief of Staff's (Home) — the owner's "recap line
- * like in terminal claude code". Two muted lines: the turn's facts, then the
- * row recap in italics, centred in the conversation column on a phone and at
- * a desk. Before this turn's summary lands the facts stand alone; when it
- * lands it appears in place, with no reload, and nothing above it moves.
+ * like in terminal claude code", made readable by note #976 (Adam picked the
+ * thin left rule): the facts line small and muted with a RECAP chip, then the
+ * row recap upright in the reply's own face and colour, left in the reply's
+ * column at no more than about 60 characters, a sentence a line, behind a
+ * thin rule — the same in both conversations, on a phone and at a desk.
+ * Before this turn's summary lands the facts stand alone, with no chip; when
+ * it lands it appears in place, with no reload, and nothing above it moves.
  *
  *   npm --prefix backend run build:workspace-ui
  *   OUT_DIR=/tmp/shots backend/node_modules/.bin/tsx scripts/verify-workspace-turn-recap.mts
@@ -127,19 +130,37 @@ async function placement(page: Page, line: string, pane: string) {
     const style = getComputedStyle(scroller);
     const left = box.left + parseFloat(style.paddingLeft);
     const right = box.right - parseFloat(style.paddingRight);
-    const centre = (left + right) / 2;
-    const parts = [...node.querySelectorAll('p')].map((p) => {
-      const range = document.createRange();
-      range.selectNodeContents(p);
-      const r = range.getBoundingClientRect();
-      return { centre: (r.left + r.right) / 2, left: r.left, right: r.right, italic: getComputedStyle(p).fontStyle, colour: getComputedStyle(p).color, size: getComputedStyle(p).fontSize };
-    });
+    const text = node.querySelector('.turnrecaptext') as HTMLElement | null;
+    const facts = node.querySelector('.turnfacts') as HTMLElement | null;
+    const reply = ([...document.querySelectorAll(`${paneSel} .chatmsg.agent`)] as HTMLElement[]).filter((n) => n.getBoundingClientRect().width > 0).at(-1);
     const last = [...document.querySelectorAll(`${paneSel} .chatmsg`)].at(-1)?.getBoundingClientRect();
-    return { centre, left, right, parts, below: last ? node.getBoundingClientRect().top >= last.bottom - 1 : true, align: getComputedStyle(node).textAlign };
+    const t = text ? getComputedStyle(text) : null;
+    const ch = (() => { if (!text) return 0; const probe = document.createElement('span'); probe.textContent = '0'; text.appendChild(probe); const w = probe.getBoundingClientRect().width; probe.remove(); return w; })();
+    return {
+      left, right,
+      textLeft: text?.getBoundingClientRect().left ?? null,
+      textWidth: text?.getBoundingClientRect().width ?? null,
+      ch,
+      factsLeft: facts?.getBoundingClientRect().left ?? null,
+      replyLeft: reply?.getBoundingClientRect().left ?? null,
+      sentences: text ? text.querySelectorAll('p').length : 0,
+      italic: t?.fontStyle ?? null,
+      colour: t?.color ?? null,
+      replyColour: reply ? getComputedStyle(reply).color : null,
+      rule: t ? `${t.borderLeftStyle} ${t.borderLeftWidth}` : null,
+      factsColour: facts ? getComputedStyle(facts).color : null,
+      chip: node.querySelector('.turnfacts .recaptag')?.textContent ?? null,
+      align: getComputedStyle(node).textAlign,
+      below: last ? node.getBoundingClientRect().top >= last.bottom - 1 : true,
+    };
   }, line, pane);
 }
-const centred = (where: Awaited<ReturnType<typeof placement>>) => Boolean(where && where.parts.length
-  && where.parts.every((part) => Math.abs(part.centre - where.centre) <= 2 && part.left >= where.left - 1 && part.right <= where.right + 1));
+/** Note #976: upright, the reply's colour, behind the rule, from the reply's left edge, no wider than ~60 characters, inside the column. */
+const readable = (where: Awaited<ReturnType<typeof placement>>) => Boolean(where && where.textLeft !== null && where.textWidth !== null
+  && where.italic === 'normal' && where.colour === where.replyColour && where.colour !== where.factsColour
+  && where.rule === 'solid 2px' && where.chip === 'Recap' && where.align === 'left'
+  && where.factsLeft !== null && where.replyLeft !== null && Math.abs(where.factsLeft - where.replyLeft) <= 2 && Math.abs(where.textLeft - where.replyLeft) <= 2
+  && where.textWidth <= where.ch * 60 + 2 && where.textLeft + where.textWidth <= where.right + 1 && where.sentences >= 2);
 
 const browser = await puppeteer.launch({
   executablePath: findChrome(),
@@ -200,19 +221,19 @@ try {
   if (!SHOTS_ONLY) await page.waitForSelector('#recapChatRecap .turnrecaptext', { timeout: 10_000 });
   await settle();
   await shot(page, 'home-phone');
-  const homeFacts = await page.$eval('#recapChatRecap .turnfacts', (node) => node.textContent ?? '').catch(() => '');
+  const homeFacts = await page.$eval('#recapChatRecap .turnfacts .turnfactswords', (node) => node.textContent ?? '').catch(() => '');
   check('Home: the facts line says how long it worked, when, and whose answer it waits for', /^Worked for 1m 4s · done .+ · waiting on Oscar$/.test(homeFacts), homeFacts);
-  const homeRecap = await page.$eval('#recapChatRecap .turnrecaptext', (node) => node.textContent ?? '').catch(() => '');
-  check('Home: the recap is the record\'s, in italics', homeRecap.startsWith('Recap: Asked Oscar to set up your own cloud'), homeRecap);
+  const homeRecap = await page.$eval('#recapChatRecap .turnrecaptext', (node) => [...node.querySelectorAll('p')].map((p) => p.textContent).join(' ')).catch(() => '');
+  check('Home: the recap is the record\'s, word for word, with no "Recap:" prefix', homeRecap.startsWith('Asked Oscar to set up your own cloud'), homeRecap);
   let where = await placement(page, '#recapChatRecap', '#recapChatScroll');
-  check('Home (phone): centred in the conversation column, under the reply, muted and italic', centred(where) && where!.below && where!.parts[1]?.italic === 'italic' && where!.align === 'center', JSON.stringify(where));
+  check('Home (phone): under the reply, in its column and colour, upright behind the rule, a sentence a line (note #976)', readable(where) && where!.below, JSON.stringify(where));
   check('Home (phone): nothing overflows', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
 
   await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
   await settle();
   await shot(page, 'home-desk');
   where = await placement(page, '#recapChatRecap', '#recapChatScroll');
-  check('Home (desk): centred in the reading column, not the window', centred(where) && where!.right - where!.left <= 760, JSON.stringify(where));
+  check('Home (desk): in the reading column at about 60 characters, not the window', readable(where) && where!.right - where!.left <= 760, JSON.stringify(where));
 
   // ── Oscar's own chat ─────────────────────────────────────────────────────
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
@@ -222,8 +243,8 @@ try {
   await page.waitForFunction(() => !document.querySelector('#agentChatRecap') || (document.querySelector('#agentChatRecap')?.textContent ?? '').includes('background job'), { timeout: 10_000 }).catch(() => {});
   await settle();
   await shot(page, 'chat-phone-before-recap');
-  const early = await page.$eval('#agentChatRecap', (node) => ({ facts: node.querySelector('.turnfacts')?.textContent ?? '', recap: node.querySelector('.turnrecaptext')?.textContent ?? null })).catch(() => null);
-  check('chat: before this turn\'s summary lands, the facts stand alone — no old recap, no placeholder', Boolean(early && early.recap === null && /^Worked for 2m 4s · done .+ · 1 background job still running$/.test(early.facts)), JSON.stringify(early));
+  const early = await page.$eval('#agentChatRecap', (node) => ({ facts: node.querySelector('.turnfacts')?.textContent ?? '', recap: node.querySelector('.turnrecaptext')?.textContent ?? null, chip: Boolean(node.querySelector('.recaptag')) })).catch(() => null);
+  check('chat: before this turn\'s summary lands, the facts stand alone — no old recap, no placeholder', Boolean(early && early.recap === null && !early.chip && /^Worked for 2m 4s · done .+ · 1 background job still running$/.test(early.facts)), JSON.stringify(early));
 
   // The summary lands: the next read carries it, and it appears in place.
   const replyTop = await page.$eval('#agentChatLog .chatmsg:last-of-type', (node) => node.getBoundingClientRect().top).catch(() => 0);
@@ -233,12 +254,12 @@ try {
   if (!SHOTS_ONLY) await page.waitForSelector('#agentChatRecap .turnrecaptext', { timeout: 12_000 });
   await settle();
   await shot(page, 'chat-phone');
-  const late = await page.$eval('#agentChatRecap .turnrecaptext', (node) => node.textContent ?? '').catch(() => '');
-  check('chat: the recap arrives by itself, with no reload', late.startsWith('Recap: We are setting up your own Agentic Cloud'), late);
+  const late = await page.$eval('#agentChatRecap .turnrecaptext', (node) => [...node.querySelectorAll('p')].map((p) => p.textContent).join(' ')).catch(() => '');
+  check('chat: the recap arrives by itself, with no reload', late.startsWith('We are setting up your own Agentic Cloud'), late);
   const replyTopAfter = await page.$eval('#agentChatLog .chatmsg:last-of-type', (node) => node.getBoundingClientRect().top).catch(() => 0);
   check('chat: the reply above did not jump down when it arrived', replyTopAfter <= replyTop + 1, `${replyTop} → ${replyTopAfter}`);
   where = await placement(page, '#agentChatRecap', '#agentChatScroll');
-  check('chat (phone): centred in the conversation column, under the reply, muted and italic', centred(where) && where!.below && where!.parts[1]?.italic === 'italic', JSON.stringify(where));
+  check('chat (phone): the same look as the Chief of Staff\'s — under the reply, upright behind the rule, a sentence a line (note #976)', readable(where) && where!.below, JSON.stringify(where));
   check('chat (phone): the reader is carried down to it', await page.evaluate(() => {
     const pane = document.getElementById('agentChatScroll')!;
     return pane.scrollHeight - pane.scrollTop - pane.clientHeight < 4;
@@ -249,7 +270,7 @@ try {
   await settle();
   await shot(page, 'chat-desk');
   where = await placement(page, '#agentChatRecap', '#agentChatScroll');
-  check('chat (desk): centred in the reading column, not the window', centred(where) && where!.right - where!.left <= 760, JSON.stringify(where));
+  check('chat (desk): in the reading column at about 60 characters, not the window', readable(where) && where!.right - where!.left <= 760, JSON.stringify(where));
 
   check('the browser stayed clean', errors.length === 0, errors.join(' | '));
   if (failures.length) throw new Error(failures.join('; '));
