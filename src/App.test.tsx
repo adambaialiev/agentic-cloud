@@ -18,11 +18,11 @@ describe('App routes', () => {
     )
 
     // The copy's door since note #822; nothing on the site sends a stranger
-    // to sign up. Since note #924 the home page's one door is a text link to
-    // its own section (named Build your own Agentic Cloud since note #951),
-    // and the header has none.
-    expect(screen.getAllByRole('link', { name: /Build your own Agentic Cloud/ })
-      .every((el) => el.getAttribute('href') === '#start')).toBe(true)
+    // to sign up. Since note #984 the home page has no first-screen door:
+    // its own section, Build your own Agentic Cloud, is one of its five
+    // screens, and nothing links to it from above.
+    expect(screen.getByRole('heading', { level: 2, name: 'Build your own Agentic Cloud.' })).toBeTruthy()
+    expect(screen.queryAllByRole('link', { name: /Build your own Agentic Cloud/ })).toEqual([])
     expect(screen.queryAllByRole('link', { name: /Build yours|Sign in/ })).toEqual([])
     expect(screen.getAllByRole('link').some((el) => el.getAttribute('href') === '/signup'))
       .toBe(false)
@@ -176,11 +176,11 @@ describe('App routes', () => {
     )
 
     // The copy's door since note #822; nothing on the site sends a stranger
-    // to sign up. Since note #924 the home page's one door is a text link to
-    // its own section (named Build your own Agentic Cloud since note #951),
-    // and the header has none.
-    expect(screen.getAllByRole('link', { name: /Build your own Agentic Cloud/ })
-      .every((el) => el.getAttribute('href') === '#start')).toBe(true)
+    // to sign up. Since note #984 the home page has no first-screen door:
+    // its own section, Build your own Agentic Cloud, is one of its five
+    // screens, and nothing links to it from above.
+    expect(screen.getByRole('heading', { level: 2, name: 'Build your own Agentic Cloud.' })).toBeTruthy()
+    expect(screen.queryAllByRole('link', { name: /Build your own Agentic Cloud/ })).toEqual([])
     expect(screen.queryAllByRole('link', { name: /Build yours|Sign in/ })).toEqual([])
     expect(screen.getAllByRole('link').some((el) => el.getAttribute('href') === '/signup'))
       .toBe(false)

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { FACES } from './live/fixture';
 
 /**
@@ -919,76 +919,6 @@ export function UpgradeArt() {
       <div className="mx-auto max-w-[440px] lg:hidden">
         <UpgradeTall />
       </div>
-    </figure>
-  );
-}
-
-/* ── 3. The real install, filmed ───────────────────────────────────────────
-   A screen recording of the installer from a clean Fly organization to a
-   working Agentic Cloud, cut to under two minutes with HyperFrames: the terminal is
-   the recording's own lines, long waits shortened with a real-time clock in
-   the corner, and the two secrets it prints masked. It never plays by itself
-   and has no sound; the captions are in the picture. The file lives in our
-   public bucket site-media, so the site's bundle stays small. */
-/* The film of a real install. Until it is played it is the poster alone,
-   clean, with our own play button in its empty lower left and no browser
-   controls, so they never cover the caption in the picture or the terminal
-   (note #839). Pressing it shows the controls and plays. The home page's
-   film used this player from note #951 until note #973 gave it its own
-   (HomeFilm.tsx): it plays by itself, shows no controls and has a tall cut
-   for phones. */
-export function InstallFilm({
-  src,
-  poster,
-  caption,
-  label = 'Play the film of a real install',
-  playAt = 'corner',
-}: {
-  src: string;
-  poster: string;
-  caption?: string;
-  label?: string;
-  playAt?: 'corner' | 'below';
-}) {
-  const video = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const play = () => {
-    setPlaying(true);
-    const started = video.current?.play();
-    if (started) started.catch(() => undefined);
-  };
-  return (
-    <figure className="relative mt-8 w-full max-w-[960px]">
-      <div className="relative">
-        <video
-          ref={video}
-          className="block aspect-video w-full rounded-[20px] bg-panel-soft shadow-[0_0_0_1px_rgb(31_30_29/0.1)]"
-          controls={playing}
-          playsInline
-          muted
-          preload="none"
-          poster={poster}
-          width={1920}
-          height={1080}
-        >
-          <source src={src} type="video/mp4" />
-        </video>
-        {playing ? null : (
-          <button
-            type="button"
-            onClick={play}
-            aria-label={label}
-            className={`absolute ${playAt === 'below' ? 'left-1/2 top-[74%] -translate-x-1/2 -translate-y-1/2' : 'bottom-[9%] left-[5%]'} flex h-12 w-12 items-center justify-center rounded-full bg-white text-panel shadow-[0_2px_10px_rgb(31_30_29/0.18)] transition-colors hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:h-16 sm:w-16`}
-          >
-            <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" aria-hidden="true">
-              <path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
-            </svg>
-          </button>
-        )}
-      </div>
-      {/* No caption under either film since note #958 (the owner, 3 Nov 2026:
-          "remove helper texts"); the captions in the picture speak for it. */}
-      {caption ? <figcaption className={`mt-3 max-w-[36rem] [text-wrap:pretty] type-sm text-hint`}>{caption}</figcaption> : null}
     </figure>
   );
 }

@@ -1,8 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { CARD, H2, H3, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
-import { InstallFilm, SidesArt } from '../components/CopyArt';
-import installFilmPoster from '../assets/private-copy/install-film-poster-2026-10-29.jpg';
-import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
+import { H2, H3, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
+import { SidesArt } from '../components/CopyArt';
 
 /**
  * Your own Agentic Cloud: the parts of the one home page (note #832, the
@@ -37,23 +35,6 @@ export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer
 export const PLATFORM_SOURCE_URL = 'https://agenticcloudcomputer.com/acc/agentic-cloud';
 export const PLATFORM_LICENSE_URL = `${PLATFORM_SOURCE_URL}?path=LICENSE&file=1`;
 
-/* The film of a real install: Iris's clean run of release 2026.10.29.0 in
-   the clean organization ia-scratch-client-2 on 29 Oct 2026, 16:15:52 to
-   16:29:16 UTC, 13 min 24 s from one command to ready, every certificate
-   issued, cut to 1 min 47 s (note #834, fix 1). It replaced Ada's 28 Oct
-   recording (note #827), a 68-minute run that ended before "ready" because
-   Fly sat on the code host's certificate. The MP4's address comes from
-   lib/films.ts (note #957), with the home film's; the poster is the ready frame, both secrets
-   masked, and ships in the site bundle. Source and MP4: Drive, "Install
-   film, clean run 29 Oct 2026 (note 834)". Its caption under the player ("A
-   real install on 29 Oct 2026: one command, 13 min 24 s …") came off with
-   note #958 (the owner: "remove helper texts"); the film's own captions and
-   What it takes above say it. Null removes it; the page reads the same
-   without it. */
-export const INSTALL_FILM: { src: string; poster: string } | null = {
-  src: filmUrl(INSTALL_FILM_PATH),
-  poster: installFilmPoster,
-};
 
 
 /* Why your own Agentic Cloud runs on Fly, not AWS or Google Cloud (note
@@ -208,45 +189,5 @@ export function HowToStart() {
           qualifier "Runs in your own Fly account. Free for now." came off;
           they live in git history and in /own-cloud.md. */}
     </Chapter>
-  );
-}
-
-/* For the engineers who check before a yes: the guide the agent follows,
-   the film of a real install, side by side on a desk. The drawing of what
-   runs on whose side (note #827) stood under them until note #835 moved it
-   into the own-cloud chapter. */
-export function ForYourTeam() {
-  return (
-    <Chapter id="for-your-team" heading="For your team.">
-      {/* Words, then the film at the page's width (note #839: beside the
-          words the terminal in it read too small, and the heading stood
-          alone over an empty gap). */}
-      <div className="mt-5">
-        <div>
-          <div className="flex flex-wrap items-center gap-7">
-            <PrimaryLink href={AGENT_GUIDE_PATH}>Read the guide your agent follows</PrimaryLink>
-          </div>
-        </div>
-        <div id="install" className="min-w-0">
-          {INSTALL_FILM ? <InstallFilm {...INSTALL_FILM} /> : null}
-        </div>
-      </div>
-    </Chapter>
-  );
-}
-
-/* The close: the founder's own address (note #832). */
-export function TalkToUs() {
-  return (
-    <Screen id="contact">
-      {/* The card reaches past the column by its own padding, so its words
-          line up with every other section's (note #839). */}
-      <div className={`${CARD} -mx-5 max-sm:rounded-none sm:-mx-7 lg:-mx-8 lg:p-8`}>
-        <h2 className={`[text-wrap:balance] ${H2}`}>Talk to us.</h2>
-        <div className="mt-7">
-          <PrimaryLink href={FOUNDER_MAILTO}>Write to the founder</PrimaryLink>
-        </div>
-      </div>
-    </Screen>
   );
 }

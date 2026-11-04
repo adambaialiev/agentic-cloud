@@ -3,11 +3,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import React from 'react';
-import { fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { render as renderBare, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_GUIDE_PATH, AGENT_LINE, INSTALL_FILM, OWN_CLOUD_HEADING, PLATFORM_LICENSE_URL, PLATFORM_SOURCE_URL } from './PrivateCopy';
-import { filmUrl, INSTALL_FILM_PATH } from '../lib/films';
+import { AGENT_GUIDE_PATH, AGENT_LINE, OWN_CLOUD_HEADING, PLATFORM_LICENSE_URL, PLATFORM_SOURCE_URL } from './PrivateCopy';
 import Home, { HOME_HEADLINE } from './Home';
 import { ROLLED_APPS } from '../components/CopyArt';
 
@@ -42,7 +41,7 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(document.querySelector('#takes')).toBeNull();
     expect(document.querySelector('#start ol')).toBeNull();
     expect(document.querySelector('#qualifier')).toBeNull();
-    for (const id of ['#own-cloud', '#start', '#for-your-team', '#contact']) {
+    for (const id of ['#own-cloud', '#start']) {
       const shown = [...document.querySelector(id)!.querySelectorAll('p, li')].filter((node) => !node.closest('.ws-live, figure, svg, [role="img"]') && !node.classList.contains('sr-only'));
       expect(shown.map((node) => node.textContent), id).toEqual([]);
     }
@@ -64,8 +63,9 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // link jumps there (a "Build yours" button until note #924). Since note
     // #951 link and section carry the action's own name.
     expect(document.querySelector('#start #give-your-agent')).toBeTruthy();
-    expect(document.querySelector('#home-top #give-your-agent')).toBeNull();
-    expect(document.querySelector('#home-top a[href="#start"]')?.textContent).toMatch(/^Build your own Agentic Cloud/);
+    // Since note #984 nothing above links here: the first-screen door left
+    // with its screen.
+    expect(document.querySelector('a[href="#start"]')).toBeNull();
     expect(document.querySelector('#start h2')?.textContent).toBe('Build your own Agentic Cloud.');
     for (const section of document.querySelectorAll('main > section')) expect(section.innerHTML, section.id).not.toContain('hello@agenticcloudcomputer.com');
     // The paste hint under it came off with note #978; the phone keeps its
@@ -192,61 +192,23 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
   // Note #827: the drawing and the film stay; since note #835 the drawing of
   // what runs on whose side is in the own-cloud chapter, the film under For
   // your team.
-  it('keeps the drawing in the own-cloud chapter and the film under For your team, each named once for a screen reader', () => {
+  it('keeps the drawing in the own-cloud chapter, named once for a screen reader', () => {
     render(<PrivateCopy />);
 
-    const team = document.querySelector('#for-your-team')!;
     expect(document.querySelector('#own-cloud #your-side figure.copy-art')).toBeTruthy();
-    expect(team.querySelector('figure.copy-art')).toBeNull();
+    // For your team and its install film left with note #984.
+    expect(document.querySelector('#for-your-team')).toBeNull();
     for (const figure of document.querySelectorAll('figure.copy-art')) {
       const named = figure.matches('[role="img"]') ? [figure] : [...figure.querySelectorAll('[role="img"]')];
       expect(named.length, figure.className).toBeGreaterThan(0);
       for (const picture of named) expect((picture.getAttribute('aria-label') ?? '').length).toBeGreaterThan(40);
     }
-    // The opening is words and the line for the agent, not a drawing.
-    expect(document.querySelector('#home-top figure')).toBeNull();
     const order = installer.match(/const ROLL_ORDER = \[([^\]]+)\]/)![1].match(/'([a-z]+)'/g)!.map((name) => name.slice(1, -1));
     expect(ROLLED_APPS).toEqual(order);
-    expect(team.querySelector(`a[href="${AGENT_GUIDE_PATH}"]`)).toBeTruthy();
-  });
-
-  it('shows the install film with a poster, and never plays it by itself', () => {
-    render(<PrivateCopy />);
-
-    const videos = [...document.querySelectorAll('#install video')] as HTMLVideoElement[];
-    expect(videos).toHaveLength(INSTALL_FILM ? 1 : 0);
-    if (!INSTALL_FILM) return;
-    const [video] = videos;
-    expect(video.autoplay).toBe(false);
-    // Note #839: the clean poster first, with our own play button and no
-    // browser controls over the caption in the picture; pressing it shows
-    // the controls.
-    expect(video.hasAttribute('controls')).toBe(false);
-    const play = screen.getByRole('button', { name: 'Play the film of a real install' });
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
-    fireEvent.click(play);
-    expect(video.hasAttribute('controls')).toBe(true);
-    expect(screen.queryByRole('button', { name: 'Play the film of a real install' })).toBeNull();
-    expect(video.muted).toBe(true);
-    expect(video.getAttribute('preload')).toBe('none');
-    expect(video.getAttribute('poster')).toBeTruthy();
-    expect(video.querySelector('source')!.getAttribute('src')).toBe(filmUrl(INSTALL_FILM_PATH));
-    expect(filmUrl('private-copy/x.mp4')).toMatch(/^https:\/\/[^/]+\/private-copy\/x\.mp4$/);
-    // No caption under the player since note #958 ("remove helper texts").
-    expect(document.querySelector('#install figcaption')).toBeNull();
-  });
-
-  // The close is the founder's own address (note #832); the keys still come
-  // from hello@, as "How to start" says.
-  it('ends on how to get in touch', () => {
-    render(<PrivateCopy />);
-
-    const contact = document.querySelector('#contact')!;
-    // The address is the link's (note #978 took off the paragraph that
-    // spelled it out).
-    expect((contact.textContent ?? '').trim()).toMatch(/^Talk to us\.\s*Write to the founder/);
-    expect([...contact.querySelectorAll('a')].every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
-    expect(document.querySelector('#start')!.textContent).not.toMatch(/update key|licence from us/);
+    // "Read the guide your agent follows" left with For your team; the
+    // guide is still the address inside the line to copy.
+    expect(document.querySelector(`a[href="${AGENT_GUIDE_PATH}"]`)).toBeNull();
+    expect(document.querySelector('#give-your-agent code')!.textContent).toContain(AGENT_GUIDE_PATH);
   });
 
   // The old address answers for good (public/_redirects), and the edge

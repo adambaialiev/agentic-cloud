@@ -1261,14 +1261,6 @@ html:has(.landing-film-dialog[open]) { overflow: hidden; }
 @media (max-width: 760px) {
 }
 
-/* The home page's team view (note #840, LivePeople): the People page's own
-   cards, two teammates side by side at one height on a desk (the People
-   page aligns them to the top), one above the other on a phone. Through
-   .ws-live, the scope the product's own rule is built under: without it the
-   two selectors weigh the same, the product's comes later and wins, and the
-   cards only matched while their words did (note #926). */
-.landing-people .ws-live .plates.peopleplates { align-items: stretch; }
-@media (max-width: 640px) { .landing-people .ws-live .plates.peopleplates { grid-template-columns: minmax(0, 1fr); } }
 
 /* The founder's card on the home page (note #786): the builder page's own
    head and board, the head a door to that page. */

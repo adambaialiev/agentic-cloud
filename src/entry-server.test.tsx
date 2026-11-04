@@ -221,8 +221,11 @@ describe('prerendered routes', () => {
     // Sign-up was the door until note #822 (only the private copy is
     // offered); for a few hours (note #791) it was a request form, and
     // nothing may link that page now. Since note #924 the first screen's
-    // door is a text link to How to start, on the same page.
-    expect(first).toContain('href="#start"');
+    // door was a text link to How to start, on the same page; since note
+    // #984 that screen is gone and the page opens on the film, so the
+    // section itself is the door.
+    expect(first).toContain('id="start"');
+    expect(first).not.toContain('href="#start"');
     expect(first).not.toContain('href="/signup"');
     expect(first).not.toContain('href="/request-access"');
     expect(first).not.toContain('t.me/');

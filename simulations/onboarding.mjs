@@ -80,7 +80,9 @@ await runBrowserScenario({
     // Since note #924 no button jumps to it: the home page's way to start is
     // its How to start section, the line for an agent at its top.
     assert.ok(await page.$('#start #give-your-agent'), 'the landing page has no line for your own Agentic Cloud');
-    assert.ok(await page.$('a[href="#start"]'), 'the landing page has no way to How to start');
+    // Since note #984 the page is five screens and How to start is one of
+    // them: the first screen's text link to it left with its screen.
+    assert.equal(await page.$('a[href="#start"]'), null, 'a link to How to start came back above it');
     await page.goto(`${app.origin}/signup`, { waitUntil: 'domcontentloaded' });
 
     // 2. One card makes the account: their name, an address here, a password.

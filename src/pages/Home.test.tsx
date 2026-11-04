@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL, TEAM_HEADING } from './Home';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
@@ -25,7 +25,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // five faces, each answered by the product; then "and all of it runs in
   // your own cloud"; How to start, For your team and Talk to us as they were.
   // The long tour is /product's alone.
-  it('runs the problem in five faces, then the own cloud, how to start, for your team, close', () => {
+  it('runs five screens: the film, the workplace, the own cloud, how to build yours, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -33,80 +33,16 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       .map((node) => node.textContent);
     expect(headings).toEqual([
       HOME_HEADLINE,
-      'Here’s the workplace.',
-      TEAM_HEADING,
-      'No session starts from zero.',
-      'Add a key once. Every agent can use it.',
-      'A desk for every agent.',
-      'Hand out work from one chat.',
       OWN_CLOUD_HEADING,
       'Build your own Agentic Cloud.',
-      'For your team.',
-      'Talk to us.',
     ]);
+    // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
+    // screens: the film, the workplace drawing, the own cloud, how to build
+    // yours, the footer. The headline is the page's one h1, not drawn.
+    expect(document.querySelector('main h1')!.className).toMatch(/\bsr-only\b/);
+    for (const id of ['#home-top', '#team', '#memory', '#keys', '#computers', '#work', '#for-your-team', '#contact']) expect(document.querySelector(id), id).toBeNull();
     expect([...document.querySelectorAll('h1')].filter((node) => !node.closest('.ws-live'))).toHaveLength(1);
     for (const gone of ['#proof', '#homeFounder', '#home-context', '#built-in', '#subscriptions', '#apps', '#home-close']) expect(document.querySelector(gone), gone).toBeNull();
-  });
-
-  // One paragraph per face, the problem named before the answer
-  // (landing-copy-rules), beside the product's own panel.
-  it('answers each face with its heading and the product’s own panel, no paragraph (note #978)', () => {
-    answer();
-    draw();
-    const faces = ['#team', '#memory', '#keys', '#computers', '#work'].map((id) => document.querySelector(id)!);
-    // Since note #978 (the owner, 4 Nov 2026, 13:26 UTC: "each section
-    // should be without description text") a face is its heading and its
-    // panel: the paragraph under the heading came off.
-    // (A panel's own words, and its one sentence for a screen reader, stay.)
-    const shown = (root: Element) => [...root.querySelectorAll('p')].filter((p) => !p.closest('.ws-live') && !p.classList.contains('sr-only'));
-    for (const face of faces) expect(shown(face), face.id).toHaveLength(0);
-    // Note #839: the rhythm varies, the panel on the left every other
-    // section. Since note #924 the chat sits beside its words too, as the
-    // other four panels do, instead of wide under them.
-    expect(['#team', '#memory', '#keys', '#computers', '#work'].map((id) => document.querySelector(`${id} [data-face-words]`)!.className.includes('lg:order-2'))).toEqual([false, true, false, true, false]);
-    for (const id of ['#team', '#memory', '#keys', '#computers', '#work']) {
-      const grid = document.querySelector(`${id} [data-face-words]`)!.parentElement!;
-      expect(grid.className, id).toMatch(/lg:grid-cols-/);
-      expect(grid.querySelector('.ws-live'), id).toBeTruthy();
-    }
-    // Note #924: a sentence the plan's caption or the heading already says
-    // came out of three of them; no claim did.
-    // The workplace, not the laptop (the owner, 29 Oct, 18:59 UTC).
-    // The panels: the Workspace's own screens, the People page's cards first.
-    for (const id of ['#team', '#memory', '#keys', '#computers', '#work']) expect(document.querySelector(`${id} .ws-live`), id).toBeTruthy();
-    // Note #840 (the owner, 30 Oct, 13:30 UTC): two teammates, neither "You"
-    // nor an admin, each with a presence line and a latest action, both in
-    // initials; not Priya Shah.
-    const cards = [...document.querySelectorAll('#team .personplate')];
-    expect(cards.map((card) => card.querySelector('.personname .name')?.textContent)).toEqual(['Lena Fischer', 'James Okafor']);
-    expect(cards.map((card) => card.querySelector('.personhead .initials')?.textContent)).toEqual(['LF', 'JO']);
-    expect(document.querySelector('#team .badge')).toBeNull();
-    expect(cards.map((card) => card.querySelector('.personstate')?.textContent)).toEqual(['Here now', 'Active 6m ago']);
-    expect(cards.map((card) => (card.querySelector('.personlatest')?.textContent ?? '').replace(/\u00a0/g, ' '))).toEqual([
-      // One latest line (note #960): her agents' merge is newer than her own.
-      'Merged: Route optimiser, first cut · 6m ago',
-      'Approved Ruby’s proposal: route optimiser, first cut · 6m ago',
-    ]);
-    expect(document.querySelector('#team')!.textContent).not.toMatch(/Priya|Admin/);
-    // Note #926 (the owner, 31 Oct 2026: contribution is "a hook"): the
-    // heading leads with people and what their agents shipped, the paragraph
-    // says only what the product's This week block shows (note #925), and
-    // each card carries that block, with figures that differ.
-    expect(TEAM_HEADING).toBe('See what everyone’s agents shipped. Live.');
-    const weeks = cards.map((card) => card.querySelector('.pcontrib')!);
-    expect(weeks.map((week) => week.querySelector('.pchead')?.textContent)).toEqual(['This week', 'This week']);
-    // One grammar since note #928: every figure a cell, tokens one per provider.
-    expect(weeks.map((week) => [...week.querySelectorAll('.pcstats > div')].map((stat) => (stat.textContent ?? '').replace(/\u00a0/g, ' ')))).toEqual([
-      ['34agent hours', '11changes merged', '2.1Mtokens · Claude Code'],
-      ['19agent hours', '6changes merged', '860Ktokens · Codex'],
-    ]);
-    // The latest change is the card's one latest line when it is the newest
-    // thing there (note #960), never a second line inside the week.
-    expect(weeks.every((week) => !week.querySelector('.pclatest'))).toBe(true);
-    // The block sits between the latest line and the agents, as in the product.
-    for (const card of cards) expect(card.querySelector('.pcontrib + .cagents, .pcontrib ~ .cagents'), 'agents under the week').toBeTruthy();
-    expect(document.querySelector('#computers #agentFacts')).toBeTruthy();
-    expect(document.querySelector('#computers #agentInfoCard')).toBeNull();
   });
 
   // Note #841 (the owner, 30 Oct 2026, 13:31 UTC): one drawing of the whole
@@ -114,15 +50,15 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // Drawn in code, wide on a desk and tall on a phone, each one picture with
   // one sentence for a screen reader, and only the page's own names on it.
   // Redrawn without rooms after they left the product (the owner, 31 Oct).
-  it('shows the whole workplace as one floor plan before the five parts', () => {
+  it('shows the whole workplace as one floor plan, alone in the screen after the film', () => {
     answer();
     draw();
     const plan = document.querySelector('#workplace')!;
-    // The film stood between them from note #951 until note #965 moved it
-    // above the headline.
-    expect(plan.previousElementSibling?.id).toBe('home-top');
-    expect(plan.nextElementSibling?.id).toBe('team');
-    expect(plan.querySelectorAll('p')).toHaveLength(0);
+    // Since note #984 it follows the film and leads to the own cloud, with
+    // no heading: "Here's the workplace." came off; the plan's labels say it.
+    expect(plan.previousElementSibling?.id).toBe(PRODUCT_FILM ? 'film' : undefined);
+    expect(plan.nextElementSibling?.id).toBe('own-cloud');
+    expect(plan.querySelectorAll('h1, h2, h3, p')).toHaveLength(0);
     expect(plan.querySelectorAll('img')).toHaveLength(0);
     const drawings = [...plan.querySelectorAll('svg[role="img"]')];
     expect(drawings).toHaveLength(2);
@@ -151,31 +87,6 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     }
   });
 
-  // The first screen is the product: the headline written from the owner's
-  // phrase, one line naming the five faces, and since note #924 (the owner,
-  // 31 Oct 2026: "Build yours" read as confusing) no button: one text link
-  // to How to start, in a row of its own so the cards stay level with the
-  // words.
-  it('opens on the headline and a text link that names the one action', () => {
-    answer();
-    draw();
-    const top = document.querySelector('#home-top')!;
-    // Since note #978 the headline stands without the line under it.
-    expect(top.querySelector('#homeWhat')).toBeNull();
-    expect([...top.querySelectorAll('p')].filter((p) => !p.closest('.ws-live') && !p.classList.contains('sr-only'))).toHaveLength(0);
-    expect([...top.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()])).toEqual([['#start', 'Build your own Agentic Cloud']]);
-    expect(top.querySelector('#home-door')!.className).toMatch(/\blg:col-start-1\b/);
-    expect(top.querySelector('a')!.className).not.toMatch(/\bbg-white\b|\brounded-xl\b/);
-    expect(document.querySelector('main a[href="/#give-your-agent"]')).toBeNull();
-    // A picture on a desk (the Workspace's agent list), none on a phone.
-    expect(top.querySelector('#home-fleet')!.className).toMatch(/\bhidden\b.*\blg:block\b/);
-    expect(top.querySelector('#home-fleet .ws-live')).toBeTruthy();
-    expect(top.querySelector('code')).toBeNull();
-    expect(document.querySelector('#start #give-your-agent code')?.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
-    // The qualifier under the action came off with note #978.
-    expect(document.querySelector('#start #qualifier')).toBeNull();
-  });
-
   // Note #832: a cold email is read on a phone, where the line cannot run.
   it('gives a phone two doors: the line by mail to yourself, and the founder', () => {
     answer();
@@ -195,28 +106,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
 
   // claims-we-never-make, for the new words: no agent counts, no "approves
   // each other's changes", "free" only for the first month.
-  it('makes none of the claims we never make in the five faces', () => {
+  it('makes none of the claims we never make on its screens', () => {
     answer();
     draw();
-    const faces = ['#home-top', '#workplace', '#team', '#memory', '#keys', '#computers', '#work']
-      .map((id) => document.querySelector(id)!.textContent ?? '').join(' ');
-    expect(faces).not.toMatch(/\b(twenty|hundred|unlimited|\d+ agents)\b/i);
-    expect(faces).not.toMatch(/each other.s (changes|work)|approve each other/i);
-    expect(faces).not.toMatch(/\bfree\b/i);
-    expect(faces).not.toMatch(/most secure|never forgets/i);
-  });
-
-  it('closes on the founder’s own address', () => {
-    answer();
-    draw();
-    const close = document.querySelector('#contact')!;
-    // Since note #978 the close is its heading and one link, to the
-    // founder's own address; the paragraph that spelled the address out
-    // came off with every section's description.
-    expect(close.querySelectorAll('p')).toHaveLength(0);
-    const links = [...close.querySelectorAll('a')];
-    expect(links.map((link) => (link.textContent ?? '').trim())).toEqual(['Write to the founder']);
-    expect(links.every((link) => link.getAttribute('href')?.startsWith('mailto:adam@agenticcloudcomputer.com'))).toBe(true);
+    const words = [...document.querySelectorAll('main > section')].map((section) => section.textContent ?? '').join(' ');
+    expect(words).not.toMatch(/\b(twenty|hundred|unlimited|\d+ agents)\b/i);
+    expect(words).not.toMatch(/each other.s (changes|work)|approve each other/i);
+    expect(words).not.toMatch(/most secure|never forgets/i);
   });
 
   // Note #791 (the owner, 2026-10-25): the apps people built here are off
@@ -238,7 +134,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     // note #977 (the owner: "Remove header") there is none: the film is the
     // first thing, and the footer carries the name.
     expect(document.querySelector('header')).toBeNull();
-    expect(document.querySelector('main')!.firstElementChild?.id).toBe(PRODUCT_FILM ? 'film' : 'home-top');
+    expect(document.querySelector('main > section')?.id).toBe(PRODUCT_FILM ? 'film' : 'workplace');
     expect(document.querySelector('footer')!.textContent).toMatch(/Agentic Cloud Computer/);
     expect(screen.queryAllByRole('link', { name: /Sign up/ })).toEqual([]);
     expect(document.querySelector('a[href="/signup"]')).toBeNull();
@@ -295,8 +191,9 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     if (!PRODUCT_FILM) return;
     const film = document.querySelector('#film')!;
     expect(document.querySelector('main section')).toBe(film);
-    expect(film.nextElementSibling?.id).toBe('home-top');
-    expect(film.compareDocumentPosition(document.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The first screen; the page's h1 (not drawn, note #984) precedes it.
+    expect(film.nextElementSibling?.id).toBe('workplace');
+    expect(film.previousElementSibling?.tagName).toBe('H1');
     // No heading, paragraph or caption around it; one link, to the site.
     expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
     expect(screen.queryByText('Watch it work, start to finish.')).toBeNull();
@@ -514,7 +411,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'home-top', 'workplace', 'team', 'memory', 'keys', 'computers', 'work', 'own-cloud', 'start', 'for-your-team', 'contact',
+      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start',
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);
@@ -533,7 +430,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     // screen allows, unless that is taller than min(screen, 900 px) leaves.
     const box = document.querySelector('#film [data-film-box]')!;
     expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_175px\)\*9\/16\)\)\]/);
-    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_250px\)\*16\/9\)\)\]/);
+    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_260px\)\*16\/9\)\)\]/);
     expect(box.querySelector('[data-film-timeline]')).toBeTruthy();
     expect(box.querySelector('#film-site a')).toBeTruthy();
   });

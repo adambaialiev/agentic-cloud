@@ -1,8 +1,10 @@
 /**
  * Where the site's films are served from: the one place both film addresses
- * are made (note #957). The home page's film (Home.tsx, PRODUCT_FILM) and the
- * install film (PrivateCopy.tsx, INSTALL_FILM) name only their path here, so
- * moving every film is a change to FILMS_ORIGIN and nothing else.
+ * are made (note #957). The home page's films (Home.tsx, PRODUCT_FILM and
+ * PRODUCT_FILM_TALL) name only their path here, so moving every film is a
+ * change to FILMS_ORIGIN and nothing else. The install film (INSTALL_FILM,
+ * private-copy/install-film-2026-10-29.mp4) left the page with note #984;
+ * its object is still in the bucket.
  *
  * Cloudflare R2 since note #957 (the owner, 3 Nov 2026, 08:03 UTC: "Video
  * should not be hosted on fly, but on cloudflare"): the bucket acc-films
@@ -44,4 +46,3 @@ export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-framed-1280x720.
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
 export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-framed-720x1280.mp4';
-export const INSTALL_FILM_PATH = 'private-copy/install-film-2026-10-29.mp4';
