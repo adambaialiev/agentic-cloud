@@ -393,7 +393,11 @@ describe('the fleet', () => {
     expect(document.getElementById('agentCounts')!.textContent).toBe('3 total · 2 active · 1 idle');
   });
 
-  it('a paused agent with no matching seat goes to the sign-in door; with one, to its own screen', async () => {
+  // Note #983: the plate of a paused agent with no matching seat used to lead
+  // only to the sign-in, so an agent whose sign-in had lapsed had no way to
+  // its own screen — the one place it is deleted. The plate opens that
+  // screen now, and the line that names the sign-in is the sign-in's door.
+  it('a paused agent with no matching seat opens its own screen, and its line opens the sign-in', async () => {
     home(emptyState({
       org: { ...org, seatProviders: ['codex'] },
       agents: [
@@ -404,7 +408,9 @@ describe('the fleet', () => {
     await findHome();
     expect(rowOf('Paused').querySelector('.ctext.act')!.textContent).toBe('Paused — sign in Claude');
     expect(rowOf('Choose').querySelector('.ctext.act')!.textContent).toBe('Paused — choose a subscription');
-    fireEvent.click(rowOf('Paused'));
+    // A seat it can have is chosen on its own screen: that line is words.
+    expect(rowOf('Choose').querySelector('.ctext.act')!.hasAttribute('data-row-door')).toBe(false);
+    fireEvent.click(rowOf('Paused').querySelector('.ctext.act')!);
     expect(await screen.findByRole('heading', { name: 'Your subscriptions' })).toBeTruthy();
   });
 
@@ -420,6 +426,7 @@ describe('the fleet', () => {
       ['Idle', '/chat/idle'],
       ['Busy', '/chat/busy'],
       ['Choose', 'page /agents/choose'],
+      ['Paused', 'page /agents/paused'],
       ['Making', 'page /agents/making'],
       ['Limited', 'page /agents/limited'],
       ['Gone', 'page /agents/gone'],
@@ -431,6 +438,7 @@ describe('the fleet', () => {
           agent({ id: 'idle', name: 'Idle' }),
           agent({ id: 'busy', name: 'Busy', working: true }),
           agent({ id: 'choose', name: 'Choose', cli: 'codex', status: 'needs-seat' }),
+          agent({ id: 'paused', name: 'Paused', status: 'needs-seat' }),
           agent({ id: 'making', name: 'Making', status: 'setting-up' }),
           agent({ id: 'limited', name: 'Limited', sessionLimit: { hitAt: soon, resetAt: soon, resumeReady: false } }),
           agent({ id: 'gone', name: 'Gone', status: 'retired' }),

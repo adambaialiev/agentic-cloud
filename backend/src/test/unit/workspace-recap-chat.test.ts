@@ -1406,6 +1406,23 @@ describe('the orchestrator verbs (note #710)', () => {
     expect(settled.messages.filter(m => m.role === 'action').map(m => m.text)).toEqual(['Asked the person to remove Theo: its work is finished.']);
     expect(recapRowViews(settled.messages)).toContainEqual({ form: 'remove-agent', agent: 'Theo', reason: 'its work is finished' });
   });
+  // Note #983: an agent that cannot run — here Theo, a Codex agent with no
+  // ChatGPT sign-in anywhere in the workplace, which is what its screen
+  // calls "Paused — sign in ChatGPT" — is asked about exactly like an idle
+  // one. The ask needs no seat and no turn of the agent's.
+  it('asks the person to remove a paused agent too: no seat of its kind, no turn, still flagged', async () => {
+    const x = await setup([]);
+    expect(await x.orgStorage.listSeatsByMember(x.org, 'u1')).toEqual([]);
+    x.model.mockImplementation(async () => {
+      expect(await x.removeFromAgent('Theo', 'its ChatGPT sign-in has lapsed')).toEqual({ ok: true, name: 'Theo' });
+      return { text: 'Asked you to remove Theo.' };
+    });
+    await x.chat.send('u1', x.org, 'request-1', 'Remove Theo, his sign-in expired');
+    await x.done();
+    const record = (await x.userStorage.getProfile('u1'))!.telegram!.agents!.a1!;
+    expect(record.removeAsk).toMatchObject({ byUserId: 'u1', reason: 'its ChatGPT sign-in has lapsed' });
+    expect(x.fromUser).not.toHaveBeenCalled();
+  });
 });
 
 describe('agentbuilt agent model (note #776): the picker on an agent\'s screen, used for the person', () => {
