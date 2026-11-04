@@ -972,8 +972,46 @@ export function InstallFilm({
   wide?: boolean;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<'still' | 'starting' | 'playing'>(autoplay ? 'starting' : 'still');
-  const play = () => {
+  const [state, setState] = useState<'still' | 'starting' | 'playing' | 'paused'>(autoplay ? 'starting' : 'still');
+  /* Since note #971 (the owner, 4 Nov 2026, 07:46 UTC: "Yes agree with tap
+     to pause") a film that plays by itself is its own pause button: a click
+     or a tap anywhere on it pauses it, another resumes it, and a keyboard
+     reaches it as one button (Space or Enter) named for what it will do.
+     Nothing stays drawn on it: at the moment of the tap a pause or play
+     mark shows in the middle and fades within a second, then the picture
+     is clean again, paused or playing. Still no browser controls. */
+  const [mark, setMark] = useState<{ kind: 'pause' | 'play'; fading: boolean; n: number } | null>(null);
+  const markTimers = useRef<number[]>([]);
+  useEffect(() => () => markTimers.current.forEach((timer) => window.clearTimeout(timer)), []);
+  const flash = (kind: 'pause' | 'play') => {
+    markTimers.current.forEach((timer) => window.clearTimeout(timer));
+    const n = Date.now();
+    setMark({ kind, fading: false, n });
+    markTimers.current = [
+      window.setTimeout(() => setMark((now) => (now && now.n === n ? { ...now, fading: true } : now)), 450),
+      window.setTimeout(() => setMark((now) => (now && now.n === n ? null : now)), 900),
+    ];
+  };
+  const toggle = () => {
+    const film = video.current;
+    if (!film) return;
+    if (film.paused) {
+      setState('playing');
+      flash('play');
+      const started = film.play();
+      if (started) started.catch(() => setState('paused'));
+    } else {
+      film.pause();
+      setState('paused');
+      flash('pause');
+    }
+  };
+  const what = label.replace(/^Play /, '');
+  /* Our play button goes when the film starts; a keyboard that pressed it
+     lands on the film's own pause button rather than nowhere. */
+  const handFocus = useRef(false);
+  const play = (event?: { currentTarget: EventTarget }) => {
+    handFocus.current = autoplay && !!event && document.activeElement === event.currentTarget;
     setState('playing');
     const started = video.current?.play();
     if (started) started.catch(() => undefined);
@@ -1011,6 +1049,8 @@ export function InstallFilm({
           disablePictureInPicture={autoplay || undefined}
           disableRemotePlayback={autoplay || undefined}
           onContextMenu={autoplay ? (event) => event.preventDefault() : undefined}
+          onPlay={autoplay ? () => setState('playing') : undefined}
+          onPause={autoplay ? () => setState((now) => (now === 'playing' ? 'paused' : now)) : undefined}
           playsInline
           muted
           loop={autoplay}
@@ -1021,6 +1061,39 @@ export function InstallFilm({
         >
           <source src={src} type="video/mp4" />
         </video>
+        {autoplay && (state === 'playing' || state === 'paused') ? (
+          <button
+            type="button"
+            ref={(node) => {
+              if (node && handFocus.current) {
+                handFocus.current = false;
+                node.focus();
+              }
+            }}
+            onClick={toggle}
+            onContextMenu={(event) => event.preventDefault()}
+            aria-label={state === 'playing' ? `Pause ${what}` : `Play ${what}`}
+            data-film-toggle={state}
+            className="absolute inset-0 block h-full w-full cursor-pointer rounded-[20px] bg-transparent [-webkit-tap-highlight-color:transparent] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent"
+          >
+            {mark ? (
+              <span
+                key={mark.n}
+                aria-hidden="true"
+                data-film-mark={mark.kind}
+                className={`pointer-events-none absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/80 text-panel transition-opacity duration-[400ms] motion-reduce:transition-none sm:h-16 sm:w-16 ${mark.fading ? 'opacity-0' : 'opacity-100'}`}
+              >
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+                  {mark.kind === 'pause' ? (
+                    <path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
+                  ) : (
+                    <path d="M8 5.5v13a1 1 0 0 0 1.5.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z" />
+                  )}
+                </svg>
+              </span>
+            ) : null}
+          </button>
+        ) : null}
         {state !== 'still' ? null : (
           <button
             type="button"

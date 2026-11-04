@@ -341,10 +341,58 @@ describe('Home, the film first and playing by itself (note #965)', () => {
     // Our own play button is the one way to start it; pressed, it plays
     // with no controls either (note #970).
     const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents, 1 minute 26 seconds/ });
+    button.focus();
     fireEvent.click(button);
     expect(play).toHaveBeenCalledTimes(1);
     expect(video.hasAttribute('controls')).toBe(false);
     expect(screen.queryByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeNull();
+    // Started, the same tap pauses and resumes it (note #971).
+    // A keyboard that pressed our button lands on the film's own button.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Pause the film of Bookface 2006/ }));
+  });
+
+  // Note #971 (the owner, 4 Nov 2026, 07:46 UTC: "Yes agree with tap to
+  // pause"): the film is its own button. A click or tap pauses it, another
+  // resumes it; a keyboard reaches it as a button named for what it will do;
+  // a mark shows at the tap and goes; never the browser's controls.
+  it('pauses on a tap and resumes on the next, with no controls and no mark left behind', async () => {
+    answer();
+    reduce(false);
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    let paused = false;
+    vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(() => paused);
+    draw();
+    await settle();
+    if (!PRODUCT_FILM) return;
+    const video = document.querySelector('#film video')!;
+    const toggle = screen.getByRole('button', { name: /^Pause the film of Bookface 2006, built by two people’s agents/ });
+    // The whole picture is the button, and it is a real button, so Space and
+    // Enter work and it takes focus.
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.className).toMatch(/\binset-0\b/);
+    expect(toggle.className).toMatch(/focus-visible:outline/);
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(toggle);
+      expect(pause).toHaveBeenCalledTimes(1);
+      paused = true;
+      expect(toggle.getAttribute('aria-label')).toMatch(/^Play the film of Bookface 2006/);
+      expect(toggle.querySelector('[data-film-mark="pause"]')).toBeTruthy();
+      expect(video.hasAttribute('controls')).toBe(false);
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(toggle.querySelector('[data-film-mark]')).toBeNull();
+      fireEvent.click(toggle);
+      expect(play).toHaveBeenCalledTimes(2);
+      paused = false;
+      expect(toggle.getAttribute('aria-label')).toMatch(/^Pause the film of Bookface 2006/);
+      expect(toggle.querySelector('[data-film-mark="play"]')).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(toggle.querySelector('[data-film-mark]')).toBeNull();
+      expect(video.hasAttribute('controls')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows the poster and play button when the browser refuses to start it', async () => {
