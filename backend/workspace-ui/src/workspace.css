@@ -1615,6 +1615,8 @@ button.chatmsg.platform.aside:active {
   color: var(--text); font-size: var(--ui-read); line-height: 1.5;
   animation: turnrecapin .4s ease-out;
 }
+/* No one word left alone on a sentence's last line. */
+.turnrecap .turnrecaptext p { text-wrap: pretty; }
 .turnrecap .turnrecaptext p + p { margin-top: 2px; }
 @keyframes turnrecapin { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .turnrecap .turnrecaptext { animation: none; } }
