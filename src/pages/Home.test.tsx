@@ -297,12 +297,28 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect(document.querySelector('main section')).toBe(film);
     expect(film.nextElementSibling?.id).toBe('home-top');
     expect(film.compareDocumentPosition(document.querySelector('h1')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // No heading, paragraph or caption around it; its one link is plain.
+    // No heading, paragraph or caption around it; one link, to the site.
     expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
     expect(screen.queryByText('Watch it work, start to finish.')).toBeNull();
     const links = [...film.querySelectorAll('a')].map((a) => [a.getAttribute('href'), (a.textContent ?? '').trim()]);
-    expect(links).toEqual(BOOKFACE_URL ? [[BOOKFACE_URL, BOOKFACE_LINK]] : []);
-    expect(film.querySelector('a')?.className ?? '').not.toMatch(/\bbg-white\b|\brounded-xl\b/);
+    expect(links).toEqual(BOOKFACE_URL ? [[BOOKFACE_URL, `${BOOKFACE_LINK} (opens in a new tab)`]] : []);
+    if (BOOKFACE_URL) {
+      // Note #981 (the owner, 4 Nov 2026, 13:58 UTC: "Open the site they
+      // built should have different design and open in new tab"): a new tab,
+      // said to a screen reader, with an outward arrow; an outlined pill at
+      // least 44 px tall, not the page's underlined text link and not a
+      // filled button.
+      const site = film.querySelector<HTMLAnchorElement>('#film-site a')!;
+      expect(site.target).toBe('_blank');
+      expect(site.rel).toBe('noopener noreferrer');
+      expect(site.querySelector('.sr-only')?.textContent).toBe(' (opens in a new tab)');
+      expect(site.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(site.className).toMatch(/\brounded-full\b/);
+      expect(site.className).toMatch(/\bborder\b/);
+      expect(site.className).toMatch(/\bmin-h-11\b/);
+      expect(site.className).not.toMatch(/(^|\s)bg-white\b|\bborder-b\b/);
+      expect(site.closest('[data-film-box]')).toBeTruthy();
+    }
     const video = film.querySelector('video')!;
     // Started from code, never by the attribute, so reduced motion holds.
     expect(video.autoplay).toBe(false);

@@ -155,6 +155,35 @@ function Face({ id, heading, panel, side = 'right' }: { id: string; heading: str
   );
 }
 
+/* The film's one door (note #981, the owner, 4 Nov 2026, 13:58 UTC: "Open
+   the site they built should have different design and open in new tab").
+   It is the first screen's one action, so it is not set like the page's
+   underlined text links: an outlined pill in the page's own ink, 44 px tall
+   for a thumb, with an arrow pointing out of the page, under the timeline
+   as part of the film block. It opens the site in a new tab (noopener,
+   noreferrer) so the film stays where the visitor left it, and says so to a
+   screen reader. Of the two shown on the proposal it is the outline, not
+   the filled ink pill: a filled button is the one shape this page has
+   turned down twice (the owner, 2026-09-07: it "read as a sticker"; note
+   #924 took "Build yours" off), and beside a light film an outline reads as
+   part of the player, not as a call to buy. */
+function SiteLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group inline-flex min-h-11 items-center gap-2.5 rounded-full border border-white/30 px-5 type-sm font-semibold text-white transition-colors hover:border-white hover:bg-white/[0.04] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:type-base"
+    >
+      {children}
+      <span className="sr-only"> (opens in a new tab)</span>
+      <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5" fill="none">
+        <path d="M7 13l6-6M8 6.5h5.5V12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </a>
+  );
+}
+
 export default function Home() {
   return (
     <main
@@ -197,8 +226,8 @@ export default function Home() {
               label="Play the film of Bookface 2006, built by two people’s agents, no sound"
             />
             {BOOKFACE_URL ? (
-              <div id="film-site" className="mt-5 sm:mt-6">
-                <PrimaryLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</PrimaryLink>
+              <div id="film-site" className="mt-4 sm:mt-5">
+                <SiteLink href={BOOKFACE_URL}>{BOOKFACE_LINK}</SiteLink>
               </div>
             ) : null}
           </div>
