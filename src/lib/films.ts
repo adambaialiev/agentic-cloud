@@ -56,8 +56,14 @@ export function filmUrl(path: string): string {
    photo beat out): the wide one 1:25, 1280x720, 3.7 MB; the tall one 1:32,
    720x1280, 5.2 MB; same encode, posters from the seventh masters in the
    bundle. */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-seventh-1280x720.mp4';
+/* Since note #992 both are Iris's eighth cut (note #991, Adam's instructions
+   of 4 Nov 2026, 20:41 and 20:44 UTC: the agents sheets and the
+   contributors page out, the Workplace window opening from the Chief of
+   Staff's face in, name-only labels beside the phones): the wide one 1:24,
+   1280x720, 3.7 MB; the tall one 1:31, 720x1280, 5.4 MB; same encode,
+   posters from the eighth masters in the bundle. */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-eighth-1280x720.mp4';
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
-export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-seventh-720x1280.mp4';
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-eighth-720x1280.mp4';

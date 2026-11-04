@@ -4,8 +4,8 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-seventh-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-seventh-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-eighth-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-eighth-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -111,7 +111,11 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    from "Your team." Iris's starts (wide 17.5 / 49.8 / 75.7 s, tall 17.5 /
    57.1 / 83.0 s) are again each crossfade's middle, read the same way; the
    close's words come in one by one, so its jump lands once "Your team."
-   is fully drawn. */
+   is fully drawn.
+   Since note #992 the film is the eighth cut: the same four acts and
+   names, "Two people" now ending on the Workplace window ("And it all
+   lives in one workplace: ..."). Iris's starts (wide 17.5 / 48.6 / 74.5 s,
+   tall 17.5 / 55.9 / 81.8 s) are read the same way. */
 export const FILM_SECTION_NAMES = ['One person', 'Two people', 'What they built', 'Your cloud'] as const;
 /* On a phone the four share one row, two lines at most. The sixth cut's
    names are short enough to read there whole, so they are the same. */
@@ -120,14 +124,14 @@ const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at,
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  length: 84.73,
-  sections: sectionsAt([0, 17.9, 50.2, 76.4]),
+  length: 83.53,
+  sections: sectionsAt([0, 17.9, 49.0, 75.2]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
-  length: 92.07,
-  sections: sectionsAt([0, 18.0, 57.5, 83.7]),
+  length: 90.83,
+  sections: sectionsAt([0, 17.9, 56.3, 82.5]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface
