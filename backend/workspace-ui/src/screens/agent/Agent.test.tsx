@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceAgentVersionAnswer, WorkspaceStateAnswer } from '../../../../src/shared/workspace-api.js';
+import type { WorkspaceAgentRow, WorkspaceAgentVersionAnswer, WorkspaceStateAnswer } from '../../../../src/shared/workspace-api.js';
 import { WorkspaceApiError } from '../../api/client.js';
 import { App } from '../../App.js';
 import {
@@ -1475,6 +1475,53 @@ describe('the delete', () => {
     fireEvent.change(screen.getByLabelText('Type Felix to confirm'), { target: { value: 'Felix ' } });
     expect(go.disabled).toBe(false);
     expect(deleted).toEqual([]);
+  });
+
+  // Note #983 (Adam, 4 Nov 2026): a Codex agent whose ChatGPT sign-in had
+  // lapsed could not be removed. Every state that stops an agent running
+  // without being a running turn is deleted the way an idle one is: the same
+  // button, the same typed name, the same one request.
+  it('deletes an agent that cannot run — a lapsed sign-in, a paused subscription, a build that never finished — exactly as an idle one', async () => {
+    const blocked: Array<Partial<WorkspaceAgentRow>> = [
+      { status: 'needs-seat', cli: 'codex' },
+      { status: 'needs-seat', cli: 'opencode' },
+      { status: 'needs-seat' },
+      { status: 'payment-required' },
+      { status: 'setting-up' },
+      { status: 'retired' },
+    ];
+    for (const shape of blocked) {
+      const deleted: string[] = [];
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/agents/felix']}>
+          <App api={scriptedApi({
+            ...workspaceScript(() => emptyState({ org, agents: deleted.length ? [] : [agent({ ...felix(), ...shape })] })),
+            ...agentScreenScript('felix', () => versionAnswer()),
+            'DELETE api/agents/felix': (call) => { deleted.push(call.path); return { ok: true, name: 'Felix', machine: 'destroyed', remaining: 0 }; },
+          }).api} />
+        </MemoryRouter>,
+      );
+      await title();
+      const button = screen.getByRole('button', { name: 'Delete this agent' }) as HTMLButtonElement;
+      expect([shape, button.disabled]).toEqual([shape, false]);
+      fireEvent.click(button);
+      fireEvent.change(screen.getByLabelText('Type Felix to confirm'), { target: { value: 'Felix' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect([shape, deleted]).toEqual([shape, ['api/agents/felix']]));
+      unmount();
+    }
+  });
+
+  it('shows the Workspace Agent\'s ask on a paused agent too, over the same delete, with the sign-in it waits for one tap away', async () => {
+    open(emptyState({ org, agents: [agent({ ...felix(), cli: 'codex', status: 'needs-seat', removeAsk: { at: '2026-11-04T14:00:00.000Z', canDecide: true, byAgentName: 'Workspace Agent' } })] }), {
+      ...agentScreenScript('felix', () => versionAnswer()),
+    });
+    await title();
+    expect(document.getElementById('agentRemoveAsk')!.textContent).toBe('Chief of Staff asked you to remove this agent');
+    expect(screen.getByRole('button', { name: 'Delete this agent' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Keep it' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in ChatGPT' }));
+    expect(await screen.findByRole('heading', { name: 'Your subscriptions' })).toBeTruthy();
   });
 
   // Home with the agents picker up: where the reader's agents are since

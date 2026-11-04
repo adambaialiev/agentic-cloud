@@ -215,7 +215,7 @@ function AgentSheet({ currentId, onClose, still, pages, moves, onPageBack }: {
   /** Close the page on top. */
   onPageBack: () => void;
 }) {
-  const { agents, state, status } = useWorkspace();
+  const { agents, status } = useWorkspace();
   const { removed, departingRows, pendingCreates } = useFleet();
   const card = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -239,7 +239,6 @@ function AgentSheet({ currentId, onClose, still, pages, moves, onPageBack }: {
   // its own Close, and the conversation above it is still being read.
   useBackClaim(dismiss, true, { covers: false });
 
-  const org = state?.org ?? null;
   // An agent on its way out keeps its card until it has left (note #715),
   // even when a read that landed meanwhile no longer carries it.
   const leavingRows = [...departingRows.values()].filter((row) => !agents?.some((agent) => agent.id === row.id));
@@ -252,7 +251,7 @@ function AgentSheet({ currentId, onClose, still, pages, moves, onPageBack }: {
   // A card is a door like every other row in here: the sheet decides where
   // it leads (a conversation leaves the sheet; an agent still setting up
   // opens as a page).
-  const open = (agent: HomeAgent) => moves.to(pathOf(agentDoor(agent, org)), null, false, 0);
+  const open = (agent: HomeAgent) => moves.to(pathOf(agentDoor(agent)), null, false, 0);
   // The page on top leaves its Back here, for Escape.
   const pageBack = useRef<(() => void) | null>(null);
   // What waits on the reader, over the cards — not over a search, which

@@ -2837,6 +2837,40 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
     expect(lifecycle.deleteAgent).toHaveBeenCalledWith('user-1', 'agent-a');
   });
 
+  // Note #983: an agent paused for want of a sign-in is deleted the way an
+  // idle one is. Nothing on the way out asks for its seat or a turn.
+  it('DELETE /api/agents/:id deletes an agent paused for a lapsed sign-in (needs-seat) like any other', async () => {
+    const { deps, userStorage } = await buildDeps();
+    await userStorage.updateProfile('user-1', {
+      telegram: {
+        chatId: '1', linkedAt: 't', notificationsEnabled: true, telegramUserId: '42',
+        agents: {
+          'agent-h': {
+            id: 'agent-h', name: 'Hazel', cli: 'codex', createdAt: '2026-10-01',
+            serverId: 'fly_ia-hh.aa11', connectedAt: '2026-10-01T10:00:00.000Z',
+          } as never,
+        },
+      } as never,
+    });
+    const orgStorage = new InMemoryOrgStorage();
+    const org = await orgStorage.createOrg({ name: 'Big Bang', createdByUserId: 'user-1' });
+    await orgStorage.addMember({ orgId: org.orgId, userId: 'user-1', role: 'admin' });
+    deps.orgStorage = orgStorage;
+    const lifecycle = lifecycleMock();
+    deps.agentLifecycle = lifecycle;
+
+    const state = createMockResponse();
+    await getRouteHandler(deps, '/api/state', 'get')(mockRequest({ headers: authHeader(42) }), state);
+    expect((state.body as { agents: Array<{ status: string }> }).agents[0]!.status).toBe('needs-seat');
+
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/agents/:id', 'delete')(mockRequest({
+      headers: authHeader(42), params: { id: 'agent-h' },
+    }), res);
+    expect(res.statusCode).toBe(200);
+    expect(lifecycle.deleteAgent).toHaveBeenCalledWith('user-1', 'agent-h');
+  });
+
   it('DELETE /api/agents/:id refuses an agent that is not on the caller\'s profile', async () => {
     const { deps } = await buildDeps();
     const lifecycle = lifecycleMock();

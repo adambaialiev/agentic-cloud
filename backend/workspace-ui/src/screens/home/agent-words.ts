@@ -111,10 +111,16 @@ export function agentPlateLine(
     case 'needs-seat':
       return hasExistingSeatForAgent(agent, org)
         ? 'Paused — choose a subscription'
-        : agent.cli === 'opencode' ? 'Paused — add your OpenCode key' : `Paused — sign in ${subscriptionName(agent.cli)}`;
+        : `Paused — ${signInWords(agent.cli)}`;
     case 'planned': return plannedAgentLine(org);
     default: return 'Setting up — a minute or two';
   }
+}
+
+/** What a paused agent with no seat of its kind asks for, lower-case: the
+ *  tail of its plate line, and (capitalised) its own screen's door to it. */
+export function signInWords(cli: string): string {
+  return cli === 'opencode' ? 'add your OpenCode key' : `sign in ${subscriptionName(cli)}`;
 }
 
 export function agentStatusLine(agent: HomeAgent, now = Date.now()): string {

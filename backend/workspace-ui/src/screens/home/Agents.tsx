@@ -37,6 +37,7 @@ import { AgentFace } from '../../ui/AgentFace.js';
 import { AgentName } from '../../ui/AgentName.js';
 import { ContextRing, WorkingFace } from '../../ui/ContextRing.js';
 import { EmptyState } from '../../ui/EmptyState.js';
+import { ROW_DOOR_ATTR } from '../../ui/FaceDoor.js';
 import { Svg, TypeIcon } from '../../ui/icons.js';
 import { StepsMeter } from '../../ui/SetupSteps.js';
 import { elapsed, useNow } from '../../ui/time.js';
@@ -44,7 +45,7 @@ import { toFor } from '../../routes.js';
 import type { HomeAgent } from '../../workspace/live.js';
 import { useFleet } from '../../workspace/useFleet.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
-import { agentDoor } from './agent-door.js';
+import { agentDoor, agentFixDoor } from './agent-door.js';
 import { AgentFiles } from './AgentFiles.js';
 import { PressableRow } from './PressableRow.js';
 import { TeamAgents } from './TeamAgents.js';
@@ -105,7 +106,10 @@ export function AgentRow({ agent, now }: { agent: HomeAgent; now: number }) {
   const recap = agentRecapLine(agent);
   const arrived = Number.isFinite(agent.recapArrivedAt) && (agent.recapArrivedAt ?? 0) > 0;
   const nowLine = agentNowLine(agent);
-  const open = () => navigate(agentDoor(agent, org));
+  const open = () => navigate(agentDoor(agent));
+  // The plate opens the agent's own screen; a paused line that names a
+  // sign-in is a door of its own to where that sign-in is made (note #983).
+  const fixDoor = going ? null : agentFixDoor(agent, org);
   const runtime = agentRuntimeFacts(agent);
   // What it runs ON, under what it thinks WITH (note #356). Both are identity
   // facts about the agent rather than states it passes through, which is why
@@ -142,7 +146,7 @@ export function AgentRow({ agent, now }: { agent: HomeAgent; now: number }) {
         <div className="cline">
           {live ? <span className="livedot" /> : null}
           {limited ? <span className="icon ft limitmark"><Svg name="alert" size={20} /></span> : null}
-          <span className={metaClass}>{meta}</span>
+          <span className={metaClass} {...(fixDoor ? { [ROW_DOOR_ATTR]: fixDoor } : {})}>{meta}</span>
           {live ? <LiveTail agent={agent} now={now} /> : null}
         </div>
         {jobCount > 0

@@ -57,7 +57,8 @@ import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { KnowledgeProposalRow, ProposalRow } from '../home/Decisions.js';
 import { ChatDoor } from '../decisions/ProposalHead.js';
 import { FoldLong } from '../decisions/FoldLong.js';
-import { agentChattable, agentMachineLine, agentRuntimeLine } from '../home/agent-words.js';
+import { agentFixDoor } from '../home/agent-door.js';
+import { agentChattable, agentMachineLine, agentRuntimeLine, signInWords } from '../home/agent-words.js';
 import { MachinePicker } from './MachinePicker.js';
 import { machineSizeWords } from './machine-words.js';
 import { SeatPicker } from './SeatPicker.js';
@@ -224,6 +225,7 @@ export function AgentScreen() {
   const org = state?.org ?? null;
   const limit = agent.status === 'ready' && !agent.working ? agent.sessionLimit : null;
   const waiting = waitingLine(agent, org);
+  const fixDoor = agentFixDoor(agent, org);
   const user = state?.user ?? null;
   const turnCount = Number.isSafeInteger(agent.version?.turnCount) ? agent.version!.turnCount : info?.turnCount;
   const runtimeText = info ? runtimeValue(info) : '';
@@ -431,7 +433,19 @@ export function AgentScreen() {
             </div>
           )
           : null}
-        {waiting ? <DetailRow label="Status"><div className="v">{waiting}</div></DetailRow> : null}
+        {waiting
+          ? (
+            <DetailRow label="Status">
+              <div className="v">{waiting}</div>
+              {/* The sign-in its plate's line leads to, from here too (note
+                  #983): the plate opens this screen now, so the next step
+                  must not be a trip back. */}
+              {fixDoor
+                ? <button className="v person act" id="agentSignIn" type="button" onClick={() => navigate(fixDoor)}><span>{signInWords(agent.cli).replace(/^./, (first) => first.toUpperCase())}</span></button>
+                : null}
+            </DetailRow>
+          )
+          : null}
         {/* WHO DRIVES IT (note #57) — the same signature every comment carries,
             on the screen that IS the agent, and a door to that person's page. */}
         {user?.name
