@@ -34,9 +34,14 @@ export function filmUrl(path: string): string {
    same way: 2.7 MB against the 12 MB master in Drive. Its poster is the
    same picture as the HyperFrames cut's, byte for byte, so the bundled
    poster did not change. */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-fourth-720p.mp4';
+/* Since note #975 (the owner, 4 Nov 2026, 09:44 UTC: "In the video UI should
+   be in phone mockups, and full ui should be put inside the mockups (phone
+   frames)") both are Iris's framed cuts (note #974): the wide one 1:25,
+   1280x720, 2.7 MB; the tall one 1:28, 720x1280, 4.3 MB; same encode, new
+   posters from the framed masters in the bundle. */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-framed-1280x720.mp4';
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
-export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-720x1280.mp4';
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-framed-720x1280.mp4';
 export const INSTALL_FILM_PATH = 'private-copy/install-film-2026-10-29.mp4';

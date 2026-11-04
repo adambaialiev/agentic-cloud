@@ -12,8 +12,8 @@ import WorkplaceArt from '../components/WorkplaceArt';
 import { FLEET } from '../components/live/fixture';
 import HomeFilm from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-hyperframes-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-framed-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-framed-poster.jpg';
 import { BUILD_YOURS, ForYourTeam, HowToStart, OwnCloud, TalkToUs } from './PrivateCopy';
 
 /**
@@ -94,6 +94,10 @@ const HERO_DOOR: string | null = BUILD_YOURS;
    version of the video? For phones") a phone gets Iris's tall cut of it
    (note #972, 1 min 28 s) in a tall frame, and a desk the wide one as
    before; HomeFilm.tsx picks one by the page's width and fetches only it.
+   Since note #975 (the owner, 4 Nov 2026, 09:44 UTC: "In the video UI
+   should be in phone mockups, and full ui should be put inside the mockups
+   (phone frames)") both are Iris's framed cuts (note #974), the product's
+   screens whole inside phone frames; the rule and the player are as before.
    Null removes the film; a null PRODUCT_FILM_TALL gives a phone the wide
    one. */
 export const PRODUCT_FILM: { src: string; poster: string } | null = {
