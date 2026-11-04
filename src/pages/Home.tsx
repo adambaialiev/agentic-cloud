@@ -4,8 +4,8 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-framed-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-framed-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-fifth-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-fifth-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -83,7 +83,11 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    walls, pokes and photos.") and the payoff (from "Everyone's agents, on one
    page." to "Your cloud."). Each starts at the first clean frame after its
    crossfade, read off the encoded files frame by frame (every 0.2 s): the
-   brief's marks (0:09, 0:22, 0:52 or 0:56, 1:11 or 1:14) land mid-fade. */
+   brief's marks (0:09, 0:22, 0:52 or 0:56, 1:11 or 1:14) land mid-fade.
+   Since note #985 the starts are the fifth cut's, read the same way (Iris's
+   marks 9.0 / 20.7 / 47.0 or 55.0 / 67.2 or 75.2 s are each fade's start;
+   the first clean frame is 0.2 s later). The ask beat's caption is still
+   "One message.", so the names stay. */
 export const FILM_SECTION_NAMES = ['Two people, four agents', 'One message', 'Four agents at once', 'What they built', 'Your cloud'] as const;
 /* On a phone the five share one row, so each name is cut to its caption's
    first words, two lines at most. */
@@ -92,14 +96,14 @@ const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at,
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  length: 85.0,
-  sections: sectionsAt([0, 9.2, 22.6, 53.0, 71.6]),
+  length: 81.27,
+  sections: sectionsAt([0, 9.2, 20.9, 47.2, 67.4]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
-  length: 88.1,
-  sections: sectionsAt([0, 9.2, 22.6, 56.2, 74.8]),
+  length: 89.27,
+  sections: sectionsAt([0, 9.2, 20.9, 55.2, 75.4]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface

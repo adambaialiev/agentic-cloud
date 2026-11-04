@@ -41,8 +41,12 @@ export function filmUrl(path: string): string {
    frames)") both are Iris's framed cuts (note #974): the wide one 1:25,
    1280x720, 2.7 MB; the tall one 1:28, 720x1280, 4.3 MB; same encode, new
    posters from the framed masters in the bundle. */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-framed-1280x720.mp4';
+/* Since note #985 both are Iris's fifth cut (note #980: real photos, a
+   natural message, Maya's face, "Auto-merge is on.", smooth scrolling): the
+   wide one 1:21, 1280x720, 3.7 MB; the tall one 1:29, 720x1280, 6.1 MB;
+   same encode, posters from the fifth masters in the bundle. */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-fifth-1280x720.mp4';
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
-export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-framed-720x1280.mp4';
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-fifth-720x1280.mp4';
