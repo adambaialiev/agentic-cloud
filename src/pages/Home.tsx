@@ -4,8 +4,8 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-eighth-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-eighth-poster.jpg';
+import productFilmPoster from '../assets/films/bookface-2006-home-film-ninth-poster.jpg';
+import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-ninth-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -115,23 +115,32 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    Since note #992 the film is the eighth cut: the same four acts and
    names, "Two people" now ending on the Workplace window ("And it all
    lives in one workplace: ..."). Iris's starts (wide 17.5 / 48.6 / 74.5 s,
-   tall 17.5 / 55.9 / 81.8 s) are read the same way. */
-export const FILM_SECTION_NAMES = ['One person', 'Two people', 'What they built', 'Your cloud'] as const;
-/* On a phone the four share one row, two lines at most. The sixth cut's
+   tall 17.5 / 55.9 / 81.8 s) are read the same way.
+   Since note #996 the film is the ninth cut and the timeline has three
+   stops, named by the owner (5 Nov 2026, 06:49 and 06:54 UTC; "Your cloud"
+   is not a section of its own, it folds into the last): "The ask" (the
+   opening card, Iris's one message and the starting point), "The team"
+   (from "Maya joins." through the merges, auto-merge and the Workplace
+   window) and "The result" (from "Here's Bookface: ..." through the photos
+   and the close, "Your team. Your agents. Your cloud. Your rules."). Iris's
+   cut points (wide 17.5 / 50.2 s, tall 17.5 / 57.5 s) are each crossfade's
+   start; the jumps land on the first clean frame after it. */
+export const FILM_SECTION_NAMES = ['The ask', 'The team', 'The result'] as const;
+/* On a phone the three share one row, two lines at most. The sixth cut's
    names are short enough to read there whole, so they are the same. */
 export const FILM_SECTION_SHORT_NAMES = FILM_SECTION_NAMES;
 const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at, label: FILM_SECTION_NAMES[i]!, short: FILM_SECTION_SHORT_NAMES[i]! }));
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   poster: productFilmPoster,
-  length: 83.53,
-  sections: sectionsAt([0, 17.9, 49.0, 75.2]),
+  length: 78.97,
+  sections: sectionsAt([0, 17.9, 50.6]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   poster: productFilmTallPoster,
-  length: 90.83,
-  sections: sectionsAt([0, 17.9, 56.3, 82.5]),
+  length: 86.27,
+  sections: sectionsAt([0, 17.9, 57.9]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface

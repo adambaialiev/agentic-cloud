@@ -348,12 +348,12 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const timeline = document.querySelector('#film [data-film-timeline]')!;
     expect(timeline.getAttribute('role')).toBe('group');
     expect(timeline.getAttribute('aria-label')).toBe('Sections of the film');
-    // One button per act (four since note #988), in order, named from the
-    // film's captions; the first is the current one.
+    // One button per act (three since note #996), in order, named by the
+    // owner; the first is the current one.
     const names = [...timeline.querySelectorAll<HTMLButtonElement>('[data-film-section]')];
-    expect(names.map((b) => b.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON']);
+    expect(names.map((b) => b.tagName)).toEqual(['BUTTON', 'BUTTON', 'BUTTON']);
     expect(names.map((b) => b.querySelector('.hidden')?.textContent)).toEqual([...FILM_SECTION_NAMES]);
-    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual(['step', null, null, null]);
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual(['step', null, null]);
     // The bar: one segment per section, proportional to its length, hidden
     // from a screen reader (the names are its buttons) and out of the tab order.
     const bar = timeline.querySelector('[aria-hidden="true"]') as HTMLElement;
@@ -365,16 +365,16 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const video = document.querySelector('#film video')!;
     paused = true;
     play.mockClear();
-    fireEvent.click(names[2]!);
-    expect(video.currentTime).toBe(starts[2]);
+    fireEvent.click(names[1]!);
+    expect(video.currentTime).toBe(starts[1]);
     expect(play).toHaveBeenCalledTimes(1);
     paused = false;
     // The played part fills and the current section moves with the film.
     fireEvent(video, new Event('seeked'));
     await settle();
-    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual([null, null, 'step', null]);
+    expect(names.map((b) => b.getAttribute('aria-current'))).toEqual([null, 'step', null]);
     expect(bar.querySelectorAll('[data-film-played]')[0]!.getAttribute('data-film-played')).toBe('1.00');
-    expect(bar.querySelectorAll('[data-film-played]')[3]!.getAttribute('data-film-played')).toBe('0.00');
+    expect(bar.querySelectorAll('[data-film-played]')[2]!.getAttribute('data-film-played')).toBe('0.00');
     // Still no browser controls.
     expect(video.hasAttribute('controls')).toBe(false);
   });
