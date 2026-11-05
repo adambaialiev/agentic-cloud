@@ -7642,8 +7642,8 @@ h2.mailfileshead { margin-top: 16px; }
 #screenCopyReleases .copyupgradecard code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; overflow-wrap: anywhere; }
 #screenCopyReleases .copyreleasecard { padding: 16px 18px 4px; }
-#screenCopyReleases .copyreleasetitle { font-size: var(--ui-lg); line-height: var(--ui-lg-leading); font-weight: 600; margin-bottom: 4px; }
+#screenCopyReleases .copyreleasetitle { font-size: var(--ui-lg); line-height: var(--ui-lg-leading); font-weight: 500; margin-bottom: 4px; }
 #screenCopyReleases .copyreleasenotes { background: none; padding: 0; margin-top: 0; }
-#screenCopyReleases .copyreleasenotes h3 { font-size: var(--ui-base); font-weight: 600; margin: 14px 0 4px; }
+#screenCopyReleases .copyreleasenotes h3 { font-size: var(--ui-base); font-weight: 500; margin: 14px 0 4px; }
 #screenCopyReleases .copyreleasecard .empty { padding: 4px 0 14px; }
 
