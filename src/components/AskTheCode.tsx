@@ -188,12 +188,12 @@ function FileList({ files, reading = false }: { files: string[]; reading?: boole
               <a
                 href={repoFileUrl(path)}
                 {...(newTab ? NEW_TAB : {})}
-                className={`break-words font-mono text-[13px] leading-snug underline underline-offset-[3px] focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${now ? 'text-hint no-underline' : 'text-white decoration-white/25 hover:decoration-white'}`}
+                className={`break-words font-mono type-sm leading-snug underline underline-offset-[3px] focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${now ? 'text-hint no-underline' : 'text-white decoration-white/25 hover:decoration-white'}`}
               >
                 {name}
                 {newTab ? <span className="sr-only"> in {folder || 'the repository'} (opens in a new tab)</span> : null}
               </a>
-              {folder ? <span aria-hidden="true" className="block break-words font-mono text-[11.5px] leading-snug text-hint/80">{folder}</span> : null}
+              {folder ? <span aria-hidden="true" className="block break-words font-mono type-xs leading-snug text-hint/80">{folder}</span> : null}
             </span>
           </li>
         );
@@ -389,7 +389,7 @@ export function AskTheCode() {
                     </p>
                     {current.files.length > 0 ? (
                       <p className="mt-2 type-sm text-hint lg:hidden">
-                        Opening <code className="font-mono text-[12.5px] text-white">{current.files[current.files.length - 1].split('/').pop()}</code>
+                        Opening <code className="font-mono type-xs text-white">{current.files[current.files.length - 1].split('/').pop()}</code>
                       </p>
                     ) : null}
                   </>
@@ -461,7 +461,7 @@ export function AskTheCode() {
                     enterKeyHint="send"
                     aria-describedby="ask-fine-print"
                     placeholder={phone ? ASK_PLACEHOLDER_PHONE : ASK_PLACEHOLDER}
-                    className="ask-input min-w-0 flex-1 bg-transparent type-base text-white placeholder:text-hint focus:outline-none sm:text-[17px]"
+                    className="ask-input min-w-0 flex-1 bg-transparent type-base text-white placeholder:text-hint focus:outline-none sm:type-md-sm"
                   />
                   <button
                     type="submit"
