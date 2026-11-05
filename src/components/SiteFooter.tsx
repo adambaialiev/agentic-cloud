@@ -1,4 +1,5 @@
 import { NEW_TAB, useNewTab } from '../lib/new-tab';
+import BrandMark from './BrandMark';
 
 export const CONTACT_EMAIL = 'hello@agenticcloudcomputer.com';
 /** The footer's Contact door goes to the founder, the one address the home
@@ -65,13 +66,17 @@ function FooterColumn({ title, children, tone }: { title: string; children: Reac
    page's side padding, as every section above it, and since note #978 the
    same 1280 px content cap as the screens above; every other page keeps the
    centred column. */
-export default function SiteFooter({ pitch, tone = 'light', wide = false }: { pitch: string; tone?: Tone; wide?: boolean }) {
+/* `mark` (the home page, note #1003, the owner: "in the footer Agentic Cloud
+   Computer should be with logo"): the name stands with the site's wave mark
+   beside it, as one unit, the way the header draws it on every other page. */
+export default function SiteFooter({ pitch, tone = 'light', wide = false, mark = false }: { pitch: string; tone?: Tone; wide?: boolean; mark?: boolean }) {
   return (
     <footer className={tone === 'dark' ? 'border-t border-hint/16 bg-panel' : 'border-t border-black/[0.08] bg-white'}>
       <div className={wide ? 'mx-auto w-full max-w-[calc(1280px+6rem)] px-5 py-12 sm:px-8 lg:px-12' : 'mx-auto w-full max-w-6xl px-5 py-12 sm:px-8'}>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
           <div className="lg:pr-6">
-            <p className={`type-base font-semibold ${tone === 'dark' ? 'text-white' : 'text-ink'}`}>
+            <p data-footer-name className={`type-base font-semibold ${mark ? 'flex items-center gap-2.5 tracking-[-0.01em]' : ''} ${tone === 'dark' ? 'text-white' : 'text-ink'}`}>
+              {mark ? <BrandMark className="-ml-[3px] h-6 w-6 shrink-0" tint={tone === 'dark' ? 'var(--color-white)' : '#1c2028'} label="" /> : null}
               Agentic Cloud Computer
             </p>
             <p className={`mt-2 type-sm ${tone === 'dark' ? 'text-hint' : 'text-prose-soft'}`}>{pitch}</p>

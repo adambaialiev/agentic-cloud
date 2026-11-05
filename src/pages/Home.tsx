@@ -6,6 +6,7 @@ import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 import { NewTabContext } from '../lib/new-tab';
+import BrandMark from '../components/BrandMark';
 
 /**
  * The one home page, for a stranger and for a CTO who arrives from a cold
@@ -186,6 +187,30 @@ function SiteLink({ href, children }: { href: string; children: string }) {
   );
 }
 
+/* The first screen names the product (note #1003, the owner, 5 Nov 2026,
+   12:49 UTC: "in the first section also let's put Agentic Cloud Computer
+   with logo"): the site's wave mark (public/logo-bw.png through BrandMark,
+   the mark on the film's closing card) and the name, small, above the film.
+   It lines up with the film's left edge (the same width rule as the film
+   box), on a phone too: where the tall film takes the phone's width that is
+   the content edge, and where the screen is short and the film narrower
+   (430x744) it stays over the film, its timeline and its link rather than
+   45 px to their left. Not a link, no tagline, not a heading: the page's h1
+   is the headline. */
+function Masthead() {
+  return (
+    <div
+      data-masthead
+      className="mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*9/16))] items-center gap-2 sm:mb-4 sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]"
+    >
+      {/* The wave fills the middle 76% of its square file, so the square is
+          pulled 3 px left to put the wave's own edge on the film's. */}
+      <BrandMark className="-ml-[3px] h-6 w-6 shrink-0" tint="var(--color-white)" label="" />
+      <span className="type-sm font-semibold leading-6 tracking-[-0.01em] text-white sm:type-base sm:leading-6">Agentic Cloud Computer</span>
+    </div>
+  );
+}
+
 export default function Home() {
   /* Every link on this page opens in a new tab (note #999): the provider
      turns it on for the page's links and its footer; SiteLink always did. */
@@ -224,10 +249,13 @@ export default function Home() {
               tall cut is sized the same way, so the film and its timeline
               are always the first screen (note #973's judgement). What the
               film leaves for its timeline and link: 175 px on a phone,
-              260 px from sm up (250 until the 44 px link of note #981). */}
+              260 px from sm up (250 until the 44 px link of note #981).
+              Since note #1003 it also leaves room for the masthead above
+              it: 36 px more on a phone (211), 40 px more from sm up (300). */}
+          <Masthead />
           <div
             data-film-box
-            className="mx-auto w-[min(100%,calc((100svh_-_175px)*9/16))] sm:w-[min(100%,calc((min(100svh,900px)_-_260px)*16/9))]"
+            className="mx-auto w-[min(100%,calc((100svh_-_211px)*9/16))] sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]"
           >
             <HomeFilm
               wide={PRODUCT_FILM}
@@ -269,7 +297,7 @@ export default function Home() {
       <OwnCloud />
       <HowToStart />
 
-      <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide />
+      <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide mark />
     </main>
     </NewTabContext.Provider>
   );

@@ -25,6 +25,25 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // five faces, each answered by the product; then "and all of it runs in
   // your own cloud"; How to start, For your team and Talk to us as they were.
   // The long tour is /product's alone.
+  // Note #1003 (the owner, 5 Nov 2026, 12:49 UTC): the first screen names
+  // the product with its mark, above the film and not over it, as words and
+  // no link; the footer's name stands with the mark too.
+  it('names the product with its mark above the film and in the footer', () => {
+    answer();
+    draw();
+    const film = document.querySelector('#film')!;
+    const masthead = film.querySelector('[data-masthead]')!;
+    expect(masthead.textContent).toBe('Agentic Cloud Computer');
+    expect(masthead.querySelector('a')).toBeNull();
+    expect(masthead.querySelector('[aria-hidden="true"]')).toBeTruthy();
+    expect(masthead.closest('[data-film-box]')).toBeNull();
+    expect(masthead.compareDocumentPosition(film.querySelector('[data-film-box]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(film.querySelector('h1, h2, h3')).toBeNull();
+    const name = document.querySelector('footer [data-footer-name]')!;
+    expect(name.textContent?.trim()).toBe('Agentic Cloud Computer');
+    expect(name.querySelector('[aria-hidden="true"]')).toBeTruthy();
+  });
+
   // Note #999 (the owner, 5 Nov 2026, 11:32 UTC: "all links in the landing
   // page should open in new tab"): every anchor on the page, the footer's
   // included, opens a new tab without handing over the opener, and says so
@@ -451,8 +470,12 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     // The film, its timeline and its link in one screen: as wide as the
     // screen allows, unless that is taller than min(screen, 900 px) leaves.
     const box = document.querySelector('#film [data-film-box]')!;
-    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_175px\)\*9\/16\)\)\]/);
-    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_260px\)\*16\/9\)\)\]/);
+    // Since note #1003 the room left also holds the masthead above the
+    // film (211 px on a phone, 300 px from sm up), which takes the same width.
+    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_211px\)\*9\/16\)\)\]/);
+    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_300px\)\*16\/9\)\)\]/);
+    const masthead = document.querySelector('#film [data-masthead]')!;
+    for (const width of box.className.split(' ').filter((c) => c.includes('w-[min('))) expect(masthead.className.split(' ')).toContain(width);
     expect(box.querySelector('[data-film-timeline]')).toBeTruthy();
     expect(box.querySelector('#film-site a')).toBeTruthy();
   });
