@@ -84,6 +84,8 @@ node install.mjs upgrade [--release <version>] [--drill] [--json]
 
 `--drill` rehearses that rollback on purpose and proves the database came back. An interrupted upgrade carries on when run again.
 
+The health page (the workplace page's "This copy" section, for admins) says on its Workspace line which release runs and which is the latest: "Up to date" in green, "Newer release" in amber with this command to run, "Can't tell" when the update service has not been reached lately.
+
 ## What it creates in your organization
 
 | What | Names |
@@ -115,7 +117,7 @@ The install makes no mail receiver and asks for no mail provider. When you want 
 - **Your domain's name servers**: to check the records you added.
 - **Your own Agentic Cloud itself**: the smoke test reads the health pages of the Workspace, the code host and the router, and the sign-up page.
 
-There is no telemetry. Once installed, your own Agentic Cloud makes no call to us.
+There is no telemetry. Once installed, your own Agentic Cloud makes one kind of call to us: about once an hour it reads the public list of releases (`GET https://acc-updates.fly.dev/releases`, no sign-in, nothing about your copy in the question) so the health page can say whether a newer release is out. To point it at another address, or to stop it, add `COPY_UPDATES_URL` (an address, or `off`) to `extraEnv.backend` in `<prefix>-copy.json` and run `node install.mjs upgrade`.
 
 ## Tests
 

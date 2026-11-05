@@ -4,14 +4,20 @@
  * release, the database and its backups, the disk, the code host, previews and
  * sites, mail in — each asked live, never remembered. And the diagnostics
  * bundle: the same report plus which settings are set, as a file the admin
- * downloads and sends us only if they choose to. Nothing here calls us.
+ * downloads and sends us only if they choose to.
+ *
+ * The one thing it asks outside the copy is our update service's public
+ * release list (note #1005, services/copy-release-check.ts): a plain GET with
+ * nothing about the copy in it, about once an hour, so the Workspace line can
+ * say whether a newer release is out. COPY_UPDATES_URL=off turns it off.
  *
  * Neither holds a message, a file, a key or a person's name: settings that
  * are keys say only "set" or "not set".
  */
 import { stat, statfs } from 'node:fs/promises';
-import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart } from '../shared/workspace-api.js';
+import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyUpdates } from '../shared/workspace-api.js';
 import type { LicenceStatus } from './copy-licence.js';
+import { compareReleases, RELEASE_VERSION_SHAPE, type ReleaseCheck, type ReleaseCheckState } from './copy-release-check.js';
 
 export type CopyHealthPart = WorkspaceCopyHealthPart;
 export type CopyHealthReport = WorkspaceCopyHealth;
@@ -35,6 +41,8 @@ export interface CopyHealthOptions {
   env: Record<string, string | undefined>;
   /** The licence, when the copy has the check on (note #814). */
   licence?: () => Promise<LicenceStatus>;
+  /** Whether a newer release is out (note #1005); absent reads as off. */
+  updates?: Pick<ReleaseCheck, 'current'>;
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }
@@ -44,7 +52,7 @@ const PLAIN_SETTINGS = [
   'COPY_RELEASE', 'WORKSPACE_URL', 'APPS_DOMAIN', 'MAIL_DOMAIN', 'PRIVATE_COPY', 'FLY_ORG', 'FLY_REGION',
   'FLY_IMAGE_APP', 'FLY_MACHINE_IMAGE', 'FLY_APP_RUNTIME_IMAGE', 'FLY_GIT_HOST_IMAGE', 'FLY_MSG_HOST_IMAGE',
   'GIT_HOST_BASE_URL', 'GIT_HOST_CONTROL_URL', 'FLY_BACKEND_PEER_IP', 'WORKSPACE_EMAIL_FROM', 'FLY_APP_NAME',
-  'SMTP_HOST', 'SMTP_PORT',
+  'SMTP_HOST', 'SMTP_PORT', 'COPY_UPDATES_URL',
 ] as const;
 /** Settings that are keys: a bundle says only whether each is there. */
 const KEY_SETTINGS = [
@@ -74,6 +82,57 @@ function upWords(ms: number): string {
   return `${Math.floor(hours / 24)} days`;
 }
 
+/** The upgrade, as it is done today (the guide's "Later: upgrades"). */
+export const HOW_TO_UPGRADE = 'To upgrade, whoever installed this Agentic Cloud runs node install.mjs upgrade in the folder they installed it from.';
+/** A last good answer older than this no longer says what is latest. */
+const LATEST_GOOD_FOR_MS = 24 * 3600_000;
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** 5 Nov 2026, 13:02 UTC */
+export function whenWords(iso: string): string {
+  const at = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]} ${at.getUTCFullYear()}, ${pad(at.getUTCHours())}:${pad(at.getUTCMinutes())} UTC`;
+}
+
+/**
+ * Running beside latest (note #1005): the state, and the words the
+ * Workspace line ends with. Pure, so every state is tested on its own.
+ */
+export function releaseStanding(
+  running: string | null,
+  check: ReleaseCheckState | null,
+  at: Date,
+  startedAt: Date,
+): { updates: WorkspaceCopyUpdates; words: string } {
+  const base = {
+    running,
+    latest: null as string | null,
+    reachedAt: check?.reachedAt ?? null,
+    triedAt: check?.triedAt ?? null,
+    lastError: check?.lastError ?? null,
+    howToUpgrade: null as string | null,
+  };
+  if (!check || !check.on) return { updates: { ...base, state: 'off' }, words: 'update checks are off' };
+  const reached = check.reachedAt ? new Date(check.reachedAt).getTime() : null;
+  if (reached === null || at.getTime() - reached > LATEST_GOOD_FOR_MS) {
+    const since = whenWords(check.reachedAt ?? startedAt.toISOString());
+    const words = check.triedAt ? `latest unknown, update service not reached since ${since}` : 'latest not asked yet';
+    return { updates: { ...base, state: 'unknown' }, words };
+  }
+  const latest = check.latest;
+  // A failed ask since the last good answer: say how old the answer is.
+  const asOf = check.lastError ? ` (as of ${sinceWords(at.getTime() - reached)})` : '';
+  if (!latest) return { updates: { ...base, state: 'unknown' }, words: 'latest unknown, the update service lists no release' };
+  if (!running || !RELEASE_VERSION_SHAPE.test(running)) {
+    return { updates: { ...base, latest, state: 'unknown' }, words: `latest ${latest}${asOf}` };
+  }
+  if (compareReleases(latest, running) > 0) {
+    return { updates: { ...base, latest, state: 'behind', howToUpgrade: HOW_TO_UPGRADE }, words: `latest ${latest}${asOf}` };
+  }
+  return { updates: { ...base, latest, state: 'current' }, words: `latest ${latest}${asOf}` };
+}
+
 export function createCopyHealth(options: CopyHealthOptions) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? (() => new Date());
@@ -90,10 +149,15 @@ export function createCopyHealth(options: CopyHealthOptions) {
     }
   };
 
-  async function workspace(): Promise<CopyHealthPart> {
+  async function standing() {
+    const check = options.updates ? await options.updates.current() : null;
+    return releaseStanding(options.release ?? null, check, now(), options.startedAt);
+  }
+
+  async function workspace(words: string): Promise<CopyHealthPart> {
     const release = options.release ? `release ${options.release}` : 'release unknown';
     const commit = options.commit ? ` (${options.commit.slice(0, 8)})` : '';
-    return { key: 'workspace', name: 'Workspace', ok: true, line: `Up ${upWords(now().getTime() - options.startedAt.getTime())} · ${release}${commit}` };
+    return { key: 'workspace', name: 'Workspace', ok: true, line: `Up ${upWords(now().getTime() - options.startedAt.getTime())} · ${release}${commit} · ${words}` };
   }
 
   async function database(): Promise<CopyHealthPart> {
@@ -167,10 +231,14 @@ export function createCopyHealth(options: CopyHealthOptions) {
   }
 
   async function report(): Promise<CopyHealthReport> {
-    const parts = await Promise.all([workspace(), licence(), database(), disk(), codeHost(), previews(), mailIn()]);
+    const { updates, words } = await standing();
+    const parts = await Promise.all([workspace(words), licence(), database(), disk(), codeHost(), previews(), mailIn()]);
     return {
       release: options.release ?? null,
       commit: options.commit ?? null,
+      running: updates.running,
+      latest: updates.latest,
+      updates,
       checkedAt: now().toISOString(),
       parts: parts.filter((part): part is CopyHealthPart => part !== null),
     };
@@ -184,7 +252,7 @@ export function createCopyHealth(options: CopyHealthOptions) {
       format: 1,
       generatedAt: now().toISOString(),
       about: 'Made by this copy for its admin to send to support. It holds no messages, code, files, mail, keys or names of people: settings that are keys say only whether they are set.',
-      health: await report(),
+      ...await report().then((health) => ({ running: health.running, latest: health.latest, health })),
       settings: {
         ...Object.fromEntries(PLAIN_SETTINGS.map((name) => [name, env[name] ?? null])),
         ...Object.fromEntries(KEY_SETTINGS.map((name) => [name, env[name] ? 'set' : 'not set'])),

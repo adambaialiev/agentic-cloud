@@ -1718,10 +1718,37 @@ export interface WorkspaceCopyHealthPart {
   line: string;
 }
 
+/**
+ * Whether a newer release exists (note #1005): `current` (green, up to
+ * date), `behind` (amber, a newer one is out), `unknown` (the update service
+ * not reached lately, or the running release is not known), `off` (the
+ * company turned the check off with COPY_UPDATES_URL=off).
+ */
+export type WorkspaceCopyUpdatesState = 'current' | 'behind' | 'unknown' | 'off';
+
+export interface WorkspaceCopyUpdates {
+  state: WorkspaceCopyUpdatesState;
+  running: string | null;
+  latest: string | null;
+  /** When the update service last answered well. */
+  reachedAt: string | null;
+  /** When it was last asked. */
+  triedAt: string | null;
+  /** Why the last ask failed, in words. */
+  lastError: string | null;
+  /** How to upgrade today, in one sentence; only when `behind`. */
+  howToUpgrade: string | null;
+}
+
 /** GET api/copy/health — a private copy only, for its admins (note #813). */
 export interface WorkspaceCopyHealth {
   release: string | null;
   commit: string | null;
+  /** The release this copy runs (the same as `release`) and the newest one
+   *  the update service offers, for support reading the JSON (note #1005). */
+  running: string | null;
+  latest: string | null;
+  updates: WorkspaceCopyUpdates;
   checkedAt: string;
   parts: WorkspaceCopyHealthPart[];
 }

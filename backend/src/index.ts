@@ -62,6 +62,7 @@ import { backfillLegacyOrgOwnership } from './services/org-ownership-backfill.js
 import { OrgCiService } from './services/org-ci.js';
 import { DatabaseBucketBackup } from './services/database-bucket-backup.js';
 import { createCopyHealth } from './services/copy-health.js';
+import { createReleaseCheck, updatesUrlFrom } from './services/copy-release-check.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
@@ -1092,6 +1093,17 @@ const copyLicence = COPY_LICENCE_ON
   : null;
 if (PRIVATE_COPY) console.log(`[config] COPY_LICENCE=${copyLicence ? 'on' : 'off'}`);
 copyLicence?.start();
+// Whether a newer release is out (note #1005): our public release list,
+// asked about hourly with nothing about this copy in the question.
+// COPY_UPDATES_URL points it at another address; COPY_UPDATES_URL=off stops it.
+const copyReleaseCheck = PRIVATE_COPY
+  ? createReleaseCheck({ url: updatesUrlFrom(process.env.COPY_UPDATES_URL), log: (line) => console.warn(line) })
+  : null;
+if (copyReleaseCheck) {
+  const where = copyReleaseCheck.state().url;
+  console.log(`[config] COPY_UPDATES_URL=${where ?? 'off'}`);
+  copyReleaseCheck.start();
+}
 const copyHealth = PRIVATE_COPY
   ? createCopyHealth({
       ...(process.env.COPY_RELEASE?.trim() ? { release: process.env.COPY_RELEASE.trim() } : {}),
@@ -1105,6 +1117,7 @@ const copyHealth = PRIVATE_COPY
       mail: () => ({ phase: copyMailSetup?.phase() ?? 'off', healthUrl: copyMailSetup?.receiverHealthUrl() ?? null }),
       env: process.env,
       ...(copyLicence ? { licence: () => copyLicence.status() } : {}),
+      ...(copyReleaseCheck ? { updates: copyReleaseCheck } : {}),
     })
   : null;
 // The ops bot's inbound half: /users answers with who is on the platform,

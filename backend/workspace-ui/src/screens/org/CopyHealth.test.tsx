@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCopyHealth, WorkspaceOrgDetail } from '../../../../src/shared/workspace-api.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WorkspaceCopyHealth, WorkspaceCopyUpdates, WorkspaceOrgDetail } from '../../../../src/shared/workspace-api.js';
 import { App } from '../../App.js';
 import { emptyState, scriptedApi, workspaceScript, type Answer } from '../../test/fixtures.js';
 
@@ -12,12 +12,23 @@ import { emptyState, scriptedApi, workspaceScript, type Answer } from '../../tes
  */
 vi.mock('../../../../src/shared/private-copy.js', () => ({ PRIVATE_COPY: true, SIGNUP_CLOSED: false, FIRST_ACCOUNT_FRAGMENT: 'first-account' }));
 
-const health: WorkspaceCopyHealth = {
+const UPGRADE = 'To upgrade, whoever installed this Agentic Cloud runs node install.mjs upgrade in the folder they installed it from.';
+const updates = (state: WorkspaceCopyUpdates['state'], latest: string | null): WorkspaceCopyUpdates => ({
+  state, running: '2026.10.27.1', latest, reachedAt: state === 'unknown' ? null : '2026-10-27T17:00:00.000Z',
+  triedAt: '2026-10-27T17:00:00.000Z', lastError: state === 'unknown' ? 'not reachable' : null,
+  howToUpgrade: state === 'behind' ? UPGRADE : null,
+});
+
+let health: WorkspaceCopyHealth;
+const baseHealth: WorkspaceCopyHealth = {
   release: '2026.10.27.1',
   commit: '8cc9f94bb2cc02d9487bd5bd2e8392ca1efea9f3',
+  running: '2026.10.27.1',
+  latest: '2026.10.27.1',
+  updates: updates('current', '2026.10.27.1'),
   checkedAt: new Date().toISOString(),
   parts: [
-    { key: 'workspace', name: 'Workspace', ok: true, line: 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b)' },
+    { key: 'workspace', name: 'Workspace', ok: true, line: 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · latest 2026.10.27.1' },
     { key: 'licence', name: 'Licence', ok: false, line: 'The licence ends in 10 days, on 26 October 2027.' },
     { key: 'database', name: 'Database', ok: true, line: '3 MB · backed up 3 h ago · every 24 h' },
     { key: 'mail-in', name: 'Mail in', ok: false, line: 'answering, but no certificate yet: mail arrives unencrypted' },
@@ -51,16 +62,69 @@ async function open(role: 'admin' | 'member') {
 }
 
 afterEach(() => { vi.useRealTimers(); });
+beforeEach(() => { health = baseHealth; });
 
 describe('a private copy\'s health, for its admins (note #813)', () => {
   it('reads every part in a line and flags the one that needs a look', async () => {
     await open('admin');
     expect(screen.getByText('This copy')).toBeTruthy();
-    expect(screen.getByText('Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b)')).toBeTruthy();
+    expect(screen.getByText('Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · latest 2026.10.27.1')).toBeTruthy();
     expect(screen.getByText('3 MB · backed up 3 h ago · every 24 h')).toBeTruthy();
     const mail = document.querySelector('[data-part="mail-in"]')!;
     expect(mail.textContent).toContain('Needs a look');
     expect(document.querySelector('[data-part="database"]')!.textContent).not.toContain('Needs a look');
+  });
+
+  it('green: says the copy is up to date, with no upgrade sentence (note #1005)', async () => {
+    await open('admin');
+    const row = document.querySelector('[data-part="workspace"]')!;
+    expect(row.getAttribute('data-updates')).toBe('current');
+    const badge = document.getElementById('orgCopyUpdatesBadge')!;
+    expect(badge.textContent).toBe('Up to date');
+    expect(badge.className).toBe('badge ok');
+    expect(row.textContent).not.toContain('Needs a look');
+    expect(document.getElementById('orgCopyUpgradeHint')).toBeNull();
+  });
+
+  it('amber: names the newer release and says how to upgrade today (note #1005)', async () => {
+    health = {
+      ...baseHealth, latest: '2026.11.03.0', updates: updates('behind', '2026.11.03.0'),
+      parts: [{ key: 'workspace', name: 'Workspace', ok: true, line: 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · latest 2026.11.03.0' }, ...baseHealth.parts.slice(1)],
+    };
+    await open('admin');
+    expect(screen.getByText('Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · latest 2026.11.03.0')).toBeTruthy();
+    const badge = document.getElementById('orgCopyUpdatesBadge')!;
+    expect(badge.textContent).toBe('Newer release');
+    expect(badge.className).toBe('badge amber');
+    const hint = document.getElementById('orgCopyUpgradeHint')!;
+    expect(hint.textContent).toBe(UPGRADE);
+    expect(hint.querySelector('code')!.textContent).toBe('node install.mjs upgrade');
+    // No button: upgrading from the Workspace is a later piece.
+    expect(document.querySelector('[data-part="workspace"] button')).toBeNull();
+  });
+
+  it('unknown: says when the update service was last reached, in grey (note #1005)', async () => {
+    const line = 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · latest unknown, update service not reached since 27 Oct 2026, 15:00 UTC';
+    health = {
+      ...baseHealth, latest: null, updates: updates('unknown', null),
+      parts: [{ key: 'workspace', name: 'Workspace', ok: true, line }, ...baseHealth.parts.slice(1)],
+    };
+    await open('admin');
+    expect(screen.getByText(line)).toBeTruthy();
+    const badge = document.getElementById('orgCopyUpdatesBadge')!;
+    expect(badge.textContent).toBe('Can\'t tell');
+    expect(badge.className).toBe('badge mut');
+    expect(document.getElementById('orgCopyUpgradeHint')).toBeNull();
+  });
+
+  it('off: no badge when the company turned the check off (note #1005)', async () => {
+    health = {
+      ...baseHealth, latest: null, updates: { ...updates('off', null), reachedAt: null, triedAt: null },
+      parts: [{ key: 'workspace', name: 'Workspace', ok: true, line: 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · update checks are off' }, ...baseHealth.parts.slice(1)],
+    };
+    await open('admin');
+    expect(screen.getByText('Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · update checks are off')).toBeTruthy();
+    expect(document.getElementById('orgCopyUpdatesBadge')).toBeNull();
   });
 
   it('downloads the diagnostics file to the admin\'s own computer', async () => {
