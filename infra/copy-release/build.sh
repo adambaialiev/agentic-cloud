@@ -9,7 +9,9 @@
 #   MACHINE_IMAGE=<the live agent image> APP_RUNTIME_IMAGE=<the live site image> \
 #     infra/copy-release/build.sh
 #
-# Built here, from this commit: backend, git-host, msg-host, router, mx.
+# Built here, from this commit: backend, git-host, msg-host, router, mx, and
+# upgrader (note #1008: the one-shot machine an upgrade runs on, with this
+# release's install.mjs and a pinned flyctl).
 # Taken by digest from what production runs today: machine (agent, site-less
 # CI) and app-runtime (sites). Their CLI pins and runtime are what our own
 # fleet runs, and building them again would only make a second, untested copy.
@@ -62,7 +64,13 @@ docker build "${LABELS[@]}" -t "$REG:router-$VERSION" infra/copy-router
 echo "== mx"
 docker build "${LABELS[@]}" -t "$REG:mx-$VERSION" infra/copy-mx
 
-BUILT=(backend git-host msg-host router mx)
+echo "== upgrader"
+STAGE=$(stage_dir)
+cp infra/copy-installer/upgrader/Dockerfile infra/copy-installer/install.mjs infra/copy-installer/package.json "$STAGE"/
+docker build "${LABELS[@]}" -t "$REG:upgrader-$VERSION" "$STAGE"
+rm -rf "$STAGE"
+
+BUILT=(backend git-host msg-host router mx upgrader)
 # Built here: single-platform images, pushed as such.
 for image in "${BUILT[@]}"; do docker push "$REG:$image-$VERSION"; done
 declare -A DIGESTS
@@ -77,7 +85,7 @@ echo "== machine, app-runtime (production's own, carried unchanged)"
 DIGESTS[machine]=$(node infra/copy-release/carry.mjs "$MACHINE_IMAGE" "$RELEASE_REPO" "machine-$VERSION")
 DIGESTS[app-runtime]=$(node infra/copy-release/carry.mjs "$APP_RUNTIME_IMAGE" "$RELEASE_REPO" "app-runtime-$VERSION")
 
-IMAGES=(backend git-host msg-host router mx machine app-runtime)
+IMAGES=(backend git-host msg-host router mx upgrader machine app-runtime)
 # The manifest names every image by digest, so a copy installs exactly these
 # bytes whatever happens to a tag later.
 MANIFEST_DIR=$(stage_dir)

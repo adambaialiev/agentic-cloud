@@ -364,6 +364,22 @@ export class FlyClient {
     });
   }
 
+  /**
+   * One app secret, set or replaced (Machines API, note #1008). Fly answers
+   * with the value it stored, so the answer's body is thrown away unread, on
+   * success and on failure alike: no log line and no error ever carries it.
+   * A machine created in the app afterwards has it in its environment.
+   */
+  async setAppSecret(appName: string, name: string, value: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/apps/${encodeURIComponent(appName)}/secrets/${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ value }),
+    });
+    await response.body?.cancel().catch(() => undefined);
+    if (!response.ok) throw new FlyApiError(`Fly API error (${response.status}) setting secret ${name} on ${appName}`, response.status);
+  }
+
   async getApp(appName: string): Promise<FlyApp> {
     return this.request<FlyApp>(`/apps/${encodeURIComponent(appName)}`);
   }

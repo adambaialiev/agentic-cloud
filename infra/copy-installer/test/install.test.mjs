@@ -5,7 +5,7 @@
  *
  *   node --test test/
  */
-import { before, describe, it } from 'node:test';
+import { afterEach, before, describe, it } from 'node:test';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -74,6 +74,7 @@ function fakeFly({ failOnce, stuckCert } = {}) {
   let next = 1;
   // The backend machine's private address; a test moves it.
   let backendIp = 'fdaa:0:1::2';
+  const peers = [{ Name: 'interactive-up1-abc-tokens-fly-io-01' }, { Name: 'interactive-someoneelse-1' }];
   const fly = async (args, opts = {}) => {
     calls.push(args);
     const [a, b] = args;
@@ -104,7 +105,15 @@ function fakeFly({ failOnce, stuckCert } = {}) {
       ips.set(app, [...(ips.get(app) ?? []), { Type: 'v6', Address: `2001:db8::${next++}` }]);
       return '';
     }
-    if (a === 'deploy') { deploys.push({ app: flag('--app'), image: flag('--image'), toml: readFileSync(flag('--config'), 'utf8') }); return ''; }
+    if (a === 'deploy') {
+      const toml = readFileSync(flag('--config'), 'utf8');
+      deploys.push({ app: flag('--app'), image: flag('--image'), toml });
+      // A backend that listens where the health check does not look never turns healthy.
+      if (toml.includes('PORT = "8081"')) throw new Error('fly deploy: machine m1 failed to reach a healthy state: 1 of 1 checks failing');
+      return '';
+    }
+    if (a === 'wireguard' && b === 'list') return JSON.stringify(peers);
+    if (a === 'wireguard' && b === 'remove') { peers.splice(peers.findIndex((p) => p.Name === args[3]), 1); return ''; }
     if (a === 'machine') return JSON.stringify([{ id: 'm1', private_ip: backendIp }]);
     if (a === 'ssh') {
       const command = flag('-C');
@@ -130,7 +139,7 @@ function fakeFly({ failOnce, stuckCert } = {}) {
     }
     throw new Error(`unexpected fly ${args.join(' ')}`);
   };
-  return { fly, calls, apps, ips, secrets, deploys, ready, sql, volumeSnapshots, db: () => db, mxRestarts: () => mxRestarts, moveBackend: (ip) => { backendIp = ip; } };
+  return { fly, calls, apps, ips, secrets, deploys, ready, sql, volumeSnapshots, peers, db: () => db, mxRestarts: () => mxRestarts, moveBackend: (ip) => { backendIp = ip; } };
 }
 
 function harness({ billing = 'CURRENT', failOnce, stuckCert, dnsNever = false } = {}) {
@@ -847,5 +856,253 @@ describe('licensing off: the product is free for now, and nothing asks for a key
     expect(installer.prefixFromDomain('agents.bookface.site')).toBe('agents-bookface');
     expect(installer.prefixFromDomain('bookface.site')).toBe('bookface');
     expect(installer.prefixFromDomain('1st.example.com')).toBe('st-example');
+  });
+});
+
+/** Fly's Machines API as the upgrader reads it, made from a finished install:
+ *  the backend's config.env exactly as the deploy wrote it, and each app's image. */
+function fakeMachines(h, { upgraderApp = true, secrets = ['FLY_API_TOKEN', 'BACKUP_S3_ENDPOINT', 'BACKUP_S3_BUCKET', 'BACKUP_S3_ACCESS_KEY_ID', 'BACKUP_S3_SECRET_ACCESS_KEY'], running = [] } = {}) {
+  const created = [];
+  const destroyed = [];
+  const imageOf = (app) => h.fly.deploys.filter((d) => d.app === app).at(-1)?.image;
+  const envOf = () => {
+    const toml = h.fly.deploys.filter((d) => d.app === 'theirco-backend').at(-1).toml;
+    const block = toml.split('[env]\n')[1].split('\n\n')[0];
+    return Object.fromEntries(block.split('\n').map((line) => /^\s+(\S+) = (".*")$/.exec(line)).filter(Boolean).map((m) => [m[1], JSON.parse(m[2])]));
+  };
+  const api = {
+    app: async (name) => (name === 'theirco-upgrader' && !upgraderApp ? null : { name, organization: { slug: 'theirco-org' } }),
+    machines: async (app) => {
+      if (app === 'theirco-upgrader') return running;
+      const image = imageOf(app);
+      if (!image) return [];
+      return [{ id: `m-${app}`, state: 'started', region: 'fra', private_ip: 'fdaa:0:1::2', config: { image, env: app === 'theirco-backend' ? { ...envOf(), FLY_PROCESS_GROUP: 'app', PRIMARY_REGION: 'fra' } : {} } }];
+    },
+    machine: async () => ({ state: 'destroyed' }),
+    createMachine: async (app, request) => { created.push({ app, request }); return { id: `up${created.length}` }; },
+    destroyMachine: async (app, id) => { destroyed.push(id); },
+    secretNames: async (app) => (app === 'theirco-upgrader' && upgraderApp ? secrets : null),
+  };
+  return { api, created, destroyed };
+}
+
+/** The copy's backup bucket, in memory. */
+function fakeBucket(seed = {}) {
+  const objects = { ...seed };
+  return {
+    objects,
+    getText: async (key) => objects[key] ?? null,
+    getJson: async (key) => (objects[key] ? JSON.parse(objects[key]) : null),
+    put: async (key, text) => { objects[key] = text; },
+    putJson: async (key, value) => { objects[key] = JSON.stringify(value); },
+    remove: async (key) => { delete objects[key]; },
+  };
+}
+
+const UPGRADER_ENV = {
+  ACC_PREFIX: 'theirco', ACC_RUN_ID: 'run1', ACC_RELEASE: '2026.10.28.1', ACC_REQUESTED_BY: 'Dana Rivera', FLY_MACHINE_ID: 'up1',
+  FLY_API_TOKEN: 'FlyV1 org', BACKUP_S3_ENDPOINT: 'https://fly.storage.tigris.dev', BACKUP_S3_BUCKET: 'theirco-backups', BACKUP_S3_ACCESS_KEY_ID: 'tid', BACKUP_S3_SECRET_ACCESS_KEY: 'tsec',
+};
+
+describe('the upgrader machine (note #1008): the same upgrade, outside every app it rolls', () => {
+  // Licensing is off in every copy today, and the upgrader is handed no key.
+  const installedFree = async (options) => {
+    process.env.COPY_LICENCE = 'on';
+    const h = await installed(options);
+    delete process.env.COPY_LICENCE;
+    return h;
+  };
+  afterEach(() => { process.env.COPY_LICENCE = 'on'; });
+  it('reads the copy from Fly: the same release, address and additions the state file holds', async () => {
+    const h = await installedFree();
+    const m = fakeMachines(h);
+    const shape = await installer.stateFromFly({ api: m.api, prefix: 'theirco' });
+    const kept = JSON.parse(h.stateText());
+    expect(shape.domain).toBe(DOMAIN);
+    expect(shape.org).toBe('theirco-org');
+    expect(shape.release.version).toBe(kept.release.version);
+    for (const name of ['backend', 'git-host', 'router', 'machine', 'app-runtime', 'msg-host', 'mx']) expect(shape.release.tags[name]).toBe(kept.release.tags[name]);
+    expect(shape.peerIp).toBe('fdaa:0:1::2');
+    // The admin's own additions come back, and nothing Fly adds by itself.
+    expect(shape.extraEnv).toEqual(kept.extraEnv);
+    expect(shape.mxV4).toBeUndefined();
+  });
+
+  it('runs a whole upgrade from the run record, and leaves the outcome, events and heartbeat in the bucket', async () => {
+    const h = await installedFree();
+    const m = fakeMachines(h);
+    const bucket = fakeBucket();
+    const out = [];
+    const run = await installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: m.api, bucket, say: (line) => out.push(line), logFile: null, heartbeatMs: 5 });
+    expect(run.outcome).toBe('done');
+    expect(run.requestedBy).toBe('Dana Rivera');
+    expect(run.release.version).toBe('2026.10.28.1');
+    expect(h.backendImage()).toBe('registry.fly.io/theirco-images:backend-2026.10.28.1');
+    const stored = JSON.parse(bucket.objects['upgrades/run1/run.json']);
+    expect(stored.outcome).toBe('done');
+    expect(stored.upgrade).toBeNull();
+    const events = bucket.objects['upgrades/run1/events.jsonl'].trim().split('\n').map((line) => JSON.parse(line));
+    expect(events.some((e) => e.event === 'step' && e.title === 'Snapshotting the database' && e.status === 'done')).toBe(true);
+    expect(events.at(-1).event).toBe('result');
+    expect(JSON.parse(bucket.objects['upgrades/run1/heartbeat.json']).machine).toBe('up1');
+    expect(bucket.objects['upgrades/current.json']).toBeUndefined();
+    // Its own WireGuard peer goes; another machine's stays.
+    expect(h.fly.peers.map((p) => p.Name)).toEqual(['interactive-someoneelse-1']);
+  });
+
+  it('carries on after Fly restarts it, with the snapshot it already took', async () => {
+    const h = await installedFree();
+    const m = fakeMachines(h);
+    const shape = await installer.stateFromFly({ api: m.api, prefix: 'theirco' });
+    const to = { version: '2026.10.28.1', commit: 'def456', tags: Object.fromEntries(Object.keys(TAGS).map((name) => [name, `${name}-2026.10.28.1`])) };
+    const bucket = fakeBucket({
+      'upgrades/run1/run.json': JSON.stringify({
+        id: 'run1', requestedBy: 'Dana Rivera', toVersion: '2026.10.28.1', drill: '', startedAt: '2026-10-28T09:00:00Z', shape,
+        upgrade: { from: shape.release, toVersion: '2026.10.28.1', startedAt: '2026-10-28T09:00:00Z', to, snapshot: { file: '/data/pre-upgrade-2026.10.27.1.db', at: '2026-10-28T09:01:00Z' } },
+      }),
+    });
+    const out = [];
+    const run = await installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: m.api, bucket, say: (line) => out.push(line), logFile: null });
+    expect(run.outcome).toBe('done');
+    expect(h.fly.sql.some((c) => c.includes('.backup'))).toBe(false);
+    expect(out.join('\n')).toContain('Carrying on with the upgrade from 2026.10.27.1 to 2026.10.28.1');
+  });
+
+  it('does nothing when started again for a run that already ended', async () => {
+    const h = await installedFree();
+    const bucket = fakeBucket({ 'upgrades/run1/run.json': JSON.stringify({ id: 'run1', outcome: 'done', result: { event: 'result', outcome: 'done' } }) });
+    const before = h.fly.calls.length;
+    const run = await installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: fakeMachines(h).api, bucket, say: () => {}, logFile: null });
+    expect(run.outcome).toBe('done');
+    expect(h.fly.calls.length).toBe(before);
+  });
+
+  it('carries on an open run whose upgrader went quiet, and refuses one that is still heard', async () => {
+    const h = await installedFree();
+    const now = new Date('2026-11-05T15:00:00Z');
+    const quiet = fakeBucket({
+      'upgrades/current.json': JSON.stringify({ id: 'old', startedAt: '2026-11-05T14:50:00Z' }),
+      'upgrades/old/heartbeat.json': JSON.stringify({ at: '2026-11-05T14:55:00Z' }),
+    });
+    const lines = [];
+    const run = await installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: fakeMachines(h).api, bucket: quiet, say: (line) => lines.push(line), logFile: null, now: () => now });
+    expect(run.id).toBe('old');
+    expect(lines.join('\n')).toContain('Carrying on run old');
+    const heard = fakeBucket({
+      'upgrades/current.json': JSON.stringify({ id: 'other', startedAt: '2026-11-05T14:59:00Z' }),
+      'upgrades/other/heartbeat.json': JSON.stringify({ at: '2026-11-05T14:59:50Z' }),
+    });
+    await expect(installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: fakeMachines(h).api, bucket: heard, say: () => {}, logFile: null, now: () => now })).rejects.toThrow('Another upgrade (other) is running');
+  });
+
+  it('records a put-back when the new release fails, with the old one back on every app', async () => {
+    const h = await installedFree({ failNew: true });
+    const bucket = fakeBucket();
+    const run = await installer.runUpgrader(UPGRADER_ENV, { ...h.deps, machinesApi: fakeMachines(h).api, bucket, say: () => {}, logFile: null });
+    expect(run.outcome).toBe('put-back');
+    expect(run.message).toContain('is back on 2026.10.27.1');
+    expect(h.backendImage()).toBe('registry.fly.io/theirco-images:backend-2026.10.27.1');
+  });
+
+  it('--drill backend: the new Workspace does not start, and the old one and its database come back without it', async () => {
+    const h = await installedFree();
+    const state = await installer.upgrade({ ...h.options, drill: 'backend' }, h.deps);
+    const rolled = h.fly.deploys.slice(h.before);
+    expect(rolled[0].toml).toContain('PORT = "8081"');
+    expect(rolled.slice(1).map((d) => `${d.app} ${d.image.split('-').pop()}`)).toEqual([
+      'theirco-backend 2026.10.27.1', 'theirco-git 2026.10.27.1', 'theirco-router 2026.10.27.1',
+    ]);
+    // The mark was written after the snapshot and before anything moved, and the restore took it away.
+    const marked = h.fly.sql.findIndex((c) => c.includes('INSERT INTO upgrade_drill'));
+    expect(marked).toBeGreaterThan(h.fly.sql.findIndex((c) => c.includes('.backup')));
+    expect(h.fly.db().drill).toBeUndefined();
+    expect(state.release.version).toBe('2026.10.27.1');
+    expect(h.lines.join('\n')).toContain('Drill done: the new Workspace did not start');
+  });
+
+  it('the command starts the upgrader with the run\'s settings, and follows it', async () => {
+    const h = await installedFree();
+    const m = fakeMachines(h);
+    const copied = [];
+    const result = await installer.upgradeCommand({ ...h.options, drill: 'backend' }, {
+      ...h.deps,
+      machinesApi: m.api,
+      updatesSource: () => ({ release: async () => ({ version: '2026.10.28.1', commit: 'def456', images: { upgrader: { tag: 'upgrader-2026.10.28.1' } } }) }),
+      copyOneImage: async () => { copied.push('upgrader'); },
+      follow: async () => ({ event: 'result', upgrade: 'drill-done', outcome: 'done' }),
+    });
+    expect(result.upgrade).toBe('drill-done');
+    expect(copied).toEqual(['upgrader']);
+    const { app, request } = m.created[0];
+    expect(app).toBe('theirco-upgrader');
+    expect(request.config.image).toBe('registry.fly.io/theirco-images:upgrader-2026.10.28.1');
+    expect(request.config.auto_destroy).toBe(true);
+    expect(request.config.restart).toEqual({ policy: 'on-failure', max_retries: 3 });
+    expect(request.config.env).toMatchObject({ ACC_PREFIX: 'theirco', ACC_RELEASE: '2026.10.28.1', ACC_DRILL: 'backend' });
+    // No key rides the machine's env: the app's secrets carry them.
+    expect(JSON.stringify(request)).not.toContain('FlyV1');
+  });
+
+  it('the command runs here, once, when the copy has no upgrader yet', async () => {
+    const h = await installedFree();
+    const m = fakeMachines(h, { upgraderApp: false });
+    await installer.upgradeCommand(h.options, { ...h.deps, machinesApi: m.api });
+    expect(m.created).toEqual([]);
+    expect(h.lines.join('\n')).toContain('theirco-upgrader does not exist yet');
+    expect(JSON.parse(h.stateText()).release.version).toBe('2026.10.28.1');
+  });
+
+  it('the command refuses while an upgrade is running, and --here takes the same lock', async () => {
+    const h = await installedFree();
+    const busy = fakeMachines(h, { running: [{ id: 'up9', state: 'started', name: 'upgrader' }] });
+    await expect(installer.upgradeCommand(h.options, { ...h.deps, machinesApi: busy.api })).rejects.toThrow('An upgrade is already running: machine up9');
+    await expect(installer.upgradeCommand({ ...h.options, here: true }, { ...h.deps, machinesApi: busy.api })).rejects.toThrow('An upgrade is already running');
+    const free = fakeMachines(h);
+    await installer.upgradeCommand({ ...h.options, here: true }, { ...h.deps, machinesApi: free.api });
+    expect(free.created[0].request.name).toMatch(/^here-lock-/);
+    expect(free.created[0].request.skip_launch).toBe(true);
+    expect(free.destroyed).toEqual(['up1']);
+  });
+
+  it('--here goes by Fly when the file is behind an upgrade made elsewhere', async () => {
+    const h = await installedFree();
+    await installer.upgrade(h.options, h.deps);
+    const kept = JSON.parse(h.stateText());
+    writeFileSync(h.options.state, JSON.stringify({ ...kept, release: kept.previous }));
+    await installer.upgradeCommand({ ...h.options, here: true, release: '2026.10.28.1' }, { ...h.deps, machinesApi: fakeMachines(h).api });
+    expect(h.lines.join('\n')).toContain('says 2026.10.27.1; Fly says theirco runs 2026.10.28.1. Going by Fly.');
+  });
+
+  it('a stale --here lock does not hold up an upgrade', () => {
+    const now = Date.parse('2026-11-05T15:00:00Z');
+    expect(installer.upgradesUnderWay([
+      { id: 'a', state: 'created', name: 'here-lock-1', created_at: '2026-11-05T12:00:00Z' },
+      { id: 'b', state: 'created', name: 'here-lock-2', created_at: '2026-11-05T14:30:00Z' },
+      { id: 'c', state: 'destroyed', name: 'upgrader' },
+    ], now).map((machine) => machine.id)).toEqual(['b']);
+  });
+
+  it('says in one word how a run ended', () => {
+    expect(installer.outcomeOf({ release: 'x' }, null, false)).toBe('done');
+    expect(installer.outcomeOf({ drill: true }, null, false)).toBe('drill-done');
+    expect(installer.outcomeOf({ unchanged: true }, null, false)).toBe('unchanged');
+    expect(installer.outcomeOf(null, new Error('The upgrade to 2 failed and a.test is back on 1 (3 min)'), false)).toBe('put-back');
+    expect(installer.outcomeOf(null, new Error('Release 2: 404'), false)).toBe('failed');
+    // Cut off with the run still open: no outcome, so Fly starts it again.
+    expect(installer.outcomeOf(null, new Error('ssh: connection lost'), true)).toBeNull();
+  });
+
+  it('reads its own lines out of `fly logs`', () => {
+    expect(installer.logLineText('2026-11-05T15:05:09Z app[up1] ams [info]ACC-EVENT {"event":"step"}')).toBe('ACC-EVENT {"event":"step"}');
+    expect(installer.logLineText('\u001b[2m2026-11-05T15:05:09Z\u001b[0m app[up1] \u001b[32mams\u001b[0m [\u001b[34minfo\u001b[0m]  Snapshotting the database…')).toBe('  Snapshotting the database…');
+  });
+
+  it('signs S3 requests the way AWS documents (Signature Version 4, GET object example)', () => {
+    const signed = installer.signV4({
+      method: 'GET', url: 'https://examplebucket.s3.amazonaws.com/test.txt', headers: { range: 'bytes=0-9' },
+      payloadHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', region: 'us-east-1', now: new Date('2013-05-24T00:00:00Z'),
+    });
+    expect(signed.authorization).toBe('AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41');
   });
 });

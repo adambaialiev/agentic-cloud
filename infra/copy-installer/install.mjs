@@ -72,7 +72,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
+import { createHash, createHmac, generateKeyPairSync, randomBytes } from 'node:crypto';
 
 export const UPDATES_URL = process.env.ACC_UPDATES_URL || 'https://acc-updates.fly.dev';
 export const SOURCE_REPO = 'acc-copy';
@@ -1136,9 +1136,12 @@ const ROLL_ORDER = ['backend', 'git', 'router', 'mx'];
 export const rolledApps = (state) => ROLL_ORDER.filter((which) => which !== 'mx' || Boolean(state.mxV4));
 
 /** One of the copy's four apps, deployed from its own registry at a release. */
-export async function deployOne({ fly, state, names, which, release, peerIp }) {
+export async function deployOne({ fly, state, names, which, release, peerIp, broken = false }) {
+  // --drill backend: the new backend listens where Fly's health check never
+  // looks, so it never turns healthy, as a Workspace that does not start.
+  const extraEnv = broken ? { ...state.extraEnv, backend: { ...state.extraEnv?.backend, PORT: '8081' } } : state.extraEnv;
   const configs = appConfigs({
-    names, org: state.org, region: state.region, domain: state.domain, tags: release.tags, peerIp, version: release.version, extraEnv: state.extraEnv,
+    names, org: state.org, region: state.region, domain: state.domain, tags: release.tags, peerIp, version: release.version, extraEnv,
   });
   const dir = mkdtempSync(path.join(tmpdir(), `${state.prefix}-${which}-`));
   try {
@@ -1190,19 +1193,20 @@ export async function upgrade(options, deps = {}) {
   const emit = eventSink(options, deps);
   const started = Date.now();
   const fetchImpl = deps.fetchImpl ?? fetch;
-  const stateFile = findStateFile(options);
-  if (!existsSync(stateFile)) throw new Error(`There is no ${stateFile}. Run this where the installer left it, or give --state <file>.`);
-  const state = JSON.parse(readFileSync(stateFile, 'utf8'));
-  if (!state.release?.tags || !state.steps?.smoke) throw new Error(`${stateFile} is not a finished install. Run the installer to the end first.`);
-  const updateKey = releaseAccess(options, state.domain);
-  const save = () => writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  // Where the run is recorded: the state file here, or (on the upgrader
+  // machine) the copy's own backup bucket, read back if it restarts.
+  const store = deps.store ?? fileStore(findStateFile(options));
+  const state = await store.load();
+  if (!state.release?.tags || !state.steps?.smoke) throw new Error(`${store.name} is not a finished install. Run the installer to the end first.`);
+  const updateKey = releaseAccess({ ...options, name: options.name ?? state.prefix }, state.domain);
+  const save = () => store.save(state);
   const names = namesFor(state.prefix);
   const domain = state.domain;
 
   const bin = deps.flyctl ?? findFlyctl();
   if (!bin) throw new Error('flyctl is not installed. Install it (fly.io/docs/flyctl/install) and run this again.');
   let token = deps.token ?? process.env.FLY_API_TOKEN ?? '';
-  const logFile = path.resolve(`${state.prefix}-upgrade.log`);
+  const logFile = deps.logFile === undefined ? path.resolve(`${state.prefix}-upgrade.log`) : deps.logFile;
   const fly = deps.fly ?? ((args, opts) => flyRunner({ bin, token, logFile })(args, opts));
   if (!token) token = (await fly(['auth', 'token'], { quiet: true })).trim();
   if (!token) throw new PersonNeeded('fly-sign-in', NO_TOKEN);
@@ -1230,15 +1234,15 @@ export async function upgrade(options, deps = {}) {
       emit({ event: 'result', outcome: 'done', exitCode: EXIT.done, command: 'upgrade', domain, release: target.version, unchanged: true });
       return state;
     }
-    run = { from: state.release, toVersion: target.version, drill: Boolean(options.drill), startedAt: new Date().toISOString() };
+    run = { from: state.release, toVersion: target.version, drill: options.drill === 'backend' ? 'backend' : Boolean(options.drill), startedAt: new Date().toISOString() };
     state.upgrade = run;
-    save();
-    log(`Upgrading ${domain} from ${run.from.version} to ${run.toVersion}${run.drill ? ' as a drill: it fails on purpose once the new release is up, and rolls back' : ''}.`);
+    await save();
+    log(`Upgrading ${domain} from ${run.from.version} to ${run.toVersion}${run.drill === 'backend' ? ' as a drill: the new Workspace is made not to start, and the old release is put back without it' : run.drill ? ' as a drill: it fails on purpose once the new release is up, and rolls back' : ''}.`);
   }
 
   const rollBack = async (why) => {
     run.phase = 'rolling-back';
-    save();
+    await save();
     log(`\n  ${why}\n  Rolling back to ${run.from.version}, database as it was at ${run.snapshot.at}.`);
     for (const which of rolledApps(state)) await timed(`${names[which]} back to ${run.from.version}`, () => deployOne({ fly, state, names, which, release: run.from, peerIp: state.peerIp }));
     await timed('database back to the snapshot', async () => {
@@ -1256,7 +1260,7 @@ export async function upgrade(options, deps = {}) {
     for (const result of results) log(`    ${result.ok ? 'ok  ' : 'FAIL'}  ${result.what}: ${result.detail}`);
     if (results.some((result) => !result.ok)) throw new Error(`Rolled back to ${run.from.version}, but the smoke test still fails (above). The snapshot is ${run.snapshot.file} on ${names.backend}.`);
     delete state.upgrade;
-    save();
+    await save();
   };
 
   if (run.phase === 'rolling-back') {
@@ -1271,7 +1275,7 @@ export async function upgrade(options, deps = {}) {
       const dest = (deps.flyRegistry ?? flyRegistry)({ app: names.images, token, fetchImpl });
       const { release, copied } = await (deps.copyRelease ?? copyRelease)({ source, dest, version: run.toVersion, log });
       run.to = { version: release.version, commit: release.commit, tags: Object.fromEntries(Object.entries(copied).map(([name, image]) => [name, image.tag])) };
-      save();
+      await save();
     });
   }
 
@@ -1284,7 +1288,7 @@ export async function upgrade(options, deps = {}) {
       const check = await fly(['ssh', 'console', '-a', names.backend, '-C', `sqlite3 ${file} "PRAGMA integrity_check"`]);
       if (!/\bok\b/.test(check)) throw new Error(`the snapshot ${file} failed its integrity check`);
       run.snapshot = { file, at: new Date().toISOString() };
-      save();
+      await save();
     });
     // A second net: Fly's own snapshots of the two disks that hold data.
     for (const app of [names.backend, names.git]) {
@@ -1302,23 +1306,38 @@ export async function upgrade(options, deps = {}) {
   if (backendNow && backendNow !== state.peerIp) {
     log(`  The backend's private address is now ${backendNow} (was ${state.peerIp}).`);
     state.peerIp = backendNow;
-    save();
+    await save();
+  }
+
+  if (run.drill === 'backend' && !run.marked) {
+    // Written after the snapshot and before anything moves: the put-back
+    // database must not have it.
+    await sqlite(fly, names, `CREATE TABLE IF NOT EXISTS upgrade_drill (at TEXT); INSERT INTO upgrade_drill VALUES ('${new Date().toISOString()}');`);
+    run.marked = true;
+    await save();
   }
 
   try {
     for (const which of rolledApps(state)) {
-      await timed(`${names[which]} to ${run.to.version}`, () => deployOne({ fly, state, names, which, release: run.to, peerIp: state.peerIp }));
+      const broken = run.drill === 'backend' && which === 'backend';
+      await timed(`${names[which]} to ${run.to.version}${broken ? ' (made not to start, for the drill)' : ''}`, () => deployOne({ fly, state, names, which, release: run.to, peerIp: state.peerIp, broken }));
+      if (broken) throw new Error(`Drill: the new backend was made not to start, and Fly reported it healthy anyway. Look at ${names.backend} before trusting this drill.`);
     }
     const results = await timed('Smoke test', () => smoke({ domain, fetchImpl }));
     for (const result of results) log(`    ${result.ok ? 'ok  ' : 'FAIL'}  ${result.what}: ${result.detail}`);
     if (results.some((result) => !result.ok)) throw new Error('The smoke test failed on the new release (above).');
-    if (run.drill) {
+    if (run.drill === true) {
       await sqlite(fly, names, `CREATE TABLE IF NOT EXISTS upgrade_drill (at TEXT); INSERT INTO upgrade_drill VALUES ('${new Date().toISOString()}');`);
       throw new Error(`Drill: ${run.to.version} is up and passed; failing on purpose, with a mark written to the database after the snapshot.`);
     }
   } catch (error) {
     await rollBack(error.message);
-    if (run.drill) {
+    if (run.drill === 'backend' && !/Fly reported it healthy anyway/.test(error.message)) {
+      log(`\nDrill done: the new Workspace did not start, and ${domain} was put back on ${run.from.version} with its database as it was, without it, in ${minutes(Date.now() - started)}.`);
+      emit({ event: 'result', outcome: 'done', exitCode: EXIT.done, command: 'upgrade', domain, release: run.from.version, drill: 'backend', rehearsed: run.to.version });
+      return state;
+    }
+    if (run.drill === true) {
       log(`\nDrill done: ${domain} went to ${run.to.version}, came back to ${run.from.version} with its database as it was, in ${minutes(Date.now() - started)}.`);
       emit({ event: 'result', outcome: 'done', exitCode: EXIT.done, command: 'upgrade', domain, release: run.from.version, drill: true, rehearsed: run.to.version });
       return state;
@@ -1329,11 +1348,525 @@ export async function upgrade(options, deps = {}) {
   state.previous = run.from;
   state.release = run.to;
   delete state.upgrade;
-  save();
+  await save();
   log(`\n${domain} runs release ${run.to.version}. This upgrade took ${minutes(Date.now() - started)}.`);
   log(`  The database as it was before is ${run.snapshot.file} on ${names.backend}, until the next upgrade.`);
   emit({ event: 'result', outcome: 'done', exitCode: EXIT.done, command: 'upgrade', domain, release: run.to.version, previous: run.from.version });
   return state;
+}
+
+/** The state file as the command keeps it here: names and addresses only. */
+export function fileStore(file) {
+  return {
+    name: file,
+    async load() {
+      if (!existsSync(file)) throw new Error(`There is no ${file}. Run this where the installer left it, or give --state <file>.`);
+      return JSON.parse(readFileSync(file, 'utf8'));
+    },
+    async save(state) {
+      writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+    },
+  };
+}
+
+// ── Upgrades on the upgrader machine (note #1008, designed on note #1007) ──
+//
+// An upgrade runs on a one-shot machine in the copy's own Fly organization,
+// app <prefix>-upgrader, from the new release's own `upgrader` image. It runs
+// the very `upgrade()` above, so its snapshots, smoke test and rollback are
+// the command's own. It reads the copy's shape from Fly, not from a file, and
+// keeps its run record, events and heartbeat in the copy's backup bucket:
+// outside every app it rolls, so it can put the old release back when the
+// new Workspace is what broke, and anyone can read where it stands after the
+// Workspace restarts. The copy's backend makes the app and gives it its
+// secrets (the organization token, the bucket's keys) at every start.
+
+export const upgraderAppOf = (prefix) => `${prefix}-upgrader`;
+const MACHINES_API = 'https://api.machines.dev/v1';
+/** What the upgrader machine needs, as the app's secrets. */
+export const UPGRADER_SECRETS = ['FLY_API_TOKEN', 'BACKUP_S3_ENDPOINT', 'BACKUP_S3_BUCKET', 'BACKUP_S3_ACCESS_KEY_ID', 'BACKUP_S3_SECRET_ACCESS_KEY'];
+const HEARTBEAT_MS = 15_000;
+/** A run whose heartbeat is older than this has no upgrader left. */
+export const STALE_HEARTBEAT_MS = 120_000;
+
+/** Fly's Machines API, the few calls an upgrade needs. A 404 is null. */
+export function machinesApi({ token, base = MACHINES_API, fetchImpl = fetch }) {
+  const call = async (method, pathname, body) => {
+    const answer = await fetchImpl(`${base}${pathname}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    if (answer.status === 404) return null;
+    const text = await answer.text();
+    if (!answer.ok) throw new Error(`Fly ${method} ${pathname.split('?')[0]}: ${answer.status} ${text.trim().slice(0, 300)}`);
+    return text ? JSON.parse(text) : {};
+  };
+  return {
+    app: (name) => call('GET', `/apps/${name}`),
+    machines: async (app) => (await call('GET', `/apps/${app}/machines`)) ?? [],
+    machine: (app, id) => call('GET', `/apps/${app}/machines/${id}`),
+    createMachine: (app, request) => call('POST', `/apps/${app}/machines`, request),
+    destroyMachine: (app, id) => call('DELETE', `/apps/${app}/machines/${id}?force=true`),
+    // Names only. Fly's answer to SETTING a secret echoes its value, so the
+    // installer never sets one: the copy's backend does, and logs nothing.
+    secretNames: async (app) => ((await call('GET', `/apps/${app}/secrets`))?.secrets ?? []).map((secret) => secret.name ?? secret.label),
+  };
+}
+
+const imageTag = (image) => String(image ?? '').split('@')[0].split(':').pop() || null;
+/** Settings Fly adds to every machine itself, never ours to write back. */
+const FLY_OWN_ENV = new Set(['FLY_PROCESS_GROUP', 'PRIMARY_REGION']);
+
+/**
+ * The copy as Fly holds it, in the state file's own shape: no file is
+ * needed, and none can be stale. Every setting the deploy writes comes back
+ * from the backend machine's own config; whatever else is in it is the
+ * admin's own addition (extraEnv), because the deploy writes [env] whole.
+ */
+export async function stateFromFly({ api, prefix, mx = 'keep' }) {
+  const names = namesFor(prefix);
+  const machineOf = async (app) => {
+    const list = (await api.machines(app)).filter((machine) => machine.state !== 'destroyed');
+    return list.find((machine) => machine.state === 'started') ?? list[0] ?? null;
+  };
+  const backend = await machineOf(names.backend);
+  if (!backend?.config?.env) throw new Error(`${names.backend} has no machine to read the copy from.`);
+  const env = backend.config.env;
+  const [git, router] = [await machineOf(names.git), await machineOf(names.router)];
+  if (!env.WORKSPACE_URL || !env.FLY_ORG || !env.COPY_RELEASE) throw new Error(`${names.backend} does not look like a finished install: WORKSPACE_URL, FLY_ORG or COPY_RELEASE is missing.`);
+  const domain = new URL(env.WORKSPACE_URL).host;
+  const tags = {
+    backend: imageTag(backend.config.image),
+    'git-host': imageTag(git?.config?.image) ?? imageTag(env.FLY_GIT_HOST_IMAGE),
+    router: imageTag(router?.config?.image),
+    machine: imageTag(env.FLY_MACHINE_IMAGE),
+    'app-runtime': imageTag(env.FLY_APP_RUNTIME_IMAGE),
+    'msg-host': imageTag(env.FLY_MSG_HOST_IMAGE),
+    ...(env.FLY_MX_IMAGE ? { mx: imageTag(env.FLY_MX_IMAGE) } : {}),
+  };
+  for (const [name, tag] of Object.entries(tags)) if (!tag) throw new Error(`Could not tell which ${name} image ${prefix} runs.`);
+  const region = env.FLY_REGION || backend.region;
+  const peerIp = backend.private_ip ?? env.FLY_BACKEND_PEER_IP;
+  const written = new Set([
+    ...Object.keys(backendEnv({ names, org: env.FLY_ORG, region, domain, tags: { ...tags, mx: tags.mx ?? 'mx' }, peerIp: 'x', version: 'x' })),
+  ]);
+  const extra = Object.fromEntries(Object.entries(env).filter(([name]) => !written.has(name) && !FLY_OWN_ENV.has(name)));
+  return {
+    prefix,
+    domain,
+    org: env.FLY_ORG,
+    region,
+    peerIp,
+    release: { version: env.COPY_RELEASE, commit: null, tags },
+    extraEnv: Object.keys(extra).length ? { backend: extra } : {},
+    // Only a receiver an installer before note #946 made is rolled; one the
+    // Workspace made follows FLY_MX_IMAGE by itself.
+    ...(mx === 'roll' ? { mxV4: 'kept' } : {}),
+    steps: { smoke: true },
+    readFrom: 'fly',
+  };
+}
+
+// S3 (Signature Version 4) for the bucket, with node:crypto only.
+const sha256Hex = (data) => createHash('sha256').update(data).digest('hex');
+const hmac = (key, data) => createHmac('sha256', key).update(data).digest();
+const uriEncode = (text) => encodeURIComponent(text).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/** The Authorization header SigV4 asks for, for one request. */
+export function signV4({ method, url, headers, payloadHash, accessKeyId, secretAccessKey, region = 'auto', service = 's3', now = new Date() }) {
+  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const day = amzDate.slice(0, 8);
+  const target = new URL(url);
+  const all = { ...headers, host: target.host, 'x-amz-date': amzDate, 'x-amz-content-sha256': payloadHash };
+  const names = Object.keys(all).map((name) => name.toLowerCase()).sort();
+  const lower = Object.fromEntries(Object.entries(all).map(([name, value]) => [name.toLowerCase(), String(value).trim()]));
+  const query = [...target.searchParams].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => `${uriEncode(k)}=${uriEncode(v)}`).join('&');
+  const canonical = [method, target.pathname, query, names.map((name) => `${name}:${lower[name]}\n`).join(''), names.join(';'), payloadHash].join('\n');
+  const scope = `${day}/${region}/${service}/aws4_request`;
+  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonical)].join('\n');
+  const key = hmac(hmac(hmac(hmac(`AWS4${secretAccessKey}`, day), region), service), 'aws4_request');
+  const signature = createHmac('sha256', key).update(toSign).digest('hex');
+  return {
+    authorization: `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}`,
+    'x-amz-date': amzDate,
+    'x-amz-content-sha256': payloadHash,
+  };
+}
+
+/** The copy's backup bucket, path style, as the run record's home. */
+export function s3Bucket({ endpoint, bucket, accessKeyId, secretAccessKey, region = 'auto', fetchImpl = fetch }) {
+  const urlOf = (key) => `${endpoint.replace(/\/$/, '')}/${bucket}/${key.split('/').map(uriEncode).join('/')}`;
+  const send = async (method, key, body) => {
+    const url = urlOf(key);
+    const bytes = body === undefined ? '' : body;
+    const headers = body === undefined ? {} : { 'content-type': 'application/json' };
+    const signed = signV4({ method, url, headers, payloadHash: sha256Hex(bytes), accessKeyId, secretAccessKey, region });
+    return fetchImpl(url, { method, headers: { ...headers, ...signed }, ...(body === undefined ? {} : { body: bytes }) });
+  };
+  return {
+    async getText(key) {
+      const answer = await send('GET', key);
+      if (answer.status === 404) return null;
+      if (!answer.ok) throw new Error(`bucket GET ${key}: ${answer.status}`);
+      return answer.text();
+    },
+    async getJson(key) {
+      const text = await this.getText(key);
+      return text === null ? null : JSON.parse(text);
+    },
+    async put(key, text) {
+      const answer = await send('PUT', key, text);
+      if (!answer.ok) throw new Error(`bucket PUT ${key}: ${answer.status}`);
+    },
+    putJson(key, value) { return this.put(key, `${JSON.stringify(value, null, 2)}\n`); },
+    async remove(key) {
+      const answer = await send('DELETE', key);
+      if (!answer.ok && answer.status !== 404) throw new Error(`bucket DELETE ${key}: ${answer.status}`);
+    },
+  };
+}
+
+/** Where a run lives in the bucket. */
+export const runKeys = (id) => ({
+  run: `upgrades/${id}/run.json`,
+  events: `upgrades/${id}/events.jsonl`,
+  heartbeat: `upgrades/${id}/heartbeat.json`,
+  current: 'upgrades/current.json',
+});
+
+/** What a run ended as, in one word, from the upgrade's own result line. */
+export function outcomeOf(result, error, open) {
+  if (error) return open ? null : /^The upgrade to .* failed and .* is back on/.test(error.message) ? 'put-back' : 'failed';
+  if (!result) return 'failed';
+  if (result.unchanged) return 'unchanged';
+  if (result.drill) return 'drill-done';
+  if (result.rolledBack) return 'put-back';
+  return 'done';
+}
+
+/** The upgrader's own WireGuard peers: flyctl leaves one per run that used `fly ssh`. */
+export function ownPeers(listed, machineId) {
+  const rows = Array.isArray(listed) ? listed : [];
+  return rows.map((row) => row.Name ?? row.name).filter((name) => typeof name === 'string' && machineId && name.startsWith(`interactive-${machineId}-`));
+}
+
+/**
+ * The upgrader machine's whole job (`node install.mjs upgrader`, the image's
+ * command). It takes its run from the environment the command or the
+ * Workspace started it with, or carries on the open run whose upgrader is
+ * gone. It always exits 0 once the run has an outcome, so Fly's restart
+ * (on-failure) brings it back only when it was cut off mid-run.
+ */
+export async function runUpgrader(env = process.env, deps = {}) {
+  const log = deps.say ?? ((line) => process.stdout.write(`${line}\n`));
+  const now = deps.now ?? (() => new Date());
+  const token = env.FLY_API_TOKEN;
+  const prefix = env.ACC_PREFIX;
+  if (!prefix || !token) throw new Error('ACC_PREFIX and FLY_API_TOKEN are needed: this runs on the upgrader machine.');
+  for (const name of UPGRADER_SECRETS) if (!env[name]) throw new Error(`${name} is not set on ${upgraderAppOf(prefix)}: the copy's backend sets it at start.`);
+  const bucket = deps.bucket ?? s3Bucket({ endpoint: env.BACKUP_S3_ENDPOINT, bucket: env.BACKUP_S3_BUCKET, accessKeyId: env.BACKUP_S3_ACCESS_KEY_ID, secretAccessKey: env.BACKUP_S3_SECRET_ACCESS_KEY });
+  const api = deps.machinesApi ?? machinesApi({ token, fetchImpl: deps.fetchImpl });
+  const machineId = env.FLY_MACHINE_ID ?? null;
+  const peersFly = deps.fly ?? ((args, opts) => flyRunner({ bin: deps.flyctl ?? findFlyctl(), token, logFile: null })(args, opts));
+
+  // Which run: the one we were started for, unless another is open and its
+  // upgrader has gone quiet, which this one then carries on.
+  let id = env.ACC_RUN_ID || `${now().toISOString().replace(/[-:]/g, '').slice(0, 15)}-${randomBytes(3).toString('hex')}`;
+  const current = await bucket.getJson(runKeys('x').current);
+  if (current?.id && current.id !== id) {
+    const beat = await bucket.getJson(runKeys(current.id).heartbeat);
+    const quietFor = now().getTime() - new Date(beat?.at ?? current.startedAt ?? 0).getTime();
+    if (quietFor < STALE_HEARTBEAT_MS) throw new Error(`Another upgrade (${current.id}) is running: its upgrader was heard ${Math.round(quietFor / 1000)} s ago.`);
+    log(`Carrying on run ${current.id}: its upgrader has not been heard for ${Math.round(quietFor / 1000)} s.`);
+    id = current.id;
+  }
+  const keys = runKeys(id);
+  let run = await bucket.getJson(keys.run);
+  if (run?.outcome) {
+    log(`Run ${id} already ended: ${run.outcome}. Nothing to do.`);
+    process.stdout.write(`ACC-EVENT ${JSON.stringify({ event: 'result', ...(run.result ?? {}), outcome: run.result?.outcome ?? 'done', run: id, already: true })}\n`);
+    return run;
+  }
+
+  // One writer at a time to the bucket, in order.
+  let chain = Promise.resolve();
+  const queue = (job) => { chain = chain.then(job).catch((error) => log(`  (run record not written: ${error.message})`)); return chain; };
+  const events = (await bucket.getText(keys.events))?.split('\n').filter(Boolean).map((line) => JSON.parse(line)) ?? [];
+  let lastResult = null;
+  const emit = (event) => {
+    const stamped = { at: now().toISOString(), ...event };
+    events.push(stamped);
+    if (event.event === 'result') lastResult = event;
+    process.stdout.write(`ACC-EVENT ${JSON.stringify(stamped)}\n`);
+    const text = `${events.map((e) => JSON.stringify(e)).join('\n')}\n`;
+    queue(() => bucket.put(keys.events, text));
+  };
+  const beat = () => queue(() => bucket.putJson(keys.heartbeat, { at: now().toISOString(), machine: machineId }));
+  const heart = setInterval(beat, deps.heartbeatMs ?? HEARTBEAT_MS);
+  heart.unref?.();
+
+  run = run ?? {
+    id,
+    requestedBy: env.ACC_REQUESTED_BY || 'someone',
+    toVersion: env.ACC_RELEASE || 'latest',
+    drill: env.ACC_DRILL || '',
+    startedAt: now().toISOString(),
+    shape: null,
+    upgrade: null,
+  };
+  run.machines = [...new Set([...(run.machines ?? []), machineId].filter(Boolean))];
+  if (!run.shape) run.shape = await stateFromFly({ api, prefix, mx: env.ACC_MX || 'keep' });
+  const { upgrade: _open, ...shape } = run.shape;
+  const state = { ...shape, ...(run.upgrade ? { upgrade: run.upgrade } : {}) };
+  const store = {
+    name: `the run record ${keys.run}`,
+    load: async () => state,
+    save: async (s) => {
+      run.upgrade = s.upgrade ?? null;
+      run.release = s.release;
+      await queue(() => bucket.putJson(keys.run, run));
+    },
+  };
+  await store.save(state);
+  await queue(() => bucket.putJson(keys.current, { id, startedAt: run.startedAt }));
+  beat();
+  log(`Upgrader ${machineId ?? '(local)'}: run ${id}, ${run.requestedBy}, ${prefix} to ${run.toVersion}${run.drill ? `, drill ${run.drill}` : ''}.`);
+
+  let error = null;
+  try {
+    await upgrade(
+      { release: run.toVersion, drill: run.drill === 'backend' ? 'backend' : run.drill === 'rollback', updates: env.ACC_UPDATES_URL || undefined, name: prefix },
+      { ...deps, store, emit, token, say: log, logFile: deps.logFile ?? '/tmp/acc-upgrade.log' },
+    );
+  } catch (caught) {
+    error = caught;
+    log(`upgrade: ${caught.message}`);
+    // flyctl's own words for what went wrong, from the log the run keeps.
+    try { if (!deps.fly) log(lastLines(readFileSync(deps.logFile ?? '/tmp/acc-upgrade.log', 'utf8'), 30).split('\n').map((line) => `  fly| ${line}`).join('\n')); } catch { /* no log */ }
+  }
+  const open = Boolean(state.upgrade);
+  const outcome = outcomeOf(lastResult, error, open);
+  clearInterval(heart);
+  if (!outcome) {
+    // Cut off with apps possibly moved: let Fly start this machine again,
+    // and the next start carries on from the run record.
+    await chain;
+    await cleanUpPeers({ fly: peersFly, org: run.shape.org, machineId, log });
+    throw new Error(`Run ${id} stopped part-way (${error.message}); carrying on at the next start.`);
+  }
+  run.outcome = outcome;
+  run.finishedAt = now().toISOString();
+  run.message = error ? error.message : null;
+  run.result = lastResult ?? { event: 'result', outcome: 'failed', message: error?.message };
+  await queue(() => bucket.putJson(keys.run, run));
+  await queue(async () => {
+    const still = await bucket.getJson(keys.current);
+    if (still?.id === id) await bucket.remove(keys.current);
+  });
+  await cleanUpPeers({ fly: peersFly, org: run.shape.org, machineId, log });
+  process.stdout.write(`ACC-EVENT ${JSON.stringify({ event: 'result', ...(lastResult ?? {}), outcome: lastResult?.outcome ?? 'failed', upgrade: outcome, run: id, ...(error ? { message: error.message } : {}) })}\n`);
+  log(`Run ${id}: ${outcome}.`);
+  await chain;
+  return run;
+}
+
+/** The last thing an upgrader does: take away the WireGuard peers its `fly ssh` left. */
+async function cleanUpPeers({ fly, org, machineId, log }) {
+  if (!machineId || !org) return;
+  try {
+    const listed = JSON.parse(await fly(['wireguard', 'list', org, '--json']) || '[]');
+    for (const name of ownPeers(listed, machineId)) {
+      await fly(['wireguard', 'remove', org, name]);
+      log(`  WireGuard peer ${name.slice(0, 40)}… removed.`);
+    }
+  } catch (error) {
+    log(`  (WireGuard peers not cleaned up: ${error.message})`);
+  }
+}
+
+/** One line from `fly logs`: the upgrader's own words after Fly's prefix. */
+export function logLineText(line) {
+  const plain = line.replace(/\u001b\[[0-9;]*m/g, '');
+  const at = plain.indexOf('[info]');
+  return at >= 0 ? plain.slice(at + 6) : plain;
+}
+
+/**
+ * `node install.mjs upgrade`: the engineer's command. It starts the upgrader
+ * machine and follows it; closing the terminal does not stop the upgrade.
+ * `--here` runs the upgrade on this computer as before: once for a copy whose
+ * release predates the upgrader, or when Fly cannot start a machine.
+ */
+export async function upgradeCommand(options, deps = {}) {
+  if (options.here) return upgradeHere(options, deps);
+  const log = deps.say ?? say;
+  const emit = eventSink(options, deps);
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const file = (() => { try { return findStateFile(options); } catch { return null; } })();
+  const kept = file && existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  const prefix = kept?.prefix ?? (options.name ? String(options.name).toLowerCase() : null);
+  if (!prefix) throw new UsageError('Which copy: run this where the installer left <prefix>-copy.json, or give --name <prefix>.');
+  const bin = deps.flyctl ?? findFlyctl();
+  let token = deps.token ?? process.env.FLY_API_TOKEN ?? '';
+  const fly = deps.fly ?? ((args, opts) => flyRunner({ bin, token, logFile: null })(args, opts));
+  if (!token && bin) token = (await fly(['auth', 'token'], { quiet: true }).catch(() => '')).trim();
+  if (!token) throw new PersonNeeded('fly-sign-in', NO_TOKEN);
+  const api = deps.machinesApi ?? machinesApi({ token, fetchImpl });
+  const names = namesFor(prefix);
+  const app = upgraderAppOf(prefix);
+  const here = (why) => {
+    log(`  ${why} So this upgrade runs here, on this computer, as with --here.`);
+    return upgradeHere(options, deps);
+  };
+
+  const secretNames = await api.secretNames(app).catch(() => null);
+  if (!secretNames) return here(`${app} does not exist yet: the Workspace makes it when it starts on a release that has the upgrader.`);
+  const missing = UPGRADER_SECRETS.filter((name) => !secretNames.includes(name));
+  if (missing.length) return here(`${app} has no ${missing.join(', ')}.`);
+  const busy = upgradesUnderWay(await api.machines(app));
+  if (busy.length) throw new Error(`An upgrade is already running: machine ${busy[0].id} in ${app} is ${busy[0].state}. Wait for it to finish, or follow it with: fly logs -a ${app}`);
+
+  const shape = await stateFromFly({ api, prefix, mx: kept?.mxV4 ? 'roll' : 'keep' });
+  if (kept?.release?.version && kept.release.version !== shape.release.version) {
+    log(`  ${file} says ${kept.release.version}; Fly says ${prefix} runs ${shape.release.version}. Going by Fly.`);
+  }
+  const access = releaseAccess({ ...options, name: prefix }, shape.domain);
+  const source = (deps.updatesSource ?? updatesSource)({ customer: access.customer, key: access.key, url: options.updates || UPDATES_URL, fetchImpl });
+  const target = await source.release(options.release || 'latest');
+  if (target.version === shape.release.version && !options.drill) {
+    log(`${shape.domain} already runs release ${target.version}; nothing to do.`);
+    emit({ event: 'result', outcome: 'done', exitCode: EXIT.done, command: 'upgrade', domain: shape.domain, release: target.version, unchanged: true });
+    return { outcome: 'unchanged' };
+  }
+  const image = target.images?.upgrader;
+  if (!image) return here(`Release ${target.version} has no upgrader image.`);
+
+  await (deps.copyOneImage ?? (async () => {
+    const workdir = mkdtempSync(path.join(tmpdir(), 'acc-upgrader-'));
+    try {
+      await copyImage(source, (deps.flyRegistry ?? flyRegistry)({ app: names.images, token, fetchImpl }), image.tag, workdir);
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  }))();
+  const runId = `${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}-${randomBytes(3).toString('hex')}`;
+  const drill = options.drill === 'backend' ? 'backend' : options.drill ? 'rollback' : '';
+  const machine = await api.createMachine(app, {
+    region: shape.region,
+    config: {
+      image: `registry.fly.io/${names.images}:${image.tag}`,
+      guest: { cpu_kind: 'shared', cpus: 1, memory_mb: 512 },
+      env: {
+        ACC_PREFIX: prefix,
+        ACC_RUN_ID: runId,
+        ACC_RELEASE: target.version,
+        ACC_DRILL: drill,
+        ACC_MX: kept?.mxV4 ? 'roll' : 'keep',
+        ACC_REQUESTED_BY: 'the engineer\'s command',
+        ...(options.updates ? { ACC_UPDATES_URL: options.updates } : {}),
+      },
+      auto_destroy: true,
+      restart: { policy: 'on-failure', max_retries: 3 },
+    },
+  });
+  log(`Upgrading ${shape.domain} from ${shape.release.version} to ${target.version}${drill ? ` as a drill (${drill})` : ''} on the upgrader, machine ${machine.id} in ${app}.`);
+  log('  This terminal only follows it: closing it does not stop the upgrade. Follow it again with:');
+  log(`  fly logs -a ${app}`);
+  const result = await (deps.follow ?? followUpgrader)({ bin, token, app, machineId: machine.id, api, log, emit, pollMs: deps.pollMs });
+  if (kept && file && result?.release) {
+    // The file stays a cache of what Fly says, so it cannot mislead a --here later.
+    const fresh = await stateFromFly({ api, prefix, mx: kept.mxV4 ? 'roll' : 'keep' }).catch(() => null);
+    if (fresh) writeFileSync(file, `${JSON.stringify({ ...kept, release: { ...fresh.release, commit: result.commit ?? kept.release?.commit ?? null }, peerIp: fresh.peerIp, ...(result.previous ? { previous: kept.release } : {}) }, null, 2)}\n`, { mode: 0o600 });
+  }
+  if (result?.upgrade === 'done' || result?.upgrade === 'drill-done' || result?.upgrade === 'unchanged') return result;
+  if (result?.upgrade === 'put-back') throw new Error(`The upgrade to ${target.version} failed and ${shape.domain} is back on ${shape.release.version}: ${result.message ?? 'see the lines above'}`);
+  throw new Error(result?.message ?? `The upgrader ended without saying how it went. Run node install.mjs status, then this command again: a new upgrader carries on the open run.`);
+}
+
+/** A --here run's lock: a machine that never starts, named so, in the upgrader's app. */
+export const HERE_LOCK = 'here-lock';
+const HERE_LOCK_STALE_MS = 2 * 3600_000;
+/** Machines in the upgrader's app that mean an upgrade is under way. */
+export const upgradesUnderWay = (machines, now = Date.now()) => machines.filter((machine) => machine.state !== 'destroyed'
+  && !(String(machine.name ?? '').startsWith(HERE_LOCK) && now - new Date(machine.created_at ?? 0).getTime() > HERE_LOCK_STALE_MS));
+
+/**
+ * The upgrade on this computer (--here): the file's record, but Fly's word
+ * on what runs, and the same one-at-a-time lock as the upgrader, so the
+ * Workspace never starts one beside it.
+ */
+async function upgradeHere(options, deps) {
+  const log = deps.say ?? say;
+  const file = findStateFile(options);
+  const fileState = await fileStore(file).load();
+  const token = deps.token ?? process.env.FLY_API_TOKEN ?? '';
+  const api = deps.machinesApi ?? (token ? machinesApi({ token, fetchImpl: deps.fetchImpl }) : null);
+  let store = fileStore(file);
+  let lock = null;
+  const app = upgraderAppOf(fileState.prefix);
+  if (api) {
+    const shape = await stateFromFly({ api, prefix: fileState.prefix, mx: fileState.mxV4 ? 'roll' : 'keep' }).catch(() => null);
+    if (shape && !fileState.upgrade && shape.release.version !== fileState.release?.version) {
+      log(`  ${file} says ${fileState.release?.version}; Fly says ${fileState.prefix} runs ${shape.release.version}. Going by Fly.`);
+      const merged = { ...fileState, release: shape.release, peerIp: shape.peerIp, extraEnv: shape.extraEnv };
+      store = { name: file, load: async () => merged, save: (s) => fileStore(file).save(s) };
+    }
+    if (await api.app(app).catch(() => null)) {
+      const busy = upgradesUnderWay(await api.machines(app));
+      if (busy.length) throw new Error(`An upgrade is already running: machine ${busy[0].id} in ${app} is ${busy[0].state}. Wait for it to finish.`);
+      const backendTag = (shape ?? fileState).release.tags.backend;
+      lock = await api.createMachine(app, {
+        name: `${HERE_LOCK}-${randomBytes(3).toString('hex')}`,
+        region: (shape ?? fileState).region,
+        skip_launch: true,
+        config: { image: `registry.fly.io/${namesFor(fileState.prefix).images}:${backendTag}`, guest: { cpu_kind: 'shared', cpus: 1, memory_mb: 256 }, auto_destroy: true },
+      }).catch((error) => { log(`  (no lock taken in ${app}: ${error.message})`); return null; });
+    }
+  }
+  try {
+    return await upgrade(options, { ...deps, store });
+  } finally {
+    if (lock?.id) await api.destroyMachine(app, lock.id).catch((error) => log(`  (the lock ${lock.id} in ${app} was not removed: ${error.message}; it lapses in 2 hours)`));
+  }
+}
+
+/** Follow one upgrader machine until it is gone: its log lines, then its result. */
+export async function followUpgrader({ bin, token, app, machineId, api, log, emit, pollMs = 5000 }) {
+  let result = null;
+  let buffer = '';
+  const child = bin ? spawn(bin, ['logs', '-a', app], { env: { ...process.env, FLY_API_TOKEN: token, FLY_NO_UPDATE_CHECK: '1' }, stdio: ['ignore', 'pipe', 'ignore'] }) : null;
+  const seen = (line) => {
+    if (machineId && !line.includes(machineId)) return;
+    const text = logLineText(line);
+    if (text.startsWith('ACC-EVENT ')) {
+      try {
+        const event = JSON.parse(text.slice(10));
+        if (event.event === 'result' && 'upgrade' in event) { result = event; return; }
+        if (event.event === 'step') emit(event);
+      } catch { /* a cut line */ }
+      return;
+    }
+    if (text.trim()) log(`  │ ${text}`);
+  };
+  child?.stdout.on('data', (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    lines.forEach(seen);
+  });
+  try {
+    for (;;) {
+      await sleep(pollMs);
+      const machine = await api.machine(app, machineId).catch(() => undefined);
+      if (result) break;
+      if (machine === null || machine?.state === 'destroyed') { await sleep(Math.min(pollMs * 2, 10_000)); break; }
+    }
+  } finally {
+    child?.kill();
+  }
+  if (result) emit({ ...result });
+  return result;
 }
 
 /** The install's steps, in order, as its state file records them. */
@@ -1638,7 +2171,12 @@ async function main() {
   }
   if (command === 'upgrade') {
     if (licensingOn() && !options['key-file']) throw new UsageError('--key-file is needed while licensing is on: the update key your own Agentic Cloud was installed with.');
-    await upgrade(options);
+    await upgradeCommand(options);
+    return;
+  }
+  if (command === 'upgrader') {
+    // On the upgrader machine only: the image's own command (note #1008).
+    await runUpgrader(process.env);
     return;
   }
   if (command !== 'copy') {
@@ -1647,7 +2185,7 @@ async function main() {
     say('         [--key-file <update key file> --licence-file <licence file> | --no-licence]  (only with COPY_LICENCE=on)');
     say('         [--plan] [--json]');
     say('       node install.mjs status [--state <file>] [--json]');
-    say('       node install.mjs upgrade [--release <version|latest>] [--drill] [--state <file>] [--json] [--key-file <file>]');
+    say('       node install.mjs upgrade [--release <version|latest>] [--drill [backend]] [--here] [--state <file>] [--json] [--key-file <file>]');
     say('       node install.mjs copy --to-app <images app> [--release <version|latest>] [--customer <id> --key-file <file>]');
     say('exit codes: 0 done, 1 failed, 2 wrong command, 3 a person is needed, 4 still waiting (run it again later)');
     process.exitCode = EXIT.usage;

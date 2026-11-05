@@ -158,6 +158,7 @@ import { RetiredSandboxClient } from './services/retired-sandbox-client.js';
 import { FlySandboxClient } from './services/fly-sandbox-client.js';
 import { FlyClient } from './services/fly-client.js';
 import { CopyPeerRepin } from './services/copy-peer-repin.js';
+import { ensureCopyUpgrader, upgraderAppName } from './services/copy-upgrader.js';
 import { SmtpMailSender, SmtpWorkspaceVerificationEmailSender, createSmtpTransport, smtpSettingsFromEnv } from './services/smtp-mail.js';
 import {
   CopyMailSetup, InMemoryCopyMailSetupStore, SqliteCopyMailSetupStore, type CopyMailSending,
@@ -1650,7 +1651,8 @@ if (flySandboxClient) {
       undefined,
       { timeoutMs: 10_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER },
     ),
-    skipAppNames: [FLY_IMAGE_APP],
+    // A copy's upgrader app (note #1008) is the installer's, not an agent's.
+    skipAppNames: [FLY_IMAGE_APP, ...(PRIVATE_COPY && copyAppPrefix ? [upgraderAppName(copyAppPrefix)] : [])],
     // Record-allowlist ownership (byo-fly-design): the sweep walks only apps
     // an agent or deployment record claims; anything else is reported, never
     // touched — the posture that has to hold before any client Fly org.
@@ -1754,6 +1756,14 @@ if (flySandboxClient) {
     });
     copyPeerRepin.start(30_000);
     console.log(`[config] COPY_PEER_REPIN=enabled (machines pinned to another address move to ${FLY_BACKEND_PEER_IP})`);
+  }
+
+  // A copy's upgrades run on a one-shot machine in <prefix>-upgrader (note
+  // #1008): made here if missing, with this backend's Fly token and backup
+  // bucket keys as its secrets. Never in the way of starting up.
+  if (PRIVATE_COPY && copyAppPrefix && FLY_API_TOKEN && FLY_ORG) {
+    void ensureCopyUpgrader({ prefix: copyAppPrefix, org: FLY_ORG, env: process.env, fly: new FlyClient(FLY_API_TOKEN) })
+      .catch((error: unknown) => console.warn(`[copy-upgrader] could not make ${upgraderAppName(copyAppPrefix)} ready: ${error instanceof Error ? error.message : String(error)}`));
   }
 
   // Recycler: destroy the machines of agents nobody has touched in
