@@ -295,6 +295,22 @@ if [ "$KIND" != "mirror-github" ]; then
   git clean -qfdx -e node_modules -e backend/node_modules
 fi
 
+# The offer gate for the release in infra/copy-release/VERSION (note #1008):
+# infra/copy-release/gate.sh, with the standing test copy's token and state.
+run_copy_release_gate() {
+  if [ -z "${COPY_TEST_FLY_TOKEN:-}" ]; then
+    echo "COPY_TEST_FLY_TOKEN is not set in /etc/ia-ci/env: there is no standing test copy to try this release on," >&2
+    echo "so it is built but NOT offered. See the knowledge page private-copy, 'The standing test copy'." >&2
+    exit 1
+  fi
+  : "${FLY_API_TOKEN:?FLY_API_TOKEN unset in /etc/ia-ci/env — cannot mark the release offered}"
+  VERSION="$(tr -d '[:space:]' < infra/copy-release/VERSION)" \
+    COPY_TEST_FLY_TOKEN="$COPY_TEST_FLY_TOKEN" FLY_API_TOKEN="$FLY_API_TOKEN" \
+    COPY_TEST_STATE_DIR="${COPY_TEST_STATE_DIR:-$WORKDIR/copy-test}" \
+    RELEASE_REPO="${COPY_RELEASE_REPO:-acc-copy-releases}" GATE_RUN="${SHA:0:12}" \
+    ./infra/copy-release/gate.sh
+}
+
 case "$KIND" in
   checks)
     # Frontend: deps, tests+coverage, lint (advisory, as in ci-cd.yml), build.
@@ -894,6 +910,16 @@ REMOTE
       RELEASE_REPO="${COPY_RELEASE_REPO:-acc-copy-releases}" \
       MACHINE_IMAGE="$COPY_MACHINE_IMAGE" APP_RUNTIME_IMAGE="$COPY_APP_RUNTIME_IMAGE" \
       ./infra/copy-release/build.sh
+    # The offer gate (note #1008): built is not offered. The standing test
+    # copy upgrades to it and passes both drills first; only then does the
+    # update service name it latest. A red here means built, NOT offered.
+    run_copy_release_gate
+    ;;
+
+  copy-release-gate)
+    # The gate alone, for a release already built (dispatch it to re-run the
+    # gate after a fix, or to try the release in VERSION again).
+    run_copy_release_gate
     ;;
 
   deploy-db-backup)

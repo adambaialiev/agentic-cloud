@@ -75,3 +75,25 @@ describe('the offer gate script (note #1008)', () => {
     ]);
   });
 });
+
+describe('the CI runner wires the gate in (note #1008)', () => {
+  const RUNNER = path.resolve(__dirname, '../../../../infra/ci-runner');
+  it('copy-release runs the gate right after the build, and copy-release-gate runs it alone', () => {
+    const job = readFileSync(path.join(RUNNER, 'run-job.sh'), 'utf8');
+    const release = job.slice(job.indexOf('\n  copy-release)'), job.indexOf('\n  copy-release-gate)'));
+    expect(release.indexOf('./infra/copy-release/build.sh')).toBeGreaterThan(0);
+    expect(release.indexOf('run_copy_release_gate')).toBeGreaterThan(release.indexOf('./infra/copy-release/build.sh'));
+    const alone = job.slice(job.indexOf('\n  copy-release-gate)'));
+    expect(alone.slice(0, alone.indexOf(';;'))).toContain('run_copy_release_gate');
+    // The function is defined before the jobs, after the checkout, with the gate's own settings.
+    const fn = job.indexOf('run_copy_release_gate() {');
+    expect(fn).toBeGreaterThan(job.indexOf('git checkout --quiet --force "$SHA"'));
+    expect(fn).toBeLessThan(job.indexOf('case "$KIND" in'));
+    expect(job.slice(fn, job.indexOf('\n}\n', fn))).toContain('./infra/copy-release/gate.sh');
+  });
+
+  it('copy-release-gate can be dispatched', () => {
+    const daemon = readFileSync(path.join(RUNNER, 'daemon.mjs'), 'utf8');
+    expect(daemon).toMatch(/const DISPATCHABLE = new Set\(\[[^\]]*'copy-release-gate'/);
+  });
+});
