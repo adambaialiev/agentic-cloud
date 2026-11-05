@@ -987,6 +987,13 @@ export async function startMockWorkspace(repoRoot, options = {}) {
       respondJson(200, { apps: [] });
       return true;
     }
+    // The home page's guide (note #1010) reads who answers once on load. No
+    // guide lives in these worlds, so it answers as the real backend does
+    // with none: resting, no time, no agent; the screen draws its rest box.
+    if (req.method === 'GET' && url.pathname === '/workspace/api/public/ask/status') {
+      respondJson(200, { state: 'resting', until: null, agent: null });
+      return true;
+    }
     // The founder's card (note #786) reads the founder's public address. No
     // such person lives in these worlds, so it answers as the real backend
     // does for a word nobody holds, and the card stands down to its door.
