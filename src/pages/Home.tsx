@@ -122,7 +122,10 @@ export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
    window) and "The result" (from "Here's Bookface: ..." through the photos
    and the close, "Your team. Your agents. Your cloud. Your rules."). Iris's
    cut points (wide 17.5 / 50.2 s, tall 17.5 / 57.5 s) are each crossfade's
-   start; the jumps land on the first clean frame after it. */
+   start; the jumps land on the first clean frame after it.
+   Since note #1000 the film is the tenth cut: the same three stops; the
+   opening card holds 6 s, so "The team" starts a second later (Iris's cut
+   points wide 18.5 / 50.2 s, tall 18.5 / 57.5 s, read the same way). */
 export const FILM_SECTION_NAMES = ['The ask', 'The team', 'The result'] as const;
 /* On a phone the three share one row, two lines at most. The sixth cut's
    names are short enough to read there whole, so they are the same. */
@@ -138,13 +141,13 @@ export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
   background: FILM_BACKGROUND,
   length: 78.97,
-  sections: sectionsAt([0, 17.9, 50.6]),
+  sections: sectionsAt([0, 18.9, 50.6]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   background: FILM_BACKGROUND,
   length: 86.27,
-  sections: sectionsAt([0, 17.9, 57.9]),
+  sections: sectionsAt([0, 18.9, 57.9]),
 };
 /* The site the film is about, live and public (note #958, the owner, 3 Nov
    2026, 12:06 UTC: "remove helper texts and put the link to the bookface

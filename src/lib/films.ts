@@ -70,8 +70,12 @@ export function filmUrl(path: string): string {
    Since note #998 the site ships no posters: until the film's first frame
    the frame is a plain fill in the film's own background colour
    (FILM_BACKGROUND in Home.tsx). */
-export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-ninth-1280x720.mp4';
+/* Since note #1000 both are Iris's tenth cut (note #997, the owner's five
+   caption changes of 5 Nov 2026, 11:28 UTC; the opening card holds 6 s):
+   the wide one 1:19, 1280x720, 3.5 MB; the tall one 1:26, 720x1280,
+   5.3 MB; same encode, no poster (note #998). */
+export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-tenth-1280x720.mp4';
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
-export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-ninth-720x1280.mp4';
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-tenth-720x1280.mp4';
