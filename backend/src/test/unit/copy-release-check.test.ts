@@ -200,3 +200,79 @@ describe('the health JSON and the diagnostics bundle carry running and latest', 
     expect(bundle.settings).toMatchObject({ COPY_UPDATES_URL: 'https://acc-updates.fly.dev' });
   });
 });
+
+describe('What\'s new: the releases newer than the running one, with their notes (note #1006)', () => {
+  const NOTES: Record<string, string> = {
+    '2026.11.01.1': '# Email set up from the Workspace\n\n## What\'s new\n\n- Mail.\n',
+    '2026.11.09.0': '# Release notes on every upgrade\n\n## What\'s new\n\n- This screen.\n',
+  };
+  const list = {
+    latest: '2026.11.16.0',
+    releases: [
+      { version: '2026.10.27.4', date: '2026-10-27' },
+      { version: '2026.11.01.1', date: '2026-11-01', summary: 'Email set up from the Workspace' },
+      { version: '2026.11.09.0', date: '2026-11-09', summary: 'Release notes on every upgrade' },
+      { version: '2026.11.16.0', date: '2026-11-16' },
+    ],
+  };
+  function world() {
+    const asked: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      asked.push(url);
+      if (url.endsWith('/releases')) return new Response(JSON.stringify(list));
+      const version = /\/releases\/([^/]+)\/notes\.md$/.exec(url)?.[1] ?? '';
+      return NOTES[version] ? new Response(NOTES[version]) : new Response('That release has no notes.', { status: 404 });
+    }) as typeof fetch;
+    return { asked, updates: createReleaseCheck({ url: 'https://updates.test', fetchImpl }) };
+  }
+  const health = (release: string | undefined, updates: ReturnType<typeof createReleaseCheck>) => createCopyHealth({
+    ...(release ? { release } : {}), startedAt: new Date(), env: {}, updates,
+    fetchImpl: (async () => { throw new TypeError('no'); }) as typeof fetch,
+  });
+
+  it('lists newer releases newest first, then the running one, each with its notes or none', async () => {
+    const { asked, updates } = world();
+    const answer = await health('2026.11.01.1', updates).releases();
+    expect(answer.updates).toMatchObject({ state: 'behind', running: '2026.11.01.1', latest: '2026.11.16.0' });
+    expect(answer.releases).toEqual([
+      { version: '2026.11.16.0', date: '2026-11-16', summary: null, notes: null, running: false },
+      { version: '2026.11.09.0', date: '2026-11-09', summary: 'Release notes on every upgrade', notes: NOTES['2026.11.09.0'], running: false },
+      { version: '2026.11.01.1', date: '2026-11-01', summary: 'Email set up from the Workspace', notes: NOTES['2026.11.01.1'], running: true },
+    ]);
+    // Older releases, hand-built test ones included, are never asked about.
+    expect(asked.some((url) => url.includes('2026.10.27.4'))).toBe(false);
+  });
+
+  it('keeps notes it found, and asks again for ones it did not', async () => {
+    const { asked, updates } = world();
+    await updates.notes('2026.11.09.0');
+    await updates.notes('2026.11.09.0');
+    await updates.notes('2026.11.16.0');
+    await updates.notes('2026.11.16.0');
+    expect(asked.filter((url) => url.endsWith('2026.11.09.0/notes.md'))).toHaveLength(1);
+    expect(asked.filter((url) => url.endsWith('2026.11.16.0/notes.md'))).toHaveLength(2);
+    expect(await updates.notes('../etc')).toBeNull();
+  });
+
+  it('up to date: only the running release, "what this release brought"', async () => {
+    const { updates } = world();
+    list.latest = '2026.11.01.1';
+    try {
+      const answer = await health('2026.11.16.0', updates).releases();
+      expect(answer.releases.map((r) => [r.version, r.running])).toEqual([['2026.11.16.0', true]]);
+    } finally {
+      list.latest = '2026.11.16.0';
+    }
+  });
+
+  it('with the running release unknown, the latest alone; with checks off, nothing asked', async () => {
+    const { updates } = world();
+    expect((await health(undefined, updates).releases()).releases.map((r) => r.version)).toEqual(['2026.11.16.0']);
+    const { calls, fetchImpl } = service(LIST);
+    const off = createReleaseCheck({ url: null, fetchImpl });
+    const answer = await health('2026.11.01.1', off).releases();
+    expect(answer.updates.state).toBe('off');
+    expect(answer.releases).toEqual([{ version: '2026.11.01.1', date: null, summary: null, notes: null, running: true }]);
+    expect(calls).toHaveLength(0);
+  });
+});

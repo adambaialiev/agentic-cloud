@@ -15,7 +15,7 @@
  * are keys say only "set" or "not set".
  */
 import { stat, statfs } from 'node:fs/promises';
-import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyUpdates } from '../shared/workspace-api.js';
+import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyRelease, WorkspaceCopyReleases, WorkspaceCopyUpdates } from '../shared/workspace-api.js';
 import type { LicenceStatus } from './copy-licence.js';
 import { compareReleases, RELEASE_VERSION_SHAPE, type ReleaseCheck, type ReleaseCheckState } from './copy-release-check.js';
 
@@ -42,7 +42,7 @@ export interface CopyHealthOptions {
   /** The licence, when the copy has the check on (note #814). */
   licence?: () => Promise<LicenceStatus>;
   /** Whether a newer release is out (note #1005); absent reads as off. */
-  updates?: Pick<ReleaseCheck, 'current'>;
+  updates?: Pick<ReleaseCheck, 'current'> & Partial<Pick<ReleaseCheck, 'notes'>>;
   fetchImpl?: typeof fetch;
   now?: () => Date;
 }
@@ -244,6 +244,35 @@ export function createCopyHealth(options: CopyHealthOptions) {
     };
   }
 
+  /**
+   * The What's new screen (note #1006): every release newer than the one
+   * running, newest first, then the running one ("what this release
+   * brought"), each with its notes. With the running release unknown, the
+   * latest alone.
+   */
+  async function releases(): Promise<WorkspaceCopyReleases> {
+    const check = options.updates ? await options.updates.current() : null;
+    const { updates } = releaseStanding(options.release ?? null, check, now(), options.startedAt);
+    const running = options.release && RELEASE_VERSION_SHAPE.test(options.release) ? options.release : null;
+    const listed = check?.releases ?? [];
+    const picked = running
+      ? listed.filter((entry) => compareReleases(entry.version, running) > 0)
+      : listed.filter((entry) => entry.version === check?.latest);
+    const shown = [...picked].sort((a, b) => compareReleases(b.version, a.version));
+    if (running) shown.push(listed.find((entry) => entry.version === running) ?? { version: running, date: null });
+    const notes = await Promise.all(shown.map((entry) => options.updates?.notes?.(entry.version) ?? Promise.resolve(null)));
+    return {
+      updates,
+      releases: shown.map((entry, i): WorkspaceCopyRelease => ({
+        version: entry.version,
+        date: entry.date ?? null,
+        summary: entry.summary ?? null,
+        notes: notes[i] ?? null,
+        running: entry.version === running,
+      })),
+    };
+  }
+
   /** What the admin may send us: the report and how the copy is set up. */
   async function diagnostics() {
     const env = options.env;
@@ -274,7 +303,7 @@ export function createCopyHealth(options: CopyHealthOptions) {
     };
   }
 
-  return { report, diagnostics };
+  return { report, diagnostics, releases };
 }
 
 export type CopyHealth = ReturnType<typeof createCopyHealth>;

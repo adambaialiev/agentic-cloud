@@ -17,6 +17,9 @@
 # fleet runs, and building them again would only make a second, untested copy.
 #
 # Releases are immutable: a version that already has a release tag is refused.
+# A version with no release notes (infra/copy-release/notes/<version>.md, note
+# #1006) is refused too, before anything is built; the notes ride in the
+# release image as notes.md, beside copy-release.json.
 # Expects `docker login registry.fly.io` done by the caller.
 set -euo pipefail
 
@@ -31,6 +34,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 REG="registry.fly.io/$RELEASE_REPO"
 cd "$REPO_ROOT"
+
+# What's new, for a company's admin (note #1006): no notes, no release.
+NOTES_FILE=$(node infra/copy-release/notes.mjs check "$VERSION") || exit 1
 
 if docker manifest inspect "$REG:release-$VERSION" >/dev/null 2>&1; then
   echo "release $VERSION already exists in $REG — releases are immutable; bump infra/copy-release/VERSION" >&2
@@ -103,7 +109,8 @@ MANIFEST_DIR=$(stage_dir)
 } > "$MANIFEST_DIR/copy-release.json"
 node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$MANIFEST_DIR/copy-release.json"
 cp infra/copy-installer/install.mjs "$MANIFEST_DIR/install.mjs"
-printf 'FROM scratch\nCOPY copy-release.json install.mjs /\n' > "$MANIFEST_DIR/Dockerfile"
+cp "$NOTES_FILE" "$MANIFEST_DIR/notes.md"
+printf 'FROM scratch\nCOPY copy-release.json install.mjs notes.md /\n' > "$MANIFEST_DIR/Dockerfile"
 docker build "${LABELS[@]}" -t "$REG:release-$VERSION" "$MANIFEST_DIR"
 docker push "$REG:release-$VERSION"
 cat "$MANIFEST_DIR/copy-release.json"

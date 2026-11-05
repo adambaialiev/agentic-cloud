@@ -172,7 +172,29 @@ export function createReleaseCheck(options: ReleaseCheckOptions) {
     timer = null;
   }
 
-  return { refresh, current, start, stop, state: snapshot };
+  /** A release's notes (note #1006), GET <url>/releases/<version>/notes.md.
+   *  Releases are immutable, so a found one is kept for good; a missing or
+   *  failed one is null and asked again next time. */
+  const notesCache = new Map<string, string>();
+  async function notes(version: string): Promise<string | null> {
+    if (!options.url || !RELEASE_VERSION_SHAPE.test(version)) return null;
+    const kept = notesCache.get(version);
+    if (kept !== undefined) return kept;
+    try {
+      const answer = await fetchImpl(`${options.url}/releases/${version}/notes.md`, {
+        headers: { accept: 'text/markdown, text/plain' }, signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!answer.ok) return null;
+      const text = (await answer.text()).slice(0, 64_000);
+      if (!text.trim()) return null;
+      notesCache.set(version, text);
+      return text;
+    } catch {
+      return null;
+    }
+  }
+
+  return { refresh, current, start, stop, notes, state: snapshot };
 }
 
 export type ReleaseCheck = ReturnType<typeof createReleaseCheck>;

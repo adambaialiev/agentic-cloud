@@ -227,8 +227,9 @@ describe('what the server serves', () => {
     expect(patterns).toContain('/agents/:id/jobs');
     expect(patterns).toContain('/seats/sign-in');
     // Every destination but the public addresses, which are served apart,
-    // and the two retired room places (note #843).
-    expect(patterns).toHaveLength(8 + WORKSPACE_ROUTE_KINDS.length - 7 + 2 + 6);
+    // and the two retired room places (note #843). The last figure is the
+    // old /organization/… aliases, What's new (note #1006) among them.
+    expect(patterns).toHaveLength(8 + WORKSPACE_ROUTE_KINDS.length - 7 + 2 + 7);
     expect(patterns).not.toContain('/:handle');
     expect(patterns).not.toContain('/:handle/:repo');
     expect(new Set(patterns).size).toBe(patterns.length);

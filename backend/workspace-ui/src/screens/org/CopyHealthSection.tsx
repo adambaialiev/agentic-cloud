@@ -39,7 +39,7 @@ const UPDATE_BADGES: Record<WorkspaceCopyUpdates['state'], { words: string; tone
 };
 
 /** The upgrade sentence, its command set as code. */
-function UpgradeHint({ text }: { text: string }) {
+export function UpgradeHint({ text }: { text: string }) {
   const command = 'node install.mjs upgrade';
   const at = text.indexOf(command);
   return (
@@ -126,6 +126,17 @@ export function CopyHealthSection() {
                     {badge ? <span className={`badge ${badge.tone}`} id="orgCopyUpdatesBadge">{badge.words}</span> : null}
                   </div>
                   {updates?.state === 'behind' && updates.howToUpgrade ? <UpgradeHint text={updates.howToUpgrade} /> : null}
+                  {/* What each release brings (note #1006): the newer ones
+                      when there are any, else what the running one brought. */}
+                  {updates && updates.state !== 'off' && (updates.state === 'behind' || updates.running)
+                    ? (
+                      <div className="cabout copywhatsnew">
+                        <button className="linkword" id="orgCopyWhatsNew" type="button" onClick={() => navigate(toFor({ kind: 'copyReleases' })!)}>
+                          {updates.state === 'behind' ? 'What\'s new' : 'What this release brought'}
+                        </button>
+                      </div>
+                    )
+                    : null}
                 </div>
               </div>
             );
