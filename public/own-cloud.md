@@ -141,6 +141,8 @@ Either way, the database and the disks are snapshotted first. The backend, the c
 
 A copy whose own release predates the upgrader gets one upgrade by `--here` without being asked: the command says so. Every upgrade after that runs on the upgrader.
 
+An admin can also upgrade from the Workspace, with no engineer: when a newer release is out, Workplace › This copy shows **Upgrade to <version>**. It asks once and starts the same upgrader, and its progress page keeps going while the Workspace restarts. A copy whose release is older than the button sees the command in its place, and needs this command once to reach a release that has it. Tell your person so after an upgrade.
+
 ## Exit codes, and when to ask your person
 
 | Code | Meaning | What you do |
