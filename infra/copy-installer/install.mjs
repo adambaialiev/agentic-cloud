@@ -1410,7 +1410,11 @@ export function machinesApi({ token, base = MACHINES_API, fetchImpl = fetch }) {
     destroyMachine: (app, id) => call('DELETE', `/apps/${app}/machines/${id}?force=true`),
     // Names only. Fly's answer to SETTING a secret echoes its value, so the
     // installer never sets one: the copy's backend does, and logs nothing.
-    secretNames: async (app) => ((await call('GET', `/apps/${app}/secrets`))?.secrets ?? []).map((secret) => secret.name ?? secret.label),
+    // null when the app itself does not exist.
+    secretNames: async (app) => {
+      const answer = await call('GET', `/apps/${app}/secrets`);
+      return answer === null ? null : (answer.secrets ?? []).map((secret) => secret.name ?? secret.label);
+    },
   };
 }
 
