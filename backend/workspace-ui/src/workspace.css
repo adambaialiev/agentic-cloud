@@ -7611,7 +7611,7 @@ h2.mailfileshead { margin-top: 16px; }
    right side says its preset over its estimate; a spare disk is a line of
    its own under the row, in the warning colour, because it bills unseen. */
 .sitesalways { color: var(--hint); font-size: var(--ui-base); line-height: 1.4; padding: 2px 4px 12px; }
-.sitesalways strong, #siteAlwaysOn strong { color: var(--text); font-weight: 600; }
+.sitesalways strong, #siteAlwaysOn strong { color: var(--text); font-weight: 500; }
 .crow .cside.siteprice { min-width: 0; }
 .crow .cside.siteprice .sitepreset { color: var(--text); }
 .crow .cside.siteprice .sitecost { font-variant-numeric: tabular-nums; }
