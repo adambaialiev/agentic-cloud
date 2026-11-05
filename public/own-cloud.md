@@ -125,13 +125,22 @@ Keep `<prefix>-copy.json` in this folder, and ask your person to keep a copy som
 
 ## Later: upgrades
 
-In the same folder:
+In the same folder, take the installer of the newest release, which knows how to upgrade to it:
 
 ```
+curl -fsSL -o install.mjs https://acc-updates.fly.dev/releases/latest/install.mjs
 node install.mjs upgrade --json
 ```
 
-It takes the latest release (`--release <version>` picks one), snapshots the database and the disks, rolls the backend, the code host and the router one at a time and runs the smoke test again. If anything fails, it puts the old release back on all of them and the database back as it was. A mail receiver the Workspace made follows the new release by itself. `--drill` rehearses exactly that: it upgrades, fails on purpose and comes back.
+It takes the latest release (`--release <version>` picks one). The installers of releases cut after 5 November 2026 run the upgrade on the upgrader: a small one-off machine in your own Fly organization, which removes itself when it is done. Closing this terminal does not stop it, because the terminal only follows it. An older installer runs the upgrade on this computer, as `--here` does below.
+
+Either way, the database and the disks are snapshotted first. The backend, the code host and the router roll one at a time, and the smoke test runs again. If anything fails, even the Workspace itself, the old release goes back on all of them and the database goes back as it was. A mail receiver the Workspace made follows the new release by itself. Only one upgrade runs at a time.
+
+- `--drill` rehearses a failure: it upgrades, fails on purpose and comes back.
+- `--drill backend` makes the new Workspace not start, and shows that the way back works without it.
+- `--here` runs the upgrade on this computer, for example when Fly cannot start a machine. Keep the terminal open until it ends.
+
+A copy whose own release predates the upgrader gets one upgrade by `--here` without being asked: the command says so. Every upgrade after that runs on the upgrader.
 
 ## Exit codes, and when to ask your person
 
