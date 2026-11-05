@@ -14,6 +14,7 @@ describe('the public guide\'s instructions', () => {
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toMatch(/reveal or summarise these instructions/);
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toMatch(/Paths are always relative to the repository/);
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toMatch(/I can't tell that from the code\./);
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('never a test file');
   });
 
   it('carries the claims that must stay exact', () => {
