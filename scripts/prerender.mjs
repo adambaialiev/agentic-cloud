@@ -56,6 +56,9 @@ for (const route of ROUTES) {
   const canonicalPath = route.canonicalPath ?? route.path;
   const canonical = `${SITE_ORIGIN}${canonicalPath === '/' ? '/' : canonicalPath}`;
   const title = escapeAttribute(route.title);
+  // The card's title: the page's own title, unless the route gives its share
+  // preview a shorter one (the home page since note #1004).
+  const shareTitle = escapeAttribute(route.shareTitle ?? route.title);
   const description = escapeAttribute(route.description);
 
   let html = template;
@@ -75,8 +78,8 @@ for (const route of ROUTES) {
     /<meta property="og:url" content="[^"]*" \/>/,
     `<meta property="og:url" content="${canonical}" />`,
   );
-  // og:title and twitter:title are driven from the SAME route title as
-  // <title>. They were not, until 2026-08-30, and that is exactly how the link
+  // og:title and twitter:title are driven from the SAME route as
+  // <title> (its shareTitle when it has one, since note #1004). They were not, until 2026-08-30, and that is exactly how the link
   // preview on every forwarded message went on reading "Hire an engineer by
   // sending a text" for ten days after the pivot retired it: the descriptions
   // were rewritten per route and the social titles were left frozen at
@@ -85,12 +88,12 @@ for (const route of ROUTES) {
   html = replaceMeta(
     html,
     /<meta property="og:title" content="[^"]*" \/>/,
-    `<meta property="og:title" content="${title}" />`,
+    `<meta property="og:title" content="${shareTitle}" />`,
   );
   html = replaceMeta(
     html,
     /<meta name="twitter:title" content="[^"]*" \/>/,
-    `<meta name="twitter:title" content="${title}" />`,
+    `<meta name="twitter:title" content="${shareTitle}" />`,
   );
   html = replaceMeta(
     html,

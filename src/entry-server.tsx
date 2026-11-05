@@ -6,6 +6,7 @@ import { prerender } from 'react-dom/static';
 import { StaticRouter } from 'react-router-dom';
 import App from './App';
 import { CHAPTERS, DOCS_PATH, chapterPath } from './docs/chapters';
+import { HOME_TITLE, SHARE_DESCRIPTION, SHARE_TITLE } from './lib/share-card';
 
 // The server half of the site. Vite builds this into dist-ssr/, and
 // scripts/prerender.mjs runs it at build time to turn every public route into
@@ -21,6 +22,10 @@ export interface RouteMeta {
   /** URL path, and the directory the HTML is written to. */
   path: string;
   title: string;
+  /** A shorter title for the share preview (og:title, twitter:title) than
+   *  the page's <title>, which keeps the name at its end (note #1004).
+   *  Defaults to `title`. */
+  shareTitle?: string;
   description: string;
   /**
    * What the page declares itself to be, when that is not its own URL. Only
@@ -41,9 +46,11 @@ export interface RouteMeta {
 export const ROUTES: RouteMeta[] = [
   {
     path: '/',
-    title: 'Claude Code and Codex agents with git, hosting, storage and email built in — Agentic Cloud Computer',
-    description:
-      'Everything an agent needs to finish the job. Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for.',
+    // The share preview's words since note #1004 (the owner's pick, 5 Nov
+    // 2026, 14:30 UTC): src/lib/share-card.ts.
+    title: HOME_TITLE,
+    shareTitle: SHARE_TITLE,
+    description: SHARE_DESCRIPTION,
     // Since note #832 the one home page carries the own-cloud offer and its
     // line for an agent, so the guide's alternate link is here.
     agentGuide: '/own-cloud.md',

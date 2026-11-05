@@ -48,14 +48,16 @@ describe('prerendered routes', () => {
     // is built in, and the description opens on the page's own headline and
     // sub-line and ends on the price. Before it, note #182's "A team of
     // Claude Code and Codex agents in the cloud".
-    expect(home?.title).toBe('Claude Code and Codex agents with git, hosting, storage and email built in — Agentic Cloud Computer');
-    expect(home?.description).toMatch(/^Everything an agent needs to finish the job\./);
+    // Since note #1004 (the owner's pick, 5 Nov 2026, 14:30 UTC) the title
+    // names the problem we solve, with the name at its end, and the share
+    // preview's title is the same words without the name; the description
+    // opens on the film's closing words ("Your cloud." says where it runs)
+    // and names what is built in.
+    expect(home?.title).toBe('One workplace for Claude Code, Codex and OpenCode agents — Agentic Cloud Computer');
+    expect(home?.shareTitle).toBe('One workplace for Claude Code, Codex and OpenCode agents');
+    expect(home?.description).toBe('Your team. Your agents. Your cloud. Your rules. One workplace for Claude Code, Codex and OpenCode agents, with git, hosting and email built in.');
     expect(home?.description).not.toMatch(/second brain/);
     expect(home?.description).not.toMatch(/cloud computer|laptop|a cloud to work in/i);
-    expect(home?.description).toMatch(/Git with CI\/CD, hosting, storage, email, Drive, notes and memory/);
-    // Since note #822 it ends on where it runs: only the private copy is
-    // offered, and a copy is free only in its trial (claims-we-never-make).
-    expect(home?.description).toMatch(/In your own cloud account, on the plan you already pay for\.$/);
     for (const route of ROUTES) expect(route.description, route.path).not.toMatch(/\bfree\b|at no charge|\bour cloud/i);
     expect(home?.description).not.toMatch(/ask before anything important ships/);
   });

@@ -20,8 +20,8 @@ describe('Landing', () => {
     // agents get already built in. "A cloud computer", "beyond the laptop"
     // and "works with your laptop closed" stopped being a reason to choose
     // us once Claude Code and Codex ran in the cloud themselves. The title,
-    // the metas, the social card (og-image ?v=31) and llms.txt open the same
-    // way. Still no hero above it and no door (note #199): the headline is
+    // the metas and llms.txt open the same way (the shared social card has
+    // carried the home page's words since note #1004). Still no hero above it and no door (note #199): the headline is
     // the first section's heading, and the page's one h1.
     const h1 = screen.getByRole('heading', { level: 1, name: 'Everything an agent needs to finish the job.' });
     expect([...document.querySelectorAll('h1')].filter((node) => !node.closest('.ws-live'))).toEqual([h1]);
