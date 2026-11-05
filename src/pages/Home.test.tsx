@@ -8,6 +8,7 @@ import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
+import { ASK_HEADING } from '../components/AskTheCode';
 
 void React;
 
@@ -62,7 +63,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(links.some((link) => link.closest('footer'))).toBe(true);
   });
 
-  it('runs five screens: the film, the workplace, the own cloud, how to build yours, the footer', () => {
+  it('runs six screens: the film, the workplace, the own cloud, ask the agent, how to build yours, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -71,6 +72,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(headings).toEqual([
       HOME_HEADLINE,
       OWN_CLOUD_HEADING,
+      ASK_HEADING,
       'Build your own Agentic Cloud.',
     ]);
     // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
@@ -183,11 +185,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   });
 
   // Since note #835 the founder's live week is off the page, so it reads
-  // nothing live: the prerendered page is the whole page.
-  it('reads nothing live', () => {
+  // nothing live: the prerendered page is the whole page. Since note #1010
+  // the one exception is the guide's status, read once for its face and name
+  // (the screen is whole without it).
+  it('reads nothing live but the guide’s status', () => {
     answer();
     draw();
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/api/public/ask/status']);
     expect(document.querySelector('[role="status"][aria-label="Loading"]')).toBeNull();
   });
 });
@@ -452,7 +456,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start',
+      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'ask', 'start',
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);

@@ -1,3 +1,4 @@
+import { AskTheCode } from '../components/AskTheCode';
 import SiteFooter from '../components/SiteFooter';
 import { FOOTER_PITCH } from '../lib/product-copy';
 import { Screen } from '../components/landing-kit';
@@ -295,6 +296,12 @@ export default function Home() {
 
       {/* ── The second wow: all of it in your own cloud ─────────────────── */}
       <OwnCloud />
+      {/* ── Ask an agent that reads the code (note #1010) ─────────────── */}
+      {/* Adam, 5 Nov 2026: a visible agent that answers visitors' questions
+          from the public code. Its own screen right after the code is said
+          to be open, so the agent reads what the heading above just named,
+          and right before the one action. */}
+      <AskTheCode />
       <HowToStart />
 
       <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide mark />
