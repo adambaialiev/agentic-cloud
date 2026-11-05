@@ -64,7 +64,7 @@ function Steps({ steps }: { steps: WorkspaceCopyUpgradeStep[] }) {
       <ul className="upsteps">
         {steps.map((step) => (
           <li key={step.key} data-state={step.state}>
-            <span className={`updot ${step.state}${step.back && step.state === 'done' ? ' back' : ''}`} aria-hidden="true">{step.state === 'done' ? '✓' : step.state === 'fail' ? '✕' : ''}</span>
+            <span className={`updot ${step.state}${step.back && step.state === 'done' ? ' wayback' : ''}`} aria-hidden="true">{step.state === 'done' ? '✓' : step.state === 'fail' ? '✕' : ''}</span>
             <span className="s">{step.label}{step.state === 'now' ? <span className="d">{step.back ? 'putting back now' : 'now'}</span> : null}</span>
             <span className="t">{clock(step.seconds)}</span>
           </li>
@@ -238,10 +238,10 @@ export function CopyUpgradeScreen() {
     <div className="uprow">
       {run.phase === 'stopped' ? <button className="btn fill" id="copyUpgradeCarryOn" type="button" disabled={busy} onClick={() => { void carryOn(); }}>Carry on</button> : null}
       {run.phase === 'put-back' || run.phase === 'drill-done' || run.phase === 'failed' || run.phase === 'stopped'
-        ? <button className={run.phase === 'stopped' ? 'btn' : 'btn fill'} id="copyUpgradeDiagnostics" type="button" onClick={() => { void diagnostics(); }}>Download diagnostics</button>
+        ? <button className={run.phase === 'stopped' ? 'btn primary' : 'btn fill'} id="copyUpgradeDiagnostics" type="button" onClick={() => { void diagnostics(); }}>Download diagnostics</button>
         : null}
-      {run.phase === 'put-back' || run.phase === 'failed' ? <button className="btn" id="copyUpgradeTryAgain" type="button" onClick={back}>Try again</button> : null}
-      {run.phase === 'done' || run.phase === 'drill-done' || run.phase === 'unchanged' ? <button className="btn" id="copyUpgradeBack" type="button" onClick={back}>Back to This copy</button> : null}
+      {run.phase === 'put-back' || run.phase === 'failed' ? <button className="btn primary" id="copyUpgradeTryAgain" type="button" onClick={back}>Try again</button> : null}
+      {run.phase === 'done' || run.phase === 'drill-done' || run.phase === 'unchanged' ? <button className="btn primary" id="copyUpgradeBack" type="button" onClick={back}>Back to This copy</button> : null}
     </div>
     {run.phase === 'done' ? <p className="formhint">The database as it was before is kept on the Workspace&apos;s disk until the next upgrade.</p> : null}
     {run.phase === 'put-back' || run.phase === 'drill-done' || run.phase === 'failed'

@@ -176,7 +176,7 @@ export function CopyHealthSection() {
           ? (
             <div className="upbox" id="orgCopyUpgradeOpen">
               <div className="t">{openRun.phase === 'stopped' ? `An upgrade to ${openRun.to} stopped part-way.` : openRun.phase === 'putting-back' ? `${openRun.from} is being put back.` : `An upgrade to ${openRun.to} is under way.`}</div>
-              <button className="btn" type="button" onClick={() => navigate(toFor({ kind: 'copyUpgrade' })!)}>{openRun.phase === 'stopped' ? 'See it' : 'Follow it'}</button>
+              <button className="btn primary" type="button" onClick={() => navigate(toFor({ kind: 'copyUpgrade' })!)}>{openRun.phase === 'stopped' ? 'See it' : 'Follow it'}</button>
             </div>
           )
           : upgrade?.offer
