@@ -4,9 +4,13 @@
  * written by the copy as it asked that part just now, flagged when it needs
  * a look. Below them, the diagnostics file: made on this screen, downloaded
  * to the admin's own computer, sent to support only if they choose to.
+ *
+ * The Workspace row also says whether a newer release is out (note #1005):
+ * green "Up to date", amber "Newer release" with how to upgrade today, grey
+ * "Can't tell" when the update service has not been reached lately.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart } from '../../../../src/shared/workspace-api.js';
+import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyUpdates } from '../../../../src/shared/workspace-api.js';
 import { useBanner } from '../../chrome/useBanner.js';
 import { errorMessage } from '../../ui/format.js';
 import { TypeIcon, type IconName } from '../../ui/icons.js';
@@ -25,6 +29,25 @@ const GLYPHS: Record<WorkspaceCopyHealthPart['key'], IconName> = {
   previews: 'globe',
   'mail-in': 'mail',
 };
+
+/** The release state's word and hue, beside the Workspace line. */
+const UPDATE_BADGES: Record<WorkspaceCopyUpdates['state'], { words: string; tone: string } | null> = {
+  current: { words: 'Up to date', tone: 'ok' },
+  behind: { words: 'Newer release', tone: 'amber' },
+  unknown: { words: 'Can\'t tell', tone: 'mut' },
+  off: null,
+};
+
+/** The upgrade sentence, its command set as code. */
+function UpgradeHint({ text }: { text: string }) {
+  const command = 'node install.mjs upgrade';
+  const at = text.indexOf(command);
+  return (
+    <div className="cabout copyupgrade" id="orgCopyUpgradeHint">
+      {at < 0 ? text : <>{text.slice(0, at)}<code>{command}</code>{text.slice(at + command.length)}</>}
+    </div>
+  );
+}
 
 export function CopyHealthSection() {
   const api = useOrgApi();
@@ -89,18 +112,24 @@ export function CopyHealthSection() {
       <h2 id="orgCopyHealthTitle">This copy</h2>
       <div className="card" id="orgCopyHealthCard">
         {health
-          ? health.parts.map((part) => (
-            <div className="crow" key={part.key} data-part={part.key}>
-              <TypeIcon glyph={GLYPHS[part.key]} />
-              <div className="main">
-                <div className="name plain">{part.name}</div>
-                <div className="cline">
-                  <span className="ctext">{part.line}</span>
-                  {part.ok ? null : <span className="badge warn">Needs a look</span>}
+          ? health.parts.map((part) => {
+            const updates = part.key === 'workspace' ? health.updates : undefined;
+            const badge = updates ? UPDATE_BADGES[updates.state] : null;
+            return (
+              <div className="crow" key={part.key} data-part={part.key} {...(updates ? { 'data-updates': updates.state } : {})}>
+                <TypeIcon glyph={GLYPHS[part.key]} />
+                <div className="main">
+                  <div className="name plain">{part.name}</div>
+                  <div className={updates ? 'cline wrap' : 'cline'}>
+                    <span className="ctext">{part.line}</span>
+                    {part.ok ? null : <span className="badge warn">Needs a look</span>}
+                    {badge ? <span className={`badge ${badge.tone}`} id="orgCopyUpdatesBadge">{badge.words}</span> : null}
+                  </div>
+                  {updates?.state === 'behind' && updates.howToUpgrade ? <UpgradeHint text={updates.howToUpgrade} /> : null}
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
           : <div className="empty">{error || 'Checking every part…'}</div>}
         {/* The licence's renewal comes from us as one line; pasted here it
             takes effect at once, with no restart (note #814). */}

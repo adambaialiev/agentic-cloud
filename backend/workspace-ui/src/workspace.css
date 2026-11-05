@@ -545,6 +545,10 @@ button.row { width: 100%; text-align: left; border-radius: 0; }
    at a glance which ones are moving. Handed-but-not-started keeps the grey:
    nothing is happening there yet. */
 .badge.busy { color: var(--warn); }
+/* A newer release of a company's own Agentic Cloud is out (note #1005): the
+   amber between the green of "Up to date" and the red of a fault. Not
+   broken, not urgent, but the admin has something to do. */
+.badge.amber { color: var(--warn); }
 /* A proposal's state in the repository list. This one reached plain coloured
    text before `.badge` did, and keeps its own rule for the row it sits in:
    an 18px line so the branch and timing beside it stay on one line, and
@@ -7617,3 +7621,11 @@ h2.mailfileshead { margin-top: 16px; }
 .crow .cside.siteprice .sitecost { font-variant-numeric: tabular-nums; }
 .crow .cline.sitespare .ctext { color: var(--warn, #b26a00); }
 #siteSpareDisks .cside { color: var(--warn, #b26a00); }
+
+/* How to upgrade today, under the health page's Workspace line (note
+   #1005): one sentence, its command in the code face. */
+#orgCopyHealthCard .copyupgrade { margin-top: 4px; }
+#orgCopyHealthCard .copyupgrade code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em;
+  overflow-wrap: anywhere; }
+#orgCopyHealthCard .crow .cline.wrap { flex-wrap: wrap; row-gap: 2px; }

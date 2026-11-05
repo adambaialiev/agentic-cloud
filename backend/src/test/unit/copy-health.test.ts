@@ -51,7 +51,7 @@ describe('a copy\'s health (note #813)', () => {
     const report = await health.report();
     expect(report.release).toBe('2026.10.27.1');
     expect(report.parts.map((part) => [part.key, part.ok, part.line])).toEqual([
-      ['workspace', true, 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b)'],
+      ['workspace', true, 'Up 3 h 0 min · release 2026.10.27.1 (8cc9f94b) · update checks are off'],
       ['database', true, '3 MB · backed up 3 h ago · every 24 h'],
       ['disk', true, expect.stringMatching(/^\d+% of .+ used$/)],
       ['code-host', true, 'answering · disk 6% used'],
