@@ -95,6 +95,14 @@ export const WORKSPACE_MACHINE_SIZE_ID = 'shared-1x';
 export const WORKSPACE_MACHINE_SIZE = agentMachineSizeById(WORKSPACE_MACHINE_SIZE_ID)!;
 
 /**
+ * A sealed public guide's machine (note #1010; Adam, 5 Nov 2026: shared
+ * cores, since it only answers questions). Two shared cores and 4 GB: one
+ * Claude Code turn at a time with the owner's own chat beside it.
+ */
+export const SEALED_AGENT_MACHINE_SIZE_ID = 'shared-2x';
+export const SEALED_AGENT_MACHINE_SIZE = agentMachineSizeById(SEALED_AGENT_MACHINE_SIZE_ID)!;
+
+/**
  * Which rung a machine is standing on, by its actual shape — never by a
  * stored label. A machine resized by hand (or created before this ladder
  * existed) reports whatever Fly says it is, and an off-ladder shape answers

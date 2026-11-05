@@ -1,3 +1,4 @@
+import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_KIND, PUBLIC_GUIDE_MODEL } from '../shared/public-guide.js';
 import { CATALOGUE_URL } from '../shared/public-host.js';
 import { harnessName, isHarnessCli } from '../shared/harness-clis.js';
 import { autoApproveChecksBlocker, autoApproveTime, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
@@ -5808,7 +5809,27 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     if (!createAgent || !deps.orgStorage || !auth.orgId) {
       return res.status(503).json({ error: 'Agent management is not available on this backend yet.' });
     }
-    const body = (req.body ?? {}) as { cli?: unknown; model?: unknown; effort?: unknown };
+    const body = (req.body ?? {}) as { cli?: unknown; model?: unknown; effort?: unknown; sealed?: unknown };
+    // The sealed public guide (note #1010): Claude Code on sonnet at medium,
+    // whatever else was asked — its kind decides, not the request.
+    if (body.sealed !== undefined) {
+      if (body.sealed !== PUBLIC_GUIDE_KIND) return res.status(400).json({ error: 'The one sealed kind is --public-guide.' });
+      if (body.cli !== undefined || body.model !== undefined || body.effort !== undefined) {
+        return res.status(400).json({ error: 'No agent was created: --public-guide takes no --cli, --model or --effort. A guide is Claude Code on sonnet at medium.' });
+      }
+      const org = await deps.orgStorage.getOrg(auth.orgId).catch(() => null);
+      if (org?.deletion) return res.status(409).json({ error: `${org.name} is being deleted, so no new agent can start there.` });
+      const result = await createAgent(auth.userId, 'claude', auth.orgId, { awaitName: true, concurrent: true, sealed: PUBLIC_GUIDE_KIND });
+      if (!result.ok) return res.status(400).json({ error: result.reason });
+      const agent = result.agent;
+      if (agent) void deps.workspaceAgent?.receipt(auth.userId, auth.orgId, agentBroughtInReceipt(agent.name)).catch(() => {});
+      return res.status(202).json({
+        ok: true,
+        ...(agent ? { agent } : {}),
+        runtime: { cli: 'claude', model: PUBLIC_GUIDE_MODEL, effort: PUBLIC_GUIDE_EFFORT },
+        message: `${agent ? `${agent.name} is arriving [${agent.id}]` : 'The public guide is being set up'}, a SEALED Claude Code agent on ${PUBLIC_GUIDE_MODEL} at ${PUBLIC_GUIDE_EFFORT} effort, on a shared-core machine of its own: it is never given a platform token or a secret, and reads only a public copy of the code. The home page's questions now go to it. Its machine takes a few minutes; its Visits list on its screen holds every visitor's conversation.`,
+      });
+    }
     // Without --cli, the plan the person signed in (note #726): a ChatGPT-only
     // person used to be refused unless the agent asked for Codex by name.
     // Claude when both are in, as before; OpenCode only when it is all they

@@ -39,6 +39,11 @@ import { InMemorySeatSignInStorage } from './services/seat-signin-storage.js';
 import { SqliteSeatSignInStorage } from './services/sqlite/sqlite-seat-signin-storage.js';
 import { SqliteStoppedUserMessageStorage } from './services/sqlite/sqlite-stopped-user-message-storage.js';
 import { SqliteAgentActivityStore } from './services/sqlite/sqlite-agent-activity-store.js';
+import { InMemoryPublicGuideStorage, SqlitePublicGuideStorage } from './services/public-guide-storage.js';
+import { PublicGuideService } from './services/public-guide-service.js';
+import type { GuideSource } from './services/public-guide-machine.js';
+import type { AgentRecord } from './types/user.js';
+import { PUBLIC_GUIDE_REPO_NAME } from './shared/public-guide.js';
 import { SqliteAgentWorkLedger } from './services/sqlite/sqlite-agent-work-ledger.js';
 import { InMemoryAgentWorkLedger } from './services/agent-work-ledger.js';
 import { SqliteAgentTokenLedger } from './services/sqlite/sqlite-agent-token-ledger.js';
@@ -1419,7 +1424,37 @@ const previewDomainService = flySandboxClient && (APPS_DNS_ZONE || process.env.A
   : undefined;
 console.log(`[config] PREVIEW_DOMAINS=${previewDomainService ? `enabled (*.${APPS_DOMAIN})` : 'disabled (fly.dev URLs)'}`);
 
+// The sealed public guide (note #1010): transcripts and the route's pointer
+// at its agent. Its service is built after the agent service, which it
+// borrows the guide's machine from.
+const publicGuideStorage = sqliteDb ? new SqlitePublicGuideStorage(sqliteDb) : new InMemoryPublicGuideStorage();
+/**
+ * Where a sealed guide's public copy comes from: the repository named
+ * PUBLIC_GUIDE_REPO_NAME in the guide's own workplace, and ONLY while it is
+ * public — an anonymous clone URL, or nothing. If it is not public, it is
+ * not on that machine.
+ */
+const publicGuideSource = async (_userId: string, agent: AgentRecord): Promise<GuideSource | null> => {
+  if (!agent.orgId) return null;
+  const org = await orgStorage.getOrg(agent.orgId).catch(() => null);
+  if (!org) return null;
+  const carried = await gitRepoStorage.listNamespacesByOrg(org.orgId).catch(() => [] as string[]);
+  const namespaces = [...new Set([org.git?.namespaceId ?? org.createdByUserId, ...(org.roomsMerged?.namespaces ?? []), ...carried])];
+  const repo = await gitRepoStorage.getLiveByNameIn(namespaces, PUBLIC_GUIDE_REPO_NAME).catch(() => null);
+  if (!repo?.publicAccess) return null;
+  const host = await orgGitHostService.clientFor(org.orgId).catch(() => gitHostClient ?? null);
+  if (!host) return null;
+  return { cloneUrl: host.cloneUrl(repo.userId, repo.name), branch: repo.defaultBranch ?? 'main' };
+};
+
 const agentService = new AgentService({
+  publicGuide: {
+    setGuide: (userId, agentId) => publicGuideStorage.setGuide({ userId, agentId, setAt: new Date().toISOString() }),
+    clearGuide: async (agentId) => {
+      if ((await publicGuideStorage.getGuide())?.agentId === agentId) await publicGuideStorage.setGuide(null);
+    },
+  },
+  publicGuideSource,
   sessionStorage,
   agentChatStorage,
   secretStorage,
@@ -1793,7 +1828,21 @@ if (flySandboxClient) {
 }
 // ── Shared Route Dependencies ──
 
+const publicGuideService = new PublicGuideService({
+  storage: publicGuideStorage,
+  host: {
+    guideAgent: (userId, agentId) => agentService.publicGuideAgent(userId, agentId),
+    guideSandbox: (userId, agentId) => agentService.publicGuideSandbox(userId, agentId),
+    guideSource: (userId, agent) => agentService.publicGuideSource(userId, agent),
+  },
+  pool: platformCredentialPool,
+  seats: orgStorage,
+  sandboxClient: () => sessionManager.getSandboxClient(),
+});
+publicGuideService.start();
+
 const deps: RouteDeps = {
+  publicGuide: publicGuideService,
   ...(workspaceWebAuth && WORKSPACE_ORIGIN
     ? {
       workspaceWebAuth,

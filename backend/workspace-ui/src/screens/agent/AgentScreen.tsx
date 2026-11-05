@@ -2,6 +2,7 @@ import { overviewTo } from '../home/home-address.js';
 import { isHarnessCli } from '../../../../src/shared/harness-clis.js';
 import { HeadRuntimeButton } from '../../ui/HeadRuntimeButton.js';
 import { ScheduleCard } from './ScheduleCard.js';
+import { VisitsCard } from './VisitsCard.js';
 /**
  * The agent's own screen: what it is, what it runs, what it last said, the
  * proposals it has made, and the delete.
@@ -564,6 +565,7 @@ export function AgentScreen() {
       </div>
 
       <ScheduleCard agentId={id} now={now} />
+      {agent.sealed ? <VisitsCard agentId={agent.id} now={now} /> : null}
 
       <div className="card" id="agentInfoCard">
         {!info

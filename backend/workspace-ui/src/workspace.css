@@ -635,6 +635,18 @@ button.chev { width: 30px; height: 30px; display: flex; align-items: center; jus
 #screenAgent .btn.primary { margin: 10px 0 16px; }
 /* The schedule card (note #779): the facts' own rows, the owner's hands under them. */
 #agentSchedule .danger-actions { padding: 4px 12px 0; }
+/* The public guide's Visits (note #1010): rows open into a read-only thread. */
+#agentVisits .visit + .visit { border-top: 1px solid var(--border); }
+#agentVisits .visitrow { display: block; width: 100%; text-align: left; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+#agentVisits .visitrow + .visitthread { border-top: 1px solid var(--border); }
+#agentVisits .visitfirst { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#agentVisits .visit[data-open] .visitfirst { font-weight: 500; }
+#agentVisits .visitthread { padding: 4px 12px 10px; }
+#agentVisits .visitturn + .visitturn { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+#agentVisits .visitq { font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+#agentVisits .visita { margin-top: 6px; }
+#agentVisits .visitflag { margin: 6px 0 0; }
+#agentVisits .visitturn[data-state="declined"] .visita, #agentVisits .visitturn[data-state="failed"] .visitq { color: var(--hint); }
 #agentSchedule .btn.primary.bare { margin: 0; color: color-mix(in srgb, var(--ok) 80%, var(--text)); }
 #agentSchedule[data-status="paused"] #agentScheduleState { color: var(--warn); }
 /* And the door to the agent on a proposal's screen (note #152) sits in the
