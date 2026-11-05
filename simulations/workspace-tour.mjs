@@ -195,7 +195,10 @@ await runBrowserScenario({
     assert.equal(normalizedText(await textOf(page, '#people .crow .cago')), '12m ago');
     await shoot('people');
     await open(page, app, `/workplace/members/${member.userId}`, '#screenOrgMember');
-    await waitForAll(page, '#orgMemberCard', ['No agents yet']);
+    // Leo drives no agents: no Agents card at all, since an empty fact
+    // reads as an error (note #1009). Who he is here closes the screen.
+    await waitForAll(page, '#orgMemberAbout', ['Joined']);
+    assert.equal(await page.$('#orgMemberAgents'), null);
     await shoot('member-leo');
     await open(page, app, '/workplace', '#screenOrg');
     assert.equal(await headerTitle(page), org.name);

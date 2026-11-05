@@ -4943,10 +4943,10 @@ a.crow { color: inherit; text-decoration: none; -webkit-user-drag: none; }
    A member's own screen wears the same disc beside "Here now" (note #346),
    which is why it is named here too: sizing on this page is by CONTEXT, and a
    disc that matches no rule renders at no size at all rather than loudly. */
-.crow .livedot, .crow .unreaddot, .seathead .livedot, #orgMemberCard .livedot, .recapquiet .livedot {
+.crow .livedot, .crow .unreaddot, .seathead .livedot, #orgMemberCard .livedot, .recapquiet .livedot, .memberagent .livedot {
   width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--accent);
 }
-.crow .livedot, .seathead .livedot, #orgMemberCard .livedot, .recapquiet .livedot { animation: breathe 1.5s ease-in-out infinite; }
+.crow .livedot, .seathead .livedot, #orgMemberCard .livedot, .recapquiet .livedot, .memberagent .livedot { animation: breathe 1.5s ease-in-out infinite; }
 /* The value that carries it. Every other `.v` on the card is one run of
    text; this one is a mark and a phrase, so it lines them up rather than
    letting the disc sit on the text's baseline. */
@@ -4954,81 +4954,82 @@ a.crow { color: inherit; text-decoration: none; -webkit-user-drag: none; }
 /* The plate's stamp, under the plate's own words (note #385): a Latest line
    with no hour on it reads as now, on the card as on the row. */
 #orgMemberCard .cago { font-size: var(--ui-sm); line-height: 17px; }
-/* Which agents a member drives (2026-09-23), and what each is doing
-   (2026-10-28): one bordered row each — face, name, the room it works in,
-   Working or Idle at the end — with its recap under the name, and each a
-   door to its page. This is the one place that names them all, so it
-   lists every one in full where the plate shows three. */
-.memberagents { list-style: none; margin: 8px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+/* Which agents a member drives (2026-09-23), and what each is doing — one
+   line each since note #1009: face, name, ONE line of its recap cut with an
+   ellipsis, and the blue dot at the end when it works (no word). Rows part
+   on a light hairline, as the card's own rows do; each is a door to its
+   agent. On a phone the recap takes the line under the name. */
+.memberagents { list-style: none; margin: 6px 0 0; padding: 0; }
 .memberagent {
-  display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center;
-  column-gap: 7px; width: 100%; padding: 5px 11px 5px 5px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-lg); background: none; color: var(--text);
-  font: inherit; font-size: var(--ui-base); line-height: var(--ui-base-leading); cursor: pointer;
+  display: grid; grid-template-columns: auto auto minmax(0, 1fr) 12px; align-items: center; column-gap: 8px;
+  width: 100%; padding: 6px 0; background: none; border: 0; border-radius: 0; color: var(--text); text-align: left;
+  font: inherit; font-size: var(--ui-base); line-height: 20px; cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.memberagent .avatar, .memberagent .icon { width: 26px; height: 26px; grid-row: 1; }
-.memberagent .mstate {
-  grid-column: 4; grid-row: 1; display: inline-flex; align-items: center; gap: 5px;
-  color: var(--hint); font-size: var(--ui-sm); white-space: nowrap;
-}
-.memberagent .mstate.busy { color: var(--text); }
-.memberagent .mrecap {
-  grid-column: 2 / -1; grid-row: 2; margin-top: 1px; font-size: var(--ui-sm); line-height: 17px;
-  color: color-mix(in srgb, var(--text) 45%, var(--hint)); overflow-wrap: anywhere;
-}
+.memberagents li + li .memberagent { border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.memberagent .avatar, .memberagent .icon { width: 22px; height: 22px; }
 .memberagent .icon { border-radius: 999px; background: color-mix(in srgb, var(--hint) 12%, transparent); color: var(--hint); }
-.memberagent .mname { font-weight: 500; white-space: nowrap; }
+.memberagent .mname { font-weight: 500; white-space: nowrap; min-width: 52px; }
+.memberagent .mrecap {
+  min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: var(--ui-sm); color: color-mix(in srgb, var(--text) 45%, var(--hint));
+}
+.memberagent .mdot { display: inline-flex; justify-content: flex-end; }
 .memberagent:active { opacity: .7; }
+@media (max-width: 520px) {
+  .memberagent { grid-template-columns: auto minmax(0, 1fr) 12px; row-gap: 1px; }
+  .memberagent .avatar, .memberagent .icon { grid-row: 1 / 3; }
+  .memberagent .mname { grid-column: 2; grid-row: 1; }
+  .memberagent .mdot { grid-column: 3; grid-row: 1; }
+  .memberagent .mrecap { grid-column: 2 / 4; grid-row: 2; }
+}
 /* A member's contribution (note #925): the card's own figures (one size
    since note #928) — two to a row on a phone, four on a desk, never three
-   and one left over — and this week's merged changes — one
-   bordered row each, the title and under it which agent, where and when,
-   each a door to the proposal, as their agents' rows are doors to them. */
+   and one left over — and this week's merged changes, since note #1009 one
+   plain line each, the title cut with an ellipsis and which agent and when
+   at its end, five and then "All N" (each a door to the proposal). */
 #orgMemberContribution .pcstats { margin-top: 8px; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 #orgMemberContribution .cago { margin-top: 6px; font-size: var(--ui-sm); line-height: 17px; color: var(--hint); }
-.memberchanges { list-style: none; margin: 8px 0 2px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.memberchanges { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; }
 .memberchange {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px;
-  width: 100%; padding: 7px 11px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--r-lg); background: none; color: var(--text);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 10px;
+  width: 100%; padding: 5px 0; text-align: left; border: 0; border-radius: 0; background: none; color: var(--text);
   font: inherit; font-size: var(--ui-base); line-height: var(--ui-base-leading); cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
-.memberchange .mctitle { grid-column: 1 / -1; font-weight: 500; overflow-wrap: anywhere; }
-.memberchange .mcfacts, .memberchange .mcago { font-size: var(--ui-sm); line-height: 17px; color: var(--hint); }
-.memberchange .mcfacts { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memberchange .mcago { white-space: nowrap; }
+.memberchange .mctitle { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.memberchange .mcfacts { font-size: var(--ui-sm); line-height: 17px; color: var(--hint); white-space: nowrap; }
 .memberchange:active { opacity: .7; }
+.memberchangesall {
+  padding: 4px 0 0; border: 0; background: none; color: var(--accent);
+  font: inherit; font-size: var(--ui-sm); cursor: pointer;
+}
+/* The facts stand in four cards (note #1009): who/latest, the week, the
+   agents, who they are here. */
+#orgMemberContribution, #orgMemberAgents, #orgMemberAbout { margin-top: 12px; }
+#orgMemberCard .v .dim { color: var(--hint); }
 /* The same agents on a People plate, as faces alone: the plate opens the
    person, and a face on it opens that agent. Side by side, not stacked, so
    each face is its own target. */
 .cfaces { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
 .cfaces .face { width: 20px; height: 20px; border-radius: 50%; flex: none; object-fit: cover; cursor: pointer; }
 .cfaces .face.more { width: auto; min-width: 20px; padding: 0 5px; border-radius: 999px; cursor: default; }
-/* What a person's agents are doing, on their People plate (2026-10-28): one
-   line each under a hairline — face, name, Working or Idle — and its recap
-   under that, clamped at two lines because the agent's own screen holds the
-   rest. Each line is a door to its agent (`data-agent-door`); the plate
-   around it stays the door to the person. */
+/* A person's agents on their People plate: since note #1009 a row of faces
+   and names under a light hairline, the blue dot on the ones working, every
+   one of them and no recaps (the member's screen holds one line each). Each
+   is a door to its agent (`data-agent-door`); the plate stays the door to
+   the person. */
 .cagents {
-  list-style: none; margin: 8px 0 0; padding: 8px 0 0; border-top: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 7px; min-width: 0;
+  list-style: none; margin: 10px 0 0; padding: 10px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  display: flex; flex-wrap: wrap; gap: 6px 14px; min-width: 0;
 }
-.cagent { min-width: 0; cursor: pointer; }
+.cagent { display: inline-flex; align-items: center; gap: 6px; min-width: 0; cursor: pointer; font-size: var(--ui-sm); line-height: 18px; color: var(--text); }
+.cagent .face { width: 20px; height: 20px; border-radius: 50%; flex: none; object-fit: cover; }
+.cagent .face.dot { display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--hint) 12%, transparent); color: var(--hint); }
+.cagent .caname { white-space: nowrap; }
+.cagent .livedot { width: 6px; height: 6px; }
 .cagent:active { opacity: .7; }
-.cagenthead { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--ui-sm); line-height: 17px; }
-.cagenthead .face { width: 18px; height: 18px; border-radius: 50%; flex: none; object-fit: cover; }
-.cagenthead .face.dot { display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--hint) 12%, transparent); color: var(--hint); }
-.cagenthead .caname { font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.cagenthead .castate { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--hint); white-space: nowrap; }
-.cagenthead .castate.busy { color: var(--text); }
-.cagent .carecap {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  margin: 2px 0 0 24px; font-size: var(--ui-sm); line-height: 15px; overflow-wrap: anywhere;
-  color: color-mix(in srgb, var(--text) 45%, var(--hint));
-}
-.cagentmore { color: var(--hint); font-size: var(--ui-sm); line-height: 17px; padding-left: 24px; }
 /* Who invited them rides the Joined line, quieter than the when. */
 #orgMemberJoined .dim { color: var(--hint); }
 .crow .cwhen { white-space: nowrap; }
@@ -5347,8 +5348,6 @@ a.crow { color: inherit; text-decoration: none; -webkit-user-drag: none; }
   color: var(--accent); font-size: var(--ui-sm); font-weight: 500; line-height: 16px;
 }
 .personname .personrole { flex: none; color: var(--hint); font-size: var(--ui-sm); }
-/* An agent's line ends in a chevron: it opens the agent (note #960). */
-.cagenthead .castate .icon { color: var(--hint); opacity: .7; }
 /* An empty week is one quiet line (note #960). */
 .pcontrib.pcempty .pchead { color: var(--hint); }
 /* Two columns that never leave a hole (note #960): the cards fill each
@@ -5400,11 +5399,6 @@ a.crow { color: inherit; text-decoration: none; -webkit-user-drag: none; }
   color: color-mix(in srgb, var(--text) 70%, var(--hint)); overflow-wrap: break-word;
 }
 .pclatest .csep, .pclatest .cago { color: var(--hint); }
-.personplate .cagents { margin: 12px 0 0; padding-top: 10px; gap: 9px; border-top-color: color-mix(in srgb, var(--border) 55%, transparent); }
-.personplate .cagenthead { font-size: var(--ui-base); line-height: 18px; }
-.personplate .cagenthead .face { width: 20px; height: 20px; }
-.personplate .cagent .carecap { margin-left: 26px; font-size: var(--ui-sm); line-height: 16px; }
-.personplate .cagentmore { padding-left: 26px; font-size: var(--ui-sm); }
 .plates .agentidentity .name {
   font-size: var(--ui-base); line-height: 18px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
@@ -7648,6 +7642,11 @@ h2.mailfileshead { margin-top: 16px; }
 #screenCopyReleases .copyreleasecard .empty { padding: 4px 0 14px; }
 
 
+/* One person is one card across the window (note #1009), its week in four
+   cells on a desk. */
+#homePeople.plates.peopleplates.solo { columns: 1; }
+#homePeople.solo .pcstats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 520px) { #homePeople.solo .pcstats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 /* Upgrade (note #1008, the mock-ups on note #1007): the button's row on the
    health card, the confirmation's four lines, the progress screen's steps
    and the notices that say how a run stands. */

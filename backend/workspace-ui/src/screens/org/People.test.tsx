@@ -119,22 +119,25 @@ describe('the People page', () => {
     const lines = [...mira.querySelectorAll('.cagents .cagent')] as HTMLElement[];
     // The working one leads.
     expect(lines.map((line) => line.getAttribute('data-agent-door'))).toEqual(['leo', 'kit']);
-    // Working is the blue dot alone (Adam, 31 Oct 2026), named for a screen reader; Idle keeps its word.
-    expect(lines.map((line) => line.querySelector('.castate')!.textContent)).toEqual(['', 'Idle']);
-    expect(lines[0]!.querySelector('.castate .livedot')!.getAttribute('aria-label')).toBe('Working');
-    expect(lines.map((line) => line.querySelector('.carecap')?.textContent)).toEqual([
-      'Fixing the footer on the landing page.', 'Drafted the pricing page; waiting on Mira.',
-    ]);
+    // A face and a name each, the blue dot alone saying which works (named
+    // for a screen reader), and no recap on the plate (note #1009).
+    expect(lines.map((line) => line.querySelector('.caname')!.textContent)).toEqual(['Leo', 'Kit']);
+    expect(lines[0]!.querySelector('.livedot')!.getAttribute('aria-label')).toBe('Working');
+    expect(lines[1]!.querySelector('.livedot')).toBeNull();
+    expect(mira.textContent).not.toContain('Fixing the footer');
     expect(mira.querySelector('.cagents')!.getAttribute('aria-label')).toBe('Mira Chen’s agents');
 
     fireEvent.click(mira.querySelector('.crow .name')!);
     expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
+    // On their page, one line each: name, one line of recap, and the dot
+    // alone for the working one — no "Working" or "Idle" (note #1009).
     const pills = [...document.querySelectorAll('#orgMemberAgents .memberagent')] as HTMLElement[];
     expect(pills.map((pill) => pill.textContent)).toEqual([
-      'LeoWorkingFixing the footer on the landing page.',
-      'KitIdleDrafted the pricing page; waiting on Mira.',
+      'LeoFixing the footer on the landing page.',
+      'KitDrafted the pricing page; waiting on Mira.',
     ]);
-    expect(document.querySelector('#orgMemberAgents .v')!.textContent).toBe('2 agents');
+    expect(pills.map((pill) => Boolean(pill.querySelector('.mdot .livedot')))).toEqual([true, false]);
+    expect(document.querySelector('#orgMemberAgents .k')!.textContent).toBe('Agents · 2');
     fireEvent.click(screen.getByRole('button', { name: 'Open Leo, working' }));
     expect(await screen.findByRole('heading', { name: 'Leo' })).toBeTruthy();
   });
@@ -153,11 +156,13 @@ describe('the People page', () => {
       }),
     });
     await screen.findByText('Nomad Trading · 2 people · 1 here now');
-    fireEvent.click(document.querySelector('#people .cagent[data-agent="leo"] .carecap')!);
+    fireEvent.click(document.querySelector('#people .cagent[data-agent="leo"] .caname')!);
     expect(await screen.findByRole('heading', { name: 'Leo' })).toBeTruthy();
   });
 
-  it('three agents on a plate, then a count; the page names them all', async () => {
+  // Every agent on the plate, as faces in a row that wraps (note #1009): a
+  // count hid which ones they were.
+  it('every agent on a plate, as faces and names', async () => {
     const many = ['a1', 'a2', 'a3', 'a4', 'a5'].map((id) => ({ id, name: id.toUpperCase() }));
     renderAt('/workplace/people?org=o1', {
       ...workspaceScript(state),
@@ -166,8 +171,8 @@ describe('the People page', () => {
     });
     await screen.findByText('Nomad Trading · 2 people · 1 here now');
     const mira = document.querySelector('#people .crow[data-person="u2"]') as HTMLElement;
-    expect(mira.querySelectorAll('.cagent')).toHaveLength(3);
-    expect(mira.querySelector('.cagentmore')!.textContent).toBe('+2 more agents');
+    expect([...mira.querySelectorAll('.cagent .caname')].map((face) => face.textContent)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5']);
+    expect(mira.querySelector('.cagentmore')).toBeNull();
   });
 
   it('a tick moves the state line and the latest line in place, without re-reading the workplace', async () => {
@@ -202,7 +207,7 @@ describe('the People page', () => {
     expect(screen.getByText('Nomad Trading · 2 people · 1 here now')).toBeTruthy();
     expect(orgReads()).toBe(before);
   });
-  it('a tick moves an agent’s state and recap in place, and drops one that has gone (2026-10-28)', async () => {
+  it('a tick moves an agent’s state in place, and drops one that has gone (2026-10-28)', async () => {
     vi.useFakeTimers();
     const withAgents = (): WorkspacePeopleAnswer['people'] => members().map((member) => (member.userId === 'u2'
       ? { ...member, agents: 2, agentFaces: [{ id: 'leo', name: 'Leo', recap: 'Old line' }, { id: 'kit', name: 'Kit' }] }
@@ -217,12 +222,9 @@ describe('the People page', () => {
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(20); });
     const line = () => document.querySelector('#people .cagent[data-agent="leo"]') as HTMLElement;
-    expect(line().querySelector('.castate')!.textContent).toBe('Idle');
-    expect(line().querySelector('.carecap')!.textContent).toBe('Old line');
+    expect(line().querySelector('.livedot')).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(PEOPLE_POLL_MS + 20); });
-    expect(line().querySelector('.castate .livedot')!.getAttribute('aria-label')).toBe('Working');
-    expect(line().querySelector('.castate')!.textContent).toBe('');
-    expect(line().querySelector('.carecap')!.textContent).toBe('Shipping the footer fix.');
+    expect(line().querySelector('.livedot')!.getAttribute('aria-label')).toBe('Working');
     expect(document.querySelector('#people .cagent[data-agent="kit"]')).toBeNull();
     expect(document.querySelectorAll('#people .crow[data-person="u2"] .cagent')).toHaveLength(1);
   });
@@ -266,13 +268,13 @@ describe('the People page', () => {
     // one cell per provider that wrote any.
     expect(stats('u2')).toEqual(['4 agent hours', '2 changes merged', '182K tokens · Claude Code', '41K tokens · Codex']);
     expect(block('u2').querySelector('[data-stat="codex"]')!.getAttribute('title')).toBe('Tokens written: what their agents wrote, not what they read.');
-    // The latest merged change is the card's ONE latest line (note #960),
-    // under the head, where it is newer than anything the person did.
+    // Their agents' merges are the week's, never the card's latest line,
+    // which is the person's own (note #1009) — Mira did nothing of her own.
     const latestLine = (userId: string) => (document.querySelector(`#people .crow[data-person="${userId}"] .personlatest`)?.textContent ?? '');
-    expect(latestLine('u2')).toBe('Merged: Live van map with ETAs on the dispatcher screen\u00a0·\u00a02h\u00a0ago');
+    expect(latestLine('u2')).toBe('');
     expect(block('u2').querySelector('.pclatest')).toBeNull();
     const card = document.querySelector('#people .crow[data-person="u2"]')!;
-    expect([...card.children].map((child) => child.className)).toEqual(['personhead', 'personlatest', 'pcontrib']);
+    expect([...card.children].map((child) => child.className)).toEqual(['personhead', 'pcontrib']);
     // A week with nothing in it is one line, not a row of zeros (note #960).
     expect(block('u1').textContent).toBe('Nothing this week');
     expect(block('u1').querySelector('.pcstats')).toBeNull();
@@ -281,7 +283,7 @@ describe('the People page', () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(PEOPLE_POLL_MS + 20); });
     expect(stats('u2')).toEqual(['5 agent hours', '3 changes merged', '190K tokens · Claude Code', '41K tokens · Codex']);
-    expect(latestLine('u2')).toBe('Merged: Driver ETAs in the customer text\u00a0·\u00a0just\u00a0now');
+    expect(latestLine('u2')).toBe('');
   });
 
   it('the member’s screen reads their whole contribution: this week, all time, and each change a door (note #925)', async () => {
@@ -308,14 +310,17 @@ describe('the People page', () => {
     await screen.findByText('Driver ETAs in the customer text');
     expect(stats('#orgMemberWeek')).toEqual(['4 agent hours', '2 changes merged', '41K tokens · Codex']);
     expect(stats('#orgMemberWorked')).toEqual(['30 agent hours', '17 changes merged', '2.4M tokens · Claude Code', '610K tokens · Codex']);
+    // No helper sentence under the figures (note #1009); a former agent is a fact.
     expect([...document.querySelectorAll('#orgMemberWorked .cago')].map((line) => line.textContent))
-      .toEqual(['including Ruby 50m, no longer here', 'Tokens counted since Oct 10, 2026.']);
+      .toEqual(['including Ruby 50m, no longer here']);
     const changes = [...document.querySelectorAll('#orgMemberMerged .memberchange')] as HTMLElement[];
-    expect(changes.map((row) => [row.querySelector('.mctitle')!.textContent, row.querySelector('.mcfacts')!.textContent, row.querySelector('.mcago')!.textContent]))
+    expect(changes.map((row) => [row.querySelector('.mctitle')!.textContent, row.querySelector('.mcfacts')!.textContent]))
       .toEqual([
-        ['Driver ETAs in the customer text', 'Leo · dispatch #8', 'just now'],
-        ['Live van map with ETAs on the dispatcher screen', 'dispatch #7', '2h ago'],
+        ['Driver ETAs in the customer text', 'Leo · just now'],
+        ['Live van map with ETAs on the dispatcher screen', '2h ago'],
       ]);
+    // Two changes: no "All N" door.
+    expect(document.getElementById('orgMemberMergedAll')).toBeNull();
     // The agents row stays as it was; the old "Agents worked" row is All time now.
     expect(document.querySelector('#orgMemberAgents')).toBeTruthy();
     expect(document.querySelector('#orgMemberCard')!.textContent).not.toContain('Agents worked');
@@ -326,5 +331,57 @@ describe('the People page', () => {
     expect(document.querySelector('#screenOrgMember')).toBeNull();
     expect(calls.some((call) => call.path === 'api/prs/pr-8')).toBe(true);
   });
-});
 
+  /**
+   * Note #1009 (Adam, 5 Nov 2026): the card and the screen said two different
+   * "latest" for one person at the same minute — the card the newer of the
+   * person's own action and their agents' merge, the screen only the
+   * person's own. One rule now, the person's own, on both.
+   */
+  it('says one latest for a person, the same on the card and on their screen (note #1009)', async () => {
+    const withBoth = (): WorkspacePeopleAnswer['people'] => members().map((member) => (member.userId === 'u2'
+      ? {
+        ...member,
+        recap: 'Turned auto-merge on',
+        recapAt: twoHoursAgo(),
+        contribution: {
+          week: { workingMs: 3_600_000, merged: 1, tokens: {} },
+          latest: { id: 'pr-9', title: 'A merge newer than anything Mira did', at: new Date().toISOString(), number: 9, repo: 'dispatch', agentName: 'Leo' },
+        },
+      }
+      : member));
+    renderAt('/workplace/people?org=o1', {
+      ...workspaceScript(state),
+      'GET api/org/people': () => ({ ...people(), people: withBoth() }),
+      'GET api/org': () => ({ org: { ...orgDetail(), members: withBoth() } }),
+      'GET api/org/people/live': () => ({ people: [] }),
+    });
+    await screen.findByText('Nomad Trading · 2 people · 1 here now');
+    const mira = document.querySelector('#people .crow[data-person="u2"]') as HTMLElement;
+    expect(mira.querySelector('.personlatest')!.textContent).toBe('Turned auto-merge on\u00a0·\u00a02h\u00a0ago');
+    fireEvent.click(mira.querySelector('.crow .name')!);
+    expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
+    expect(document.querySelector('#orgMemberLatest .v')!.textContent).toBe('Turned auto-merge on · 2h ago');
+  });
+
+  it('lists five of the week’s merged changes, then “All N” opens the rest (note #1009)', async () => {
+    const merged = Array.from({ length: 7 }, (_, index) => ({
+      id: `pr-${index}`, title: `Change ${index + 1}`, at: new Date(Date.now() - index * 3_600_000).toISOString(), number: index + 1, repo: 'dispatch', agentName: 'Leo',
+    }));
+    renderAt('/workplace/members/u2?org=o1', {
+      ...workspaceScript(state),
+      'GET api/org/people': () => people(),
+      'GET api/org': () => ({ org: orgDetail() }),
+      'GET api/org/members/u2/contribution': () => ({
+        weekStart: '2026-10-26', tokensFrom: '2026-10-10',
+        week: { workingMs: 0, merged: 7, tokens: {} }, allTime: { workingMs: 0, merged: 7, tokens: {} }, merged,
+      }),
+    });
+    await screen.findByText('Change 1');
+    const titles = () => [...document.querySelectorAll('#orgMemberMerged .mctitle')].map((title) => title.textContent);
+    expect(titles()).toEqual(['Change 1', 'Change 2', 'Change 3', 'Change 4', 'Change 5']);
+    fireEvent.click(screen.getByRole('button', { name: 'All 7' }));
+    expect(titles()).toHaveLength(7);
+    expect(document.getElementById('orgMemberMergedAll')).toBeNull();
+  });
+});

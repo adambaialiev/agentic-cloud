@@ -8,7 +8,8 @@ import { HERO_FLEET } from '../../components/live/fixture';
  * Workplace and people: teammates (switched off since 2026-10-11, owner's
  * decision — RouteDeps.invitesClosed), the two roles, the People page
  * (back wherever a workplace has a team, with each person's agents and
- * what they are doing, 2026-10-28),
+ * what they are doing, 2026-10-28; since note #1009 the card shows their
+ * agents as faces and the person's screen one line each),
  * what a workplace holds, leaving, renaming and deleting.
  * Facts checked 2026-09-24 against the invite, people, workplace and
  * deletion screens on main: the deletion lock is three days. Since note
@@ -114,17 +115,19 @@ const chapter: DocChapter = {
         <>
           <p>
             Wherever a workplace has a team &mdash; more than one person in it, or invites open
-            &mdash; its people stand in the <Ui>Workplace</Ui> window, right under the agent
+            &mdash; its people stand first in the <Ui>Workplace</Ui> window, in place of the agent
             counts, and on the People page, which the account menu&rsquo;s <Ui>People</Ui> row
             opens. Each person is one card: whether they are here now or when they were last
-            active, the last thing they did, and under it each agent they drive &mdash;{' '}
-            <Ui>Working</Ui> or <Ui>Idle</Ui>, with the same one-line summary of its latest work
-            that its owner sees. Tap an agent to open its page; tap the rest of the card for the
-            person. Nobody else ever sees the words of your chat with an agent, only that line.
+            active, the last thing they themselves did, what their agents did here this week, and
+            the face and name of each agent they drive, with a blue dot on the ones working. Tap
+            an agent to open its page; tap the rest of the card for the person.
           </p>
           <p>
-            Each person&rsquo;s own screen lists every agent they drive the same way, with when
-            they joined and, for an admin, <Ui>Make admin</Ui> and{' '}
+            Each person&rsquo;s own screen says the same last thing they did, then their week and
+            all time, the changes their agents merged this week, and every agent they drive with
+            one line on its latest work &mdash; the same line its owner sees. Nobody else ever
+            sees the words of your chat with an agent, only that line. Last come when they joined,
+            who invited them and their email and, for an admin, <Ui>Make admin</Ui> and{' '}
             <Ui>Remove from workplace</Ui>. A workplace of one that nobody can join shows none of
             this: no People row, and no role or head count in the workplace switcher.
           </p>

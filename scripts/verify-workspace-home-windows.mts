@@ -248,10 +248,11 @@ try {
   await settled();
   check('the workplace’s own name is the window’s title (note #960)', (await title()).startsWith('Nomad Trading'), await title());
   check('the name wears the open state', (await page.$eval('#homeWorkplaceDoor', (node) => node.getAttribute('aria-expanded'))) === 'true');
-  // An index since note #960: the pulse in full, then one row per shelf,
-  // the Chief of Staff's own settings among them, each a screen of its own.
+  // An index since note #960: the pulse in full — the people where there is
+  // a team, the agent counts where there is none (note #1009) — then one row
+  // per shelf, the Chief of Staff's own settings among them.
   check('it holds the pulse and the index, the Chief of Staff a row of it',
-    Boolean(await page.$('#homeSheet #homeWorkplace #agentActivity')) && Boolean(await page.$('#homeSheet #homeWorkplace #indexChiefOfStaff'))
+    Boolean(await page.$('#homeSheet #homeWorkplace #peopleSection, #homeSheet #homeWorkplace #agentActivity')) && Boolean(await page.$('#homeSheet #homeWorkplace #indexChiefOfStaff'))
       && !(await page.$('#homeSheet #homeWorkplace #recapAgentSection')),
     String(await page.$$eval('#homeSheet #homeWorkplace > *', (nodes) => nodes.map((node) => node.id).join(','))));
   check('no room in it', !(await page.$('#homeSheet #homeRoom')));

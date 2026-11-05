@@ -14,12 +14,14 @@
  * as an error. The card stands on the plates' own grey, as the agents' do
  * (Adam: "let's not make cards white").
  *
- * Under the head, the last thing they did and when; then what their agents
+ * Under the head, the last thing THEY did and when (`personLatestLine`, the
+ * one rule the member's screen uses too, note #1009); then what their agents
  * did here this week (note #925) — agent hours, changes merged, tokens
- * written per provider and the latest change's title (`PersonContribution`);
- * then their agents — one line each, face, name, the blue dot when it is
- * working (no word since 31 Oct 2026) or "Idle", and the agent's recap
- * (2026-10-28), working ones first, three and then "+N more agents".
+ * written per provider (`PersonContribution`); then their agents as a row of
+ * faces and names, the blue dot on the ones working, working ones first,
+ * every one of them and no recaps (note #1009, Adam, 5 Nov 2026: the recaps
+ * are the owner's words and made the window an agent log; the member's
+ * screen keeps one line each).
  * Everything under the head stands at the card's own left edge, as the
  * agents do (Adam, 31 Oct 2026, of the 46px indent under the name: "the
  * main thing that I don't like is left big margin").
@@ -42,10 +44,6 @@ import { PressableRow } from '../home/PressableRow.js';
 import { PersonContribution } from './Contribution.js';
 import { personAgentsInOrder, personAgentStateLine, personLatestLine, personStatusLine } from './people-words.js';
 
-/** Agents on a plate before the rest become a count: three lines with a
- *  recap each keep a card a glance, not a page. */
-export const PERSON_AGENTS_SHOWN = 3;
-
 export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
   person: WorkspaceOrgMember;
   now: number;
@@ -58,11 +56,9 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
 }) {
   const here = Boolean(person.here);
   // WHEN the latest line happened (note #385), after it on the same line.
-  // ONE latest line (note #960): theirs or their agents' latest merge.
+  // ONE latest rule (note #1009): their own last action, as their screen says.
   const latest = personLatestLine(person, now);
   const agents = personAgentsInOrder(person.agentFaces ?? []);
-  const shown = agents.slice(0, PERSON_AGENTS_SHOWN);
-  const more = agents.length - shown.length;
   const admin = showRole && person.role === 'admin';
   return (
     <PressableRow className="crow open personplate" data-person={person.userId} onPress={onOpen}>
@@ -102,34 +98,28 @@ export function PersonRow({ person, now, onOpen, showRole = true, messageTo }: {
         )
         : null}
       {person.contribution ? <PersonContribution contribution={person.contribution} /> : null}
-      {shown.length
+      {agents.length
         ? (
+          // Faces with names, the blue dot alone saying which work (no word,
+          // Adam: "Blue dot is enough"); each opens its agent.
           <ul className="cagents" aria-label={`${person.you ? 'Your' : `${person.name}’s`} agents`}>
-            {shown.map((agent) => (
-              <li className="cagent" key={agent.id} data-agent={agent.id} {...{ [AGENT_DOOR_ATTR]: agent.id }}>
-                <span className="cagenthead">
-                  {agent.avatarUrl
-                    ? <img className="face" src={agent.avatarUrl} alt="" />
-                    : <span className="face dot"><Icon name="bot" size={11} /></span>}
-                  <span className="caname">{agent.name}</span>
-                  {/* Working is the blue dot alone (Adam, 31 Oct 2026: "Blue
-                      dot is enough"); Idle keeps its word. The dot carries
-                      the word for a screen reader and a resting mouse. */}
-                  {/* The blue dot when it works, and no word at all when it
-                      does not (Adam, 31 Oct 2026: "Blue dot is enough"; note
-                      #960 took "Idle" off too). The chevron says the line
-                      opens the agent. */}
-                  <span className={agent.working ? 'castate busy' : 'castate'}>
-                    {agent.working
-                      ? <span className="livedot" role="img" aria-label={personAgentStateLine(agent)} title={personAgentStateLine(agent)} />
-                      : <span className="sr-only">{personAgentStateLine(agent)}</span>}
-                    <Icon name="chev" size={14} />
-                  </span>
-                </span>
-                {agent.recap ? <span className="carecap">{agent.recap}</span> : null}
+            {agents.map((agent) => (
+              <li
+                className={agent.working ? 'cagent busy' : 'cagent'}
+                key={agent.id}
+                data-agent={agent.id}
+                title={`${agent.name}, ${personAgentStateLine(agent).toLowerCase()}`}
+                {...{ [AGENT_DOOR_ATTR]: agent.id }}
+              >
+                {agent.avatarUrl
+                  ? <img className="face" src={agent.avatarUrl} alt="" />
+                  : <span className="face dot"><Icon name="bot" size={11} /></span>}
+                <span className="caname">{agent.name}</span>
+                {agent.working
+                  ? <span className="livedot" role="img" aria-label={personAgentStateLine(agent)} />
+                  : <span className="sr-only">{personAgentStateLine(agent)}</span>}
               </li>
             ))}
-            {more ? <li className="cagentmore">+{more} more {more === 1 ? 'agent' : 'agents'}</li> : null}
           </ul>
         )
         : null}

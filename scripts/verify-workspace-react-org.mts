@@ -707,15 +707,18 @@ try {
   // never hidden from the rest of the workplace) put back which agents —
   // name and face, in the Agents row — and Adam's of 2026-10-28 what each is
   // doing: Working or Idle, and its recap, still in that one row.
-  check('…and how many agents she drives', (await text('#orgMemberAgents .v')) === '3 agents', await text('#orgMemberAgents'));
+  check('…and how many agents she drives', (await text('#orgMemberAgents .k')) === 'Agents · 3', await text('#orgMemberAgents'));
   const miraAgents = await page.$$eval('#orgMemberAgents .memberagent .mname', (nodes) => nodes.map((node) => node.textContent ?? ''));
   check('…and which, each by name and face',
     [...miraAgents].sort().join('|') === 'Nan|Otto|Pim'
     && (await page.$$('#orgMemberAgents .memberagent .avatar, #orgMemberAgents .memberagent .icon')).length === 3,
     miraAgents.join('|'));
-  check('…and what each is doing, in that row and in no card of its own',
+  // One line of recap each, and the dot alone for a working one — no
+  // "Working" or "Idle" words (note #1009).
+  check('…and what each is doing, one line each, in no card of its own',
     /pricing rewrite/.test(await text('#orgMemberAgents')) && !(await page.$('#orgMemberAgentsCard'))
-    && (await page.$$('#orgMemberAgents .memberagent .mstate')).length === 3,
+    && (await page.$$('#orgMemberAgents .memberagent .mrecap')).length === 3
+    && !/\b(Working|Idle)\b/.test(await text('#orgMemberAgents')),
     await text('#orgMemberAgents'));
   // The line under her name already says which workplace she belongs to; the card
   // no longer repeats it as a row of its own.
@@ -786,7 +789,8 @@ try {
     seen.said === 'Here now' && seen.size === '6x6' && seen.breathes === 'breathe', JSON.stringify(seen));
   // Nothing came with the workplace (note #726): the founder's agents are
   // the Chief of Staff's to bring in, and this road never asked it to.
-  check('…and counts no agents yet — founding brought none', (await text('#orgMemberAgents .v')) === 'No agents yet', await text('#orgMemberAgents'));
+  // An empty fact reads as an error (note #1009): no agents, no card for them.
+  check('…and has no agents card — founding brought none', !(await page.$('#orgMemberAgents')));
   check('…and the reader\'s own email', /^Emailsaddam@/.test(await text('#orgMemberEmail')), await text('#orgMemberEmail'));
   await shotOrg('people-member-you');
   await page.goto(`${ORIGIN}/workplace?org=${orgDoc.orgId}`, { waitUntil: 'networkidle0' });
@@ -1354,8 +1358,8 @@ try {
   await orgStorage.selectSeat(seeded.seatId, orgDoc.orgId);
 
   // The people are a deck in Home's Workplace window again (2026-10-28,
-  // Adam: "let's bring back the team UI"), after the agent counts; the
-  // Settings card stays gone (note #634). The reader's own picture closes
+  // Adam: "let's bring back the team UI"), first, in place of the agent
+  // counts (note #1009); the Settings card stays gone (note #634). The reader's own picture closes
   // the header row and drops the account menu, whose People row opens the
   // People page. The window is read open, and the picture tapped with it
   // closed.
@@ -1363,8 +1367,8 @@ try {
   await page.waitForSelector('#homeSheet #homePeople .crow[data-person="user-mira"]', { timeout: 10_000 }).catch(() => {});
   const header = await page.evaluate(() => ({
     deck: Boolean(document.querySelector('#homeSheet #peopleSection #homePeople .crow[data-person="user-mira"]')),
-    afterCounts: Boolean((document.querySelector('#agentActivity')?.compareDocumentPosition(document.querySelector('#peopleSection')!) ?? 0)
-      & Node.DOCUMENT_POSITION_FOLLOWING),
+    // First, in place of the agent counts (note #1009).
+    afterCounts: document.querySelector('#homeWorkplace')?.firstElementChild?.id === 'peopleSection' && !document.querySelector('#agentActivity'),
     settingsCard: Boolean(document.querySelector('#settingsCard')),
     last: document.querySelector('#screenHome > .chathead')?.lastElementChild?.id ?? '',
     face: (() => {
@@ -1372,7 +1376,7 @@ try {
       return box ? `${Math.round(box.width)}x${Math.round(box.height)}` : 'none';
     })(),
   }));
-  check('Home\u2019s Workplace window has the people deck after the counts, and no settings card',
+  check('Home\u2019s Workplace window has the people deck first, in place of the counts, and no settings card',
     header.deck && header.afterCounts && !header.settingsCard, JSON.stringify(header));
   await shotOrg('home-people-deck');
   check('…the reader\u2019s picture closes the header row, at 32px', header.last === 'homeAccount' && header.face === '32x32', JSON.stringify(header));

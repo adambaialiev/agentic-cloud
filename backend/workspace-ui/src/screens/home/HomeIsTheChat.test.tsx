@@ -191,7 +191,10 @@ describe('the Workplace window (note #715)', () => {
     // The conversation is still there under it, at Home's address.
     expect(document.getElementById('screenHome')).toBeTruthy();
     expect(at()).toBe('/');
-    expect(dialog.querySelector('#homeWorkplace #agentActivity')).toBeTruthy();
+    // The people lead where there is a team; the agent counts stand only
+    // where there is none (note #1009).
+    expect(dialog.querySelector('#homeWorkplace #peopleSection')).toBeTruthy();
+    expect(dialog.querySelector('#homeWorkplace #agentActivity')).toBeNull();
     expect(dialog.querySelector('#homeWorkplace #seatsHomeSection')).toBeTruthy();
     // An index since note #960: a row per shelf, the agent's own cards one
     // of them, on a screen of their own.

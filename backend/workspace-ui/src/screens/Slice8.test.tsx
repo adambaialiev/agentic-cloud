@@ -2062,7 +2062,7 @@ describe('organizations', () => {
     // How many agents she drives (note #346); which ones ride `agentFaces`,
     // absent from this fixture (People.test draws them). The role is the
     // line under her name, not a row that repeats it.
-    expect(document.querySelector('#orgMemberAgents .v')!.textContent).toBe('3 agents');
+    expect(document.querySelector('#orgMemberAgents .k')!.textContent).toBe('Agents · 3');
     expect(document.querySelector('#orgMemberCard')!.textContent).not.toContain('Role');
     // How long her agents have worked here (note #644), now All time's
     // first figure (note #925): zero said as zero, and no former agent is
@@ -2087,9 +2087,13 @@ describe('organizations', () => {
     // Never seen: "Seen · Joined 3w ago" over "Joined · 3w ago" said one
     // thing twice, so the Seen row waits for a stamp of its own.
     expect(card.textContent).not.toContain('Seen');
-    // When and by whom are one moment, so one row.
-    expect(document.querySelector('#orgMemberJoined .v')!.textContent).toMatch(/ · invited by Saddam$/);
-    expect(card.textContent).not.toContain('Invited by');
+    // Who they are here — Joined, Invited by, Email — is the last card of
+    // facts, after their week and their agents (note #1009).
+    expect(document.querySelector('#orgMemberJoined .v')!.textContent).toMatch(/ago$/);
+    expect(document.querySelector('#orgMemberInvitedBy .v')!.textContent).toBe('Saddam');
+    expect(card.textContent).not.toContain('Joined');
+    const order = [...document.querySelectorAll('#screenOrgMember > .card')].map((node) => node.id);
+    expect(order.slice(0, 4)).toEqual(['orgMemberCard', 'orgMemberContribution', 'orgMemberAgents', 'orgMemberAbout']);
     // Message and the role change are rows of ONE card.
     const actions = document.querySelector('#orgMemberActions')!;
     expect([...actions.querySelectorAll('button.addrow')].map((b) => b.textContent)).toEqual(['Message Mira Chen', 'Make admin']);
@@ -2164,7 +2168,7 @@ describe('organizations', () => {
       'GET api/org': () => new Promise((resolve) => { land = resolve; }),
     });
     expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
-    expect(document.querySelector('#orgMemberAgents .v')!.textContent).toBe('3 agents');
+    expect(document.querySelector('#orgMemberAgents .k')!.textContent).toBe('Agents · 3');
     expect(screen.queryByText('Loading…')).toBeNull();
     await waitFor(() => expect(calls.some((call) => call.path === 'api/org')).toBe(true));
 
@@ -2172,7 +2176,7 @@ describe('organizations', () => {
     const moved = orgDetail();
     moved.members[1] = { ...moved.members[1]!, agents: 4 };
     await act(async () => { land({ org: moved }); });
-    await waitFor(() => expect(document.querySelector('#orgMemberAgents .v')!.textContent).toBe('4 agents'));
+    await waitFor(() => expect(document.querySelector('#orgMemberAgents .k')!.textContent).toBe('Agents · 4'));
   });
 
   it('opens at once from the People list a plate was drawn from (note #613)', async () => {
@@ -2214,8 +2218,8 @@ describe('organizations', () => {
       'GET api/org': () => ({ org: withRecap }),
     });
     expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
-    expect(screen.getByText('Handed note #385 to Alex')).toBeTruthy();
-    expect(document.querySelector('#orgMemberCard .cago')!.textContent).toBe('2h ago');
+    // One line, as the plate says it (note #1009): what, then when.
+    expect(document.querySelector('#orgMemberLatest .v')!.textContent).toBe('Handed note #385 to Alex · 2h ago');
   });
 
   it('counts the reader’s own agents too, and names only what the server sent', async () => {
@@ -2228,7 +2232,7 @@ describe('organizations', () => {
     // Ada is in this reader's OWN fleet, but the page names a member's agents
     // from their row (`agentFaces`, 2026-09-23) and never from the reader's
     // fleet — a row from an older backend carries none, and names none.
-    expect(document.querySelector('#orgMemberAgents .v')!.textContent).toBe('1 agent');
+    expect(document.querySelector('#orgMemberAgents .k')!.textContent).toBe('Agents · 1');
     expect(document.querySelector('#screenOrgMember')!.textContent).not.toContain('Ada');
   });
 });

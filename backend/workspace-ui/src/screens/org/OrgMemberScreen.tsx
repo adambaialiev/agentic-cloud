@@ -4,12 +4,22 @@
  * here rather than on the list row because taking a person out deserves a
  * screen that says who they are first.
  *
- * It is one card of facts (note #346). It used to end in a second card that
- * listed the member's agents by name, face and latest-work line; what each
- * agent is DOING belongs to the person driving it, so that card went. Which
- * agents they drive does not (2026-09-23, the owner: a person's agents are
- * never hidden from the rest of the workplace), so the Agents row says the
- * count and then draws each one — face, name, room — as a door to its page.
+ * Since note #1009 (Adam, 5 Nov 2026: "Person details page also can be
+ * improved, there's something wrong") it reads as a PERSON's page, not as an
+ * agent log, in four cards, top to bottom:
+ *   1. Seen and Latest — the latest by the card's own rule
+ *      (`personLatestLine`: the last thing THEY did), so a plate and the
+ *      screen it opens never disagree about the same minute;
+ *   2. their week, as the card says it — This week, All time, and the five
+ *      newest changes merged this week with "All N" for the rest (it listed
+ *      every one, 54 boxes in Adam's week);
+ *   3. their agents, one line each — face, name, ONE clamped recap line and
+ *      the blue dot when working (no "Working"/"Idle" words), working first,
+ *      every one listed (a person's agents are never hidden, 2026-09-23), each
+ *      a door to its page. Six full-height boxes of recap stood ABOVE the week
+ *      and pushed it off the screen;
+ *   4. Joined, Invited by, Email.
+ * Then, for an admin, the role change and the removal as before.
  *
  * It opens on what this tab already knows (note #613): the workplace record
  * it last read, or — the usual way in, from a People plate — the people list
@@ -30,16 +40,18 @@ import { toFor } from '../../routes.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { workplaceHasTeam } from './org-words.js';
 import { personInitials } from '../../ui/initials.js';
-import { contributionChangeAgo, contributionChangeFacts, formerAgentsLine, peopleClockMoves, personAgentCountLine, personAgentsInOrder, personAgentStateLine, personRecapAgo, personStatusLine } from './people-words.js';
+import { contributionChangeFacts, formerAgentsLine, peopleClockMoves, personAgentsInOrder, personAgentStateLine, personLatestLine, personStatusLine } from './people-words.js';
 import { ContributionStats } from './Contribution.js';
 import { useMemberContribution } from './useMemberContribution.js';
-import { dayWordsUtc } from '../people/board-words.js';
 import { useOrgDetail } from './useOrgDetail.js';
 import { heldOrgDetail, holdOrgDetail } from './org-detail-cache.js';
 import { heldPeople, holdPeople } from './people-cache.js';
 import { Svg } from '../../ui/icons.js';
 import { AgentFace } from '../../ui/AgentFace.js';
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
+
+/** Changes merged this week drawn before "All N" (note #1009). */
+const MERGED_SHOWN = 5;
 
 export function OrgMemberScreen() {
   const { id = '' } = useParams();
@@ -51,6 +63,7 @@ export function OrgMemberScreen() {
   const { org: read, error, refresh } = useOrgDetail({ cached: true });
   const [search] = useSearchParams();
   const [busy, setBusy] = useState(false);
+  const [showAllMerged, setShowAllMerged] = useState(false);
   const orgId = read?.orgId ?? search.get('org') ?? state?.org?.orgId ?? '';
   // Until the record has ever been read here, the people list stands in: it
   // carries the same rows (one builder makes both) and the workplace's name
@@ -83,7 +96,10 @@ export function OrgMemberScreen() {
   // falls back to "Joined 6h ago", and two rows saying 6h ago is one row
   // read twice (note #613).
   const seenKnown = here || Boolean(member.lastSeenAt);
-  const recapAgo = personRecapAgo(member, now);
+  const latest = personLatestLine(member, now);
+  // Which agents ride `agentFaces`; a row from an older backend carries only
+  // the count, and the card still says it.
+  const agentCount = member.agentFaces?.length ?? member.agents;
   const canMessage = !member.you && Boolean(state?.messagesAvailable);
   // Back to the People page, where this screen is opened from (note #328):
   // a replace, so Back never reopens a record the server would now refuse.
@@ -153,8 +169,7 @@ export function OrgMemberScreen() {
       <div className="card" id="orgMemberCard">
         {/* Presence first, and marked the way their plate marks it — the same
             breathing disc, so "here now" is the same fact on both screens.
-            No Role row: the line under the name above already says it, and a
-            card that repeats its own header is a card nobody reads twice. */}
+            No Role row: the line under the name above already says it. */}
         {seenKnown
           ? (
             <div className="drow">
@@ -166,75 +181,19 @@ export function OrgMemberScreen() {
             </div>
           )
           : null}
-        {/* The latest thing they drove, and WHEN — the plate's own pair
-            (note #385), so the card a plate opens says no less than it did. */}
-        {member.recap
+        {/* The last thing THEY did, and when, on one line — the plate's own
+            line by the plate's own rule (note #1009). */}
+        {latest
           ? (
-            <div className="drow">
+            <div className="drow" id="orgMemberLatest">
               <div className="k">Latest</div>
-              <div className="v">{member.recap}</div>
-              {recapAgo ? <div className="cago">{recapAgo}</div> : null}
+              <div className="v">{latest.text}{latest.ago ? <span className="dim">{' \u00b7 '}{latest.ago}</span> : null}</div>
             </div>
           )
           : null}
-        {/* Where to reach them (note #626) — sent to everyone in the
-            workplace (note #632). A tap writes to them from the Workspace's
-            own mail, not from whatever mail app the device happens to have. */}
-        {member.email
-          ? (
-            <div className="drow" id="orgMemberEmail">
-              <div className="k">Email</div>
-              <button className="v act" type="button" onClick={() => navigate(toFor({ kind: 'mail' })!, { state: { writeTo: member.email } })}>
-                {member.email}
-              </button>
-            </div>
-          )
-          : null}
-        {/* How many, and which (2026-09-23): each agent's face and name, a
-            door to its page — theirs read-only, the reader's own its
-            control room — and since 2026-10-28 what it is doing: Working or
-            Idle, and its latest-work recap. (The room it worked in, until
-            rooms left the product — note #843.) */}
-        <div className="drow" id="orgMemberAgents">
-          <div className="k">Agents</div>
-          <div className="v">{personAgentCountLine(member.agents)}</div>
-          {member.agentFaces?.length
-            ? (
-              <ul className="memberagents">
-                {personAgentsInOrder(member.agentFaces).map((agent) => (
-                  <li key={agent.id}>
-                    <button
-                      className="memberagent"
-                      type="button"
-                      data-member-agent={agent.id}
-                      aria-label={`Open ${agent.name}, ${personAgentStateLine(agent).toLowerCase()}`}
-                      onClick={() => navigate(toFor({ kind: 'agent', id: agent.id })!)}
-                    >
-                      <AgentFace agent={agent} />
-                      <span className="mname">{agent.name}</span>
-                      <span className={agent.working ? 'mstate busy' : 'mstate'}>
-                        {agent.working ? <span className="livedot" /> : null}
-                        {personAgentStateLine(agent)}
-                      </span>
-                      {agent.recap ? <span className="mrecap">{agent.recap}</span> : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )
-            : null}
-        </div>
-        {/* When and by whom, as one fact: they are the same moment. */}
-        <div className="drow" id="orgMemberJoined">
-          <div className="k">Joined</div>
-          <div className="v">
-            {relative(member.joinedAt) || 'just now'}
-            {member.invitedByName ? <span className="dim"> · invited by {member.invitedByName}</span> : null}
-          </div>
-        </div>
       </div>
-      {/* What their agents did here (note #925): this week, all time, and
-          every change merged this week — what it was, which agent made it,
+      {/* What their agents did here (note #925): this week, all time, and the
+          newest changes merged this week — what it was, which agent made it,
           when — each a door to the proposal. Every member reads every
           member's; nothing of it leaves the workplace. The week stands at
           once from the card's own numbers; the rest settles with the read. */}
@@ -250,14 +209,15 @@ export function OrgMemberScreen() {
           <div className="k">All time</div>
           <ContributionStats numbers={{ ...(contribution?.allTime ?? { merged: 0, tokens: {} }), workingMs: member.workedMs }} />
           {formerAgentsLine(member) ? <div className="cago">{formerAgentsLine(member)}</div> : null}
-          {contribution ? <div className="cago">Tokens counted since {dayWordsUtc(contribution.tokensFrom)}.</div> : null}
         </div>
-        <div className="drow" id="orgMemberMerged">
-          <div className="k">Merged this week</div>
-          {contribution?.merged.length
-            ? (
+        {/* Absent, not "nothing", when nothing was merged: the week above
+            already says 0. */}
+        {contribution?.merged.length
+          ? (
+            <div className="drow" id="orgMemberMerged">
+              <div className="k">Merged this week</div>
               <ul className="memberchanges">
-                {contribution.merged.map((change) => (
+                {(showAllMerged ? contribution.merged : contribution.merged.slice(0, MERGED_SHOWN)).map((change) => (
                   <li key={change.id}>
                     <button
                       className="memberchange"
@@ -266,15 +226,79 @@ export function OrgMemberScreen() {
                       onClick={() => navigate(toFor({ kind: 'pr', id: change.id })!)}
                     >
                       <span className="mctitle">{change.title}</span>
-                      <span className="mcfacts">{contributionChangeFacts(change)}</span>
-                      <span className="mcago">{contributionChangeAgo(change, now)}</span>
+                      <span className="mcfacts">{contributionChangeFacts(change, now)}</span>
                     </button>
                   </li>
                 ))}
               </ul>
-            )
-            : <div className="v dim">{contribution ? 'Nothing merged yet this week.' : '…'}</div>}
+              {!showAllMerged && contribution.merged.length > MERGED_SHOWN
+                ? (
+                  <button className="memberchangesall" id="orgMemberMergedAll" type="button" onClick={() => setShowAllMerged(true)}>
+                    All {contribution.merged.length}
+                  </button>
+                )
+                : null}
+            </div>
+          )
+          : null}
+      </div>
+      {/* Which agents they drive (2026-09-23: never hidden), and what each
+          is doing — one line each (note #1009). The count rides the
+          heading; a person with none has no card at all (an empty fact
+          reads as an error, as on their plate). */}
+      {agentCount
+        ? (
+          <div className="card" id="orgMemberAgents">
+            <div className="drow">
+              <div className="k">Agents · {agentCount}</div>
+              <ul className="memberagents">
+                {personAgentsInOrder(member.agentFaces ?? []).map((agent) => (
+                  <li key={agent.id}>
+                    <button
+                      className="memberagent"
+                      type="button"
+                      data-member-agent={agent.id}
+                      aria-label={`Open ${agent.name}, ${personAgentStateLine(agent).toLowerCase()}`}
+                      onClick={() => navigate(toFor({ kind: 'agent', id: agent.id })!)}
+                    >
+                      <AgentFace agent={agent} />
+                      <span className="mname">{agent.name}</span>
+                      <span className="mrecap">{agent.recap ?? ''}</span>
+                      <span className="mdot">{agent.working ? <span className="livedot" /> : null}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )
+        : null}
+      {/* Who they are in the workplace: when they came, who asked them, and
+          where to reach them (note #626) — a tap writes to them from the
+          Workspace's own mail. */}
+      <div className="card" id="orgMemberAbout">
+        <div className="drow" id="orgMemberJoined">
+          <div className="k">Joined</div>
+          <div className="v">{relative(member.joinedAt) || 'just now'}</div>
         </div>
+        {member.invitedByName
+          ? (
+            <div className="drow" id="orgMemberInvitedBy">
+              <div className="k">Invited by</div>
+              <div className="v">{member.invitedByName}</div>
+            </div>
+          )
+          : null}
+        {member.email
+          ? (
+            <div className="drow" id="orgMemberEmail">
+              <div className="k">Email</div>
+              <button className="v act" type="button" onClick={() => navigate(toFor({ kind: 'mail' })!, { state: { writeTo: member.email } })}>
+                {member.email}
+              </button>
+            </div>
+          )
+          : null}
       </div>
       {/* What you can do WITH them, as rows of one card — the same row the
           message door already was, so a role change is not a loose word
