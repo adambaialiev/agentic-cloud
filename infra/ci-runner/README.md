@@ -242,6 +242,26 @@ the repoint against — neither name lives in this repository.
   rather than letting the registry choose. See
   [how a change reaches a machine](../../docs/machine-update-channels.md).
 
+### The copy-release gate (note #1008)
+
+`copy-release` builds a release for companies (`infra/copy-release/build.sh`),
+then runs `infra/copy-release/gate.sh`: the standing test copy (a real
+Agentic Cloud in our scratch Fly organization) takes the release's
+`--drill backend`, `--drill` and the upgrade itself. Only when all pass does
+`offer.mjs` push `offered-<version>`, and the update service names the
+release latest. A red `deploy/copy-release` after a green build means *built,
+not offered*. `copy-release-gate` (dispatchable) runs the gate alone again.
+Its settings, in `/etc/ia-ci/env`:
+
+```sh
+COPY_TEST_FLY_TOKEN="FlyV1 ..."                    # the scratch organization's token
+COPY_TEST_STATE_DIR=/home/runner/ci-work/copy-test # holds acc-testcopy-copy.json (names only)
+```
+
+The gate fetches its own pinned flyctl into `$COPY_TEST_STATE_DIR`. The test
+copy, who may touch it and how to rebuild it: knowledge page private-copy,
+"The standing test copy".
+
 ### Box requirements for this job
 
 ```sh
