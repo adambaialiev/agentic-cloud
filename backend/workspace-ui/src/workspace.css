@@ -644,6 +644,8 @@ button.chev { width: 30px; height: 30px; display: flex; align-items: center; jus
 #agentVisits .visitthread { padding: 4px 12px 10px; }
 #agentVisits .visitturn + .visitturn { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 #agentVisits .visitq { font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+#agentVisits .visitthread .v { font-size: var(--ui-sm); line-height: var(--ui-sm-leading); margin-top: 2px; overflow-wrap: anywhere; }
+#agentVisits .visitthread .v.dim { color: var(--hint); }
 #agentVisits .visita { margin-top: 6px; }
 #agentVisits .visitflag { margin: 6px 0 0; }
 #agentVisits .visitturn[data-state="declined"] .visita, #agentVisits .visitturn[data-state="failed"] .visitq { color: var(--hint); }
