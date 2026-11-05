@@ -16,7 +16,7 @@
 import { toFor } from '../../routes.js';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { WorkspaceSiteRow } from '../../../../src/shared/workspace-api.js';
+import type { WorkspaceSiteCost, WorkspaceSiteCostsAnswer, WorkspaceSiteRow } from '../../../../src/shared/workspace-api.js';
 import { useBanner } from '../../chrome/useBanner.js';
 import { useSession } from '../../session/useSession.js';
 import { AskByTyping } from '../../ui/Ask.js';
@@ -25,7 +25,8 @@ import { Icon, TypeIcon } from '../../ui/icons.js';
 import { relative } from '../../ui/time.js';
 import { askedOf } from '../../ui/ask-words.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
-import { SITE_STATE, siteIsLive, sitesOf } from './site-words.js';
+import { SITE_STATE, alwaysOnWords, disksSize, estimateFootnote, machineShape, perMonth, presetName, siteIsLive, sitesOf } from './site-words.js';
+import { useSiteCosts, type SiteCostsRead } from './site-costs.js';
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { FaceDoor } from '../../ui/FaceDoor.js';
 
@@ -37,6 +38,7 @@ export function SiteScreen() {
   const navigate = useNavigate();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
+  const costs = useSiteCosts();
   const site: WorkspaceSiteRow | undefined = sitesOf(state).find((entry) => entry.name === id);
   const org = state?.org ?? null;
   const canManage = !org || org.role === 'admin';
@@ -130,6 +132,7 @@ export function SiteScreen() {
           )
           : null}
       </div>
+      <SiteCostCard site={site} costs={costs} />
       {canManage || ask
         ? (
           <div id="siteDanger">
@@ -191,5 +194,96 @@ export function SiteScreen() {
         )
         : null}
     </div>
+  );
+}
+
+/**
+ * What this site is and what it costs, in full (note #993): its preset, the
+ * machine's shape as Fly reports it, every disk — spare ones called out,
+ * because they bill and nothing else shows them — and the estimate, said to
+ * be one. Never a guessed figure: a machine that cannot be read says so.
+ */
+function SiteCostCard({ site, costs }: { site: WorkspaceSiteRow; costs: SiteCostsRead }) {
+  const cost: WorkspaceSiteCost | undefined = costs.answer?.sites.find((entry) => entry.name === site.name);
+  const answer: WorkspaceSiteCostsAnswer | null = costs.answer;
+  const hosted = answer ? answer.hosted : null;
+  const always = alwaysOnWords(hosted);
+  const preset = presetName(site.preset);
+  const machine = cost?.read ? cost.machine : undefined;
+  const disks = cost?.read ? cost.disks ?? [] : [];
+  const spare = cost?.read ? cost.spareDisks ?? [] : [];
+  const spareUsd = spare.reduce((sum, disk) => sum + disk.monthlyUsd, 0);
+  const mountedUsd = disks.reduce((sum, disk) => sum + disk.monthlyUsd, 0);
+  const unread = !cost
+    ? (costs.loading ? 'Reading its machine…' : 'Its machine could not be read just now, so there is no estimate.')
+    : !cost.read
+      ? (cost.reason === 'no-machine' ? 'It has no machine right now, so there is no estimate.' : 'Its machine could not be read just now, so there is no estimate.')
+      : null;
+  return (
+    <>
+      <h2 className="indexhead" id="siteCostHead">Running it</h2>
+      <div className="card" id="siteCost">
+        <div className="crow" id="sitePreset">
+          <TypeIcon glyph="box" />
+          <div className="main">
+            <div className="name plain">{preset}</div>
+            <div className="cline wrap">
+              <span className="ctext">
+                {machine
+                  ? `${machineShape(machine)} · ${machine.running ? 'always on, never sleeps' : 'stopped: only its disks bill'}`
+                  : cost?.built === false ? 'Nothing built yet, so it costs nothing.' : 'Always on, never sleeps'}
+              </span>
+            </div>
+          </div>
+          {machine ? <div className="cside">{perMonth(machine.monthlyUsd)}</div> : null}
+        </div>
+        {disks.length
+          ? (
+            <div className="crow" id="siteDisk">
+              <TypeIcon glyph="database" />
+              <div className="main">
+                <div className="name plain">{`Disk · ${disksSize(disks)}`}</div>
+                <div className="cline"><span className="ctext">Mounted by its machine</span></div>
+              </div>
+              <div className="cside">{perMonth(mountedUsd)}</div>
+            </div>
+          )
+          : null}
+        {spare.length
+          ? (
+            <div className="crow" id="siteSpareDisks">
+              <TypeIcon glyph="database" />
+              <div className="main">
+                <div className="name plain">{`${spare.length} spare disk${spare.length === 1 ? '' : 's'} · ${disksSize(spare)}`}</div>
+                <div className="cline wrap"><span className="ctext">No machine mounts {spare.length === 1 ? 'it' : 'them'}, and {spare.length === 1 ? 'it' : 'they'} {hosted ? (spare.length === 1 ? 'costs' : 'cost') : (spare.length === 1 ? 'is billed' : 'are billed')} all the same</span></div>
+              </div>
+              <div className="cside">{perMonth(spareUsd)}</div>
+            </div>
+          )
+          : null}
+        {cost?.read && cost.built !== false
+          ? (
+            <div className="crow" id="siteEstimate">
+              <TypeIcon glyph="card" />
+              <div className="main">
+                <div className="name plain">{`Estimate · ${perMonth(cost.monthlyUsd ?? 0)}`}</div>
+                <div className="cline wrap">
+                  <span className="ctext">
+                    {hosted ? 'Machine plus disks, paid by Agentic Cloud: not billed to you' : 'Machine plus disks, on your cloud bill'}
+                    {machine && !machine.running && machine.runningMonthlyUsd ? ` · ${perMonth(machine.runningMonthlyUsd + (cost.disksMonthlyUsd ?? 0))} once it runs again` : ''}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )
+          : null}
+        {unread && cost?.built !== false
+          ? <div className="crow" id="siteEstimate"><TypeIcon glyph="card" /><div className="main"><div className="cline wrap"><span className="ctext">{unread}</span></div></div></div>
+          : null}
+        <div className="quota" id="siteAlwaysOn">
+          <strong>{always.lead}</strong> {always.rest}{answer ? ` ${estimateFootnote(answer)}` : ''}
+        </div>
+      </div>
+    </>
   );
 }

@@ -174,6 +174,7 @@ import {
   type WorkspaceBucketRow,
   type WorkspaceBucketUsageAnswer,
   type WorkspaceBucketNamedAnswer,
+  type WorkspaceSiteCostsAnswer,
   NO_SUCH_REPOSITORY,
 } from '../shared/workspace-api.js';
 import { TOTP_DIGITS, TOTP_PERIOD_SECONDS } from '../utils/totp.js';
@@ -203,6 +204,7 @@ import type { RepoContributors } from '../types/git-repo.js';
 import { bucketPublicUrl } from '../types/storage-bucket.js';
 import { DEPLOYMENT_NAME_PATTERN, siteIsListed, siteKindForPreset } from '../types/deployment.js';
 import { SiteFavicons } from '../services/site-favicon.js';
+import { SiteCostReader } from '../services/site-costs.js';
 import { mintHumanGitToken } from '../services/human-git-token.js';
 import { inferContentType, SESSION_ATTACHMENT_MAX_BYTES } from '../services/session-attachments.js';
 import { imageDimensions } from '../utils/image-dimensions.js';
@@ -5944,6 +5946,38 @@ self.addEventListener('activate', (event) => {
       decision: 'kept',
     }).catch(() => { /* the flag is cleared either way */ });
     return res.json({ ok: true, name });
+  });
+
+  /**
+   * What each site costs to keep up (note #993): its machine as Fly reports
+   * it and every disk its app holds, priced by the spend view's own table
+   * (`site-costs.ts`). Every member reads it, as every member reads the
+   * Sites screen: these are list-price estimates of the shape of a machine,
+   * not the invoice, which stays admin-only in the spend view. Read on
+   * demand, never in `api/state`: it is a walk of the cloud account, and the
+   * state read is what every screen waits on.
+   */
+  let siteCostReader: SiteCostReader | null = null;
+  const siteCostsReader = () => {
+    if (!deps.deploymentService) return null;
+    siteCostReader ??= new SiteCostReader({ read: (doc) => deps.deploymentService!.readInfrastructure(doc) });
+    return siteCostReader;
+  };
+  router.get('/api/sites/costs', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const siteCosts = siteCostsReader();
+    if (!deps.deploymentStorage || !siteCosts) {
+      return res.status(503).json({ error: 'Hosting is not available on this backend yet' });
+    }
+    const costsNs = await viewerNamespaceFor(auth, req, res);
+    if (!costsNs) return;
+    const docs = auth.orgId
+      ? await deps.deploymentStorage.listByOrg(auth.orgId)
+      : await deps.deploymentStorage.listByUser(auth.userId);
+    const org = auth.orgId ? await deps.orgStorage?.getOrg(auth.orgId).catch(() => null) : null;
+    const answer: WorkspaceSiteCostsAnswer = await siteCosts.forSites(docs, org ? isHostedWorkplace(org) : false);
+    return res.json(answer);
   });
 
   /**

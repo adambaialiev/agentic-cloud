@@ -18,7 +18,8 @@ import { Storage } from '../home/Storage.js';
 import { WorkspaceAgentCards } from '../home/WorkspaceAgentCards.js';
 import { useWorkspaceAgentDetails } from '../home/workspace-agent-details.js';
 import { counted, sitesLine, storageLine } from '../home/workplace-index-words.js';
-import { sitesOf } from '../sites/site-words.js';
+import { sitesCostSuffix, sitesOf } from '../sites/site-words.js';
+import { useSiteCosts } from '../sites/site-costs.js';
 import { bucketsOf } from '../storage/bucket-words.js';
 
 export function RepositoriesScreen() {
@@ -39,10 +40,13 @@ export function RepositoriesScreen() {
 export function SitesScreen() {
   const { state } = useWorkspace();
   const sites = sitesOf(state);
+  // Read once here and handed to the list, so the total in the sub-line and
+  // the rows under it are the same answer (note #993).
+  const costs = useSiteCosts();
   return (
     <div className="screen" id="screenSites">
-      <ScreenTitle title="Sites" sub={state ? sitesLine(sites.map((site) => site.url ?? '')) : ''} subId="sitesSub" />
-      <Sites screen />
+      <ScreenTitle title="Sites" sub={state ? `${sitesLine(sites.map((site) => site.url ?? ''))}${sitesCostSuffix(costs.answer)}` : ''} subId="sitesSub" />
+      <Sites screen costs={costs} />
     </div>
   );
 }

@@ -119,6 +119,17 @@ describe('Home cards', () => {
         secrets: [secret(), secret({ name: 'OPENAI_KEY', description: undefined, scope: 'agent', agentId: 'a', agentName: 'Ada' })],
       })),
       ...quiet,
+      // The Sites screen's estimates (note #993): the backend prices them; the
+      // screen only says them. `api` was not read, so it has no figure.
+      'GET api/sites/costs': () => ({
+        hosted: false,
+        sites: [
+          { name: 'shop', preset: 'static', read: true, machine: { cpuKind: 'shared', cpus: 1, memoryMb: 256, running: true, monthlyUsd: 1.94 }, disks: [{ sizeGb: 1, monthlyUsd: 0.15 }], spareDisks: [{ sizeGb: 3, monthlyUsd: 0.45 }, { sizeGb: 3, monthlyUsd: 0.45 }], disksMonthlyUsd: 1.05, monthlyUsd: 2.99 },
+          { name: 'api', preset: 'service', read: false, reason: 'unreadable' },
+        ],
+        monthlyUsd: 2.99, unread: 1,
+        disclaimer: 'Estimates from Fly\u2019s published prices — the Fly dashboard is the authority.',
+      }),
     });
     const seats = await screen.findByText('Claude');
     const card = seats.closest('.seatcard') as HTMLElement;
@@ -149,9 +160,19 @@ describe('Home cards', () => {
     expect(shop.querySelector('.cwhen')!.textContent).toContain('updated');
     const api = screen.getByText('api').closest('.crow') as HTMLElement;
     expect(within(api).getByText('setting up')).toBeTruthy();
-    expect(api.querySelector('.cside')!.textContent).toBe('app');
-    // The domain is the screen's line, not a footer explaining the list.
-    expect(document.getElementById('sitesSub')!.textContent).toBe('2 sites on agentbuilt.app');
+    // Note #993: the preset by its product name over the estimate, in place
+    // of the bare "site" / "app"; a site that was not read says so, never a
+    // guessed figure; spare disks are a line of their own, billed.
+    await waitFor(() => expect(shop.querySelector('.sitecost')!.textContent).toBe('~$2.99/mo'));
+    expect(shop.querySelector('.sitepreset')!.textContent).toBe('static');
+    expect(shop.querySelector('.sitespare')!.textContent).toBe('2 spare disks · 6 GB, billed');
+    expect(api.querySelector('.sitepreset')!.textContent).toBe('static');
+    expect(api.querySelector('.sitecost')!.textContent).toBe('cost unread');
+    // The domain is the screen's line, with what the sites cost together and
+    // the one it could not count; the never-sleeps line is said once, above.
+    expect(document.getElementById('sitesSub')!.textContent).toBe('2 sites on agentbuilt.app · est. $2.99 a month (1 not read)');
+    expect(document.getElementById('sitesAlwaysOn')!.textContent).toMatch(/^Sites never sleep\. .*whether or not anyone visits/);
+    expect(document.getElementById('sitesEstimateNote')!.textContent).toMatch(/the Fly dashboard is the authority/);
     expect(screen.queryByText(/Each site is at its own name/)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Back' }));
 
@@ -2948,6 +2969,35 @@ describe('a site', () => {
     expect(await screen.findByText(/Deployed it · updated/)).toBeTruthy();
     expect(document.getElementById('siteLastDeploy')).toBeNull();
     expect(document.querySelectorAll('#siteCard .crow').length).toBe(2);
+  });
+
+  it('says in full what the site runs on and what it costs (note #993)', async () => {
+    renderAt('/sites/shop?org=o1', {
+      ...workspaceScript(() => orgState({ sites: [site({ preset: 'service-pro', kind: 'service' })] })),
+      ...quiet,
+      'GET api/sites/costs': () => ({
+        hosted: true,
+        sites: [{ name: 'shop', preset: 'service-pro', read: true, machine: { cpuKind: 'shared', cpus: 1, memoryMb: 1024, running: true, monthlyUsd: 5.69 }, disks: [{ sizeGb: 3, monthlyUsd: 0.45 }], spareDisks: [{ sizeGb: 3, monthlyUsd: 0.45 }, { sizeGb: 3, monthlyUsd: 0.45 }], disksMonthlyUsd: 1.35, monthlyUsd: 7.04 }],
+        monthlyUsd: 7.04, unread: 0, disclaimer: 'Estimates.',
+      }),
+    });
+    await waitFor(() => expect(document.getElementById('siteEstimate')?.textContent).toContain('Estimate · ~$7.04/mo'));
+    expect(document.getElementById('sitePreset')!.textContent).toBe('service-pro1 shared CPU · 1 GB memory · always on, never sleeps~$5.69/mo');
+    expect(document.getElementById('siteDisk')!.textContent).toBe('Disk · 3 GBMounted by its machine~$0.45/mo');
+    expect(document.getElementById('siteSpareDisks')!.textContent).toBe('2 spare disks · 2 × 3 GBNo machine mounts them, and they cost all the same~$0.90/mo');
+    // A hosted workplace: the same figures, and who pays them said plainly.
+    expect(document.getElementById('siteEstimate')!.textContent).toContain('paid by Agentic Cloud: not billed to you');
+    expect(document.getElementById('siteAlwaysOn')!.textContent).toMatch(/^Sites never sleep\./);
+  });
+
+  it('never guesses a figure for a site whose machine could not be read', async () => {
+    renderAt('/sites/shop?org=o1', {
+      ...workspaceScript(() => orgState({ sites: [site()] })),
+      ...quiet,
+      'GET api/sites/costs': () => ({ hosted: false, sites: [{ name: 'shop', preset: 'static', read: false, reason: 'unreadable' }], monthlyUsd: 0, unread: 1, disclaimer: 'Estimates.' }),
+    });
+    await waitFor(() => expect(document.getElementById('siteEstimate')?.textContent).toBe('Its machine could not be read just now, so there is no estimate.'));
+    expect(document.getElementById('siteCost')!.textContent).not.toMatch(/\$/);
   });
 
   it('says what a site that is not serving is', async () => {

@@ -2077,6 +2077,55 @@ export interface WorkspaceSiteRow {
 /** DELETE api/sites/:name, POST api/sites/:name/keep */
 export interface WorkspaceSiteNamedAnswer { ok: true; name: string }
 
+/** One disk a site's app holds, priced from the spend view's table. */
+export interface WorkspaceSiteDisk { sizeGb: number; monthlyUsd: number }
+
+/**
+ * One site's estimated monthly cost (note #993), read from the machine and
+ * disks Fly reports for its app and priced by `config/fly-cost-estimates.ts`.
+ * `read: false` means the machine or its disks could not be read: there is
+ * no figure then, never a guess, and it is left out of the total.
+ */
+export interface WorkspaceSiteCost {
+  name: string;
+  preset: string;
+  read: boolean;
+  /** `false` for a reserved name with nothing built: it costs nothing. */
+  built?: false;
+  /** Why there is no figure: no machine found, or the read failed. */
+  reason?: 'no-machine' | 'unreadable';
+  machine?: {
+    cpuKind: 'shared' | 'performance';
+    cpus: number;
+    memoryMb: number;
+    /** Sites never sleep; false only for one paused or stopped by support. */
+    running: boolean;
+    /** The machine's share of the estimate: a full month while it runs, 0 stopped. */
+    monthlyUsd: number;
+    /** A stopped machine's shape, priced as if it ran — what it costs when back. */
+    runningMonthlyUsd?: number;
+  };
+  /** The disk(s) its machine mounts. */
+  disks?: WorkspaceSiteDisk[];
+  /** Disks the app holds that no machine mounts — billed all the same. */
+  spareDisks?: WorkspaceSiteDisk[];
+  disksMonthlyUsd?: number;
+  /** Machine plus every disk, per 30-day month. */
+  monthlyUsd?: number;
+}
+
+/** GET api/sites/costs */
+export interface WorkspaceSiteCostsAnswer {
+  /** The workplace runs on the platform's cloud: the estimate is our cost, not its bill. */
+  hosted: boolean;
+  sites: WorkspaceSiteCost[];
+  /** The sum over every site that was read. */
+  monthlyUsd: number;
+  /** Sites the sum leaves out because they could not be read. */
+  unread: number;
+  disclaimer: string;
+}
+
 /**
  * One object-storage bucket as api/state lists it (note #768): what the
  * owner sees of what their agents keep files in — and, for a public one,

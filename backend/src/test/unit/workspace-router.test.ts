@@ -1851,6 +1851,35 @@ describe('telegram mini app routes — the Workspace agents surface', () => {
     expect((await deploymentStorage.get(shop.id))!.status).toBe('live');
   });
 
+  it('GET /api/sites/costs prices each site from its machine and disks (note #993)', async () => {
+    const { deps } = await buildDeps();
+    const deploymentStorage = new InMemoryDeploymentStorage();
+    await deploymentStorage.create({
+      userId: 'user-1', agentId: 'agent-a', name: 'shop', preset: 'service', status: 'live',
+      flyApp: 'iapp-shop', machineId: 'm1', volumeId: 'v1',
+    });
+    await deploymentStorage.create({ userId: 'user-2', agentId: 'agent-z', name: 'stranger', preset: 'static', status: 'live', flyApp: 'iapp-x', machineId: 'm9' });
+    const readInfrastructure = vi.fn(async () => ({
+      machines: [{ id: 'm1', state: 'started', config: { guest: { cpu_kind: 'shared', cpus: 1, memory_mb: 512 }, mounts: [{ volume: 'v1' }] } }],
+      volumes: [{ id: 'v1', size_gb: 3 }, { id: 'v2', size_gb: 3 }],
+    }));
+    deps.deploymentStorage = deploymentStorage;
+    deps.deploymentService = { url: (d: { name: string }) => `https://${d.name}.agentbuilt.app`, readInfrastructure } as never;
+
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/sites/costs', 'get')(mockRequest({ headers: authHeader(42) }), res);
+
+    expect(res.statusCode).toBe(200);
+    const body = res.body as { sites: Array<Record<string, unknown>>; monthlyUsd: number; unread: number; disclaimer: string };
+    // Only this account's site, and nothing read for anybody else's.
+    expect(body.sites.map((s) => s.name)).toEqual(['shop']);
+    expect(readInfrastructure).toHaveBeenCalledTimes(1);
+    expect(body.sites[0]).toMatchObject({ read: true, preset: 'service', spareDisks: [{ sizeGb: 3 }] });
+    expect(body.monthlyUsd).toBe(body.sites[0]!.monthlyUsd);
+    expect(body.unread).toBe(0);
+    expect(body.disclaimer).toMatch(/estimate/i);
+  });
+
   it('POST /api/sites/:name/keep clears the ask and tells the agent', async () => {
     const { deps } = await buildDeps();
     const deploymentStorage = new InMemoryDeploymentStorage();

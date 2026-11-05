@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { FlyClient, FlyMachineService } from './fly-client.js';
+import type { FlyClient, FlyMachine, FlyMachineService, FlyVolume } from './fly-client.js';
 import type { FlyAppOrgContext } from './fly-app-org-context.js';
 import type { FlySandboxClient } from './fly-sandbox-client.js';
 import { buildFlySandboxId } from './fly-sandbox-id.js';
@@ -771,6 +771,22 @@ export class DeploymentService {
     }
     this.log(`WARNING: no validation token for ${hostname} after retries; the CNAME instruction falls back to ${appName}.fly.dev (TLS will need manual attention)`);
     return `${appName}.fly.dev`;
+  }
+
+  /**
+   * What a site's app holds in the account it lives in — its machines and
+   * every volume, spare ones included — for the Sites screen's estimate
+   * (note #993, `site-costs.ts`). A read only; it throws when either read
+   * fails, so the caller says "could not be read" rather than pricing half.
+   */
+  async readInfrastructure(deployment: DeploymentDocument): Promise<{ machines: FlyMachine[]; volumes: FlyVolume[] }> {
+    if (!deployment.flyApp) return { machines: [], volumes: [] };
+    const { client } = await this.contextFor(deployment.flyApp);
+    const [machines, volumes] = await Promise.all([
+      client.listMachines(deployment.flyApp),
+      client.listVolumes(deployment.flyApp),
+    ]);
+    return { machines, volumes };
   }
 
   private async destroyInfra(appName: string): Promise<void> {

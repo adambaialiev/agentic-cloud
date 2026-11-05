@@ -1652,6 +1652,24 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
       else respondJson(404, { error: 'No such item.' });
       return true;
     }
+    // The Sites screen's estimates (note #993): the real route prices the
+    // machine and disks Fly reports with config/fly-cost-estimates.ts. These
+    // figures are that table's answer for a static site (1 shared CPU,
+    // 256 MB, one 1 GB disk) — a fixture, not a second price source.
+    if (pathname === '/workspace/api/sites/costs' && method === 'GET') {
+      const sites = site && site.status !== 'destroyed'
+        ? [{
+          name: site.name, preset: site.preset, read: true,
+          machine: { cpuKind: 'shared', cpus: 1, memoryMb: 256, running: true, monthlyUsd: 1.94 },
+          disks: [{ sizeGb: 1, monthlyUsd: 0.15 }], spareDisks: [], disksMonthlyUsd: 0.15, monthlyUsd: 2.09,
+        }]
+        : [];
+      respondJson(200, {
+        hosted: true, sites, monthlyUsd: sites.length ? 2.09 : 0, unread: 0,
+        disclaimer: 'Estimates from Fly’s published prices — the Fly dashboard is the authority.',
+      });
+      return true;
+    }
     const roomMatch = pathname.match(/^\/workspace\/api\/rooms\/([^/]+)$/);
     if (roomMatch && method === 'GET') {
       const room = team.rooms.find((row) => row.roomId === decodeURIComponent(roomMatch[1]));
