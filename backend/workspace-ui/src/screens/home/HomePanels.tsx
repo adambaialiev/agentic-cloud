@@ -5,9 +5,10 @@
  * half of Home; the sections, their order and every id inside are kept,
  * because the harnesses, the stylesheet and the simulations key on them.
  *
- * Since note #960 (Adam, 3 Nov 2026) it is an INDEX: the agent counts (note
- * #614) and its people with what their agents are doing (2026-10-28) are
- * drawn in full, then one row per shelf (`WorkplaceIndex`) — direct
+ * Since note #960 (Adam, 3 Nov 2026) it is an INDEX: its people with what
+ * their agents are doing (2026-10-28) — or, where there is no team, the
+ * agent counts (note #614; note #1009) — are drawn in full, then one row
+ * per shelf (`WorkplaceIndex`) — direct
  * messages and mail, notes, Drive, repositories, knowledge, sites, buckets,
  * secrets, the Chief of Staff's own settings — each opening a screen of its
  * own, with the reader's auto-merge switch (note #944) and their
@@ -56,13 +57,13 @@ export function WorkplacePanel({ orgId }: { orgId: string }) {
     : agent.data ? agentStateLine(agent.data.agent).text : null;
   return (
     <div id="homeWorkplace">
-      {/* How much is running right now is the first question the
-          workplace answers, before anyone is named (note #614). */}
-      <AgentActivity />
       {/* Who is driving it, and what their agents are doing (2026-10-28) —
-          wherever the workplace can have a team: a workplace of one that
-          nobody can join has nobody to list, and makes no read for it. */}
-      {workplaceHasTeam(state?.org, state?.invitesClosed) ? <People /> : null}
+          wherever the workplace can have a team. There the reader's own card
+          shows their agents with the blue dot on the working ones, so the
+          agent counts (note #614) would say it twice and stand down (note
+          #1009). A workplace of one that nobody can join draws no people
+          and makes no read for them: the counts are its pulse. */}
+      {workplaceHasTeam(state?.org, state?.invitesClosed) ? <People /> : <AgentActivity />}
       {/* A person waiting at the door: absent, not empty, when nobody
           waits. */}
       <HomeJoinRequests />

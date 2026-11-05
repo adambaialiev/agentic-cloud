@@ -271,11 +271,12 @@ export function contributionChangeAgo(change: Pick<WorkspaceContributionChange, 
   return relative(change.at, now) || 'just now';
 }
 
-/** Who made a change and where, under its title on a member's screen:
- *  "Leo · shop #12". */
-export function contributionChangeFacts(change: WorkspaceContributionChange): string {
-  const where = change.repo ? `${change.repo} #${change.number}` : `#${change.number}`;
-  return change.agentName ? `${change.agentName} · ${where}` : where;
+/** Which agent made a change and when, at the end of its row on a member's
+ *  screen: "Leo · 2h ago" (note #1009: the repository and number went; the
+ *  row opens the proposal, which says both). */
+export function contributionChangeFacts(change: Pick<WorkspaceContributionChange, 'at' | 'agentName'>, now = Date.now()): string {
+  const ago = contributionChangeAgo(change, now);
+  return change.agentName ? `${change.agentName} · ${ago}` : ago;
 }
 
 /** Agent time as a figure in HOURS, the unit its label names (note #960:
@@ -296,19 +297,17 @@ export function weekIsEmpty(numbers: WorkspaceContributionNumbers): boolean {
     && TOKEN_PROVIDERS.every((provider) => (numbers.tokens[provider] ?? 0) <= 0);
 }
 
-/** A person's ONE latest line (note #960): their own latest, or their
- *  agents' latest merged change, whichever is newer — never both, in two
- *  places on the card. */
+/** A person's ONE latest line, on their card and on their own screen alike
+ *  (note #1009, Adam, 5 Nov 2026): the last thing THEY did, and when. Their
+ *  agents' merges are not it: those are the week's (the card's "changes
+ *  merged", the screen's "Merged this week"). Until then the card took the
+ *  newer of the two (note #960) while the screen said only the person's own,
+ *  so the two disagreed about the same person at the same minute — and with
+ *  auto-merge on, a merge every few minutes pushed the person's line out. */
 export function personLatestLine(
-  person: Pick<WorkspaceOrgMember, 'recap' | 'recapAt' | 'contribution'>,
+  person: Pick<WorkspaceOrgMember, 'recap' | 'recapAt'>,
   now = Date.now(),
 ): { text: string; ago: string } | null {
-  const merged = person.contribution?.latest;
-  const recapAt = person.recap && person.recapAt ? Date.parse(person.recapAt) : NaN;
-  const mergedAt = merged ? Date.parse(merged.at) : NaN;
-  if (merged && (!person.recap || !(recapAt >= mergedAt))) {
-    return { text: `Merged: ${merged.title}`, ago: contributionChangeAgo(merged, now) };
-  }
   if (person.recap) return { text: person.recap, ago: personRecapAgo(person, now) };
   return null;
 }

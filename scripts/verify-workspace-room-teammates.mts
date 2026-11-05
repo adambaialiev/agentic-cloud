@@ -337,13 +337,22 @@ try {
   check('…the page says who drives it', Boolean(await page.evaluate(() => document.body.textContent?.includes('Dana Ives'))),
     `${page.url()} :: ${await page.evaluate(() => document.body.textContent?.replace(/\s+/g, ' ').slice(0, 400))}`);
 
-  // 6. The Workplace window's pulse counts the READER's agents only (the
-  // owner, 2026-09-23: "It should show only information about my agents,
-  // not my teammates agents"). Four teammates' agents here, one mid-turn.
+  // 6. The Workplace window's pulse is the READER's agents only (the owner,
+  // 2026-09-23: "It should show only information about my agents, not my
+  // teammates agents"). With a team it is the reader's own card — their
+  // agents' faces, the dot on the working ones — in place of the counts
+  // (note #1009). Four teammates' agents here, one mid-turn; none is on it.
   await openWorkplaceWindow(page, ORIGIN);
-  await page.waitForSelector('#homeSheet #homeWorkplace #agentActivity .agentactivitynumber', { timeout: 10_000 }).catch(() => {});
-  const pulse = await texts('#agentActivity .agentactivitynumber');
-  check('the workplace pulse counts only the reader’s own agents', pulse.join('|') === '0|1', pulse.join('|'));
+  await page.waitForSelector('#homeSheet #homePeople .crow .cagent', { timeout: 10_000 }).catch(() => {});
+  const pulse = await page.evaluate(() => {
+    const own = [...document.querySelectorAll('#homePeople .crow')].find((card) => card.querySelector('.personrole')?.textContent?.startsWith('You'));
+    return {
+      counts: Boolean(document.getElementById('agentActivity')),
+      own: own ? [...own.querySelectorAll('.cagent')].length : -1,
+      working: own ? own.querySelectorAll('.cagent .livedot').length : -1,
+    };
+  });
+  check('the workplace pulse is only the reader’s own agents, on their own card', !pulse.counts && pulse.own === 1 && pulse.working === 0, JSON.stringify(pulse));
 
   // 7. Where a person is described, the agents they drive are named too: a
   // member's own page. (The rooms list named each room's agents, the

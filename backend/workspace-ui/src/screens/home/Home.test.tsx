@@ -630,8 +630,11 @@ describe('Home’s two windows (note #715)', () => {
     expect(node('indexNotes').textContent).toBe('NotesNo notes yet');
   });
 
-  it('opens Workplace with the workplace-wide agent counts (note #614)', async () => {
+  // The counts stand only where there is no team (note #1009): with people
+  // cards, the reader's own card says the same with faces and dots.
+  it('opens a workplace with no team on the agent counts (note #614)', async () => {
     home(halved({
+      org: { ...org, members: 1 }, invitesClosed: true, 
       agents: [
         agent({ id: 'ada', name: 'Ada', working: true }),
         agent({ id: 'theo', name: 'Theo', working: true }),
@@ -653,6 +656,7 @@ describe('Home’s two windows (note #715)', () => {
   // not my teammates agents." Theirs are shown where they work, not here.
   it('counts only the reader’s own agents in the workplace pulse, never a teammate’s', async () => {
     home(halved({
+      org: { ...org, members: 1 }, invitesClosed: true, 
       agents: [agent({ id: 'ada', name: 'Ada', working: true })],
       teamAgents: [
         { id: 'leo', name: 'Leo', status: 'ready', working: true, owner: { userId: 'dana', name: 'Dana Ives' } },
@@ -678,7 +682,9 @@ describe('Home’s two windows (note #715)', () => {
     const workplace = await workplaceWindow();
     const before = (a: string, b: string) =>
       Boolean(node(a).compareDocumentPosition(node(b)) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(before('agentActivity', 'peopleSection')).toBe(true);
+    // The people stand first, and in place of the agent counts (note #1009).
+    expect(workplace.firstElementChild).toBe(node('peopleSection'));
+    expect(document.getElementById('agentActivity')).toBeNull();
     expect(before('peopleSection', 'humanMessagesCard')).toBe(true);
     expect(workplace.querySelector('#workspaceRecap')).toBeNull();
     expect([...node('humanMessagesCard').querySelectorAll('.crow .name')].map((row) => row.textContent))
@@ -689,7 +695,8 @@ describe('Home’s two windows (note #715)', () => {
    * The team, back in the Workplace window (Adam, 2026-10-28: "let's bring
    * back the team UI where I can see my teammates and their statuses and
    * what their agents cooking"): one plate per person with here-now or last
-   * seen, and under each their agents, Working or Idle, with the recap line.
+   * seen, and under each their agents as faces and names, the blue dot on
+   * the working ones and no recap (note #1009).
    */
   it('stands the people deck in Workplace, each person with what their agents are doing', async () => {
     const seen = new Date().toISOString();
@@ -712,9 +719,27 @@ describe('Home’s two windows (note #715)', () => {
     const mira = deck.querySelector('.crow[data-person="u2"]') as HTMLElement;
     expect(within(mira).getByText('Active 4m ago')).toBeTruthy();
     const leo = mira.querySelector('.cagent[data-agent-door="leo"]') as HTMLElement;
-    expect(leo.querySelector('.castate .livedot')!.getAttribute('aria-label')).toBe('Working');
-    expect(leo.querySelector('.carecap')!.textContent).toBe('Fixing the footer on the landing page.');
+    expect(leo.querySelector('.livedot')!.getAttribute('aria-label')).toBe('Working');
+    expect(leo.textContent).toBe('Leo');
+    expect(deck.textContent).not.toContain('Fixing the footer');
+    // Two people, two columns: the full-width card is for one (note #1009).
+    expect(deck.classList.contains('solo')).toBe(false);
+    expect(document.getElementById('peopleHeadShown')!.textContent).toBe('People');
     expect(within(deck.querySelector('.crow[data-person="u1"]') as HTMLElement).getByText('Here now')).toBeTruthy();
+  });
+
+  // One person is one card across the window, not half of it (note #1009).
+  it('draws a workplace of one that can grow as one full-width card', async () => {
+    home(halved({ org: { ...org, members: 1 } }), {
+      'GET api/org/people': () => ({
+        org: { orgId: 'o1', name: 'Nomad Trading', role: 'admin', workedMs: 0 },
+        people: [{ userId: 'u1', name: 'Saddam', you: true, role: 'admin', joinedAt: '2026-08-01T00:00:00Z', agents: 1, workedMs: 0, here: true, agentFaces: [{ id: 'a', name: 'Ada', working: true }] }],
+      }),
+    });
+    await workplaceWindow();
+    const deck = await waitFor(() => { const found = document.querySelector('#homeSheet #homePeople'); if (!found?.querySelector('.crow')) throw new Error('no plates yet'); return found as HTMLElement; });
+    expect(deck.classList.contains('solo')).toBe(true);
+    expect(document.getElementById('agentActivity')).toBeNull();
   });
 
   it('leaves the deck out — and makes no read for it — in a workplace of one nobody can join (note #205)', async () => {
@@ -808,7 +833,7 @@ describe('Home’s two windows (note #715)', () => {
   // The Leaderboard's two doors went with the board (Adam, 28 Oct 2026,
   // note #824): the account menu's name opens the reader's own page instead.
   it('has no Leaderboard row under the agent counts, and never asks where the reader stands', async () => {
-    const { calls } = home(halved());
+    const { calls } = home(halved({ org: { ...org, members: 1 }, invitesClosed: true }));
     await workplaceWindow();
     expect(node('agentActivity').textContent).not.toMatch(/Leaderboard/);
     expect(document.getElementById('leaderboardDoor')).toBeNull();

@@ -12,9 +12,10 @@
  * `WorkplacePanel` decides that, so a workplace of one that nobody can join
  * does not even make the read.
  *
- * It stands right after the agent counts, before the direct channels:
- * how much is running is the first question the window answers (note
- * #614), who is driving it the second. People belong to the workplace, not
+ * It stands first in the window, before the direct channels, and IN PLACE
+ * of the agent counts (note #614): the reader's own card shows their agents
+ * with the blue dot on the ones working, which is the same fact, and the
+ * window said it twice (note #1009). People belong to the workplace, not
  * to a room — `usePeople()` is keyed on the workplace alone — so the deck
  * reads the same whichever room the chat is in.
  *
@@ -81,6 +82,10 @@ export function People() {
     : `${total} ${total === 1 ? 'person' : 'people'} in this workplace`;
   return (
     <div id="peopleSection">
+      {/* The group's visible heading, as Messages and Work have theirs
+          (note #1009). The counted heading under it is for a screen reader
+          and stays visually hidden, so it is not read twice. */}
+      <h2 className="indexhead" id="peopleHeadShown" aria-hidden="true">People</h2>
       <h2 className="agentshead homehead" id="peopleHead">
         <span>People</span>
         <span className="agentcounts" id="peopleCounts" aria-label={countLabel}>
@@ -88,7 +93,9 @@ export function People() {
           {known ? <><span className="sep"> · </span><span className="active">{here} here</span></> : null}
         </span>
       </h2>
-      <div id="homePeople" className="plates peopleplates">
+      {/* One person is one card across the window, not half of it with
+          the other half empty (note #1009). */}
+      <div id="homePeople" className={`plates peopleplates${(known ? people.length : org.members) === 1 ? ' solo' : ''}`}>
         {waiting
           ? Array.from({ length: Math.max(1, Math.min(org.members, SHOWN)) }, (_, index) => <PersonSkeleton key={index} />)
           : error && people.length === 0

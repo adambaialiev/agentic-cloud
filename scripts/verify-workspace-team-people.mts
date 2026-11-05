@@ -2,13 +2,13 @@
 // check the team view (Adam, 2026-10-28: "let's bring back the team UI where
 // I can see my teammates and their statuses and what their agents cooking").
 //
-// Home's Workplace window stands a People deck right after the agent counts:
-// one plate per person — here now, or when they were last — and under each
-// person the agents they drive, Working or Idle, with the same one-line
-// recap the agent's own row carries. Each agent's line opens that agent; the
-// rest of the plate opens the person. The People page draws the same plates,
-// and a member's own screen lists every agent the same way. The people tick
-// moves an agent's state and recap with no full read. A workplace of one
+// Home's Workplace window stands a People deck first, in place of the agent
+// counts (note #1009): one plate per person — here now, or when they were
+// last — and under each person the agents they drive as faces and names, the
+// blue dot on the working ones and no recap. Each agent's face opens that
+// agent; the rest of the plate opens the person. The People page draws the
+// same plates, and a member's own screen lists every agent, one line of
+// recap each. The people tick moves an agent's state with no full read. A workplace of one
 // that nobody can join draws none of it and makes no people read.
 //
 // Note #925 (Adam, 2026-10-31: "people see each other's contribution made
@@ -151,8 +151,8 @@ try {
   /** The Workplace window's scroller, photographed whole: the sheet scrolls
    *  inside itself, so a full-page shot would show only its first screen. */
   const shotWindow = async (name: string) => {
-    // From the agent counts down: the deck stands right under them.
-    await page.evaluate(() => document.getElementById('agentActivity')?.scrollIntoView({ block: 'start' }));
+    // From the top of the pulse down: the people, or the counts where there is no team.
+    await page.evaluate(() => (document.getElementById('peopleSection') ?? document.getElementById('agentActivity'))?.scrollIntoView({ block: 'start' }));
     await page.screenshot({ path: path.join(OUT, `team-people-${name}.png`) as `${string}.png` });
     await settleAfterShot(page);
   };
@@ -185,6 +185,7 @@ try {
   await openWorkplaceWindow(page, ORIGIN);
   await page.waitForSelector('#homeSheet #agentActivity', { timeout: 10_000 }).catch(() => {});
   check('a workplace of one that nobody can join has no people deck', !(await page.$('#peopleSection')));
+  check('…and keeps the agent counts as its pulse (note #1009)', Boolean(await page.$('#homeSheet #agentActivity')));
   check('…and makes no people read for it', peopleReads === 0, `${peopleReads} reads`);
   await closeHomeWindow(page);
   await page.click('#homeAccount');
@@ -256,35 +257,34 @@ try {
   await merge('Live van map with ETAs on the dispatcher screen', 120);
   await merge('Secret change in another workplace', 5, 'some-other-namespace', 'elsewhere');
 
-  // 3. The deck in the Workplace window, after the counts.
+  // 3. The deck in the Workplace window, in place of the counts (note #1009).
   const openDeck = async () => {
     await openWorkplaceWindow(page, ORIGIN);
     await page.waitForSelector('#homeSheet #homePeople .crow[data-person="dana"] .cagent', { timeout: 10_000 }).catch(() => {});
   };
   await openDeck();
   check('a workplace of two stands the people deck even with invites shut', Boolean(await page.$('#homeSheet #peopleSection')));
-  check('…right after the agent counts',
-    await page.evaluate(() => Boolean(((document.getElementById('agentActivity')?.compareDocumentPosition(document.getElementById('peopleSection')!) ?? 0)
-      & Node.DOCUMENT_POSITION_FOLLOWING) && ((document.getElementById('peopleSection')!.compareDocumentPosition(document.getElementById('humanMessagesCard') ?? document.body)
-      & Node.DOCUMENT_POSITION_FOLLOWING) || !document.getElementById('humanMessagesCard')))));
+  check('…first in the window, in place of the agent counts (note #1009)',
+    await page.evaluate(() => document.getElementById('homeWorkplace')?.firstElementChild?.id === 'peopleSection'
+      && !document.getElementById('agentActivity')));
+  check('…under a visible People heading', (await texts('#homeSheet #peopleHeadShown'))[0] === 'People');
+  check('…in two columns for two people', !(await page.$('#homePeople.solo')));
   check('the heading counts the people and who is here', (await texts('#peopleCounts'))[0] === '2 total · 1 here', (await texts('#peopleCounts'))[0]);
   check('the reader is here now; Dana was active four minutes ago',
     (await texts('#homePeople .crow .cline .ctext')).join('|') === 'Here now|Active 4m ago', (await texts('#homePeople .crow .cline .ctext')).join('|'));
   const danaLines = await attrs('#homePeople .crow[data-person="dana"] .cagent', 'data-agent-door');
   check('Dana’s working agent leads her agents, and another workplace’s agent is not there',
     danaLines.join('|') === 'leo|nora', danaLines.join('|'));
-  // Working is the blue dot alone since Adam's 31 Oct ask; Idle keeps its word.
-  check('a working agent wears the dot alone, an idle one says Idle',
-    (await texts('#homePeople .crow[data-person="dana"] .cagent .castate')).join('|') === '|Idle'
-    && (await attrs('#homePeople .crow[data-person="dana"] .cagent .castate .livedot', 'aria-label')).join('|') === 'Working',
-    (await texts('#homePeople .crow[data-person="dana"] .cagent .castate')).join('|'));
-  check('only the working one wears the live disc',
-    (await page.$$('#homePeople .crow[data-person="dana"] .cagent .castate .livedot')).length === 1
+  // A face and a name each; working is the blue dot alone (no word), and
+  // the window carries no recap (note #1009).
+  check('each agent is a face and a name',
+    (await texts('#homePeople .crow[data-person="dana"] .cagent .caname')).join('|') === 'Leo|Nora',
+    (await texts('#homePeople .crow[data-person="dana"] .cagent .caname')).join('|'));
+  check('only the working one wears the live disc, named for a screen reader',
+    (await attrs('#homePeople .crow[data-person="dana"] .cagent .livedot', 'aria-label')).join('|') === 'Working'
     && Boolean(await page.$('#homePeople .cagent[data-agent="leo"] .livedot')));
-  check('each carries its recap line',
-    (await texts('#homePeople .crow[data-person="dana"] .cagent .carecap')).join('|')
-      === 'Fixing the footer on the landing page; checks running.|Drafted the pricing page copy; two options ready for Dana.',
-    (await texts('#homePeople .crow[data-person="dana"] .cagent .carecap')).join('|'));
+  check('no recap in the window',
+    !(await page.evaluate(() => document.getElementById('homePeople')!.textContent!.includes('Fixing the footer'))));
   check('the reader’s own plate lists their agent too',
     (await texts('#homePeople .crow[data-person="' + me.userId + '"] .cagent .caname')).join('|') === 'Felix');
   check('another workplace’s recap is nowhere on the page',
@@ -292,12 +292,11 @@ try {
   const faceDrawn = await page.$$eval('#homePeople .cagent img.face', (nodes) => nodes.length > 0 && nodes.every((node) => (node as HTMLImageElement).naturalWidth > 0));
   check('the agents’ faces are drawn pictures', faceDrawn);
   const lineBox = await page.$eval('#homePeople .cagent[data-agent="leo"]', (node) => {
-    const head = node.querySelector('.cagenthead')!.getBoundingClientRect();
-    const state = node.querySelector('.castate')!.getBoundingClientRect();
+    const face = node.getBoundingClientRect();
     const plate = node.closest('.crow')!.getBoundingClientRect();
-    return { stateInside: state.right <= plate.right + 0.5, oneLine: head.height <= 20 };
+    return { inside: face.right <= plate.right + 0.5, oneLine: face.height <= 22 };
   });
-  check('an agent’s head line fits its plate on a phone', lineBox.stateInside && lineBox.oneLine, JSON.stringify(lineBox));
+  check('an agent’s face and name fit its plate on a phone', lineBox.inside && lineBox.oneLine, JSON.stringify(lineBox));
   // Note #833's card (Adam: "just redesign this"): one head row, no monospace,
   // initials where there is no picture, the send mark level with the name,
   // the agents' own grey card (not white: Adam, 2026-10-29), one column on a phone.
@@ -333,9 +332,9 @@ try {
     ...block.querySelectorAll('.pcstats > div')].map((node) => `${node.querySelector('b')?.textContent} ${node.querySelector('span')?.textContent?.replace(/\u00a0/g, ' ')}`).join('|'));
   check('Dana’s card says her week here: hours, merges, tokens per provider',
     await statsOf('dana') === '2.7 agent hours|2 changes merged|182K tokens · Claude Code|41K tokens · Codex', await statsOf('dana'));
-  // ONE latest line per person (note #960): hers is newer than her agents'
-  // last merge, so the card says hers and no second "Merged:" line.
-  check('…and one latest line, the newer of hers and her agents’ last merge',
+  // ONE latest line per person, and it is hers (note #1009): her agents'
+  // merges are the week's, never a "Merged:" line.
+  check('…and one latest line, her own',
     (await texts('#homePeople .crow[data-person="dana"] .personlatest'))[0]?.startsWith('Approved proposal #12')
       && (await page.$$('#homePeople .crow[data-person="dana"] .pclatest')).length === 0,
     (await texts('#homePeople .crow[data-person="dana"] .personlatest'))[0]);
@@ -376,21 +375,21 @@ try {
   working.add('dana:nora');
   await userStorage.updateAgentFields('dana', 'nora', { recap: { text: 'Rewriting the pricing table for annual plans.', at: new Date().toISOString() } } as never);
   const moved = await page.waitForFunction(
-    () => document.querySelector('#homePeople .cagent[data-agent="nora"] .castate .livedot')?.getAttribute('aria-label') === 'Working'
-      && document.querySelector('#homePeople .cagent[data-agent="nora"] .carecap')?.textContent === 'Rewriting the pricing table for annual plans.',
+    () => document.querySelector('#homePeople .cagent[data-agent="nora"] .livedot')?.getAttribute('aria-label') === 'Working',
     { timeout: 12_000 },
   ).then(() => true).catch(() => false);
-  check('the people tick moves an agent to Working and brings its new recap', moved,
+  check('the people tick moves an agent to Working', moved,
     (await texts('#homePeople .cagent[data-agent="nora"]')).join('|'));
   check('…without a full people read or a state read', peopleReads === 0 && stateReads === 0, `${peopleReads} people, ${stateReads} state`);
   working.delete('dana:nora');
 
-  // The same tick brings a change merged while the reader looks (note #925);
-  // the workplace's numbers are read at most every ten seconds, so this can
-  // take a tick and a half.
+  // The same tick brings a change merged while the reader looks (note #925)
+  // into her week — and never into her latest line, which stays hers (note
+  // #1009). The workplace's numbers are read at most every ten seconds, so
+  // this can take a tick and a half.
   await merge('Driver ETAs in the customer text', 0);
   const landed = await page.waitForFunction(
-    () => (document.querySelector('#homePeople .crow[data-person="dana"] .personlatest')?.textContent ?? '').startsWith('Merged: Driver ETAs in the customer text')
+    () => (document.querySelector('#homePeople .crow[data-person="dana"] .personlatest')?.textContent ?? '').startsWith('Approved proposal #12')
       && document.querySelector('#homePeople .crow[data-person="dana"] [data-stat="merged"] b')?.textContent === '3',
     { timeout: 25_000 },
   ).then(() => true).catch(() => false);
@@ -399,7 +398,7 @@ try {
   check('…still without a full people read', peopleReads === 0, `${peopleReads} people reads`);
 
   // 5. A press on an agent's line opens that agent; elsewhere, the person.
-  await tap(page, '#homePeople .cagent[data-agent="leo"] .carecap');
+  await tap(page, '#homePeople .cagent[data-agent="leo"] .caname');
   await page.waitForFunction(() => /\/agents\/leo\b/.test(location.pathname)
     || [...document.querySelectorAll<HTMLElement>('.windowpage:not([hidden])')].some((node) => node.dataset.address === '/agents/leo'), { timeout: 10_000 }).catch(() => {});
   const atLeo = await page.evaluate(() => /\/agents\/leo\b/.test(location.pathname)
@@ -425,14 +424,26 @@ try {
   check('…under a title naming the head count', ((await texts('#peopleSub'))[0] ?? '').startsWith('Nomad Trading · 2 people · 1 here now'), (await texts('#peopleSub'))[0]);
   await shot('people-page-phone');
 
-  // 7. Dana's own screen lists every agent with its state and recap.
+  // 7. Dana's own screen lists every agent, one line of recap each and the
+  // dot alone for the working one (note #1009), after her week.
   await tap(page, '#people .crow[data-person="dana"] .name');
   await page.waitForSelector('#orgMemberAgents .memberagent', { timeout: 10_000 }).catch(() => {});
   check('her screen names her role again', ((await texts('#orgMemberSub'))[0] ?? '') === 'Member of Nomad Trading', (await texts('#orgMemberSub'))[0]);
-  check('…and lists her agents with their state and recap, the working one first',
-    (await texts('#orgMemberAgents .memberagent .mstate')).join('|') === 'Working|Idle'
-    && (await texts('#orgMemberAgents .memberagent .mrecap'))[0] === 'Fixing the footer on the landing page; checks running.',
-    `${(await texts('#orgMemberAgents .memberagent .mstate')).join('|')} · ${(await texts('#orgMemberAgents .memberagent .mrecap')).join('|')}`);
+  const agentRows = await page.$$eval('#orgMemberAgents .memberagent', (rows) => rows.map((row) => ({
+    name: row.querySelector('.mname')?.textContent ?? '',
+    recap: row.querySelector('.mrecap')?.textContent ?? '',
+    dot: Boolean(row.querySelector('.mdot .livedot')),
+    oneLine: (() => { const recap = row.querySelector('.mrecap') as HTMLElement | null; return !recap || recap.getBoundingClientRect().height <= 22; })(),
+  })));
+  check('…and lists her agents, the working one first with the dot alone, one line of recap each',
+    agentRows.map((row) => `${row.name}${row.dot ? '•' : ''}`).join('|') === 'Leo•|Nora'
+    && agentRows[0]?.recap === 'Fixing the footer on the landing page; checks running.'
+    && agentRows.every((row) => row.oneLine)
+    && !(await page.evaluate(() => /\b(Working|Idle)\b/.test(document.getElementById('orgMemberAgents')!.textContent ?? ''))),
+    JSON.stringify(agentRows));
+  check('…after her week, with who she is here last',
+    (await page.$$eval('#screenOrgMember > .card', (cards) => cards.map((card) => card.id).join('|'))).startsWith('orgMemberCard|orgMemberContribution|orgMemberAgents|orgMemberAbout'),
+    await page.$$eval('#screenOrgMember > .card', (cards) => cards.map((card) => card.id).join('|')));
   // Note #925: her screen's whole contribution — this week, all time, and
   // each change merged this week with the agent that made it, newest first.
   await page.waitForSelector('#orgMemberMerged .memberchange', { timeout: 10_000 }).catch(() => {});
@@ -445,8 +456,8 @@ try {
   const changes = await texts('#orgMemberMerged .memberchange .mctitle');
   check('…and lists this week’s merged changes, newest first',
     changes.join('|') === 'Driver ETAs in the customer text|Live van map with ETAs on the dispatcher screen|Footer links point at the new pricing page', changes.join('|'));
-  check('…each naming the agent and the repository',
-    (await texts('#orgMemberMerged .memberchange .mcfacts'))[0] === 'leo · dispatch #4' || (await texts('#orgMemberMerged .memberchange .mcfacts'))[0] === 'Leo · dispatch #4',
+  check('…each naming the agent and when',
+    /^[Ll]eo · (just now|\d+[smh] ago)$/.test((await texts('#orgMemberMerged .memberchange .mcfacts'))[0] ?? ''),
     (await texts('#orgMemberMerged .memberchange .mcfacts'))[0]);
   await shot('member-phone');
 
