@@ -1,3 +1,5 @@
+import { NEW_TAB, useNewTab } from '../lib/new-tab';
+
 export const CONTACT_EMAIL = 'hello@agenticcloudcomputer.com';
 /** The footer's Contact door goes to the founder, the one address the home
  *  page names (the owner, 29 Oct 2026, 17:21 UTC, note #834). The Terms and
@@ -16,9 +18,13 @@ type Tone = 'light' | 'dark';
 export const FOOTER_QUIET: Record<Tone, string> = { dark: 'text-hint', light: 'text-prose-soft' };
 
 function FooterLink({ href, children, tone }: { href: string; children: string; tone: Tone }) {
+  /* On the home page every link opens a new tab (note #999); on the other
+     pages the footer's links open in place, as before. */
+  const newTab = useNewTab();
   return (
     <a
       href={href}
+      {...(newTab ? NEW_TAB : {})}
       className={
         tone === 'dark'
           ? 'text-hint underline decoration-hint/30 underline-offset-2 transition-colors hover:text-white hover:decoration-white/40'
@@ -26,6 +32,7 @@ function FooterLink({ href, children, tone }: { href: string; children: string; 
       }
     >
       {children}
+      {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
     </a>
   );
 }

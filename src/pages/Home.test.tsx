@@ -25,6 +25,24 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // five faces, each answered by the product; then "and all of it runs in
   // your own cloud"; How to start, For your team and Talk to us as they were.
   // The long tour is /product's alone.
+  // Note #999 (the owner, 5 Nov 2026, 11:32 UTC: "all links in the landing
+  // page should open in new tab"): every anchor on the page, the footer's
+  // included, opens a new tab without handing over the opener, and says so
+  // to a screen reader.
+  it('opens every link on the page in a new tab', () => {
+    answer();
+    draw();
+    const links = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')];
+    expect(links.length).toBeGreaterThan(10);
+    for (const link of links) {
+      const name = `${link.textContent} ${link.getAttribute('href')}`;
+      expect(link.getAttribute('target'), name).toBe('_blank');
+      expect(link.getAttribute('rel'), name).toBe('noopener noreferrer');
+      expect(`${link.textContent ?? ''} ${link.getAttribute('aria-describedby') ? 'described' : ''}`, name).toMatch(/opens in a new tab|described/);
+    }
+    expect(links.some((link) => link.closest('footer'))).toBe(true);
+  });
+
   it('runs five screens: the film, the workplace, the own cloud, how to build yours, the footer', () => {
     answer();
     draw();

@@ -5,6 +5,7 @@ import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { HowToStart, OwnCloud } from './PrivateCopy';
+import { NewTabContext } from '../lib/new-tab';
 
 /**
  * The one home page, for a stranger and for a CTO who arrives from a cold
@@ -186,7 +187,10 @@ function SiteLink({ href, children }: { href: string; children: string }) {
 }
 
 export default function Home() {
+  /* Every link on this page opens in a new tab (note #999): the provider
+     turns it on for the page's links and its footer; SiteLink always did. */
   return (
+    <NewTabContext.Provider value={true}>
     <main
       className="landing-page copy-page min-h-dvh overflow-x-clip bg-panel text-white"
       style={{ fontFamily: 'var(--font-ui)' }}
@@ -267,5 +271,6 @@ export default function Home() {
 
       <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide />
     </main>
+    </NewTabContext.Provider>
   );
 }

@@ -100,6 +100,7 @@ describe('Why your Agentic Cloud runs on Fly (note #838)', () => {
   it('is linked from the home page’s own-cloud chapter', () => {
     draw(<Home />);
     expect(WHY_FLY_PATH).toBe('/why-fly');
-    expect(document.querySelector(`#own-cloud a[href="${WHY_FLY_PATH}"]`)?.textContent).toBe('Why it runs on Fly');
+    // On the home page it opens a new tab (note #999) and says so to a screen reader.
+    expect(document.querySelector(`#own-cloud a[href="${WHY_FLY_PATH}"]`)?.textContent).toBe('Why it runs on Fly (opens in a new tab)');
   });
 });

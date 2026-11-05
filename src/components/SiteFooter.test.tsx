@@ -4,6 +4,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import SiteFooter, { FOOTER_QUIET } from './SiteFooter';
+import { NewTabContext } from '../lib/new-tab';
 
 const css = readFileSync(path.resolve(__dirname, '..', 'index.css'), 'utf8');
 const landing = /\.landing-page\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
@@ -18,6 +19,19 @@ const contrast = (a: string, b: string) => {
 };
 
 describe('SiteFooter', () => {
+  // Note #999: the home page opens every link in a new tab; everywhere else
+  // the footer's links open in place, as before.
+  it('opens its links in place, unless the page asks for new tabs', () => {
+    const { container, unmount } = render(<SiteFooter pitch="Pitch." tone="dark" />);
+    expect([...container.querySelectorAll('a')].every((a) => !a.hasAttribute('target'))).toBe(true);
+    unmount();
+    const home = render(<NewTabContext.Provider value={true}><SiteFooter pitch="Pitch." tone="dark" /></NewTabContext.Provider>);
+    const links = [...home.container.querySelectorAll('a')];
+    expect(links.length).toBeGreaterThan(5);
+    expect(links.every((a) => a.getAttribute('target') === '_blank' && a.getAttribute('rel') === 'noopener noreferrer')).toBe(true);
+    home.unmount();
+  });
+
   // The owner, 28 Oct 2026: the footer's column titles and closing line were
   // the hint grey at 80%, which measured 3.6:1 on every public page. Small
   // text needs 4.5:1, so no footer text is a fraction of its colour.

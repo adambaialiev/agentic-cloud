@@ -30,13 +30,24 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // Since note #835 the page leads with the product; the own cloud is the
     // second chapter of the story. Since note #978 (the owner, 4 Nov 2026,
     // 13:26 UTC: "each section should be without description text") it is
-    // its heading, "Nothing of yours stays with us.", its links and the
-    // drawing: the data lead, the open-source paragraph, the three steps,
-    // "What it takes" and the qualifier came off.
+    // its heading, its links and the drawing: the data lead, the
+    // open-source paragraph, the three steps, "What it takes" and the
+    // qualifier came off. Since note #999 the heading is "Run it in your own
+    // cloud. The code is open-source." and "Nothing of yours stays with us."
+    // came off too.
     expect(screen.getByRole('heading', { level: 1, name: HOME_HEADLINE })).toBeTruthy();
     expect([...document.querySelectorAll('h1')].filter((node) => !node.closest('.ws-live'))).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 2, name: OWN_CLOUD_HEADING })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 3, name: 'Nothing of yours stays with us.' })).toBeTruthy();
+    expect(OWN_CLOUD_HEADING).toBe('Run it in your own cloud. The code is open-source.');
+    expect(document.body.textContent).not.toMatch(/Nothing of yours stays with us|runs in your company’s own cloud\./);
+    expect(document.querySelector('#own-cloud h3')).toBeNull();
+    // "open-source" is a link to the public code, opening a new tab; its
+    // hint describes the link and stays out of the heading's name.
+    const open = screen.getByRole('link', { name: 'open-source' });
+    expect(open.closest('h2')).toBeTruthy();
+    expect(open.getAttribute('href')).toBe(PLATFORM_SOURCE_URL);
+    expect(open.getAttribute('target')).toBe('_blank');
+    expect(open.getAttribute('rel')).toBe('noopener noreferrer');
     expect(document.querySelector('#own-cloud-lead')).toBeNull();
     expect(document.querySelector('#takes')).toBeNull();
     expect(document.querySelector('#start ol')).toBeNull();
@@ -71,7 +82,8 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // The paste hint under it came off with note #978; the phone keeps its
     // two doors.
     expect(section.textContent).not.toMatch(/Paste it into/);
-    expect([...section.querySelectorAll('#on-a-phone a')].map((link) => (link.textContent ?? '').trim())).toEqual(['Send me the line', 'Write to the founder']);
+    // Their new-tab hint (note #999) is for a screen reader; the words stay.
+    expect([...section.querySelectorAll('#on-a-phone a')].map((link) => (link.textContent ?? '').replace('(opens in a new tab)', '').trim())).toEqual(['Send me the line', 'Write to the founder']);
   });
 
   // The guide is what an agent runs from: every flag and every message it
@@ -180,7 +192,7 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     // Since note #978 the sentence that said it came off; the heading and
     // the links to the code and its licence say it.
     expect(section.querySelector('p')).toBeNull();
-    const links = [...section.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').trim()]);
+    const links = [...section.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').replace('(opens in a new tab)', '').trim()]);
     expect(links).toEqual([
       [PLATFORM_SOURCE_URL, 'Read the code'],
       [PLATFORM_LICENSE_URL, 'The AGPL-3.0 licence'],

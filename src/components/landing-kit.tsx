@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { NEW_TAB, useNewTab } from '../lib/new-tab';
 /**
  * The landing page's design language, in one module.
  *
@@ -102,12 +103,15 @@ export function Arrow() {
    The primary is white with an arrow, the secondary the app's hint grey; a
    hairline under each is all the affordance they carry. */
 export function PrimaryLink({ href, children }: { href: string; children: string }) {
+  const newTab = useNewTab();
   return (
     <a
       href={href}
+      {...(newTab ? NEW_TAB : {})}
       className="group inline-flex items-center gap-2 border-b border-white/35 pb-1 type-base font-semibold text-white transition-colors hover:border-white"
     >
       {children}
+      {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
       <span className="transition-transform duration-200 group-hover:translate-x-0.5">
         <Arrow />
       </span>
@@ -116,12 +120,15 @@ export function PrimaryLink({ href, children }: { href: string; children: string
 }
 
 export function SecondaryLink({ href, children }: { href: string; children: string }) {
+  const newTab = useNewTab();
   return (
     <a
       href={href}
+      {...(newTab ? NEW_TAB : {})}
       className="inline-flex items-center border-b border-white/15 pb-1 type-base font-semibold text-hint transition-colors hover:border-white/40 hover:text-white"
     >
       {children}
+      {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
     </a>
   );
 }

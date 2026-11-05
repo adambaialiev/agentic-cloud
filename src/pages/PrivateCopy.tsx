@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { H2, H3, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
+import { H2, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
+import { NEW_TAB, useNewTab } from '../lib/new-tab';
 import { SidesArt } from '../components/CopyArt';
 
 /**
@@ -87,7 +88,7 @@ export function AgentLine() {
   );
 }
 
-export function Chapter({ id, heading, children }: { id: string; heading: string; children: ReactNode }) {
+export function Chapter({ id, heading, children }: { id: string; heading: ReactNode; children: ReactNode }) {
   return (
     <Screen id={id}>
       <h2 className={`[text-wrap:balance] ${H2}`}>{heading}</h2>
@@ -143,17 +144,50 @@ export function OwnCloudAction() {
    "Nothing of yours stays with us" with the open-source platform as the
    proof (the installer alone until note #959). The drawing is not on a phone: the engineers it is for
    read it on a laptop, and its labels are too small there (note #834). */
-export const OWN_CLOUD_HEADING = 'And all of it runs in your company’s own cloud.';
+/* Since note #999 (the owner, 5 Nov 2026, 11:32 UTC: rename "And all of it
+   runs in your company's own cloud." to "Run it in your own cloud. The code
+   is open-source") the heading says both halves of the deal, and its
+   "open-source" is a link to the public repository (knowledge page
+   posting-in-public: AGPL-3.0, public since 3 Nov 2026). "Nothing of yours
+   stays with us." came off with it; the three links stay. */
+export const OWN_CLOUD_HEADING = 'Run it in your own cloud. The code is open-source.';
+
+function NewTabHint({ id }: { id: string }) {
+  return useNewTab() ? <span id={id} hidden>Opens in a new tab</span> : null;
+}
+
+/* The heading as drawn: the same words, "open-source" a link to the code.
+   Its new-tab hint is a description, not part of the heading's name. */
+function OwnCloudHeading() {
+  const newTab = useNewTab();
+  return (
+    <>
+      Run it in your own cloud. The code is{' '}
+      <a
+        href={PLATFORM_SOURCE_URL}
+        {...(newTab ? { ...NEW_TAB, 'aria-describedby': 'own-cloud-new-tab' } : {})}
+        className="underline decoration-white/35 decoration-[0.06em] underline-offset-[0.14em] transition-colors hover:decoration-white focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        open-source
+      </a>
+      .
+    </>
+  );
+}
 
 export function OwnCloud() {
   return (
-    <Chapter id="own-cloud" heading={OWN_CLOUD_HEADING}>
+    <Chapter id="own-cloud" heading={<OwnCloudHeading />}>
+      {/* The heading link's new-tab hint, outside the heading so its name
+          stays the line itself. */}
+      <NewTabHint id="own-cloud-new-tab" />
       <div className="mt-6 sm:mt-8">
         <div id="with-us">
-          <h3 className={H3}>Nothing of yours stays with us.</h3>
           {/* The platform's code and its licence (note #959; the installer's code
-              until then), and why it is Fly (note #838). */}
-          <div className="mt-4 flex flex-wrap items-center gap-x-7 gap-y-4">
+              until then), and why it is Fly (note #838). Since note #999 they
+              sit right under the heading: its "Nothing of yours stays with
+              us." came off. */}
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
             <SecondaryLink href={PLATFORM_SOURCE_URL}>Read the code</SecondaryLink>
             <SecondaryLink href={PLATFORM_LICENSE_URL}>The AGPL-3.0 licence</SecondaryLink>
             <SecondaryLink href={WHY_FLY_PATH}>Why it runs on Fly</SecondaryLink>
