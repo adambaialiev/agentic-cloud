@@ -125,14 +125,13 @@ Keep `<prefix>-copy.json` in this folder, and ask your person to keep a copy som
 
 ## Later: upgrades
 
-In the same folder, take the installer of the newest release, which knows how to upgrade to it:
+In the same folder, with the installer from step 4 (if this guide names a newer one now, download and check that one first, the same way):
 
 ```
-curl -fsSL -o install.mjs https://acc-updates.fly.dev/releases/latest/install.mjs
 node install.mjs upgrade --json
 ```
 
-It takes the latest release (`--release <version>` picks one). The installers of releases cut after 5 November 2026 run the upgrade on the upgrader: a small one-off machine in your own Fly organization, which removes itself when it is done. Closing this terminal does not stop it, because the terminal only follows it. An older installer runs the upgrade on this computer, as `--here` does below.
+It takes the latest release (`--release <version>` picks one). The upgrade runs on the upgrader: a small one-off machine in your own Fly organization, which removes itself when it is done. Closing this terminal does not stop it, because the terminal only follows it.
 
 Either way, the database and the disks are snapshotted first. The backend, the code host and the router roll one at a time, and the smoke test runs again. If anything fails, even the Workspace itself, the old release goes back on all of them and the database goes back as it was. A mail receiver the Workspace made follows the new release by itself. Only one upgrade runs at a time.
 
