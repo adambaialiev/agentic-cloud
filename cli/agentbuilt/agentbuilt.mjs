@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.69.0';
+const VERSION = '1.70.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -442,6 +442,13 @@ Orchestrating the workplace (Workspace Agent only — another agent is refused):
       for them; left out, it starts on the defaults. A name that harness
       does not offer is refused with the list it does offer, and no agent
       is created. The answer names the model and effort it will run on.
+  agentbuilt agent create --public-guide
+      Only when your user asked for the home page's public guide (note
+      #1010): a SEALED Claude Code agent on sonnet at medium, on a shared-core
+      machine of its own, that is never given a platform token or a secret
+      and reads only a public copy of the code. It answers visitors' questions
+      on the home page; the newest guide is the one the page asks. Sealed is
+      decided here, once: an existing agent cannot be sealed later.
   agentbuilt agent model "<name-or-id>" [--model <model>] [--effort <effort>]
       Change one of your user's agents' model, effort or both — the same
       change as the model picker on that agent's screen, with the same
@@ -6711,10 +6718,12 @@ async function agent(args) {
       // agent joins the workplace. The harness and, since note #757, the
       // model and effort are parsed here. Which names a harness offers is the
       // backend's to judge — its refusal lists them.
-      const usage = 'usage: agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>]';
+      const usage = 'usage: agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>] | create --public-guide';
       const chosen = {};
       for (let index = 0; index < agentRest.length; index += 1) {
         const word = agentRest[index];
+        // The sealed public guide (note #1010): its harness, model and effort are the kind's.
+        if (word === '--public-guide') { chosen.sealed = 'public-guide'; continue; }
         const flag = ['cli', 'model', 'effort'].find((name) => word === `--${name}` || word.startsWith(`--${name}=`));
         if (!flag) fail(usage);
         let value;
@@ -6728,6 +6737,7 @@ async function agent(args) {
         chosen[flag] = value.trim();
       }
       if (chosen.cli !== undefined && !['claude', 'codex', 'opencode'].includes(chosen.cli)) fail('--cli must be claude, codex or opencode');
+      if (chosen.sealed && (chosen.cli || chosen.model || chosen.effort)) fail('--public-guide takes no --cli, --model or --effort: a guide is Claude Code on sonnet at medium.');
       const result = await api('POST', 'api/agent-cli/agents', {
         body: JSON.stringify(chosen),
         headers: { 'Content-Type': 'application/json' },

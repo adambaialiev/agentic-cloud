@@ -88,6 +88,9 @@ import {
 import type { ProviderUsageSnapshot } from '../../types/user.js';
 import { dedicatedLimitMessage, modelLimitMessage, NO_SEAT_MESSAGE, paymentRequiredMessage } from '../platform-turn-policy.js';
 import { resolveUserSecretEnv } from '../../services/user-secrets.js';
+import { buildGuideSetupCommand, buildSealedClaudeCommand, type GuideSource } from '../../services/public-guide-machine.js';
+import { isSealedAgent } from '../../types/user.js';
+import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_MODEL } from '../../shared/public-guide.js';
 import { quoteShellArg } from '../../utils/shell-quote.js';
 import { ClaudeTurnTokens, creditTurnTokens } from '../turn-tokens.js';
 import type { AgentRecord } from '../../types/user.js';
@@ -105,6 +108,24 @@ export interface ClaudeHarnessDeps {
   cliInstallInFlight?: (sandboxId: string) => Promise<void> | undefined;
   /** Tests may replace the provider read used to disambiguate runtime billing failures. */
   fetchImpl?: typeof fetch;
+  /**
+   * Where a sealed guide's public copy comes from (note #1010): a PUBLIC
+   * repository's anonymous clone, or null. A sealed turn runs the machine's
+   * idempotent setup first, so a rebuilt root filesystem heals itself.
+   */
+  sealedGuideSource?: (userId: string, agentId: string) => Promise<GuideSource | null>;
+}
+
+/** The sealed machine's setup, as the first lines of a sealed turn's script (output on stderr). */
+async function sealedGuideSetupPrefix(
+  harnessDeps: ClaudeHarnessDeps,
+  _deps: AgentLoopDeps,
+  userId: string,
+  agentId: string | undefined,
+): Promise<string> {
+  if (!agentId || !harnessDeps.sealedGuideSource) return '';
+  const source = await harnessDeps.sealedGuideSource(userId, agentId).catch(() => null);
+  return source ? `${buildGuideSetupCommand(source)}\n` : '';
 }
 
 // Run the CLI as the non-root `agent` user — the same user the setup agent
@@ -250,12 +271,19 @@ export function createClaudeHarnessRunner(harnessDeps: ClaudeHarnessDeps): Agent
     // Run with the EFFECTIVE model/effort — the same concrete values the
     // reply header advertises. Unset overrides resolve to the CLI defaults
     // (opus · high); effort resolution is model-aware.
-    const requestedModel = targetAgent
-      ? resolveEffectiveModel('claude', targetAgent.model)
-      : undefined;
-    const requestedEffort = targetAgent
-      ? resolveEffectiveEffort('claude', targetAgent.model, targetAgent.effort)
-      : undefined;
+    // A sealed guide (note #1010) is the same thing whoever asks: its model
+    // and effort are the kind's, never a record's pick.
+    const sealed = isSealedAgent(targetAgent);
+    const requestedModel = sealed
+      ? PUBLIC_GUIDE_MODEL
+      : targetAgent
+        ? resolveEffectiveModel('claude', targetAgent.model)
+        : undefined;
+    const requestedEffort = sealed
+      ? PUBLIC_GUIDE_EFFORT
+      : targetAgent
+        ? resolveEffectiveEffort('claude', targetAgent.model, targetAgent.effort)
+        : undefined;
     // Continuity id lives on the agent record. Only callers without an agent
     // record may use the legacy session-document field: falling back to it for
     // an existing agent would resume stale context after that agent's New chat
@@ -619,7 +647,9 @@ export function createClaudeHarnessRunner(harnessDeps: ClaudeHarnessDeps): Agent
     // rather than inside the try so the catch below can redact the same values
     // out of a failure message. A storage failure must not cost the user their
     // turn, so it degrades to no secrets rather than throwing.
-    const secretEnv = attachInfo
+    // A SEALED agent (note #1010) is handed no secret at all, in any turn —
+    // the first lock of the seal, in code rather than in its instructions.
+    const secretEnv = attachInfo || isSealedAgent(targetAgent)
       ? {}
       : await resolveUserSecretEnv(deps.secretStorage, deps.userSecretOwnerId ?? userId, targetAgent?.id, deps.userSecretViewer ?? { ownerIsAdmin: true });
 
@@ -639,6 +669,7 @@ export function createClaudeHarnessRunner(harnessDeps: ClaudeHarnessDeps): Agent
         requestedEffort,
         targetAgentId: deps.telegramTargetAgentId,
         ...(targetAgent ? { tokenAgent: targetAgent } : {}),
+        ...(isSealedAgent(targetAgent) ? { sealed: true } : {}),
         initialUsage: profile?.telegram?.providerUsage?.claude,
         // Platform turns run on a POOL account; its stream-reported windows
         // are shared state and must not land on the user's own usage record.
@@ -1055,6 +1086,8 @@ async function attemptClaudeTurn(args: {
   tokenAgent?: Pick<AgentRecord, 'id' | 'name' | 'orgId'>;
   initialUsage?: ProviderUsageSnapshot;
   suppressUserUsageCapture?: boolean;
+  /** A sealed guide's turn (note #1010): launched as `guide` through the sealed runner. */
+  sealed?: boolean;
 }): Promise<ClaudeTurnOutcome> {
   const {
     harnessDeps,
@@ -1145,7 +1178,9 @@ async function attemptClaudeTurn(args: {
       emit('agent_interrupted', {});
       return { kind: 'interrupted' };
     }
-    const command = buildClaudeExecCommand({ prompt, resumeSessionId, oauthToken, model: requestedModel, effort: requestedEffort });
+    const command = args.sealed
+      ? `${await sealedGuideSetupPrefix(harnessDeps, deps, userId, deps.telegramTargetAgentId)}${buildSealedClaudeCommand({ prompt, ...(resumeSessionId ? { resumeSessionId } : {}), ...(oauthToken ? { oauthToken } : {}) })}`
+      : buildClaudeExecCommand({ prompt, resumeSessionId, oauthToken, model: requestedModel, effort: requestedEffort });
     harnessLog(sessionId, 'turn start', {
       sandboxId,
       sshUser: HARNESS_SSH_USER,

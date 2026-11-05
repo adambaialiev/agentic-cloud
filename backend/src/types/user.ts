@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { normalizeAgentUsername } from '../utils/agent-username.js';
 import type { FirstVisit } from '../shared/first-visit.js';
 import { HARNESS_CLIS, harnessName } from '../shared/harness-clis.js';
+import type { SealedAgentKind } from '../shared/public-guide.js';
 
 export interface UserRoleState {
   admin?: boolean;
@@ -224,9 +225,23 @@ export function isWorkspaceAgent(agent: Pick<AgentRecord, 'purpose'> | null | un
   return agent?.purpose === 'workspace-recap';
 }
 
+/**
+ * A SEALED agent (note #1010): set once, at creation, and never changed — a
+ * machine that ever held a token or a secret cannot be made clean by a flag.
+ * Its machine is never given a platform token or a workplace secret, and
+ * every turn runs as a separate user with read-only tools over a public copy
+ * of the code (services/public-guide-machine.ts). Knowledge page:
+ * sealed-public-agent.
+ */
+export function isSealedAgent(agent: Pick<AgentRecord, 'sealed'> | null | undefined): boolean {
+  return Boolean(agent?.sealed);
+}
+
 export interface AgentRecord {
   /** Absent on every room agent; see {@link WorkspacePurpose}. */
   purpose?: WorkspacePurpose;
+  /** Set only at creation; see {@link isSealedAgent}. */
+  sealed?: SealedAgentKind;
   id: string;
   /**
    * The workplace this agent permanently belongs to. Switching the
@@ -782,6 +797,8 @@ export function addTelegramAgentRecord(
   orgId?: string,
   /** A model and effort chosen at creation (note #757); absent, the defaults. */
   runtime?: { model?: string; effort?: string },
+  /** A sealed kind (note #1010), only ever set here. */
+  sealed?: SealedAgentKind,
 ): { agents: Record<string, AgentRecord>; agentId: string } {
   const agents: Record<string, AgentRecord> = { ...(telegram?.agents ?? {}) };
   const id = makeId();
@@ -795,6 +812,7 @@ export function addTelegramAgentRecord(
     ...(runtime?.model ? { model: runtime.model } : {}),
     ...(runtime?.effort ? { effort: runtime.effort } : {}),
     ...(orgId ? { orgId } : {}),
+    ...(sealed ? { sealed } : {}),
     createdAt: new Date().toISOString(),
   };
   return { agents, agentId: id };

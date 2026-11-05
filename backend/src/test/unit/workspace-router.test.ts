@@ -11752,3 +11752,58 @@ describe('the app catalogue (note #756): /api/public/apps', () => {
     expect(apps[0]!.createdAt).toBe('2026-08-07T08:24:06.861Z');
   });
 });
+
+describe('the public guide\'s door (note #1010)', () => {
+  const ask = vi.fn();
+  const status = vi.fn();
+  const deps = (): Partial<RouteDeps> => ({
+    workspaceWebOrigin: WORKSPACE_ORIGIN,
+    publicGuide: { ask, status, listVisits: vi.fn(), getVisit: vi.fn() } as never,
+  });
+
+  it('takes a question signed out from the site, passes the visitor\'s address, and answers 202 with the question id', async () => {
+    ask.mockResolvedValueOnce({ state: 'accepted', questionId: 'q-1', position: 2 });
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask', 'post')(mockRequest({
+      headers: { Origin: WORKSPACE_ORIGIN, 'CF-Connecting-IP': '203.0.113.7' },
+      body: { visitId: 'visit-12345678', question: 'Does every agent get its own computer?' },
+    }), res);
+    expect(res.statusCode).toBe(202);
+    expect(res.body).toEqual({ state: 'accepted', questionId: 'q-1', position: 2 });
+    expect(ask).toHaveBeenLastCalledWith({ visitId: 'visit-12345678', question: 'Does every agent get its own computer?', address: '203.0.113.7' });
+    expect(res.headers['cache-control']).toBe('no-store');
+  });
+
+  it('refuses a question from another site', async () => {
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask', 'post')(mockRequest({
+      headers: { Origin: 'https://evil.example' }, body: { visitId: 'visit-12345678', question: 'q' },
+    }), res);
+    expect(res.statusCode).toBe(403);
+    expect(ask).not.toHaveBeenCalledWith(expect.objectContaining({ question: 'q', address: expect.anything() }));
+  });
+
+  it('draws limited, resting and busy as 200 states, invalid as 400, and rests when nothing is wired', async () => {
+    for (const [answer, code] of [[{ state: 'limited', until: 'x' }, 200], [{ state: 'resting', until: null }, 200], [{ state: 'busy' }, 200], [{ state: 'invalid', error: 'e' }, 400]] as const) {
+      ask.mockResolvedValueOnce(answer);
+      const res = createMockResponse();
+      await getRouteHandler(deps(), '/api/public/ask', 'post')(mockRequest({ headers: { Origin: WORKSPACE_ORIGIN }, body: {} }), res);
+      expect(res.statusCode).toBe(code);
+      expect(res.body).toEqual(answer);
+    }
+    const bare = createMockResponse();
+    await getRouteHandler({ workspaceWebOrigin: WORKSPACE_ORIGIN }, '/api/public/ask', 'post')(mockRequest({ headers: { Origin: WORKSPACE_ORIGIN }, body: {} }), bare);
+    expect(bare.body).toEqual({ state: 'resting', until: null });
+  });
+
+  it('answers a poll, and 404 for a question it does not know', async () => {
+    status.mockResolvedValueOnce({ questionId: 'q-1', state: 'reading', position: 0, files: ['README.md'], answer: null, elapsedSeconds: 4 });
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask/:questionId', 'get')(mockRequest({ params: { questionId: 'q-1' } }), res);
+    expect(res.body).toMatchObject({ state: 'reading', files: ['README.md'] });
+    status.mockResolvedValueOnce(null);
+    const missing = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask/:questionId', 'get')(mockRequest({ params: { questionId: 'nope' } }), missing);
+    expect(missing.statusCode).toBe(404);
+  });
+});

@@ -24,6 +24,14 @@ import { Leaderboard, hasBuilderPage } from '../services/leaderboard.js';
 import { WorkplaceContributions, cardContribution, memberContributionAnswer } from '../services/workplace-contribution.js';
 import { FOUNDER_HANDLE } from '../shared/handles.js';
 import { normalizeXHandle } from '../shared/leaderboard.js';
+import {
+  PUBLIC_GUIDE_LIMITS,
+  type PublicAskAnswer,
+  type PublicAskStatus,
+  type WorkspacePublicGuideVisitAnswer,
+  type WorkspacePublicGuideVisitsAnswer,
+} from '../shared/public-guide.js';
+import { isSealedAgent } from '../types/user.js';
 import type {
   WorkspaceMailAddressClaimAnswer,
   WorkspaceMailApproval,
@@ -3380,6 +3388,46 @@ self.addEventListener('activate', (event) => {
     if (typeof res.setHeader === 'function') res.setHeader('Cache-Control', 'no-store');
   };
 
+  /**
+   * The sealed public guide (note #1010): anyone, signed out, asks the home
+   * page's agent a question about the product. One fresh conversation per
+   * visit (the page's random visit id), one answer at a time, answers back
+   * by polling. The limits, the queue and the rest states live in
+   * PublicGuideService; this door checks the Origin and passes the visitor's
+   * address, which keys an in-memory limit and is never stored.
+   *
+   * The address: Cloudflare's own header when the request came through the
+   * site's function (every visitor does), else the socket. A caller that
+   * goes around the site can name any address in that header — which only
+   * moves them between per-visitor buckets; the global hour and day caps
+   * count every question whatever it claims.
+   */
+  const publicAskAddress = (req: Request): string => {
+    const forwarded = req.headers?.['cf-connecting-ip'];
+    const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+    return (typeof value === 'string' && value.trim()) || req.ip || req.socket?.remoteAddress || 'unknown';
+  };
+  router.post('/api/public/ask', async (req, res) => {
+    publicHeaders(res);
+    if (deps.workspaceWebOrigin && !requestHasWorkspaceOrigin(req, deps.workspaceWebOrigin, deps.workspaceWebCompatibleOrigins)) {
+      return res.status(403).json({ state: 'invalid', error: 'Ask from agenticcloudcomputer.com.' } satisfies PublicAskAnswer);
+    }
+    if (!deps.publicGuide) return res.json({ state: 'resting', until: null } satisfies PublicAskAnswer);
+    const body = (req.body ?? {}) as { visitId?: unknown; question?: unknown };
+    const answer = await deps.publicGuide.ask({ visitId: body.visitId, question: body.question, address: publicAskAddress(req) })
+      .catch((error) => {
+        console.warn('[public-guide] ask failed:', error);
+        return { state: 'resting', until: null } satisfies PublicAskAnswer;
+      });
+    return res.status(answer.state === 'accepted' ? 202 : answer.state === 'invalid' ? 400 : 200).json(answer satisfies PublicAskAnswer);
+  });
+
+  router.get('/api/public/ask/:questionId', async (req, res) => {
+    publicHeaders(res);
+    const status = deps.publicGuide ? await deps.publicGuide.status(String(req.params.questionId ?? '')).catch(() => null) : null;
+    return status ? res.json(status satisfies PublicAskStatus) : res.status(404).json({ error: 'No such question.' });
+  });
+
   router.get('/api/public/people/:handle', async (req, res) => {
     publicHeaders(res);
     const person = await publicPerson(String(req.params.handle ?? ''), req);
@@ -4193,6 +4241,8 @@ self.addEventListener('activate', (event) => {
         // The Workspace Agent's ask to remove it (note #710): the owner's
         // own private agent is the only one that can leave it, and these
         // rows are the owner's fleet, so the reader is the one who decides.
+        // A sealed public guide (note #1010): its screen shows the Visits list.
+        ...(agent.sealed ? { sealed: agent.sealed } : {}),
         ...(agent.removeAsk ? {
           removeAsk: {
             at: agent.removeAsk.at,
@@ -8464,6 +8514,29 @@ self.addEventListener('activate', (event) => {
     };
   };
 
+  /**
+   * The Visits list on a sealed guide's screen (note #1010): every visitor's
+   * conversation, kept 90 days, read only by the guide's owner. Nothing about
+   * a visitor beyond what they typed.
+   */
+  router.get('/api/agents/:id/visits', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const agent = activeAgent(auth, String(req.params.id ?? ''));
+    if (!agent || !isSealedAgent(agent)) return res.status(404).json({ error: 'No such agent on this account' });
+    if (!deps.publicGuide) return res.json({ visits: [], keptDays: PUBLIC_GUIDE_LIMITS.transcriptDays } satisfies WorkspacePublicGuideVisitsAnswer);
+    return res.json(await deps.publicGuide.listVisits(agent.id) satisfies WorkspacePublicGuideVisitsAnswer);
+  });
+
+  router.get('/api/agents/:id/visits/:visitId', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const agent = activeAgent(auth, String(req.params.id ?? ''));
+    if (!agent || !isSealedAgent(agent) || !deps.publicGuide) return res.status(404).json({ error: 'No such agent on this account' });
+    const visit = await deps.publicGuide.getVisit(agent.id, String(req.params.visitId ?? ''));
+    return visit ? res.json({ visit } satisfies WorkspacePublicGuideVisitAnswer) : res.status(404).json({ error: 'That visit is no longer kept.' });
+  });
+
   router.get('/api/agents/:id/runtime', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;
@@ -8495,6 +8568,10 @@ self.addEventListener('activate', (event) => {
     }
     if (!isSupportedAgentCli(agent.cli)) {
       return res.status(400).json({ error: 'This agent no longer has a supported model picker.' });
+    }
+    // A sealed guide's model is its kind's (note #1010); the harness runs it on that whatever is stored.
+    if (isSealedAgent(agent)) {
+      return res.status(409).json({ error: 'The public guide always runs on sonnet at medium effort.' });
     }
     if (!deps.userStorage) {
       return res.status(503).json({ error: 'Model settings are not available right now' });

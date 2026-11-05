@@ -156,6 +156,7 @@ import {
   type UserProfileDocument,
   ensureAgentForCli,
   addTelegramAgentRecord,
+  isSealedAgent,
   getTelegramAgentByCli,
   isSupportedAgentCli,
   listAgents,
@@ -172,7 +173,10 @@ import {
   effectiveAgentMachineSize,
   pricedAgentMachineSizes,
   WORKSPACE_MACHINE_SIZE,
+  SEALED_AGENT_MACHINE_SIZE,
 } from '../config/agent-machine-sizes.js';
+import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_KIND, PUBLIC_GUIDE_MODEL, type SealedAgentKind } from '../shared/public-guide.js';
+import type { GuideSource } from './public-guide-machine.js';
 import { agentMachineShapeOf, recordAgentMachineShapes } from './agent-machine-observer.js';
 import { COST_ESTIMATE_DISCLAIMER } from '../config/fly-cost-estimates.js';
 import type { OrgStorage } from './org-storage.js';
@@ -1083,7 +1087,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // to prepare the LICENSE and README when the user asks for it.
 // v185 (note #943): a file sent with ATTACH: is up to 5 GB, not ~45 MB — a
 // big one goes from the machine straight into storage. No CLI change.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 185;
+// v186 (note #1010): CLI 1.70.0 — `agentbuilt agent create --public-guide`,
+// the Workspace Agent's verb for the home page's sealed guide.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 186;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -2550,6 +2556,13 @@ export class AgentService {
       // to. Absent → the central host serves everything.
       orgGitHost?: Pick<OrgGitHostService, 'clientFor'>;
       /**
+       * The sealed public guide (note #1010): the route's pointer at its
+       * agent, set when one is created and cleared when it is deleted.
+       */
+      publicGuide?: { setGuide(userId: string, agentId: string): Promise<void>; clearGuide(agentId: string): Promise<void> };
+      /** Where a sealed guide's public copy comes from: a PUBLIC repository of its workplace, or null. */
+      publicGuideSource?: (userId: string, agent: AgentRecord) => Promise<GuideSource | null>;
+      /**
        * Knowledge pages (docs/agent-knowledge-pages.md). Same shape as the
        * proposal gate above and for the same reason: both or neither, so the
        * ask and the decision can never exist without each other.
@@ -2816,6 +2829,12 @@ export class AgentService {
         sandboxClient: this.deps.sessionManager.getSandboxClient(),
         resolveDefaultSandboxId: (userId) => this.resolveTelegramHarnessSandboxId(userId, 'claude'),
         cliInstallInFlight: (sandboxId) => this.deps.harnessCliUpdater?.installInFlight?.(sandboxId),
+        sealedGuideSource: async (userId, agentId) => {
+          const agent = (await this.deps.userStorage.getProfile(userId))?.telegram?.agents?.[agentId];
+          return agent && isSealedAgent(agent) && this.deps.publicGuideSource
+            ? this.deps.publicGuideSource(userId, agent)
+            : null;
+        },
       });
     }
     return this.claudeHarnessRunner;
@@ -2883,6 +2902,8 @@ export class AgentService {
     onReserved?: (agent: { id: string; name: string }) => void,
     /** A model and effort asked for at creation (note #757), written on the reserved record. */
     runtime?: { model?: string; effort?: string },
+    /** A sealed kind (note #1010), written on the reserved record and never again. */
+    sealed?: SealedAgentKind,
   ): Promise<void> {
     const activeMembership = this.deps.orgStorage
       ? await (requestedOrgId
@@ -2911,12 +2932,19 @@ export class AgentService {
       cli,
       activeMembership?.orgId,
       runtime,
+      ...(sealed ? [sealed] as const : []),
     );
     if (!reserved) {
       return; // at the cap (message already sent) or no profile
     }
     const { agentId, name } = reserved;
     onReserved?.({ id: agentId, name });
+    // The public route answers through the newest sealed guide (note #1010).
+    if (sealed === PUBLIC_GUIDE_KIND) {
+      await this.deps.publicGuide?.setGuide(userId, agentId).catch((error) => {
+        console.warn(`[public-guide] could not point the public route at ${agentId}:`, error);
+      });
+    }
 
     try {
       await this.provisionTelegramAgentBotMachine(userId, agentId);
@@ -3020,6 +3048,7 @@ export class AgentService {
     cli: AgentCli,
     orgId?: string,
     runtime?: { model?: string; effort?: string },
+    sealed?: SealedAgentKind,
   ): Promise<{ agentId: string; name: string } | null> {
     const profile = await this.deps.userStorage.getProfile(userId);
     if (!profile) return null;
@@ -3031,6 +3060,7 @@ export class AgentService {
       undefined,
       orgId,
       runtime,
+      sealed,
     );
     await this.deps.userStorage.updateProfile(userId, {
       telegram: { ...current, agents }
@@ -3162,8 +3192,20 @@ export class AgentService {
        */
       model?: string;
       effort?: string;
+      /**
+       * A SEALED agent (note #1010): Claude Code on sonnet at medium, a
+       * shared-core machine of its own, never a token or a secret. Only at
+       * creation — no later switch can make a machine clean again.
+       */
+      sealed?: SealedAgentKind;
     },
   ): Promise<{ ok: true; agent?: { id: string; name: string } } | { ok: false; reason: string }> {
+    if (options?.sealed && cli !== 'claude') {
+      return { ok: false, reason: 'A sealed public guide is a Claude Code agent.' };
+    }
+    if (options?.sealed) {
+      options = { ...options, model: PUBLIC_GUIDE_MODEL, effort: PUBLIC_GUIDE_EFFORT };
+    }
     const profile = await this.deps.userStorage.getProfile(userId);
     if (!options?.concurrent && this.telegramMiniAppCreationsInFlight.has(userId)) {
       return { ok: false, reason: 'A new agent is already being set up — it will appear here in a moment.' };
@@ -3196,8 +3238,9 @@ export class AgentService {
     const runtime = options?.model || options?.effort
       ? { ...(options.model ? { model: options.model } : {}), ...(options.effort ? { effort: options.effort } : {}) }
       : undefined;
+    const sealed = options?.sealed;
     if (!options?.awaitName) {
-      void this.startManagedAgentSetup(userId, cli, orgId, undefined, runtime)
+      void this.startManagedAgentSetup(userId, cli, orgId, undefined, runtime, ...(sealed ? [sealed] as const : []))
         .catch((error) => {
           console.error(`[miniapp] agent creation failed for ${userId}:`, error);
         })
@@ -3211,7 +3254,7 @@ export class AgentService {
     // reservation, settles the wait with nothing; so does the bound.
     let reserved: ((agent?: { id: string; name: string }) => void) | undefined;
     const reservation = new Promise<{ id: string; name: string } | undefined>((resolve) => { reserved = resolve; });
-    void this.startManagedAgentSetup(userId, cli, orgId, (agent) => reserved?.(agent), runtime)
+    void this.startManagedAgentSetup(userId, cli, orgId, (agent) => reserved?.(agent), runtime, ...(sealed ? [sealed] as const : []))
       .catch((error) => {
         console.error(`[miniapp] agent creation failed for ${userId}:`, error);
       })
@@ -4743,6 +4786,36 @@ export class AgentService {
     } finally {
       this.telegramAgentBotImageRollsInFlight.delete(agentId);
     }
+  }
+
+  /**
+   * The sealed public guide's record (note #1010), only while it is still one:
+   * the public route's pointer outlives nothing.
+   */
+  async publicGuideAgent(userId: string, agentId: string): Promise<AgentRecord | null> {
+    const agent = (await this.deps.userStorage.getProfile(userId))?.telegram?.agents?.[agentId];
+    if (!agent || !isSealedAgent(agent) || agent.cli !== 'claude') return null;
+    if (this.telegramAgentDeletionsInFlight.has(`${userId}:${agentId}`)) return null;
+    return agent;
+  }
+
+  /**
+   * The guide's machine for a visit's turn: built if it has gone, stamped
+   * active so the idle reaper does not put it to sleep mid-answer. Waking it
+   * is the first exec's job, as for every agent.
+   */
+  async publicGuideSandbox(userId: string, agentId: string): Promise<string | null> {
+    const agent = await this.publicGuideAgent(userId, agentId);
+    if (!agent) return null;
+    const ensured = await this.ensureTelegramAgentMachine(userId, agent);
+    const sandboxId = buildHarnessSandboxId(ensured.agent.serverId);
+    if (!sandboxId) return null;
+    this.touchTelegramAgentActivity(userId, ensured.agent);
+    return sandboxId;
+  }
+
+  async publicGuideSource(userId: string, agent: AgentRecord): Promise<GuideSource | null> {
+    return isSealedAgent(agent) && this.deps.publicGuideSource ? this.deps.publicGuideSource(userId, agent) : null;
   }
 
   /**
@@ -7647,6 +7720,9 @@ export class AgentService {
     // a full coding agent and follows the same workplace default as room
     // agents (note #493).
     if (agent.purpose === 'workspace-briefing') return { cpuKind: WORKSPACE_MACHINE_SIZE.cpuKind, cpus: WORKSPACE_MACHINE_SIZE.cpus, memoryMb: WORKSPACE_MACHINE_SIZE.memoryMb };
+    // A sealed guide only answers questions (Adam, 5 Nov 2026): shared cores,
+    // whatever the workplace builds its other agents on.
+    if (isSealedAgent(agent)) return { cpuKind: SEALED_AGENT_MACHINE_SIZE.cpuKind, cpus: SEALED_AGENT_MACHINE_SIZE.cpus, memoryMb: SEALED_AGENT_MACHINE_SIZE.memoryMb };
     const chosen = await this.orgAgentMachineSizeId(userId, agent);
     if (!chosen) return undefined;
     const size = effectiveAgentMachineSize(chosen);
@@ -7740,7 +7816,9 @@ export class AgentService {
     // identity block's URL is the branded one when DNS is configured —
     // mirrors the fleet-creation path. Skipping it here shipped managed-bot
     // agents with fly.dev URLs (observed live 2026-08-06).
-    if (!agent.purpose) void this.provisionTelegramAgentPreviewDomain(userId, agentId, created.appName)
+    // A sealed guide serves nothing and is given nothing (note #1010): no
+    // preview address, no identity, no token.
+    if (!agent.purpose && !isSealedAgent(agent)) void this.provisionTelegramAgentPreviewDomain(userId, agentId, created.appName)
       .then(() => this.writeTelegramAgentIdentityById(userId, agentId));
   }
 
@@ -7997,7 +8075,7 @@ export class AgentService {
     // needs waking. The agent's branded preview name (if it has one) is
     // re-pointed at the replacement app first — that is what makes the
     // branded link outlive recycles, unlike fly.dev.
-    if (!agent.purpose) void this.provisionTelegramAgentPreviewDomain(userId, agent.id, created.appName, updated.previewHostname)
+    if (!agent.purpose && !isSealedAgent(agent)) void this.provisionTelegramAgentPreviewDomain(userId, agent.id, created.appName, updated.previewHostname)
       .then(() => this.writeTelegramAgentIdentityById(userId, agent.id));
 
     return { agent: updated, reprovisioned: true };
@@ -8215,6 +8293,9 @@ export class AgentService {
       return;
     }
     if (agent.purpose) return; // Restricted assistant never receives a general agentbuilt credential.
+    // Nor does a sealed agent (note #1010): no docs, no CLI, no token, ever.
+    // The one place a platform token is minted for a machine is below this line.
+    if (isSealedAgent(agent)) return;
     const block = this.buildTelegramAgentIdentityBlock(agent);
     // Production hosting rides the identity write: mint this machine's CLI
     // token (rotating any previous one), drop the config on the durable
@@ -8845,6 +8926,12 @@ export class AgentService {
     const secretsOwnerId = this.deps.orgGit
       ? (await this.deps.orgGit.resolveNamespace(userId, agent.orgId)).namespaceId
       : userId;
+    // A deleted guide answers nobody (note #1010): the public route rests.
+    if (isSealedAgent(agent)) {
+      await this.deps.publicGuide?.clearGuide(agentId).catch((error) => {
+        console.warn(`[public-guide] could not clear the public route's pointer at ${agentId}:`, error);
+      });
+    }
     await this.userSecrets.deleteAgentSecrets(secretsOwnerId, agentId)
       .then((count) => {
         if (count > 0) {
