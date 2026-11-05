@@ -247,7 +247,7 @@ export function AskTheCode() {
     readStatus(abort.signal)
       .then((status) => {
         setAgent(status.agent);
-        if (status.state === 'resting' || !status.agent) setGate({ kind: 'resting', until: status.until });
+        if (status.state === 'resting' || !status.agent) setGate({ kind: 'resting', until: status.until ?? undefined });
       })
       .catch(() => { /* Unreachable: the page stays at rest; a question will say what is wrong. */ });
     return () => abort.abort();
@@ -283,10 +283,10 @@ export function AskTheCode() {
           /* The plan ran short mid-turn: not counted, and the visitor sees
              the resting box rather than an error. */
           setTurns((list) => list.slice(0, -1));
-          setGate({ kind: 'resting', until: read.until });
+          setGate({ kind: 'resting', until: read.until ?? undefined });
           return;
         }
-        update({ state: read.state, position: read.position ?? 0, files: read.files ?? [], answer: read.answer });
+        update({ state: read.state, position: read.position ?? 0, files: read.files ?? [], answer: read.answer ?? undefined });
         if (isPending(read.state)) timer = window.setTimeout(poll, ASK_POLL_MS);
       } catch {
         if (abort.signal.aborted) return;
@@ -310,7 +310,7 @@ export function AskTheCode() {
     try {
       const reply = await askQuestion(visitId(), question);
       if (reply.state === 'limited' || reply.state === 'resting') {
-        setGate({ kind: reply.state, until: reply.until });
+        setGate({ kind: reply.state, until: reply.until ?? undefined });
         if (reply.state === 'limited') setDraft(question);
         return;
       }
@@ -320,7 +320,7 @@ export function AskTheCode() {
         return;
       }
       setDraft('');
-      setTurns((list) => [...list, { question, state: reply.state, questionId: reply.questionId, position: reply.position ?? 0, files: [], startedAt }]);
+      setTurns((list) => [...list, { question, state: 'queued', questionId: reply.questionId, position: reply.position ?? 0, files: [], startedAt }]);
     } catch {
       setTurns((list) => [...list, { question, state: 'failed', position: 0, files: [], startedAt }]);
     } finally {

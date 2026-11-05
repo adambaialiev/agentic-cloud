@@ -522,7 +522,7 @@ export interface RouteDeps {
    * answers back by polling, and the Visits transcripts on the guide's
    * screen. Absent → the public route says the guide is resting.
    */
-  publicGuide?: Pick<PublicGuideService, 'ask' | 'status' | 'listVisits' | 'getVisit'>;
+  publicGuide?: Pick<PublicGuideService, 'ask' | 'status' | 'overview' | 'listVisits' | 'getVisit'>;
   agentLifecycle?: {
     /**
      * `cli` is the harness picked at creation — the one choice an agent

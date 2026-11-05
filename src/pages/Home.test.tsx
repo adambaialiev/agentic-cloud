@@ -191,7 +191,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   it('reads nothing live but the guide’s status', () => {
     answer();
     draw();
-    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/api/public/ask/status']);
+    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/workspace/api/public/ask/status']);
     expect(document.querySelector('[role="status"][aria-label="Loading"]')).toBeNull();
   });
 });

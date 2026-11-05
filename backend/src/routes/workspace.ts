@@ -28,6 +28,7 @@ import {
   PUBLIC_GUIDE_LIMITS,
   type PublicAskAnswer,
   type PublicAskStatus,
+  type PublicGuideOverview,
   type WorkspacePublicGuideVisitAnswer,
   type WorkspacePublicGuideVisitsAnswer,
 } from '../shared/public-guide.js';
@@ -3420,6 +3421,19 @@ self.addEventListener('activate', (event) => {
         return { state: 'resting', until: null } satisfies PublicAskAnswer;
       });
     return res.status(answer.state === 'accepted' ? 202 : answer.state === 'invalid' ? 400 : 200).json(answer satisfies PublicAskAnswer);
+  });
+
+  /* Registered before /:questionId, which would otherwise take "status" for an id. */
+  router.get('/api/public/ask/status', async (_req, res) => {
+    publicHeaders(res);
+    const overview = deps.publicGuide ? await deps.publicGuide.overview().catch(() => null) : null;
+    if (!overview) return res.json({ state: 'resting', until: null, agent: null } satisfies PublicGuideOverview);
+    const name = overview.agentName;
+    return res.json({
+      state: overview.state,
+      until: overview.until,
+      agent: name ? { name, avatarUrl: agentFaceUrl(name) ?? null } : null,
+    } satisfies PublicGuideOverview);
   });
 
   router.get('/api/public/ask/:questionId', async (req, res) => {

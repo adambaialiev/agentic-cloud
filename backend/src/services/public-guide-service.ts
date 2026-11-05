@@ -281,6 +281,19 @@ export class PublicGuideService {
     return { state: 'accepted', questionId: record.questionId, position };
   }
 
+  /**
+   * GET /api/public/ask/status: who answers and whether it rests, for the page
+   * on load. Judged as a new question would be (the global caps included), so
+   * a page that says "open" takes the next question unless the visitor's own
+   * ten are spent.
+   */
+  async overview(): Promise<{ state: 'open' | 'resting'; until: string | null; agentName: string | null }> {
+    const guide = await this.currentGuide();
+    if (!guide) return { state: 'resting', until: null, agentName: null };
+    const resting = await this.restingState(true);
+    return { state: resting ? 'resting' : 'open', until: resting?.until ?? null, agentName: guide.agent.name ?? null };
+  }
+
   /** GET /api/public/ask/:questionId. */
   async status(questionId: string): Promise<PublicAskStatus | null> {
     if (typeof questionId !== 'string' || !/^[0-9a-f-]{36}$/i.test(questionId)) return null;

@@ -254,6 +254,14 @@ describe('PublicGuideService — resting on the owner\'s plan', () => {
     expect(await x.storage.countQuestionsSince(0)).toBe(0);
   });
 
+  it('says on load who answers and whether it rests (the page\'s status read)', async () => {
+    expect(await world().service.overview()).toEqual({ state: 'open', until: null, agentName: 'Wren' });
+    const reset = Math.floor(Date.parse('2026-11-05T22:00:00.000Z') / 1000);
+    const full = world({ seat: { usage: { capturedAt: 'x', windows: { five_hour: { id: 'five_hour', usedPercent: 85, resetsAt: reset } } } }, now: () => Date.parse('2026-11-05T19:00:00.000Z') });
+    expect(await full.service.overview()).toEqual({ state: 'resting', until: '2026-11-05T22:00:00.000Z', agentName: 'Wren' });
+    expect(await world({ noGuide: true }).service.overview()).toEqual({ state: 'resting', until: null, agentName: null });
+  });
+
   it('with no guide at all, it rests and says no time', async () => {
     const x = world({ noGuide: true });
     expect(await x.service.ask({ visitId: VISIT, question: 'q', address: 'a' })).toEqual({ state: 'resting', until: null });

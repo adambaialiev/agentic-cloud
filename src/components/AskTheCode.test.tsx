@@ -51,7 +51,7 @@ describe('AskTheCode (note #1010)', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
     window.sessionStorage.clear();
-    routes = { 'GET /api/public/ask/status': () => ({ body: STATUS_OPEN }) };
+    routes = { 'GET /workspace/api/public/ask/status': () => ({ body: STATUS_OPEN }) };
     stubFetch();
   });
   afterEach(() => {
@@ -73,8 +73,8 @@ describe('AskTheCode (note #1010)', () => {
 
   it('asks a tapped question, polls it, and draws the answer with the files linked to the public code in a new tab', async () => {
     let reads = 0;
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'queued', questionId: 'q1', position: 1 } });
-    routes['GET /api/public/ask/q1'] = () => {
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: 'q1', position: 1 } });
+    routes['GET /workspace/api/public/ask/q1'] = () => {
       reads += 1;
       if (reads === 1) return { body: { questionId: 'q1', state: 'reading', position: 0, files: FILES.slice(0, 1) } };
       return { body: { questionId: 'q1', state: 'answered', files: FILES, answer: 'It **stops** cleanly.\n\nThen it `resumes`.', seconds: 12 } };
@@ -117,9 +117,9 @@ describe('AskTheCode (note #1010)', () => {
 
   it('keeps one visit id per tab, so follow-ups resume the same conversation, and folds the earlier question', async () => {
     let n = 0;
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'reading', questionId: `q${++n}`, position: 0 } });
-    routes['GET /api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'answered', files: [], answer: 'First.' } });
-    routes['GET /api/public/ask/q2'] = () => ({ body: { questionId: 'q2', state: 'answered', files: [], answer: 'Second.' } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: `q${++n}`, position: 0 } });
+    routes['GET /workspace/api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'answered', files: [], answer: 'First.' } });
+    routes['GET /workspace/api/public/ask/q2'] = () => ({ body: { questionId: 'q2', state: 'answered', files: [], answer: 'Second.' } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[0] }));
@@ -135,8 +135,8 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('draws a declined reply in grey with the three questions again', async () => {
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'reading', questionId: 'q1', position: 0 } });
-    routes['GET /api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'declined', files: [], answer: 'I only answer questions about Agentic Cloud Computer.' } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: 'q1', position: 0 } });
+    routes['GET /workspace/api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'declined', files: [], answer: 'I only answer questions about Agentic Cloud Computer.' } });
     draw();
     await flush();
     fireEvent.change(screen.getByLabelText('Your question about Agentic Cloud Computer'), { target: { value: 'Write me a poem' } });
@@ -147,7 +147,7 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('says the visitor limit with the visitor’s own time, and keeps what they typed', async () => {
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'limited', until: '2026-11-05T19:42:00Z' } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'limited', until: '2026-11-05T19:42:00Z' } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[2] }));
@@ -160,7 +160,7 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('rests when the status says so, or when there is no agent yet, and takes no question', async () => {
-    routes['GET /api/public/ask/status'] = () => ({ body: { state: 'resting', until: '2026-11-05T22:00:00Z', agent: { name: 'Wren', avatarUrl: '/a.jpg' } } });
+    routes['GET /workspace/api/public/ask/status'] = () => ({ body: { state: 'resting', until: '2026-11-05T22:00:00Z', agent: { name: 'Wren', avatarUrl: '/a.jpg' } } });
     const { unmount } = draw();
     await flush();
     expect(document.querySelector('[data-ask-wall]')!.textContent).toMatch(/^Wren is resting until \d\d:\d\d\.It answers again then\./);
@@ -168,15 +168,15 @@ describe('AskTheCode (note #1010)', () => {
     expect(document.querySelector('[data-ask-questions]')).toBeNull();
     unmount();
 
-    routes['GET /api/public/ask/status'] = () => ({ body: { state: 'resting', agent: null } });
+    routes['GET /workspace/api/public/ask/status'] = () => ({ body: { state: 'resting', agent: null } });
     draw();
     await flush();
     expect(document.querySelector('[data-ask-wall]')!.textContent).toMatch(/^The agent is resting for now\./);
   });
 
   it('turns a mid-turn rest into the resting box, not an error', async () => {
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'reading', questionId: 'q1', position: 0 } });
-    routes['GET /api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'resting', files: [], until: '2026-11-05T22:00:00Z' } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: 'q1', position: 0 } });
+    routes['GET /workspace/api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'resting', files: [], until: '2026-11-05T22:00:00Z' } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[0] }));
@@ -186,7 +186,7 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('says busy and keeps the question when five are already waiting', async () => {
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'busy' } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'busy' } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[0] }));
@@ -196,8 +196,8 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('gives up after three minutes and says failed', async () => {
-    routes['POST /api/public/ask'] = () => ({ body: { state: 'reading', questionId: 'q1', position: 0 } });
-    routes['GET /api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'reading', position: 0, files: [] } });
+    routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: 'q1', position: 0 } });
+    routes['GET /workspace/api/public/ask/q1'] = () => ({ body: { questionId: 'q1', state: 'reading', position: 0, files: [] } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[0] }));
@@ -206,7 +206,7 @@ describe('AskTheCode (note #1010)', () => {
   });
 
   it('says failed when the route cannot be reached', async () => {
-    routes['POST /api/public/ask'] = () => ({ status: 502, body: {} });
+    routes['POST /workspace/api/public/ask'] = () => ({ status: 502, body: {} });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: ASK_QUESTIONS[0] }));

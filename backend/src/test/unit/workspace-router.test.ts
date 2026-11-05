@@ -11758,7 +11758,23 @@ describe('the public guide\'s door (note #1010)', () => {
   const status = vi.fn();
   const deps = (): Partial<RouteDeps> => ({
     workspaceWebOrigin: WORKSPACE_ORIGIN,
-    publicGuide: { ask, status, listVisits: vi.fn(), getVisit: vi.fn() } as never,
+    publicGuide: { ask, status, overview, listVisits: vi.fn(), getVisit: vi.fn() } as never,
+  });
+  const overview = vi.fn();
+
+  it('says on load who answers, with its face, and whether it rests; resting with no agent when nothing is wired', async () => {
+    overview.mockResolvedValueOnce({ state: 'open', until: null, agentName: 'Nina' });
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask/status', 'get')(mockRequest({}), res);
+    expect(res.body).toEqual({ state: 'open', until: null, agent: { name: 'Nina', avatarUrl: expect.stringMatching(/^\/workspace\/avatars\//) } });
+    expect(res.headers['cache-control']).toBe('no-store');
+    overview.mockResolvedValueOnce({ state: 'resting', until: '2026-11-05T22:00:00.000Z', agentName: null });
+    const none = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/ask/status', 'get')(mockRequest({}), none);
+    expect(none.body).toEqual({ state: 'resting', until: '2026-11-05T22:00:00.000Z', agent: null });
+    const bare = createMockResponse();
+    await getRouteHandler({ workspaceWebOrigin: WORKSPACE_ORIGIN }, '/api/public/ask/status', 'get')(mockRequest({}), bare);
+    expect(bare.body).toEqual({ state: 'resting', until: null, agent: null });
   });
 
   it('takes a question signed out from the site, passes the visitor\'s address, and answers 202 with the question id', async () => {

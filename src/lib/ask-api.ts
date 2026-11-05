@@ -3,15 +3,17 @@
  * contract is on note #1010, section 10, agreed between the page and the
  * backend; change it there first.
  *
- *   GET  /api/public/ask/status        → AskStatus
- *   POST /api/public/ask {visitId, question} → AskAccepted | AskRefused
- *   GET  /api/public/ask/:questionId   → AskQuestion
+ *   GET  /workspace/api/public/ask/status        → AskStatus
+ *   POST /workspace/api/public/ask {visitId, question} → AskAccepted | AskRefused
+ *   GET  /workspace/api/public/ask/:questionId   → AskQuestion
  *
- * Same origin: the site's Cloudflare function proxies /api to the backend.
+ * The backend's types are backend/src/shared/public-guide.ts. Same origin:
+ * the site's Cloudflare function proxies /workspace to the backend, whose
+ * Workspace router is mounted there.
  */
 
-export const ASK_STATUS_PATH = '/api/public/ask/status';
-export const ASK_PATH = '/api/public/ask';
+export const ASK_STATUS_PATH = '/workspace/api/public/ask/status';
+export const ASK_PATH = '/workspace/api/public/ask';
 
 /** One question is at most this long, after trim (the route refuses more). */
 export const ASK_MAX_CHARS = 500;
@@ -20,21 +22,22 @@ export const ASK_POLL_MS = 1500;
 /** …and gives up, drawing "failed", after this long. */
 export const ASK_GIVE_UP_MS = 180_000;
 
-export type AskAgent = { name: string; avatarUrl: string };
+export type AskAgent = { name: string; avatarUrl: string | null };
 
 export type AskStatus = {
   state: 'open' | 'resting';
-  until?: string;
+  until?: string | null;
   agent: AskAgent | null;
 };
 
 export type AskPendingState = 'queued' | 'waking' | 'reading';
 export type AskQuestionState = AskPendingState | 'answered' | 'declined' | 'failed' | 'resting';
 
-export type AskAccepted = { state: AskPendingState; questionId: string; position: number };
+/* 202 'accepted' (the question is queued; position 0 means it is next). */
+export type AskAccepted = { state: 'accepted'; questionId: string; position: number };
 export type AskRefused =
   | { state: 'limited'; until: string }
-  | { state: 'resting'; until?: string }
+  | { state: 'resting'; until: string | null }
   | { state: 'busy' };
 
 export type AskQuestion = {
@@ -42,9 +45,9 @@ export type AskQuestion = {
   state: AskQuestionState;
   position?: number;
   files: string[];
-  answer?: string;
-  until?: string;
-  seconds?: number;
+  answer: string | null;
+  until?: string | null;
+  elapsedSeconds: number;
 };
 
 export function isPending(state: string): state is AskPendingState {
@@ -54,7 +57,7 @@ export function isPending(state: string): state is AskPendingState {
 /* A visit is one tab: sessionStorage, so a reload or a new tab is a fresh
    conversation (Adam's decision 6), and nothing outlives the tab. */
 const VISIT_KEY = 'acc-ask-visit';
-const VISIT_ID = /^[A-Za-z0-9_-]{16,64}$/;
+const VISIT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function newVisitId(): string {
   const bytes = new Uint8Array(18);

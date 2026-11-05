@@ -102,6 +102,17 @@ export interface PublicAskStatus {
   elapsedSeconds: number;
 }
 
+/**
+ * GET /api/public/ask/status — read by the page once on load (note #1010,
+ * section 10): the guide's face and name, and whether it rests. `agent` is
+ * null while no guide exists, and the page then draws the resting box.
+ */
+export interface PublicGuideOverview {
+  state: 'open' | 'resting';
+  until: string | null;
+  agent: { name: string; avatarUrl: string | null } | null;
+}
+
 /** One question in a stored visit (the Visits list on the guide's screen). */
 export interface PublicGuideQuestionRecord {
   questionId: string;
