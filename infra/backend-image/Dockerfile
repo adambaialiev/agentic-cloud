@@ -39,6 +39,10 @@ COPY --from=build /src/backend/node_modules node_modules
 COPY --from=build /src/backend/assets assets
 COPY --from=build /src/backend/scripts scripts
 COPY --from=build /src/backend/package.json /src/backend/package-lock.json ./
+# The installer's own registry code (note #1008): the Upgrade button copies the
+# new release's upgrader image into the copy's registry with it before
+# starting the upgrader (services/copy-upgrade.ts, loadInstaller).
+COPY infra/copy-installer/install.mjs installer/install.mjs
 # The font and icons a browser asks the domain's root for (note #815). Our
 # platform's public site serves them; a copy has only this backend, which
 # reads them from ../public (routes/workspace-root.ts, BRAND_FILES).

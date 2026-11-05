@@ -1760,6 +1760,46 @@ export interface WorkspaceCopyReleases {
   releases: WorkspaceCopyRelease[];
 }
 
+/** One step of an upgrade, as the progress screen lists it (note #1008). */
+export interface WorkspaceCopyUpgradeStep {
+  key: string;
+  label: string;
+  state: 'done' | 'now' | 'wait' | 'fail';
+  seconds: number | null;
+  /** A step of the way back (putting the old release back). */
+  back: boolean;
+}
+
+/** One upgrade run, read from the run record in the backup bucket (note #1008). */
+export interface WorkspaceCopyUpgradeRun {
+  id: string;
+  requestedBy: string | null;
+  from: string | null;
+  to: string | null;
+  drill: 'rollback' | 'backend' | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  /** starting → running → (putting-back) → an outcome; stopped when its upgrader went quiet. */
+  phase: 'starting' | 'running' | 'putting-back' | 'stopped' | 'done' | 'put-back' | 'drill-done' | 'unchanged' | 'failed';
+  heardSecondsAgo: number | null;
+  message: string | null;
+  snapshotAt: string | null;
+  steps: WorkspaceCopyUpgradeStep[];
+}
+
+/** GET api/copy/upgrade — the Upgrade button and its run, for a copy's admins (note #1008). */
+export interface WorkspaceCopyUpgradeState {
+  running: string | null;
+  latest: string | null;
+  behind: boolean;
+  /** The button, when an upgrade may start now. */
+  offer: { version: string; date: string | null; agentsWorking: number; minutes: number } | null;
+  /** Why there is no button although a newer release exists. */
+  refusal: string | null;
+  /** The open run, else the last one this Workspace started. */
+  run: WorkspaceCopyUpgradeRun | null;
+}
+
 /** GET api/copy/health — a private copy only, for its admins (note #813). */
 export interface WorkspaceCopyHealth {
   release: string | null;

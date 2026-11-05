@@ -10,7 +10,7 @@
  * "Can't tell" when the update service has not been reached lately.
  */
 import { useCallback, useEffect, useState } from 'react';
-import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyUpdates } from '../../../../src/shared/workspace-api.js';
+import type { WorkspaceCopyHealth, WorkspaceCopyHealthPart, WorkspaceCopyUpgradeState, WorkspaceCopyUpdates } from '../../../../src/shared/workspace-api.js';
 import { useBanner } from '../../chrome/useBanner.js';
 import { errorMessage } from '../../ui/format.js';
 import { TypeIcon, type IconName } from '../../ui/icons.js';
@@ -19,6 +19,8 @@ import { useOrgApi } from './useOrgApi.js';
 import { useNavigate } from 'react-router-dom';
 import { toFor } from '../../routes.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
+import { CopyUpgradeConfirm } from './CopyUpgradeScreen.js';
+import { releaseDay } from './CopyReleasesScreen.js';
 
 const GLYPHS: Record<WorkspaceCopyHealthPart['key'], IconName> = {
   workspace: 'gauge',
@@ -59,6 +61,10 @@ export function CopyHealthSection() {
   const [saving, setSaving] = useState(false);
   const [pasting, setPasting] = useState(false);
   const [licenceText, setLicenceText] = useState('');
+  // The Upgrade button (note #1008): what may start now, and any run open.
+  const [upgrade, setUpgrade] = useState<WorkspaceCopyUpgradeState | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [starting, setStarting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -67,7 +73,28 @@ export function CopyHealthSection() {
     } catch (err) {
       setError(errorMessage(err));
     }
+    // A Workspace on a release before the button has no such read: no row.
+    setUpgrade(await api.api<WorkspaceCopyUpgradeState>('api/copy/upgrade').catch(() => null));
   }, [api]);
+
+  const startUpgrade = async (yes: boolean) => {
+    setConfirming(false);
+    if (!yes || !upgrade?.offer) return;
+    setStarting(true);
+    try {
+      await api.api('api/copy/upgrade', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: upgrade.offer.version }),
+      });
+      navigate(toFor({ kind: 'copyUpgrade' })!);
+    } catch (err) {
+      banner.show(errorMessage(err));
+      await load();
+    } finally {
+      setStarting(false);
+    }
+  };
+  const openRun = upgrade?.run && ['starting', 'running', 'putting-back', 'stopped'].includes(upgrade.run.phase) ? upgrade.run : null;
+  const lastRun = upgrade?.run && !openRun ? upgrade.run : null;
   useEffect(() => { void load(); }, [load]);
 
   const download = async () => {
@@ -125,7 +152,8 @@ export function CopyHealthSection() {
                     {part.ok ? null : <span className="badge warn">Needs a look</span>}
                     {badge ? <span className={`badge ${badge.tone}`} id="orgCopyUpdatesBadge">{badge.words}</span> : null}
                   </div>
-                  {updates?.state === 'behind' && updates.howToUpgrade ? <UpgradeHint text={updates.howToUpgrade} /> : null}
+                  {updates?.state === 'behind' && updates.howToUpgrade && !upgrade?.offer && !openRun ? <UpgradeHint text={updates.howToUpgrade} /> : null}
+                  {updates?.state === 'behind' && upgrade?.refusal && !openRun ? <div className="cabout" id="orgCopyUpgradeRefusal">{upgrade.refusal}</div> : null}
                   {/* What each release brings (note #1006): the newer ones
                       when there are any, else what the running one brought. */}
                   {updates && updates.state !== 'off' && (updates.state === 'behind' || updates.running)
@@ -142,6 +170,29 @@ export function CopyHealthSection() {
             );
           })
           : <div className="empty">{error || 'Checking every part…'}</div>}
+        {/* Upgrade (note #1008): the button when an upgrade may start now,
+            or the run that is under way, for every admin on any device. */}
+        {openRun
+          ? (
+            <div className="upbox" id="orgCopyUpgradeOpen">
+              <div className="t">{openRun.phase === 'stopped' ? `An upgrade to ${openRun.to} stopped part-way.` : openRun.phase === 'putting-back' ? `${openRun.from} is being put back.` : `An upgrade to ${openRun.to} is under way.`}</div>
+              <button className="btn" type="button" onClick={() => navigate(toFor({ kind: 'copyUpgrade' })!)}>{openRun.phase === 'stopped' ? 'See it' : 'Follow it'}</button>
+            </div>
+          )
+          : upgrade?.offer
+            ? (
+              <div className="upbox" id="orgCopyUpgradeBox">
+                <div className="t">
+                  {upgrade.offer.version} is ready{upgrade.offer.date ? `, from ${releaseDay(upgrade.offer.date)}` : ''}.{' '}
+                  <button className="linkword" type="button" onClick={() => navigate(toFor({ kind: 'copyReleases' })!)}>What&apos;s new</button>
+                </div>
+                <button className="btn fill" id="orgCopyUpgradeButton" type="button" disabled={starting} onClick={() => setConfirming(true)}>
+                  {starting ? <span className="spinner" /> : null}
+                  Upgrade to {upgrade.offer.version}
+                </button>
+              </div>
+            )
+            : null}
         {/* The licence's renewal comes from us as one line; pasted here it
             takes effect at once, with no restart (note #814). */}
         {hasLicence && pasting
@@ -173,8 +224,14 @@ export function CopyHealthSection() {
           Download diagnostics
         </button>
       </div>
+      {confirming && upgrade?.offer && upgrade.running
+        ? <CopyUpgradeConfirm from={upgrade.running} to={upgrade.offer.version} agentsWorking={upgrade.offer.agentsWorking} onAnswer={(yes) => { void startUpgrade(yes); }} />
+        : null}
       <p className="formhint">
         {health ? `Checked ${relative(health.checkedAt)}. ` : ''}
+        {lastRun && lastRun.finishedAt
+          ? <><button className="linkword" id="orgCopyLastUpgrade" type="button" onClick={() => navigate(toFor({ kind: 'copyUpgrade' })!)}>Last upgrade</button>{`: ${lastRun.phase === 'done' ? `to ${lastRun.to}` : lastRun.phase === 'drill-done' ? `a drill (${lastRun.from} back)` : `to ${lastRun.to}, put back`} on ${lastRun.finishedAt.slice(0, 10)}${lastRun.requestedBy ? ` by ${lastRun.requestedBy}` : ''}. `}</>
+          : null}
         The diagnostics file stays on your computer until you send it to support. It holds no messages, code, files, mail, keys or names.
       </p>
     </section>

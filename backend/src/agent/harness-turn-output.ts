@@ -1089,3 +1089,8 @@ export class TurnOutputReader {
     }
   }
 }
+
+/** How many agent turns are running on this backend right now (note #1008: the Upgrade confirmation says so). */
+export function countActiveDetachedTurns(): number {
+  return activeDetachedTurns.size;
+}

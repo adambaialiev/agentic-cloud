@@ -108,6 +108,9 @@ export const WORKSPACE_ROUTE_DEFS = {
   /** What's new, in a company's own Agentic Cloud (note #1006): the
    *  releases newer than the running one, with their notes. Admins only. */
   copyReleases: { screen: 'copyreleases', pattern: ['workplace', 'whats-new'], scope: 'org' },
+  /** Upgrade, in a company's own Agentic Cloud (note #1008): one run's
+   *  progress, then how it ended. Admins only. */
+  copyUpgrade: { screen: 'copyupgrade', pattern: ['workplace', 'upgrade'], scope: 'org' },
   /** The Workspace Agent's conversation used to live here (note #423); since
    *  2026-10-10 it IS Home, and this address only sends its reader there. */
   recapChat: { screen: 'recapChat', pattern: ['recap'], scope: 'org' },

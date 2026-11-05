@@ -1,5 +1,6 @@
 import type { CopyMailSetup } from '../services/copy-mail-setup.js';
 import type { CopyHealth } from '../services/copy-health.js';
+import type { CopyUpgrade } from '../services/copy-upgrade.js';
 import type { AgentChatUpload } from '../services/agent-chat-storage.js';
 import type { CopyLicence } from '../services/copy-licence.js';
 import type { WorkspaceChatFile, WorkspaceChatFileTextAnswer, WorkspaceManagedJob, WorkspaceSettledJob } from '../shared/workspace-api.js';
@@ -300,6 +301,8 @@ export interface RouteDeps {
    * Unset here, where both answer 404.
    */
   copyHealth?: CopyHealth;
+  /** The Upgrade button of a company's own Agentic Cloud (note #1008). */
+  copyUpgrade?: CopyUpgrade;
   /**
    * A private copy's licence (note #814): admins paste a renewal at
    * `POST api/copy/licence`, and a new person or agent is refused in words

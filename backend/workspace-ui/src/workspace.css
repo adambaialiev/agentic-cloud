@@ -7647,3 +7647,46 @@ h2.mailfileshead { margin-top: 16px; }
 #screenCopyReleases .copyreleasenotes h3 { font-size: var(--ui-base); font-weight: 500; margin: 14px 0 4px; }
 #screenCopyReleases .copyreleasecard .empty { padding: 4px 0 14px; }
 
+
+/* Upgrade (note #1008, the mock-ups on note #1007): the button's row on the
+   health card, the confirmation's four lines, the progress screen's steps
+   and the notices that say how a run stands. */
+#orgCopyHealthCard .upbox { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border); }
+#orgCopyHealthCard .upbox .t { flex: 1; min-width: 0; color: var(--hint); }
+#orgCopyHealthCard .upbox .linkword, #orgCopyHealth .formhint .linkword {
+  appearance: none; background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: var(--accent); font-weight: 500; cursor: pointer; }
+.btn.fill { background: var(--accent); color: var(--accent-text); }
+.btn.fill:disabled { background: color-mix(in srgb, var(--hint) 30%, transparent); color: var(--accent-text); }
+#copyUpgradeConfirm .upconfirm { list-style: none; display: grid; gap: 8px; margin-top: 12px; }
+#copyUpgradeConfirm .upconfirm li { display: flex; gap: 10px; line-height: var(--ui-base-leading); }
+#copyUpgradeConfirm .upconfirm .k { width: 16px; flex: none; text-align: center; color: var(--hint); }
+#copyUpgradeConfirm .upconfirm .d { color: var(--hint); }
+#screenCopyUpgrade .upsteps { list-style: none; }
+#screenCopyUpgrade .upsteps li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 14px; }
+#screenCopyUpgrade .upsteps li + li { border-top: 1px solid var(--border); }
+#screenCopyUpgrade .upsteps .s { flex: 1; min-width: 0; font-weight: 500; }
+#screenCopyUpgrade .upsteps .s .d { display: block; color: var(--hint); font-weight: 400; }
+#screenCopyUpgrade .upsteps .t { color: var(--hint); font-variant-numeric: tabular-nums; }
+#screenCopyUpgrade .updot { width: 18px; height: 18px; flex: none; margin-top: 1px; border-radius: 50%;
+  display: grid; place-items: center; font-size: var(--ui-sm); line-height: 1; font-weight: 500; color: var(--accent-text); }
+#screenCopyUpgrade .updot.done { background: var(--ok); }
+#screenCopyUpgrade .updot.done.back { background: var(--warn); }
+#screenCopyUpgrade .updot.fail { background: var(--danger); }
+#screenCopyUpgrade .updot.wait { border: 2px solid color-mix(in srgb, var(--hint) 35%, transparent); }
+#screenCopyUpgrade .updot.now { border: 2px solid var(--accent); border-top-color: transparent; animation: upspin 1s linear infinite; }
+@keyframes upspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #screenCopyUpgrade .updot.now { animation: none; } }
+#screenCopyUpgrade .upnotice { display: flex; gap: 10px; margin: 14px 0 0; padding: 12px 14px; border-radius: var(--r-lg);
+  background: var(--accent-soft); color: var(--text); line-height: var(--ui-base-leading); }
+#screenCopyUpgrade .upnotice b { font-weight: 500; }
+#screenCopyUpgrade .upnotice.good { background: color-mix(in srgb, var(--ok) 11%, transparent); }
+#screenCopyUpgrade .upnotice.warn { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+#screenCopyUpgrade .upnotice.bad { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+#screenCopyUpgrade .upnotice code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--ui-sm); }
+#screenCopyUpgrade .uprow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+#screenCopyUpgrade .copyreleasecard { padding: 16px 18px 4px; }
+#screenCopyUpgrade .copyreleasetitle { font-size: var(--ui-lg); line-height: var(--ui-lg-leading); font-weight: 500; margin-bottom: 4px; }
+@media (max-width: 560px) {
+  #orgCopyHealthCard .upbox { flex-direction: column; align-items: stretch; }
+}

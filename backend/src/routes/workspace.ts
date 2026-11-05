@@ -226,6 +226,7 @@ import { composeSeedAgentRecap } from '../services/agent-recap.js';
 import { deleteRepoNow, isRestorableRepo } from '../services/git-repo-admin.js';
 import type { GitPullRequestDocument, PullRequestAttachment } from '../types/git-pr.js';
 import { CopyMailSetupError } from '../services/copy-mail-setup.js';
+import { CopyUpgradeRefused } from '../services/copy-upgrade.js';
 import type { WorkspaceCopyMailProviderInput } from '../shared/workspace-api.js';
 import { LICENSE_FILE, detectLicense, readmeDescription } from '../shared/licenses.js';
 import { orgKnowledgeShelfNamespace, type GitNamespace } from '../services/org-git.js';
@@ -12635,10 +12636,61 @@ self.addEventListener('activate', (event) => {
     const ctx = await requireMembership(auth, res);
     if (!ctx) return;
     if (ctx.membership.role !== 'admin') return res.status(403).json({ error: 'Only an admin can download this copy\'s diagnostics.' });
-    const bundle = await deps.copyHealth.diagnostics();
+    const health = await deps.copyHealth.diagnostics();
+    // The last upgrade's steps (note #1008), without who asked: the bundle holds no names.
+    const run = deps.copyUpgrade ? await deps.copyUpgrade.state().then((state) => state.run).catch(() => null) : null;
+    const bundle = run ? { ...health, lastUpgrade: { ...run, requestedBy: null } } : health;
     const day = bundle.generatedAt.slice(0, 10);
     res.setHeader('content-disposition', `attachment; filename="copy-diagnostics-${day}.json"`);
     return res.json(bundle);
+  });
+
+  /**
+   * The Upgrade button (note #1008): its state for an admin, and the start.
+   * Every change here is a POST, so authenticate() has already checked the
+   * exact Workspace origin and the CSRF token. One run at a time, refused in
+   * words while one is open, a machine is mid-deploy, the disk is short or a
+   * Claude sign-in is open (services/copy-upgrade.ts).
+   */
+  const copyUpgradeAdmin = async (req: Request, res: Response) => {
+    if (!deps.copyUpgrade) {
+      res.status(404).json({ error: 'Only your own Agentic Cloud upgrades from here.' });
+      return null;
+    }
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return null;
+    if (ctx.membership.role !== 'admin') {
+      res.status(403).json({ error: 'Only an admin can upgrade this Agentic Cloud.' });
+      return null;
+    }
+    return { upgrade: deps.copyUpgrade, by: auth.profile.displayName || 'An admin' };
+  };
+  const copyUpgradeAnswer = async (res: Response, run: () => Promise<unknown>) => {
+    try {
+      return res.json(await run());
+    } catch (error) {
+      if (error instanceof CopyUpgradeRefused) return res.status(error.status).json({ error: error.message });
+      console.warn('[copy-upgrade] could not start:', error);
+      return res.status(502).json({ error: `The upgrade could not start: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  };
+  router.get('/api/copy/upgrade', async (req, res) => {
+    const ok = await copyUpgradeAdmin(req, res);
+    if (!ok) return;
+    return copyUpgradeAnswer(res, () => ok.upgrade.state());
+  });
+  router.post('/api/copy/upgrade', async (req, res) => {
+    const ok = await copyUpgradeAdmin(req, res);
+    if (!ok) return;
+    const drill = req.body?.drill === 'backend' ? 'backend' : req.body?.drill === 'rollback' ? 'rollback' : null;
+    return copyUpgradeAnswer(res, () => ok.upgrade.start({ version: String(req.body?.version ?? ''), drill, by: ok.by }));
+  });
+  router.post('/api/copy/upgrade/carry-on', async (req, res) => {
+    const ok = await copyUpgradeAdmin(req, res);
+    if (!ok) return;
+    return copyUpgradeAnswer(res, () => ok.upgrade.carryOn(ok.by));
   });
 
   router.get('/api/org/deletion', async (req, res) => {

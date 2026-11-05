@@ -159,6 +159,7 @@ import { FlySandboxClient } from './services/fly-sandbox-client.js';
 import { FlyClient } from './services/fly-client.js';
 import { CopyPeerRepin } from './services/copy-peer-repin.js';
 import { ensureCopyUpgrader, upgraderAppName } from './services/copy-upgrader.js';
+import { createCopyUpgrade, s3UpgradeBucket } from './services/copy-upgrade.js';
 import { SmtpMailSender, SmtpWorkspaceVerificationEmailSender, createSmtpTransport, smtpSettingsFromEnv } from './services/smtp-mail.js';
 import {
   CopyMailSetup, InMemoryCopyMailSetupStore, SqliteCopyMailSetupStore, type CopyMailSending,
@@ -180,7 +181,7 @@ import { recordAgentRuntimeSamples } from './services/machine-runtime-meter.js';
 import { recordAgentMachineShapes } from './services/agent-machine-observer.js';
 import { FlyAgentRecycler } from './services/fly-agent-recycler.js';
 import { globalSshClient } from './services/ssh-client.js';
-import { markHarnessShutdown } from './agent/harness-turn-output.js';
+import { countActiveDetachedTurns, markHarnessShutdown } from './agent/harness-turn-output.js';
 import { buildAssistantSessionId } from './services/agent-service.js';
 import {
   InMemoryManagedServerStorage,
@@ -1121,6 +1122,38 @@ const copyHealth = PRIVATE_COPY
       ...(copyReleaseCheck ? { updates: copyReleaseCheck } : {}),
     })
   : null;
+// The Upgrade button (note #1008): the Workspace starts the one-shot upgrader
+// in <prefix>-upgrader and reads the run record back from the backup bucket.
+let copyUpgraderReady = false;
+const copyUpgrade = PRIVATE_COPY && copyAppPrefix && FLY_API_TOKEN
+  ? createCopyUpgrade({
+      prefix: copyAppPrefix,
+      region: FLY_REGION,
+      token: FLY_API_TOKEN,
+      updatesUrl: copyReleaseCheck?.state().url ?? null,
+      bucket: process.env.BACKUP_S3_ENDPOINT && process.env.BACKUP_S3_BUCKET && process.env.BACKUP_S3_ACCESS_KEY_ID && process.env.BACKUP_S3_SECRET_ACCESS_KEY
+        ? s3UpgradeBucket({
+          endpoint: process.env.BACKUP_S3_ENDPOINT, bucket: process.env.BACKUP_S3_BUCKET,
+          accessKeyId: process.env.BACKUP_S3_ACCESS_KEY_ID, secretAccessKey: process.env.BACKUP_S3_SECRET_ACCESS_KEY,
+        })
+        : null,
+      fly: new FlyClient(FLY_API_TOKEN),
+      releases: async () => {
+        const check = copyReleaseCheck ? await copyReleaseCheck.current() : null;
+        const latest = check?.latest ?? null;
+        return {
+          running: process.env.COPY_RELEASE?.trim() || null,
+          latest,
+          latestDate: check?.releases.find((release) => release.version === latest)?.date ?? null,
+        };
+      },
+      upgraderReady: () => copyUpgraderReady,
+      ...(sqliteDbPath ? { dbPath: sqliteDbPath, dataDir: dirnameNode(sqliteDbPath) } : {}),
+      signInOpenSince: () => seatSignInFlow.openClaudeSignInSince(),
+      agentsWorking: () => countActiveDetachedTurns(),
+      rollMx: Boolean(process.env.RESEND_MAIL_API_KEY || process.env.SMTP_HOST),
+    })
+  : null;
 // The ops bot's inbound half: /users answers with who is on the platform,
 // /fleet with which identity version the agents are on. Same two
 // env vars the backup monitor already needs — with them the bot gains a
@@ -1763,6 +1796,7 @@ if (flySandboxClient) {
   // bucket keys as its secrets. Never in the way of starting up.
   if (PRIVATE_COPY && copyAppPrefix && FLY_API_TOKEN && FLY_ORG) {
     void ensureCopyUpgrader({ prefix: copyAppPrefix, org: FLY_ORG, env: process.env, fly: new FlyClient(FLY_API_TOKEN) })
+      .then((result) => { copyUpgraderReady = result.ok; })
       .catch((error: unknown) => console.warn(`[copy-upgrader] could not make ${upgraderAppName(copyAppPrefix)} ready: ${error instanceof Error ? error.message : String(error)}`));
   }
 
@@ -1861,6 +1895,7 @@ const deps: RouteDeps = {
   ...(SIGNUP_CLOSED ? { signupClosed: true } : {}),
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
+  ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
   // Owner, 2026-10-11 (note #733): the Chief of Staff covers recaps now, so
   // a room no longer draws its briefing card. Documented on RouteDeps;

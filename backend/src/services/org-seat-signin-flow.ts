@@ -456,6 +456,21 @@ export class OrgSeatSignInFlow {
     session.state = { phase: 'done', seatId: stored.seat.seatId, label: stored.seat.label };
   }
 
+  /**
+   * When the oldest Claude sign-in still open in this process began, or
+   * null (note #1008): its PKCE verifier lives only in memory, so an upgrade
+   * that restarts the Workspace would cut it. Finished ones do not count.
+   */
+  openClaudeSignInSince(): number | null {
+    let oldest: number | null = null;
+    for (const session of this.sessions.values()) {
+      if (session.provider !== 'claude' || session.state.phase === 'done') continue;
+      if (Date.now() - session.startedAt > SIGNIN_MAX_AGE_MS) continue;
+      oldest = oldest === null ? session.startedAt : Math.min(oldest, session.startedAt);
+    }
+    return oldest;
+  }
+
   /** The screen's Cancel (or leaving a failed attempt): forget the session. */
   async cancel(userId: string, orgId?: string): Promise<void> {
     await this.restore();
