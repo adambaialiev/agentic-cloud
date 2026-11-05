@@ -6,7 +6,7 @@ import React from 'react';
 import { render as renderBare, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AGENT_GUIDE_PATH, AGENT_LINE, OWN_CLOUD_HEADING, PLATFORM_LICENSE_URL, PLATFORM_SOURCE_URL } from './PrivateCopy';
+import { AGENT_GUIDE_PATH, AGENT_LINE, OWN_CLOUD_HEADING, PLATFORM_SOURCE_URL } from './PrivateCopy';
 import Home, { HOME_HEADLINE } from './Home';
 import { ROLLED_APPS } from '../components/CopyArt';
 
@@ -185,20 +185,21 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
 
   // Note #959: the whole platform is open source (the public repository,
   // AGPL-3.0), not only the installer, and nothing says we keep the source.
-  it('links the open-source code and its AGPL-3.0 licence under its heading', () => {
+  // Since note #1002 (the owner, 5 Nov 2026, 12:45 UTC) the licence link is
+  // off the section; the code and why it is Fly stay.
+  it('links the open-source code under its heading, and not the licence', () => {
     render(<PrivateCopy />);
 
     const section = document.querySelector('#with-us')!;
     // Since note #978 the sentence that said it came off; the heading and
-    // the links to the code and its licence say it.
+    // the link to the code say it.
     expect(section.querySelector('p')).toBeNull();
     const links = [...section.querySelectorAll('a')].map((link) => [link.getAttribute('href'), (link.textContent ?? '').replace('(opens in a new tab)', '').trim()]);
     expect(links).toEqual([
       [PLATFORM_SOURCE_URL, 'Read the code'],
-      [PLATFORM_LICENSE_URL, 'The AGPL-3.0 licence'],
       ['/why-fly', 'Why it runs on Fly'],
     ]);
-    expect(PLATFORM_LICENSE_URL).toBe('https://agenticcloudcomputer.com/acc/agentic-cloud?path=LICENSE&file=1');
+    expect(document.body.textContent).not.toMatch(/The AGPL-3\.0 licence/);
   });
 
   // Note #827: the drawing and the film stay; since note #835 the drawing of

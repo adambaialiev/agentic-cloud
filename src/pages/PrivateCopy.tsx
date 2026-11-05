@@ -31,10 +31,12 @@ export const INSTALLER_SOURCE_URL: string | null = 'https://agenticcloudcomputer
    UTC: "The whole platform is open source, we should talk about it in the
    landing page"): the public repository agentic-cloud, answering signed out
    since 1 Nov 2026, under the GNU AGPL-3.0 (its LICENSE; the README says the
-   name and the logo are not under it). The home page links the repository
-   and the licence; the installer's folder stays for /why-fly. */
+   name and the logo are not under it). The home page links the repository;
+   the installer's folder stays for /why-fly. Since note #1002 (the owner,
+   5 Nov 2026, 12:45 UTC: "remove link to 'The AGPL-3.0 licence' in the
+   section Run it in your own cloud") the home page no longer links the
+   licence itself; it is in the repository, which is linked. */
 export const PLATFORM_SOURCE_URL = 'https://agenticcloudcomputer.com/acc/agentic-cloud';
-export const PLATFORM_LICENSE_URL = `${PLATFORM_SOURCE_URL}?path=LICENSE&file=1`;
 
 
 
@@ -183,13 +185,12 @@ export function OwnCloud() {
       <NewTabHint id="own-cloud-new-tab" />
       <div className="mt-6 sm:mt-8">
         <div id="with-us">
-          {/* The platform's code and its licence (note #959; the installer's code
-              until then), and why it is Fly (note #838). Since note #999 they
-              sit right under the heading: its "Nothing of yours stays with
-              us." came off. */}
+          {/* The platform's code (note #959; the installer's code until
+              then) and why it is Fly (note #838). Since note #999 they sit
+              right under the heading: its "Nothing of yours stays with us."
+              came off. Since note #1002 the licence link is gone too. */}
           <div className="flex flex-wrap items-center gap-x-7 gap-y-4">
             <SecondaryLink href={PLATFORM_SOURCE_URL}>Read the code</SecondaryLink>
-            <SecondaryLink href={PLATFORM_LICENSE_URL}>The AGPL-3.0 licence</SecondaryLink>
             <SecondaryLink href={WHY_FLY_PATH}>Why it runs on Fly</SecondaryLink>
           </div>
         </div>
