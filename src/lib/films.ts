@@ -66,7 +66,10 @@ export function filmUrl(path: string): string {
    5 Nov 2026, 06:26, 06:49 and 06:54 UTC: shot 12 out, no agent names in
    the handout shot, two new lines on the Workplace window, three sections):
    the wide one 1:19, 1280x720, 3.5 MB; the tall one 1:26, 720x1280,
-   5.3 MB; same encode, posters from the ninth masters in the bundle. */
+   5.3 MB; same encode, posters from the ninth masters in the bundle.
+   Since note #998 the site ships no posters: until the film's first frame
+   the frame is a plain fill in the film's own background colour
+   (FILM_BACKGROUND in Home.tsx). */
 export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-ninth-1280x720.mp4';
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:

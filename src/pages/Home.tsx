@@ -4,8 +4,6 @@ import { Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
-import productFilmPoster from '../assets/films/bookface-2006-home-film-ninth-poster.jpg';
-import productFilmTallPoster from '../assets/films/bookface-2006-home-film-vertical-ninth-poster.jpg';
 import { HowToStart, OwnCloud } from './PrivateCopy';
 
 /**
@@ -130,15 +128,21 @@ export const FILM_SECTION_NAMES = ['The ask', 'The team', 'The result'] as const
    names are short enough to read there whole, so they are the same. */
 export const FILM_SECTION_SHORT_NAMES = FILM_SECTION_NAMES;
 const sectionsAt = (starts: number[]): Section[] => starts.map((at, i) => ({ at, label: FILM_SECTION_NAMES[i]!, short: FILM_SECTION_SHORT_NAMES[i]! }));
+/* The film's own background colour, read off the encoded files (every
+   frame of the opening card and the blank first frame, both shapes: RGB
+   252, 252, 249; Chrome paints 251, 252, 249). It is the placeholder until
+   the film's first frame is drawn (note #998): no poster. A new cut that
+   changes its background changes this. */
+export const FILM_BACKGROUND = '#fcfcf9';
 export const PRODUCT_FILM: Film | null = {
   src: filmUrl(PRODUCT_FILM_PATH),
-  poster: productFilmPoster,
+  background: FILM_BACKGROUND,
   length: 78.97,
   sections: sectionsAt([0, 17.9, 50.6]),
 };
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
-  poster: productFilmTallPoster,
+  background: FILM_BACKGROUND,
   length: 86.27,
   sections: sectionsAt([0, 17.9, 57.9]),
 };

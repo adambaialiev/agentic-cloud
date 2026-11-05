@@ -5,8 +5,17 @@ import { useEffect, useRef, useState } from 'react';
  *
  * - It starts by itself (note #965): muted, inline on a phone, looping, from
  *   code after the page loads and never by the autoPlay attribute, so a
- *   visitor whose system asks for reduced motion gets the poster and our own
- *   play button instead, and so does one whose browser refuses to start it.
+ *   visitor whose system asks for reduced motion gets the placeholder and
+ *   our own play button instead, and so does one whose browser refuses to
+ *   start it.
+ * - Until its first frame is drawn the frame is a plain fill in the film's
+ *   own background colour, with nothing on it (note #998, the owner, 5 Nov
+ *   2026, 11:30 UTC: "instead of video I see a flash of a frame with Iris
+ *   ... Let placeholder be pure background with the same color from the
+ *   video but without content"). Until then a poster, a frame rendered
+ *   from each cut, lay over the film and showed for a moment on a slow or
+ *   cold load. The film opens on that same background, so the handover has
+ *   no visible step, and the site ships no poster files.
  * - It never shows the browser's controls (note #970): no control bar on a
  *   hover or a tap, no picture-in-picture or cast, no right-click "Show
  *   controls".
@@ -19,8 +28,8 @@ import { useEffect, useRef, useState } from 'react';
  *   sm): a phone held upright gets the 9:16 cut, a phone turned sideways, a
  *   tablet and a desk get the wide one. The frame's shape follows the same
  *   query in CSS, so the page never jumps when the script arrives; the
- *   poster is a <picture> whose <source media> is that query, so the browser
- *   fetches one poster; and the film's address is set from code only once
+ *   placeholder's colour follows it too; and the film's address is set
+ *   from code only once
  *   the query has been read, so it fetches one film. Turning the phone
  *   round swaps the film (and only then fetches the other).
  * - The frame is always the film's own shape, never stretched or
@@ -46,7 +55,9 @@ export type Section = { at: number; label: string; short?: string };
 
 export const TALL_FILM_QUERY = '(max-width: 639px)';
 
-export type Film = { src: string; poster: string; length?: number; sections?: Section[] };
+/** A film: its address, its own background colour (the placeholder until
+ *  its first frame is drawn), its length and its sections. */
+export type Film = { src: string; background: string; length?: number; sections?: Section[] };
 type Shape = 'wide' | 'tall';
 type State = 'still' | 'starting' | 'playing' | 'paused';
 
@@ -63,8 +74,6 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
     latest.current = next;
     setState(next);
   };
-  /* The poster lies over the film until a frame of it has been drawn. */
-  const [drawn, setDrawn] = useState(false);
 
   /* Which film this screen gets, read once the page runs, and again when
      the phone is turned round. */
@@ -199,7 +208,11 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
 
   return (
     <figure className="relative m-0 w-full">
-      <div data-film-frame className={`relative overflow-hidden rounded-[20px] bg-panel-soft shadow-[0_0_0_1px_rgb(31_30_29/0.1)] ${frame}`}>
+      <div
+        data-film-frame
+        className={`relative overflow-hidden rounded-[20px] bg-[var(--film-bg)] shadow-[0_0_0_1px_rgb(31_30_29/0.1)] max-sm:bg-[var(--film-bg-tall)] ${frame}`}
+        style={{ ['--film-bg' as string]: wide.background, ['--film-bg-tall' as string]: (tall ?? wide).background }}
+      >
         <video
           ref={video}
           className="absolute inset-0 block h-full w-full object-cover"
@@ -213,8 +226,7 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
           onContextMenu={(event) => event.preventDefault()}
           onPlay={() => go('playing')}
           onPause={() => { if (latest.current === 'playing') go('paused'); }}
-          onPlaying={() => setDrawn(true)}
-          onEmptied={() => { setDrawn(false); setTime(0); }}
+          onEmptied={() => setTime(0)}
           onSeeked={(event) => setTime(event.currentTarget.currentTime)}
           onLoadedMetadata={(event) => {
             if (pendingJump.current !== null) {
@@ -223,17 +235,6 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
             }
           }}
         />
-        {drawn ? null : (
-          <picture>
-            {tall ? <source media={TALL_FILM_QUERY} srcSet={tall.poster} /> : null}
-            <img
-              src={wide.poster}
-              alt=""
-              data-film-poster
-              className="pointer-events-none absolute inset-0 block h-full w-full object-cover"
-            />
-          </picture>
-        )}
         {state === 'playing' || state === 'paused' ? (
           <button
             type="button"

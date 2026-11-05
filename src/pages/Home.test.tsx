@@ -3,7 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent } from '@testing-library/react';
-import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL } from './Home';
+import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_BACKGROUND, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
@@ -228,15 +228,16 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect(video.getAttribute('src')).toBe(filmUrl(PRODUCT_FILM_PATH));
     expect(video.querySelectorAll('source')).toHaveLength(0);
     expect(filmUrl('films/x.mp4')).toMatch(/^https:\/\/[^/]+\/films\/x\.mp4$/);
-    // The poster comes with the site, one picture whose source the browser
-    // picks by the same query, so it fetches one poster.
-    const poster = film.querySelector('picture')!;
-    expect(poster.querySelector('img')!.getAttribute('src')).toBe(PRODUCT_FILM.poster);
-    expect(PRODUCT_FILM.poster).not.toMatch(/^https?:/);
+    // No poster since note #998: until its first frame the frame is a plain
+    // fill in the film's own background colour, in both shapes, and no
+    // picture lies over the film.
+    expect(film.querySelector('picture, img')).toBeNull();
+    const frame = film.querySelector('[data-film-frame]') as HTMLElement;
+    expect(frame.style.getPropertyValue('--film-bg')).toBe(FILM_BACKGROUND);
+    expect(frame.className).toMatch(/\bbg-\[var\(--film-bg\)\]/);
     if (PRODUCT_FILM_TALL) {
-      const tall = poster.querySelector('source')!;
-      expect(tall.getAttribute('media')).toBe(TALL_FILM_QUERY);
-      expect(tall.getAttribute('srcset')).toBe(PRODUCT_FILM_TALL.poster);
+      expect(frame.style.getPropertyValue('--film-bg-tall')).toBe(FILM_BACKGROUND);
+      expect(frame.className).toMatch(/\bmax-sm:bg-\[var\(--film-bg-tall\)\]/);
     }
     // Never the browser's controls (note #970).
     expect(video.hasAttribute('controls')).toBe(false);
@@ -274,7 +275,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect(names.style.getPropertyValue('--film-names')).toBe(`repeat(${FILM_SECTION_SHORT_NAMES.length}, minmax(0, 1fr))`);
   });
 
-  it('holds still on its poster for reduced motion, and our play button starts it without controls', async () => {
+  it('holds still on its plain placeholder for reduced motion, and our play button starts it without controls', async () => {
     answer();
     screenIs({ still: true });
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
@@ -284,7 +285,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect(play).not.toHaveBeenCalled();
     const video = document.querySelector('#film video')!;
     expect(video.hasAttribute('controls')).toBe(false);
-    expect(document.querySelector('#film picture img')).toBeTruthy();
+    expect(document.querySelector('#film picture, #film img')).toBeNull();
     const button = screen.getByRole('button', { name: /^Play the film of Bookface 2006, built by two people’s agents/ });
     button.focus();
     fireEvent.click(button);
@@ -446,7 +447,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     await settle();
     if (!PRODUCT_FILM) return;
     expect(document.querySelector('#film video')!.hasAttribute('controls')).toBe(false);
-    expect(document.querySelector('#film picture img')).toBeTruthy();
+    expect(document.querySelector('#film picture, #film img')).toBeNull();
     expect(screen.getByRole('button', { name: /^Play the film of Bookface 2006/ })).toBeTruthy();
   });
 });
