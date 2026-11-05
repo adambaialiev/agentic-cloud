@@ -33,6 +33,14 @@
  * reads a release's notes from there first, from the image otherwise. A
  * release's summary in /releases is its notes' title line.
  *   GET  /health                              no sign-in
+ *
+ * The gate (note #1008): a release is OFFERED (in /releases and as latest)
+ * only once it holds an `offered-<version>` tag, which the copy-release job
+ * pushes after the standing test copy upgraded to it and passed both drills
+ * (infra/copy-release/gate.sh), or an operator pushes with a reason
+ * (infra/copy-release/offer.mjs --override). Releases up to GATE_FROM were
+ * offered before the gate and stay so. A release not yet offered can still be
+ * fetched by its exact version, which is how the test copy reaches it.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -48,6 +56,8 @@ export const REPO_NAME = 'acc-copy';
 export const VERSION_SHAPE = /^(\d{4})\.(\d{2})\.(\d{2})\.(\d{1,3})$/;
 const TAG_SHAPE = /^([a-z][a-z0-9-]*?)-(\d{4}\.\d{2}\.\d{2}\.\d{1,3})$/;
 const DIGEST_SHAPE = /^sha256:[a-f0-9]{64}$/;
+/** The last release offered before the gate existed: it and every older one stay offered. */
+export const GATE_FROM = '2026.11.01.1';
 const RELEASE_FILES = new Set(['copy-release.json', 'install.mjs', 'notes.md']);
 const CONTENT_TYPES = {
   'copy-release.json': 'application/json',
@@ -102,6 +112,7 @@ export function createUpdateService({
   now = () => new Date(),
   fetchImpl = fetch,
   notesDir = DEPLOYED_NOTES_DIR,
+  gateFrom = GATE_FROM,
 }) {
   const upstreamAuth = `Basic ${Buffer.from(`x:${upstreamToken}`).toString('base64')}`;
   const releaseFiles = new Map();
@@ -133,10 +144,17 @@ export function createUpdateService({
     if (!answer.ok) throw new Error(`upstream tags ${answer.status}`);
     return (await answer.json()).tags ?? [];
   };
-  const releasesFor = async (key) => (await allTags())
+  /** Every release the key covers, offered or not. */
+  const releasesFor = async (key, tags) => (tags ?? await allTags())
     .map((tag) => /^release-(.+)$/.exec(tag)?.[1])
     .filter((version) => version && VERSION_SHAPE.test(version) && covers(key, version))
     .sort(compareVersions);
+  /** The releases companies are offered: through the gate, or from before it. */
+  const offeredFor = async (key) => {
+    const tags = await allTags();
+    const passed = new Set(tags.map((tag) => /^offered-(.+)$/.exec(tag)?.[1]).filter(Boolean));
+    return (await releasesFor(key, tags)).filter((version) => passed.has(version) || compareVersions(version, gateFrom) <= 0);
+  };
 
   const readReleaseFile = async (version, name) => {
     const cacheKey = `${version}/${name}`;
@@ -241,7 +259,7 @@ export function createUpdateService({
         return relay(res, await up(`blobs/${digest}`, { method: req.method }), head);
       }
       if (path === '/releases') {
-        const versions = await releasesFor(key);
+        const versions = await offeredFor(key);
         // A summary only where notes exist; a list is never held up by one.
         const summaries = await Promise.all(versions.map((version) => notesFor(version)
           .then((bytes) => (bytes ? notesTitle(bytes.toString('utf8')) : null)).catch(() => null)));
@@ -256,8 +274,10 @@ export function createUpdateService({
       if (file) {
         const name = file[2];
         if (!RELEASE_FILES.has(name)) return send(res, 404, 'No such file in a release.');
+        // latest is the newest OFFERED; an exact version may be one the gate
+        // has not let through yet (the test copy upgrades to it first).
         const versions = await releasesFor(key);
-        const version = file[1] === 'latest' ? versions.at(-1) : file[1];
+        const version = file[1] === 'latest' ? (await offeredFor(key)).at(-1) : file[1];
         if (!version || !versions.includes(version)) {
           return send(res, VERSION_SHAPE.test(file[1]) && !covers(key, file[1]) ? 403 : 404,
             VERSION_SHAPE.test(file[1]) && !covers(key, file[1])
@@ -288,6 +308,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
   const handle = createUpdateService({
+    ...(process.env.OFFER_GATE_FROM?.trim() ? { gateFrom: process.env.OFFER_GATE_FROM.trim() } : {}),
     upstream: process.env.UPSTREAM_REGISTRY || 'https://registry.fly.io',
     upstreamRepo: process.env.UPSTREAM_REPO,
     upstreamToken: process.env.UPSTREAM_TOKEN,

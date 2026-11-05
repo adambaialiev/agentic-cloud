@@ -24,6 +24,10 @@ let updates: {
   createUpdateService: (opts: Record<string, unknown>) => (req: IncomingMessage, res: ServerResponse) => Promise<void>;
   fileFromTar: (archive: Buffer, name: string) => Buffer | null;
 };
+let offer: {
+  offerRelease: (opts: Record<string, unknown>) => Promise<{ already?: boolean; offer?: Record<string, string> }>;
+  offerLine: (offer: Record<string, string>) => string;
+};
 let installer: {
   updatesSource: (opts: Record<string, unknown>) => unknown;
   flyRegistry: (opts: Record<string, unknown>) => unknown;
@@ -143,6 +147,7 @@ beforeAll(async () => {
   signed = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-release/signed.mjs')).href);
   updates = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-updates/server.mjs')).href);
   installer = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-installer/install.mjs')).href);
+  offer = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-release/offer.mjs')).href);
   keyFor = (payload, pem = PEM) => signed.signPayload({ kind: 'update', id: 'k1', customer: 'theirco', domain: 'agents.theirco.test', updatesUntil: '2026-12-31', ...payload }, pem);
   upstream = fakeRegistry('our-token');
   for (const version of ['2026.10.27.1', '2027.02.01.1']) {
@@ -156,12 +161,16 @@ beforeAll(async () => {
   }
   const upstreamUrl = await listen(upstream.handler);
   const handle = updates.createUpdateService({
+    // Every release counts as from before the offer gate (note #1008): these tests are about other things.
+    gateFrom: '9999.12.31.999',
     upstream: upstreamUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
     publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), revoked: new Set(['revoked-id']), requireKey: true,
   });
   serviceUrl = await listen((req, res) => { void handle(req, res); });
   // Licensing off (note #935), the shipped default: no key asked, none read.
   const open = updates.createUpdateService({
+    // Every release counts as from before the offer gate (note #1008): these tests are about other things.
+    gateFrom: '9999.12.31.999',
     upstream: upstreamUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
     publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)),
   });
@@ -289,6 +298,8 @@ describe('release notes: written per release, refused when missing, served by th
     release('2026.11.01.1', {}); // before notes rode in the image
     release('2026.11.09.0', { 'notes.md': GOOD }); // after: its notes are in its image
     const handle = updates.createUpdateService({
+    // Every release counts as from before the offer gate (note #1008): these tests are about other things.
+    gateFrom: '9999.12.31.999',
       upstream: await listen(registry.handler), upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
       publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), notesDir: deployed,
     });
@@ -357,5 +368,65 @@ describe('release notes: written per release, refused when missing, served by th
     expect(readFileSync(path.join(INFRA, 'copy-updates/Dockerfile'), 'utf8')).toContain('COPY copy-release/notes copy-release/notes');
     expect(readFileSync(path.join(INFRA, 'copy-updates/stage.sh'), 'utf8')).toContain('infra/copy-release/notes');
     expect(readFileSync(path.join(INFRA, 'copy-release/build.sh'), 'utf8')).toContain('COPY copy-release.json install.mjs notes.md /');
+  });
+});
+
+describe('the offer gate: companies are offered a release only after the standing test copy passed it (note #1008)', () => {
+  let gated = '';
+  let registryUrl = '';
+  let registry: ReturnType<typeof fakeRegistry>;
+  const VERSIONS = ['2026.11.01.1', '2026.11.10.0', '2026.11.17.0'];
+  beforeAll(async () => {
+    registry = fakeRegistry('our-token');
+    for (const version of VERSIONS) {
+      registry.addImage('acc-copy-releases', `release-${version}`, [gzipSync(tar({
+        'copy-release.json': JSON.stringify({ version, commit: 'abc', images: {} }), 'install.mjs': `// ${version}\n`,
+      }))]);
+    }
+    registryUrl = await listen(registry.handler);
+    const handle = updates.createUpdateService({
+      upstream: registryUrl, upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
+      publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)),
+    });
+    gated = await listen((req, res) => { void handle(req, res); });
+  });
+  const offerIt = (extra: Record<string, unknown>) => offer.offerRelease({
+    repo: 'acc-copy-releases', token: 'our-token', base: registryUrl, log: () => {}, now: () => new Date('2026-11-10T09:30:00Z'), ...extra,
+  });
+
+  it('keeps every release from before the gate offered, and holds back a new one, which its exact version still reaches', async () => {
+    const listed = await (await fetch(`${gated}/releases`)).json();
+    expect(listed.latest).toBe('2026.11.01.1');
+    expect(listed.releases.map((r: { version: string }) => r.version)).toEqual(['2026.11.01.1']);
+    expect((await fetch(`${gated}/releases/latest/copy-release.json`)).headers.get('x-release')).toBe('2026.11.01.1');
+    // The test copy upgrades to it by name before anyone is offered it.
+    const exact = await fetch(`${gated}/releases/2026.11.10.0/copy-release.json`);
+    expect(exact.status).toBe(200);
+    expect((await exact.json()).version).toBe('2026.11.10.0');
+  });
+
+  it('offers it once the gate passed, and names it latest', async () => {
+    const done = await offerIt({ version: '2026.11.10.0', gate: 'passed', run: 'j1' });
+    expect(offer.offerLine(done.offer!)).toBe('offered 2026.11.10.0: the standing test copy upgraded to it and passed both drills (run j1)');
+    const listed = await (await fetch(`${gated}/releases`)).json();
+    expect(listed.latest).toBe('2026.11.10.0');
+    expect(listed.releases.map((r: { version: string }) => r.version)).toEqual(['2026.11.01.1', '2026.11.10.0']);
+    expect((await offerIt({ version: '2026.11.10.0', gate: 'passed' })).already).toBe(true);
+  });
+
+  it('lets an operator through only with who and why, and keeps both in the release for good', async () => {
+    await expect(offerIt({ version: '2026.11.17.0', gate: 'override', by: 'Ada' })).rejects.toThrow('An override needs --by <who> and --reason');
+    expect((await (await fetch(`${gated}/releases`)).json()).latest).toBe('2026.11.10.0');
+    await offerIt({ version: '2026.11.17.0', gate: 'override', by: 'Ada', reason: 'test copy down for a Fly outage; drill passed by hand' });
+    expect((await (await fetch(`${gated}/releases`)).json()).latest).toBe('2026.11.17.0');
+    // The offer's own file, as anyone reading the registry finds it.
+    const doc = JSON.parse(registry.manifests.get('acc-copy-releases')!.get('offered-2026.11.17.0')!.bytes.toString());
+    const layer = registry.blobs.get(doc.layers[0].digest)!;
+    const kept = JSON.parse(updates.fileFromTar(layer, 'offer.json')!.toString());
+    expect(kept).toEqual({ version: '2026.11.17.0', gate: 'override', at: '2026-11-10T09:30:00.000Z', by: 'Ada', reason: 'test copy down for a Fly outage; drill passed by hand' });
+  });
+
+  it('refuses a version with no release', async () => {
+    await expect(offerIt({ version: '2026.12.01.0', gate: 'passed' })).rejects.toThrow('There is no release 2026.12.01.0 in acc-copy-releases.');
   });
 });

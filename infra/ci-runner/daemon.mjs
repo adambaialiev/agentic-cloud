@@ -896,7 +896,8 @@ if (recoveryDrillConfigured()) {
 // transient reason (the mirror race, a host briefly down) had no sanctioned
 // re-run short of SSHing into this box and running run-job.sh by hand. A
 // dispatch rebuilds main's HEAD — same guardrails as a push, minus the commit.
-const DISPATCHABLE = new Set(['machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'deploy-prod', 'deploy-site']);
+// copy-release-gate joined 2026-11-05 (note #1008): the offer gate again, for a release already built.
+const DISPATCHABLE = new Set(['machine-image', 'git-host-image', 'msg-host-image', 'copy-release', 'copy-release-gate', 'deploy-prod', 'deploy-site']);
 
 /** Head SHA of a branch — a dispatched job builds the same code a push would. */
 async function resolveHeadSha(ref) {
