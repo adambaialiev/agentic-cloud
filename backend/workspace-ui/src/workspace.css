@@ -7629,3 +7629,21 @@ h2.mailfileshead { margin-top: 16px; }
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em;
   overflow-wrap: anywhere; }
 #orgCopyHealthCard .crow .cline.wrap { flex-wrap: wrap; row-gap: 2px; }
+
+/* The link to What's new under the Workspace line (note #1006): a word in
+   the accent, not a row, because it belongs to that one line. */
+#orgCopyHealthCard .copywhatsnew { margin-top: 4px; }
+#orgCopyHealthCard .copywhatsnew .linkword, #screenCopyReleases .linkword {
+  appearance: none; background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: var(--accent); font-weight: 500; cursor: pointer; }
+/* What's new (note #1006): one card per release, its title first, its
+   three sections one level under it. */
+#screenCopyReleases .copyupgradecard { margin-bottom: 8px; }
+#screenCopyReleases .copyupgradecard code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95em; overflow-wrap: anywhere; }
+#screenCopyReleases .copyreleasecard { padding: 16px 18px 4px; }
+#screenCopyReleases .copyreleasetitle { font-size: var(--ui-lg); line-height: var(--ui-lg-leading); font-weight: 600; margin-bottom: 4px; }
+#screenCopyReleases .copyreleasenotes { background: none; padding: 0; margin-top: 0; }
+#screenCopyReleases .copyreleasenotes h3 { font-size: var(--ui-base); font-weight: 600; margin: 14px 0 4px; }
+#screenCopyReleases .copyreleasecard .empty { padding: 4px 0 14px; }
+

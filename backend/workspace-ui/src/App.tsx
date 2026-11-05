@@ -76,6 +76,7 @@ import { OrgCloudScreen } from './screens/org/OrgCloudScreen.js';
 import { UnknownScreen } from './screens/Placeholder.js';
 import { MailScreen } from './screens/mail/MailScreen.js';
 import { MailSetupScreen } from './screens/mail/MailSetupScreen.js';
+import { CopyReleasesScreen } from './screens/org/CopyReleasesScreen.js';
 import { MailConversationScreen } from './screens/mail/MailConversationScreen.js';
 import { ProfileScreen } from './screens/profile/ProfileScreen.js';
 import { SeatScreen } from './screens/seats/SeatScreen.js';
@@ -308,6 +309,8 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   organizations: <OrganizationsScreen />,
   organization: <OrganizationScreen />,
   organizationCloud: <OrgCloudScreen />,
+  // What's new, in a company's own Agentic Cloud (note #1006).
+  copyReleases: <CopyReleasesScreen />,
   organizationPeople: <PeopleScreen />,
   organizationInvite: <InviteScreen />,
   // The conversation is Home since 2026-10-10; its old address only sends

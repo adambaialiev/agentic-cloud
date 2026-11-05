@@ -105,6 +105,9 @@ export const WORKSPACE_ROUTE_DEFS = {
   organizations: { screen: 'orgpicker', pattern: ['workplaces'], scope: 'account' },
   organization: { screen: 'org', pattern: ['workplace'], scope: 'org' },
   organizationCloud: { screen: 'orgcloud', pattern: ['workplace', 'cloud'], scope: 'org' },
+  /** What's new, in a company's own Agentic Cloud (note #1006): the
+   *  releases newer than the running one, with their notes. Admins only. */
+  copyReleases: { screen: 'copyreleases', pattern: ['workplace', 'whats-new'], scope: 'org' },
   /** The Workspace Agent's conversation used to live here (note #423); since
    *  2026-10-10 it IS Home, and this address only sends its reader there. */
   recapChat: { screen: 'recapChat', pattern: ['recap'], scope: 'org' },

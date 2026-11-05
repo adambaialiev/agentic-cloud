@@ -12544,6 +12544,21 @@ self.addEventListener('activate', (event) => {
   });
 
   /**
+   * What's new (note #1006): the releases newer than the one this copy runs,
+   * and the running one, each with its notes from the update service. For an
+   * admin of the workplace; not a copy, no screen.
+   */
+  router.get('/api/copy/releases', async (req, res) => {
+    if (!deps.copyHealth) return res.status(404).json({ error: 'Only your own Agentic Cloud has this screen.' });
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return;
+    if (ctx.membership.role !== 'admin') return res.status(403).json({ error: 'Only an admin sees what each release brings.' });
+    return res.json(await deps.copyHealth.releases());
+  });
+
+  /**
    * The diagnostics bundle (note #813): the health report and which settings
    * are set, as a file the admin downloads. It leaves the copy only if they
    * send it to us; nothing here sends anything anywhere.

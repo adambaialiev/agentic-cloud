@@ -23,22 +23,41 @@
  *   GET  /v2/acc-copy/tags/list               the release tags the key covers
  *   GET|HEAD /v2/acc-copy/manifests/<ref>     <image>-<version>, or a digest
  *   GET|HEAD /v2/acc-copy/blobs/<digest>
- *   GET  /releases                            {latest, releases:[{version, date}]}
- *   GET  /releases/<version|latest>/<file>    copy-release.json, install.mjs
+ *   GET  /releases                            {latest, releases:[{version, date, summary?}]}
+ *   GET  /releases/<version|latest>/<file>    copy-release.json, install.mjs, notes.md
+ *
+ * Release notes (note #1006): a release cut since notes existed carries its
+ * notes.md in its release image, beside copy-release.json. Releases cut
+ * before that (2026.10.27.9 to 2026.11.01.1) are immutable and hold none, so
+ * this service also ships infra/copy-release/notes/ in its own deploy and
+ * reads a release's notes from there first, from the image otherwise. A
+ * release's summary in /releases is its notes' title line.
  *   GET  /health                              no sign-in
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createServer as createHttpServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
 import { publicKeyFrom, verifySigned } from '../copy-release/signed.mjs';
+import { notesTitle } from '../copy-release/notes.mjs';
 
 export const REPO_NAME = 'acc-copy';
 /** A release is named by the day it was cut and a counter: 2026.10.27.1. */
 export const VERSION_SHAPE = /^(\d{4})\.(\d{2})\.(\d{2})\.(\d{1,3})$/;
 const TAG_SHAPE = /^([a-z][a-z0-9-]*?)-(\d{4}\.\d{2}\.\d{2}\.\d{1,3})$/;
 const DIGEST_SHAPE = /^sha256:[a-f0-9]{64}$/;
-const RELEASE_FILES = new Set(['copy-release.json', 'install.mjs']);
+const RELEASE_FILES = new Set(['copy-release.json', 'install.mjs', 'notes.md']);
+const CONTENT_TYPES = {
+  'copy-release.json': 'application/json',
+  'install.mjs': 'text/javascript; charset=utf-8',
+  'notes.md': 'text/markdown; charset=utf-8',
+};
+/** The notes this deploy ships, for releases whose image holds none. */
+export const DEPLOYED_NOTES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '../copy-release/notes');
+/** A release image found without notes is not asked again sooner than this. */
+const MISSING_NOTES_RETRY_MS = 3_600_000;
 const MANIFEST_TYPES = [
   'application/vnd.oci.image.index.v1+json',
   'application/vnd.oci.image.manifest.v1+json',
@@ -82,6 +101,7 @@ export function createUpdateService({
   requireKey = false,
   now = () => new Date(),
   fetchImpl = fetch,
+  notesDir = DEPLOYED_NOTES_DIR,
 }) {
   const upstreamAuth = `Basic ${Buffer.from(`x:${upstreamToken}`).toString('base64')}`;
   const releaseFiles = new Map();
@@ -139,6 +159,20 @@ export function createUpdateService({
     const file = fileFromTar(Buffer.from(await blob.arrayBuffer()), name);
     if (file) releaseFiles.set(cacheKey, file);
     return file;
+  };
+
+  /** A release's notes: this deploy's copy first (releases that predate
+   *  notes in the image), then the release image's own notes.md. */
+  const missingNotes = new Map();
+  const notesFor = async (version) => {
+    const deployed = path.join(notesDir, `${version}.md`);
+    if (VERSION_SHAPE.test(version) && existsSync(deployed)) return readFileSync(deployed);
+    const missingSince = missingNotes.get(version);
+    if (missingSince !== undefined && now().getTime() - missingSince < MISSING_NOTES_RETRY_MS) return null;
+    const bytes = await readReleaseFile(version, 'notes.md');
+    if (bytes) missingNotes.delete(version);
+    else missingNotes.set(version, now().getTime());
+    return bytes;
   };
 
   const send = (res, status, body, headers = {}) => {
@@ -208,9 +242,14 @@ export function createUpdateService({
       }
       if (path === '/releases') {
         const versions = await releasesFor(key);
+        // A summary only where notes exist; a list is never held up by one.
+        const summaries = await Promise.all(versions.map((version) => notesFor(version)
+          .then((bytes) => (bytes ? notesTitle(bytes.toString('utf8')) : null)).catch(() => null)));
         return send(res, 200, {
           customer: key.customer, updatesUntil: key.updatesUntil, latest: versions.at(-1) ?? null,
-          releases: versions.map((version) => ({ version, date: releaseDate(version) })),
+          releases: versions.map((version, i) => ({
+            version, date: releaseDate(version), ...(summaries[i] ? { summary: summaries[i] } : {}),
+          })),
         });
       }
       const file = /^\/releases\/([^/]+)\/([^/]+)$/.exec(path);
@@ -225,10 +264,10 @@ export function createUpdateService({
               ? `Your update key covers releases until ${key.updatesUntil}.`
               : 'No such release.');
         }
-        const bytes = await readReleaseFile(version, name);
-        if (!bytes) return send(res, 404, 'No such file in that release.');
+        const bytes = name === 'notes.md' ? await notesFor(version) : await readReleaseFile(version, name);
+        if (!bytes) return send(res, 404, name === 'notes.md' ? 'That release has no notes.' : 'No such file in that release.');
         res.writeHead(200, {
-          'content-type': name.endsWith('.json') ? 'application/json' : 'text/javascript; charset=utf-8',
+          'content-type': CONTENT_TYPES[name],
           'content-length': bytes.length, 'x-release': version,
         });
         return res.end(head ? undefined : bytes);

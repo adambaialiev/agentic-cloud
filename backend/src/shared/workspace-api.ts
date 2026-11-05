@@ -1740,6 +1740,26 @@ export interface WorkspaceCopyUpdates {
   howToUpgrade: string | null;
 }
 
+/** One release on the What's new screen (note #1006). */
+export interface WorkspaceCopyRelease {
+  version: string;
+  date: string | null;
+  /** The notes' title line, from the update service's list. */
+  summary: string | null;
+  /** The notes, as written (Markdown); null when they could not be read. */
+  notes: string | null;
+  /** The release this copy runs. */
+  running: boolean;
+}
+
+/** GET api/copy/releases — a private copy only, for its admins (note
+ *  #1006): every release newer than the running one, newest first, then the
+ *  running one itself. */
+export interface WorkspaceCopyReleases {
+  updates: WorkspaceCopyUpdates;
+  releases: WorkspaceCopyRelease[];
+}
+
 /** GET api/copy/health — a private copy only, for its admins (note #813). */
 export interface WorkspaceCopyHealth {
   release: string | null;

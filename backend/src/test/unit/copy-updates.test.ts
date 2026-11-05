@@ -262,3 +262,100 @@ describe('licensing off: the update service hands releases to anyone (note #935)
     expect(Object.keys(copied)).toEqual(IMAGES);
   });
 });
+
+describe('release notes: written per release, refused when missing, served by the update service (note #1006)', () => {
+  type Notes = {
+    notesProblem: (text: string) => string | null;
+    notesTitle: (text: string) => string;
+    readNotes: (version: string, dir?: string) => { file?: string; title?: string; problem?: string };
+    NOTES_DIR: string;
+  };
+  let notes: Notes;
+  let notesUrl = '';
+  const GOOD = "# Release notes on every upgrade\n\n## What's new\n\n- A What's new screen.\n\n## Fixed\n\n- Nothing.\n\n## Needs you\n\n- Nothing.\n";
+  beforeAll(async () => {
+    notes = await import(/* @vite-ignore */ pathToFileURL(path.join(INFRA, 'copy-release/notes.mjs')).href);
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    // This deploy's own notes: one release cut before notes rode in images.
+    const deployed = mkdtempSync(path.join(tmpdir(), 'deployed-notes-'));
+    writeFileSync(path.join(deployed, '2026.11.01.1.md'), GOOD.replace('Release notes on every upgrade', 'Email set up from the Workspace'));
+    const registry = fakeRegistry('our-token');
+    const release = (version: string, files: Record<string, string>) => {
+      registry.addImage('acc-copy-releases', `backend-${version}`, [gzipSync(Buffer.from(`backend ${version}`))]);
+      registry.addImage('acc-copy-releases', `release-${version}`, [gzipSync(tar({ 'copy-release.json': JSON.stringify({ version }), 'install.mjs': '//\n', ...files }))]);
+    };
+    release('2026.10.27.4', {}); // a hand-built test release: no notes anywhere
+    release('2026.11.01.1', {}); // before notes rode in the image
+    release('2026.11.09.0', { 'notes.md': GOOD }); // after: its notes are in its image
+    const handle = updates.createUpdateService({
+      upstream: await listen(registry.handler), upstreamRepo: 'acc-copy-releases', upstreamToken: 'our-token',
+      publicKey: signed.publicKeyFrom(signed.publicKeyX(privateKey)), notesDir: deployed,
+    });
+    notesUrl = await listen((req, res) => { void handle(req, res); });
+  });
+
+  it('checks a notes file\'s shape: a title, then What\'s new, Fixed and Needs you, none empty', () => {
+    expect(notes.notesProblem(GOOD)).toBeNull();
+    expect(notes.notesTitle(GOOD)).toBe('Release notes on every upgrade');
+    expect(notes.notesProblem("## What's new\n- x\n")).toContain('first line must be the title');
+    expect(notes.notesProblem("# T\n## What's new\n- x\n## Needs you\n- x\n")).toContain('in that order');
+    expect(notes.notesProblem("# T\n## What's new\n- x\n## Fixed\n\n## Needs you\n- x\n")).toContain('"## Fixed" is empty');
+  });
+
+  it('refuses to cut a release whose notes are missing, before anything is built', async () => {
+    const { spawnSync } = await import('node:child_process');
+    expect(notes.readNotes('2099.01.01.0').problem).toContain('no release notes for 2099.01.01.0');
+    const cli = spawnSync('node', [path.join(INFRA, 'copy-release/notes.mjs'), 'check', '2099.01.01.0'], { encoding: 'utf8' });
+    expect(cli.status).toBe(1);
+    expect(cli.stderr).toContain('refusing to cut 2099.01.01.0');
+    // build.sh itself stops there: no docker, no registry, exit 1.
+    const build = spawnSync('bash', [path.join(INFRA, 'copy-release/build.sh')], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: process.env.PATH, VERSION: '2099.01.01.0', SHA: 'abc', RELEASE_REPO: 'none', MACHINE_IMAGE: 'x', APP_RUNTIME_IMAGE: 'y', FLY_API_TOKEN: 'z' },
+    });
+    expect(build.status).toBe(1);
+    expect(build.stderr).toContain('refusing to cut 2099.01.01.0: no release notes');
+    expect(build.stdout).not.toContain('== backend');
+  });
+
+  it('has notes for the release in VERSION and for every release companies were offered', async () => {
+    const { readFileSync } = await import('node:fs');
+    const version = readFileSync(path.join(INFRA, 'copy-release/VERSION'), 'utf8').trim();
+    for (const v of [version, '2026.10.27.9', '2026.10.28.0', '2026.10.28.1', '2026.10.29.0', '2026.11.01.0', '2026.11.01.1']) {
+      const read = notes.readNotes(v);
+      expect(read.problem, v).toBeUndefined();
+      // Words for an admin: no file names, no proposal numbers.
+      const text = readFileSync(read.file!, 'utf8');
+      expect(text, v).not.toMatch(/#\d{2,}|PR \d|\.(ts|tsx|mjs|sh)\b/);
+    }
+  });
+
+  it('lists each release with its notes\' title, and serves the notes from the deploy or the image', async () => {
+    const listed = await (await fetch(`${notesUrl}/releases`)).json();
+    expect(listed.latest).toBe('2026.11.09.0');
+    expect(listed.releases).toEqual([
+      { version: '2026.10.27.4', date: '2026-10-27' },
+      { version: '2026.11.01.1', date: '2026-11-01', summary: 'Email set up from the Workspace' },
+      { version: '2026.11.09.0', date: '2026-11-09', summary: 'Release notes on every upgrade' },
+    ]);
+    const old = await fetch(`${notesUrl}/releases/2026.11.01.1/notes.md`);
+    expect(old.status).toBe(200);
+    expect(old.headers.get('content-type')).toBe('text/markdown; charset=utf-8');
+    expect(await old.text()).toContain('# Email set up from the Workspace');
+    const latest = await fetch(`${notesUrl}/releases/latest/notes.md`);
+    expect(latest.headers.get('x-release')).toBe('2026.11.09.0');
+    expect(await latest.text()).toBe(GOOD);
+    const none = await fetch(`${notesUrl}/releases/2026.10.27.4/notes.md`);
+    expect(none.status).toBe(404);
+    expect(await none.text()).toBe('That release has no notes.');
+    expect((await fetch(`${notesUrl}/releases/2026.12.01.0/notes.md`)).status).toBe(404);
+  });
+
+  it('ships the backfilled notes in its own deploy', async () => {
+    const { readFileSync } = await import('node:fs');
+    expect(readFileSync(path.join(INFRA, 'copy-updates/Dockerfile'), 'utf8')).toContain('COPY copy-release/notes copy-release/notes');
+    expect(readFileSync(path.join(INFRA, 'copy-updates/stage.sh'), 'utf8')).toContain('infra/copy-release/notes');
+    expect(readFileSync(path.join(INFRA, 'copy-release/build.sh'), 'utf8')).toContain('COPY copy-release.json install.mjs notes.md /');
+  });
+});

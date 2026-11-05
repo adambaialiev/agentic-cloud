@@ -84,7 +84,7 @@ node install.mjs upgrade [--release <version>] [--drill] [--json]
 
 `--drill` rehearses that rollback on purpose and proves the database came back. An interrupted upgrade carries on when run again.
 
-The health page (the workplace page's "This copy" section, for admins) says on its Workspace line which release runs and which is the latest: "Up to date" in green, "Newer release" in amber with this command to run, "Can't tell" when the update service has not been reached lately.
+The health page (the workplace page's "This copy" section, for admins) says on its Workspace line which release runs and which is the latest: "Up to date" in green, "Newer release" in amber with this command to run, "Can't tell" when the update service has not been reached lately. Its "What's new" link opens every release newer than yours, newest first, each with its notes in plain words (what is new, what is fixed, and anything you must do after the upgrade), then what your own release brought. The notes come from the update service: `GET https://acc-updates.fly.dev/releases/<version>/notes.md`.
 
 ## What it creates in your organization
 

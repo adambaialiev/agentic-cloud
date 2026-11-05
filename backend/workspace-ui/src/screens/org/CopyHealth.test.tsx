@@ -100,7 +100,8 @@ describe('a private copy\'s health, for its admins (note #813)', () => {
     expect(hint.textContent).toBe(UPGRADE);
     expect(hint.querySelector('code')!.textContent).toBe('node install.mjs upgrade');
     // No button: upgrading from the Workspace is a later piece.
-    expect(document.querySelector('[data-part="workspace"] button')).toBeNull();
+    // (Its one button is the What's new link, note #1006.)
+    expect([...document.querySelectorAll('[data-part="workspace"] button')].map((b) => b.textContent)).toEqual(['What\'s new']);
   });
 
   it('unknown: says when the update service was last reached, in grey (note #1005)', async () => {

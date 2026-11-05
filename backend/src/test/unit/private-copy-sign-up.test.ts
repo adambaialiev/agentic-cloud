@@ -267,6 +267,7 @@ describe('a private copy takes people by invite (note #808)', () => {
     const health = {
       report: async () => ({ release: '2026.10.27.1', commit: 'abc', checkedAt: '2026-10-27T18:00:00.000Z', parts: [{ key: 'workspace', name: 'Workspace', ok: true, line: 'Up 1 h' }] }),
       diagnostics: async () => ({ kind: 'acc-copy-diagnostics', generatedAt: '2026-10-27T18:00:00.000Z' }),
+      releases: async () => ({ updates: { state: 'current' }, releases: [{ version: '2026.10.27.1', running: true, notes: '# First' }] }),
     };
     const { users, orgStorage, post, get, person } = await start({ privateCopy: true, firstAccountCode: CODE, copyHealth: health } as unknown as Partial<RouteDeps>);
     const adminJar = cookieJar(setCookies(await post('auth/email/register', person('ada', { firstAccountCode: CODE }))));
@@ -277,6 +278,11 @@ describe('a private copy takes people by invite (note #808)', () => {
     expect(file.status).toBe(200);
     expect(file.headers.get('content-disposition')).toBe('attachment; filename="copy-diagnostics-2026-10-27.json"');
     expect(await get('api/copy/health').then((r) => r.status)).toBe(401);
+    // What's new (note #1006): the same admins, the same refusals.
+    const releases = await get('api/copy/releases', adminJar);
+    expect(releases.status).toBe(200);
+    expect(await releases.json()).toMatchObject({ releases: [{ version: '2026.10.27.1', running: true }] });
+    expect(await get('api/copy/releases').then((r) => r.status)).toBe(401);
 
     // A member who is not an admin is told, in words.
     const [ada] = await users.getAllUsers();
@@ -290,11 +296,13 @@ describe('a private copy takes people by invite (note #808)', () => {
     expect(refused.status).toBe(403);
     expect(await refused.json()).toMatchObject({ error: expect.stringContaining('Only an admin') });
     expect(await get('api/copy/diagnostics', beaJar).then((r) => r.status)).toBe(403);
+    expect(await get('api/copy/releases', beaJar).then((r) => r.status)).toBe(403);
 
     // Our own platform has no such page.
     await new Promise<void>((resolve) => server!.close(() => resolve()));
     const ours = await start({});
     expect(await ours.get('api/copy/health').then((r) => r.status)).toBe(404);
+    expect(await ours.get('api/copy/releases').then((r) => r.status)).toBe(404);
   });
   it('signs a removed or declined person out at once, and lets them back only through an invite (note #814)', async () => {
     const { users, orgStorage, post, get, send, person } = await start({ privateCopy: true, firstAccountCode: CODE });
