@@ -58,10 +58,10 @@ Do not ask about email. It is not part of the install: once their Agentic Cloud 
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/4a4f07db66498df0c7d6cff3be7beeeaddb4ba2c?path=infra/copy-installer/install.mjs'
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/d9ae4793bfc82f7a92eeb7a758bd6c8183108876?path=infra/copy-installer/install.mjs'
 ```
 
-Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `aec069572118ec47056b4304057d4529856ba51429f23d32a8a6f91a1981a72f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
+Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `806d8a460029ecb0f9fd232a288d38067f3a2e723015f0b8c30cfd8798117f7d`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
 
 It is one file of plain JavaScript with no packages. Its code and tests are public in the platform's own open-source repository, at https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer, so you and your person can read every line first.
 
