@@ -74,15 +74,22 @@ It only looks. It asks your domain's own name servers for each record, and Fly f
 ## Upgrade
 
 ```sh
-node install.mjs upgrade [--release <version>] [--drill] [--json]
+node install.mjs upgrade [--release <version>] [--drill [backend]] [--here] [--json]
 ```
 
-1. It copies the new release into your registry.
-2. It snapshots the database and takes Fly snapshots of the two disks that hold data.
-3. It moves each app to the new release and runs the smoke test.
-4. If anything fails, it puts every app back on the release it came from and restores the database snapshot.
+The upgrade runs on the **upgrader**: a one-off machine in your own Fly organization (app `<prefix>-upgrader`), started from the new release's own `upgrader` image. It removes itself when it is done. This command only starts it and follows its lines, so closing the terminal does not stop the upgrade. The upgrader:
 
-`--drill` rehearses that rollback on purpose and proves the database came back. An interrupted upgrade carries on when run again.
+1. reads your Agentic Cloud's shape from Fly itself (which release each app runs, its settings), so no file of yours can be out of date;
+2. copies the new release into your registry;
+3. snapshots the database and takes Fly snapshots of the two disks that hold data;
+4. moves each app to the new release and runs the smoke test;
+5. if anything fails, even the new Workspace itself, puts every app back on the release it came from and restores the database snapshot.
+
+It keeps its record in your backup bucket (`upgrades/` in `<prefix>-backups`): what it was asked, every step, and how it ended, plus a heartbeat. If its machine is cut off, Fly starts it again and it carries on from there. Only one upgrade runs at a time.
+
+- `--drill` rehearses the rollback on purpose and proves the database came back.
+- `--drill backend` makes the new Workspace not start, and proves the way back works without it.
+- `--here` runs the upgrade on this computer instead, as installers before 5 November 2026 did. The command does that by itself, once, for a copy whose running release predates the upgrader, and says so.
 
 The health page (the workplace page's "This copy" section, for admins) says on its Workspace line which release runs and which is the latest: "Up to date" in green, "Newer release" in amber with this command to run, "Can't tell" when the update service has not been reached lately. Its "What's new" link opens every release newer than yours, newest first, each with its notes in plain words (what is new, what is fixed, and anything you must do after the upgrade), then what your own release brought. The notes come from the update service: `GET https://acc-updates.fly.dev/releases/<version>/notes.md`.
 
@@ -92,6 +99,7 @@ The health page (the workplace page's "This copy" section, for admins) says on i
 | --- | --- |
 | Four apps: the image registry, the backend (the Workspace and its database), the code host, and the router for previews and sites | `<prefix>-images`, `-backend`, `-git`, `-router` |
 | Two buckets: files, and database backups | `<prefix>-media`, `<prefix>-backups` |
+| The upgrader's app, made by the Workspace when it starts: no address, no disk, a machine only while an upgrade runs. Its secrets are the Workspace's own Fly token and the backup bucket's keys | `<prefix>-upgrader` |
 | Two disks: the database and the code | created with the apps |
 | Certificates for the domain, `git.` and `*.` | requested from Fly |
 
