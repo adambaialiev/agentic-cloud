@@ -8,7 +8,7 @@ import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
-import { ASK_HEADING } from '../components/AskTheCode';
+import { GUEST_HEADING } from '../components/GuestAgent';
 
 void React;
 
@@ -63,7 +63,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(links.some((link) => link.closest('footer'))).toBe(true);
   });
 
-  it('runs six screens: the film, the workplace, the own cloud, how to build yours, ask the agent, the footer', () => {
+  it('runs six screens: the film, the workplace, the own cloud, how to build yours, an agent of your own, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -73,12 +73,14 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       HOME_HEADLINE,
       OWN_CLOUD_HEADING,
       'Build your own Agentic Cloud.',
-      ASK_HEADING,
+      GUEST_HEADING,
     ]);
-    // Note #1012 (Adam, 6 Nov 2026, 05:50 UTC): the Ask screen is last, and
-    // the footer is the only thing under it.
-    const ask = document.querySelector('main > section#ask')!;
-    expect(ask.nextElementSibling?.tagName).toBe('FOOTER');
+    // Note #1012 (Adam, 6 Nov 2026, 05:50 UTC): the agent screen is last,
+    // and the footer is the only thing under it. Since note #1039 it is the
+    // guest's own agent; Hugo's "Ask an agent that reads the code." is gone.
+    const last = document.querySelector('main > section#your-agent')!;
+    expect(last.nextElementSibling?.tagName).toBe('FOOTER');
+    expect(document.querySelector('#ask')).toBeNull();
     // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
     // screens: the film, the workplace drawing, the own cloud, how to build
     // yours, the footer. The headline is the page's one h1, not drawn.
@@ -196,10 +198,10 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // nothing live: the prerendered page is the whole page. Since note #1010
   // the one exception is the guide's status, read once for its face and name
   // (the screen is whole without it).
-  it('reads nothing live but the guide’s status', () => {
+  it('reads nothing live but the guest agent’s status', () => {
     answer();
     draw();
-    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/workspace/api/public/ask/status']);
+    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/workspace/api/public/guest']);
     expect(document.querySelector('[role="status"][aria-label="Loading"]')).toBeNull();
   });
 });
@@ -464,7 +466,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start', 'ask',
+      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start', 'your-agent',
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);

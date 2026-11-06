@@ -1006,6 +1006,18 @@ export async function startMockWorkspace(repoRoot, options = {}) {
       respondJson(200, { state: 'resting', until: null, agent: null });
       return true;
     }
+    // The home page's guest agent (note #1039) reads where this browser
+    // stands once on load. No guest agents are switched on in these worlds,
+    // so it answers as the real backend does then (note #1038): resting, no
+    // time, no agent; the screen draws its resting box.
+    if (req.method === 'GET' && url.pathname === '/workspace/api/public/guest') {
+      respondJson(200, {
+        state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null,
+        quietUntil: null, endsAt: null, messagesLeft: null, linePosition: null, until: null, removedReason: null, turnstileSiteKey: null,
+        limits: { messageMaxChars: 1000, quietMinutes: 30, lifetimeHours: 3, messagesMax: 40 },
+      });
+      return true;
+    }
     // The founder's card (note #786) reads the founder's public address. No
     // such person lives in these worlds, so it answers as the real backend
     // does for a word nobody holds, and the card stands down to its door.

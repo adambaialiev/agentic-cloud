@@ -1,4 +1,4 @@
-import { AskTheCode } from '../components/AskTheCode';
+import { GuestAgentSection } from '../components/GuestAgent';
 import SiteFooter from '../components/SiteFooter';
 import { FOOTER_PITCH } from '../lib/product-copy';
 import { Screen } from '../components/landing-kit';
@@ -303,13 +303,12 @@ export default function Home() {
       <OwnCloud />
       <HowToStart />
 
-      {/* ── Ask an agent that reads the code (note #1010) ─────────────── */}
-      {/* Adam, 5 Nov 2026: a visible agent that answers visitors' questions
-          from the public code. Since note #1012 (Adam, 6 Nov 2026, 05:50
-          UTC: "the agent section should be the last. Only the footer should
-          be below") it is the page's last screen, after "Build your own
-          Agentic Cloud.", with only the footer under it. */}
-      <AskTheCode />
+      {/* ── An agent of your own (notes #1036, #1038, #1039) ──────────── */}
+      {/* Adam, 6 Nov 2026: a visitor makes a real Claude Code agent of their
+          own, talks to it and deletes it. It took the place of "Ask an agent
+          that reads the code." (note #1010, Hugo), the page's last screen
+          since note #1012, with only the footer under it. */}
+      <GuestAgentSection />
 
       <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide mark />
     </main>
