@@ -13,7 +13,11 @@ import { LiveSites } from '../../components/LiveSurfaces';
  * a time (config/access.ts, note #771); the Sites screen with each site's
  * shape and monthly estimate (notes #960, #993); the directory at /apps on
  * the copy's own address (shared/public-host.ts, note #807), members only
- * since note #1014 (routes/workspace.ts /api/public/apps).
+ * since note #1014 (routes/workspace.ts /api/public/apps). Same day, the
+ * custom-domain section: the address that keeps working beside a custom
+ * domain is the site's own under the copy's domain (APPS_DOMAIN, which the
+ * installer sets to it, infra/copy-installer), not agentbuilt.app; addCustomDomain
+ * (services/deployment-service.ts) adds a certificate and never removes it.
  */
 const chapter: DocChapter = {
   slug: 'sites-and-domains',
@@ -168,8 +172,8 @@ const chapter: DocChapter = {
           </p>
           <p>
             Once the record is visible, the certificate is issued within minutes, and the agent
-            can confirm the domain reads <Ui>READY</Ui>. The <code>agentbuilt.app</code> address
-            keeps working beside your domain. The Workspace has no domains screen, so to see which
+            can confirm the domain reads <Ui>READY</Ui>. The site&rsquo;s own address under your
+            Agentic Cloud&rsquo;s domain keeps working beside it. The Workspace has no domains screen, so to see which
             domains a site answers on, ask an agent. An admin&rsquo;s agent can take a domain off
             again.
           </p>
