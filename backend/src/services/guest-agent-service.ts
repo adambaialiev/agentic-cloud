@@ -303,8 +303,7 @@ export class GuestAgentService {
       return this.blankStatus('removed', { agent, removedReason: row.removedReason ?? 'quiet' });
     }
     if (row.phase === 'creating') {
-      const fromSpare = Boolean(row.steps?.find((s) => s.id === 'computer')?.done && row.steps?.find((s) => s.id === 'code')?.done && row.preparedAt !== row.claimedAt);
-      return this.blankStatus('creating', { agent, steps: row.steps ?? null, estimateSeconds: fromSpare ? 15 : 120, createdAt: row.claimedAt, machine: { ...GUEST_AGENT_MACHINE, awake: true } });
+      return this.blankStatus('creating', { agent, steps: row.steps ?? null, estimateSeconds: row.fromSpare ? 15 : 120, createdAt: row.claimedAt, machine: { ...GUEST_AGENT_MACHINE, awake: true } });
     }
     const now = this.now();
     const turnId = this.runningByAgent.get(row.agentId) ?? null;
@@ -435,6 +434,7 @@ export class GuestAgentService {
         phase: 'creating',
         keyHash,
         claimedAt: nowIso,
+        fromSpare: true,
         lastActiveAt: nowIso,
         steps: [{ id: 'computer', done: true }, { id: 'code', done: true }, { id: 'claude', done: false }, { id: 'hello', done: false }],
         transcript: { ...spare.transcript, createdAt: nowIso },

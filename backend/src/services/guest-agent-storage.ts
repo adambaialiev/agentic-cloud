@@ -23,6 +23,8 @@ export interface GuestAgentRow {
   /** When it was made (reserved, for a spare) and when a visitor claimed it. */
   preparedAt: string;
   claimedAt: string | null;
+  /** Claimed from a ready spare (seconds), not built from nothing (minutes). */
+  fromSpare?: boolean;
   /** The last message or end of a turn: the quiet clock starts here. */
   lastActiveAt: string | null;
   messagesUsed: number;
