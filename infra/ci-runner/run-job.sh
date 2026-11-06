@@ -307,6 +307,8 @@ run_copy_release_gate() {
   VERSION="$(tr -d '[:space:]' < infra/copy-release/VERSION)" \
     COPY_TEST_FLY_TOKEN="$COPY_TEST_FLY_TOKEN" FLY_API_TOKEN="$FLY_API_TOKEN" \
     COPY_TEST_STATE_DIR="${COPY_TEST_STATE_DIR:-$WORKDIR/copy-test}" \
+    COPY_TEST_ADMIN_EMAIL="${COPY_TEST_ADMIN_EMAIL:-}" COPY_TEST_ADMIN_PASSWORD="${COPY_TEST_ADMIN_PASSWORD:-}" \
+    COPY_TEST_VOICE_OPENROUTER_KEY="${COPY_TEST_VOICE_OPENROUTER_KEY:-}" \
     RELEASE_REPO="${COPY_RELEASE_REPO:-acc-copy-releases}" GATE_RUN="${SHA:0:12}" \
     ./infra/copy-release/gate.sh
 }

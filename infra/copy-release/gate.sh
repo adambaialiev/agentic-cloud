@@ -12,14 +12,20 @@
 #   1. --drill backend: the new Workspace is made not to start, and the old
 #      release and its database come back without it;
 #   2. --drill: the new release comes up, fails on purpose, and is put back;
-#   3. the upgrade itself, and the copy's own health check after it.
+#   3. the upgrade itself, and the copy's own health check after it;
+#   4. one real transcription (note #1030): a short recording goes through the
+#      copy's own transcribe route on its workplace's OpenRouter key, and the
+#      gate fails if the words do not come back (infra/copy-release/voice-check.mjs).
 # Only then is `offered-<version>` pushed (infra/copy-release/offer.mjs),
 # and the update service names it latest. Any failure stops here: the release
 # stays built but unoffered, and companies keep the one they were offered.
 #
 # COPY_TEST_FLY_TOKEN is the scratch organization's token. FLY_API_TOKEN is
 # ours, which may push to the release registry. COPY_TEST_STATE_DIR holds the
-# test copy's <name>-copy.json (names and addresses only).
+# test copy's <name>-copy.json (names and addresses only). The voice step
+# signs in as the test copy's admin with COPY_TEST_ADMIN_EMAIL and
+# COPY_TEST_ADMIN_PASSWORD, and saves COPY_TEST_VOICE_OPENROUTER_KEY as the
+# workplace's key when voice-to-text is off there. None of them is printed.
 set -euo pipefail
 
 : "${VERSION:?VERSION unset}"
@@ -30,6 +36,7 @@ NAME="${COPY_TEST_NAME:-acc-testcopy}"
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INSTALLER="${COPY_TEST_INSTALLER:-$REPO_ROOT/infra/copy-installer/install.mjs}"
 OFFER="${COPY_TEST_OFFER:-$REPO_ROOT/infra/copy-release/offer.mjs}"
+VOICE_CHECK="${COPY_TEST_VOICE_CHECK:-$REPO_ROOT/infra/copy-release/voice-check.mjs}"
 STATE="$COPY_TEST_STATE_DIR/$NAME-copy.json"
 [ -f "$STATE" ] || { echo "no test copy state at $STATE — see the knowledge page private-copy, 'The standing test copy'" >&2; exit 1; }
 
@@ -51,10 +58,15 @@ UPDATES=()
 STARTED=$(date +%s)
 step() {
   local title=$1; shift
+  run_step "$title" node "$INSTALLER" "$@"
+}
+
+run_step() {
+  local title=$1; shift
   local at; at=$(date +%s)
   echo
   echo "== $title ($(date -u +%H:%M:%S) UTC)"
-  if (cd "$COPY_TEST_STATE_DIR" && FLY_API_TOKEN="$COPY_TEST_FLY_TOKEN" node "$INSTALLER" "$@"); then
+  if (cd "$COPY_TEST_STATE_DIR" && FLY_API_TOKEN="$COPY_TEST_FLY_TOKEN" "$@"); then
     echo "== $title: passed in $(( $(date +%s) - at )) s"
   else
     local code=$?
@@ -79,6 +91,7 @@ step "drill backend: the new Workspace never starts, the old one comes back with
 step "drill: the new release comes up, fails on purpose, and is put back" upgrade --name "$NAME" --release "$VERSION" --drill --json "${UPDATES[@]}"
 step "upgrade to $VERSION" upgrade --name "$NAME" --release "$VERSION" --json "${UPDATES[@]}"
 step "the test copy's own health" status --state "$STATE" --json
+run_step "voice-to-text: one real transcription on the workplace's own key" node "$VOICE_CHECK" --state "$STATE"
 cleanup_peers
 
 echo

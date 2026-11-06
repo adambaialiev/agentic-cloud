@@ -12,7 +12,7 @@ import path from 'node:path';
 
 const GATE = path.resolve(__dirname, '../../../../infra/copy-release/gate.sh');
 
-function run({ failOn }: { failOn?: string } = {}) {
+function run({ failOn, voiceFails }: { failOn?: string; voiceFails?: boolean } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'gate-'));
   const calls = path.join(dir, 'calls.txt');
   writeFileSync(path.join(dir, 'acc-testcopy-copy.json'), JSON.stringify({ prefix: 'acc-testcopy', org: 'scratch-org' }));
@@ -27,6 +27,13 @@ function run({ failOn }: { failOn?: string } = {}) {
     import { appendFileSync } from 'node:fs';
     appendFileSync(${JSON.stringify(calls)}, 'offer ' + process.argv.slice(2).join(' ') + ' token=' + process.env.FLY_API_TOKEN + ' repo=' + process.env.RELEASE_REPO + '\\n');
   `);
+  // The voice-to-text check (note #1030): records what it was handed, never a key's value.
+  writeFileSync(path.join(dir, 'voice.mjs'), `
+    import { appendFileSync } from 'node:fs';
+    appendFileSync(${JSON.stringify(calls)}, 'voice ' + process.argv.slice(2).join(' ').replace(/\\S*acc-testcopy-copy.json/, 'STATE')
+      + ' admin=' + process.env.COPY_TEST_ADMIN_EMAIL + ' key=' + (process.env.COPY_TEST_VOICE_OPENROUTER_KEY ? 'set' : 'unset') + '\\n');
+    if (${JSON.stringify(Boolean(voiceFails))}) process.exit(1);
+  `);
   const flyDir = path.join(dir, 'fly');
   spawnSync('mkdir', ['-p', flyDir]);
   writeFileSync(path.join(flyDir, 'flyctl'), '#!/bin/sh\n[ "$1" = wireguard ] && [ "$2" = list ] && echo "[]"\nexit 0\n');
@@ -37,6 +44,8 @@ function run({ failOn }: { failOn?: string } = {}) {
       PATH: process.env.PATH, HOME: dir, VERSION: '2026.11.10.0', COPY_TEST_FLY_TOKEN: 'scratch-token', FLY_API_TOKEN: 'our-token',
       COPY_TEST_STATE_DIR: dir, COPY_TEST_FLYCTL_DIR: flyDir, COPY_TEST_INSTALLER: path.join(dir, 'installer.mjs'),
       COPY_TEST_OFFER: path.join(dir, 'offer.mjs'), RELEASE_REPO: 'acc-copy-releases', GATE_RUN: 'abc123',
+      COPY_TEST_VOICE_CHECK: path.join(dir, 'voice.mjs'), COPY_TEST_ADMIN_EMAIL: 'ada@testcopy.example',
+      COPY_TEST_ADMIN_PASSWORD: 'pw', COPY_TEST_VOICE_OPENROUTER_KEY: 'sk-or-v1-test',
     },
   });
   return { ...result, calls: existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n') : [] };
@@ -51,6 +60,7 @@ describe('the offer gate script (note #1008)', () => {
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --drill --json token=scratch-token',
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --json token=scratch-token',
       `install status --state ${r.calls[3]!.split('--state ')[1]!.split(' ')[0]} --json token=scratch-token`,
+      'voice --state STATE admin=ada@testcopy.example key=set',
       'offer 2026.11.10.0 --gate passed --run abc123 token=our-token repo=acc-copy-releases',
     ]);
     expect(r.stdout).toContain('GATE PASSED for 2026.11.10.0');
@@ -63,6 +73,15 @@ describe('the offer gate script (note #1008)', () => {
     expect(r.calls.some((call) => call.startsWith('offer'))).toBe(false);
     expect(r.stdout).toContain('GATE FAILED: release 2026.11.10.0 is built but NOT offered. Companies keep the release they were offered.');
     expect(r.stdout).toContain('offer.mjs 2026.11.10.0 --override --by <who> --reason');
+  });
+
+  it('a transcription that brings no words back offers nothing (note #1030)', () => {
+    const r = run({ voiceFails: true });
+    expect(r.status).toBe(1);
+    expect(r.calls.at(-1)).toBe('voice --state STATE admin=ada@testcopy.example key=set');
+    expect(r.calls.some((call) => call.startsWith('offer'))).toBe(false);
+    expect(r.stdout).toContain('voice-to-text: one real transcription');
+    expect(r.stdout).toContain('GATE FAILED');
   });
 
   it('a failed upgrade after both drills passed still offers nothing', () => {
@@ -90,6 +109,10 @@ describe('the CI runner wires the gate in (note #1008)', () => {
     expect(fn).toBeGreaterThan(job.indexOf('git checkout --quiet --force "$SHA"'));
     expect(fn).toBeLessThan(job.indexOf('case "$KIND" in'));
     expect(job.slice(fn, job.indexOf('\n}\n', fn))).toContain('./infra/copy-release/gate.sh');
+    // The voice step's sign-in and key reach the gate by name (note #1030).
+    for (const name of ['COPY_TEST_ADMIN_EMAIL', 'COPY_TEST_ADMIN_PASSWORD', 'COPY_TEST_VOICE_OPENROUTER_KEY']) {
+      expect(job.slice(fn, job.indexOf('\n}\n', fn))).toContain(`${name}="\${${name}:-}"`);
+    }
   });
 
   it('copy-release-gate can be dispatched', () => {
