@@ -58,8 +58,8 @@ const chapter: DocChapter = {
           </p>
           <p>
             The new card reads <Ui>Setting up — a minute or two</Ui>, and it is ready in about
-            that. If the machine cannot be built, the half-made agent is removed. More agents working
-            at the same time means another subscription (see{' '}
+            that. If the machine cannot be built, the half-made agent is removed. Several agents can
+            share one seat, and more seats run more agents at once (see{' '}
             <DocLink href="/docs/your-cloud-and-subscriptions#seats">Your subscriptions</DocLink>).
             Giving one its first job is in{' '}
             <DocLink href="/docs/talking-to-agents">Talking to agents</DocLink>.
@@ -270,7 +270,7 @@ const chapter: DocChapter = {
     { term: 'Where', text: <>Home, the faces beside the message box. Tap a card for the chat; tap the name or face in the chat header for the agent&rsquo;s own screen.</> },
     { term: 'Name and picture', text: 'Assigned from a pool of human names, skipping names you already use. Not chosen or changed by you.' },
     { term: 'Default model', text: <><code>opus</code> for Claude Code, <code>gpt-6.1-sol</code> for Codex, <code>glm-5.3</code> for OpenCode, all at effort <strong>high</strong>.</> },
-    { term: 'More at once', text: 'More agents working at the same time means another subscription.' },
+    { term: 'More at once', text: 'Several agents can share one seat; more seats run more agents at once.' },
     { term: 'Default machine', text: '2 dedicated cores and 4 GB. Its owner can resize it from its screen.' },
     { term: 'Sleep', text: 'About three quiet minutes after the last turn. Wakes in seconds on a message.' },
     { term: 'Context window', text: 'The ring around the face, labelled “Context window N% full”. Amber from 67%, red from 90%. Only a fresh chat resets it.' },

@@ -99,7 +99,7 @@ const chapter: DocChapter = {
             sites, and mail coming in.
           </p>
           <p>
-            More agents working at the same time means another subscription (see{' '}
+            Several agents can share one seat, and more seats run more agents at once (see{' '}
             <DocLink href="/docs/your-cloud-and-subscriptions#seats">Seats</DocLink>).
           </p>
         </>
@@ -195,7 +195,7 @@ const chapter: DocChapter = {
     },
     {
       term: 'More agents at once',
-      text: 'Another subscription.',
+      text: 'Several agents can share one seat; more seats run more at once.',
     },
     {
       term: 'Seat',

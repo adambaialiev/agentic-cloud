@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react';
-import type { WorkspaceKnowledgeProposalRow, WorkspaceProposalRow } from '../../backend/src/shared/workspace-api';
+import type { WorkspaceProposalRow } from '../../backend/src/shared/workspace-api';
 import type { RecapRowView } from '../../backend/src/shared/recap-chat-rows';
 import { chatDayLabel } from '../../backend/workspace-ui/src/screens/chat/chat-notice';
 import { ChatMessageRow } from '../../backend/workspace-ui/src/screens/chat/ChatMessageRow';
@@ -51,18 +51,6 @@ const VAN_MAP: WorkspaceProposalRow = {
   canDecide: true,
   checks: { total: 2, failing: 0, pending: 0, worst: 'success' },
 };
-const ON_CALL: WorkspaceKnowledgeProposalRow = {
-  id: 'kp_4',
-  number: 4,
-  title: 'On-call for the pings pipeline',
-  status: 'open',
-  pages: ['pipeline-on-call'],
-  createdAt: ago(70 * MINUTE),
-  agentName: 'Otis',
-  agentAvatarUrl: FACES.otis,
-  agentId: 'agent_otis',
-  canDecide: true,
-};
 
 type Line =
   | { seq: number; at: string; row: TranscriptRow }
@@ -79,7 +67,7 @@ const LINES = (): Line[] => [
   },
   {
     seq: 2, at: ago(3 * HOUR + 18 * MINUTE),
-    did: { form: 'did', parts: ['Sent to ', { agent: 'Otis' }], body: 'Before Friday’s pilot: alerts on the pings pipeline (lag, dropped pings, a stalled partition job) and an on-call page saying what each one means and what to do. Propose the page when it is ready.' },
+    did: { form: 'did', parts: ['Sent to ', { agent: 'Otis' }], body: 'Before Friday’s pilot: alerts on the pings pipeline (lag, dropped pings, a stalled partition job) and an on-call page in knowledge saying what each one means and what to do.' },
   },
   {
     seq: 3, at: ago(3 * HOUR + 18 * MINUTE),
@@ -96,10 +84,9 @@ const LINES = (): Line[] => [
     seq: 5, at: ago(48 * MINUTE),
     row: {
       seq: 5, role: 'platform', at: ago(48 * MINUTE),
-      text: 'Forwarded PR #43 in northstar-dispatch and knowledge proposal #4.',
+      text: 'Forwarded PR #43 in northstar-dispatch.',
       forwarded: [
         { kind: 'pr', id: 'pr_43', pr: VAN_MAP },
-        { kind: 'knowledge', id: 'kp_4', knowledge: ON_CALL },
       ],
     },
   },
@@ -107,7 +94,7 @@ const LINES = (): Line[] => [
     seq: 6, at: ago(47 * MINUTE),
     row: {
       seq: 6, role: 'agent', at: ago(47 * MINUTE),
-      text: 'Two for you, checks green on both. Theo’s rollback rehearsal passed in 48 seconds.',
+      text: 'One for you, checks green. Otis’s on-call page is live in knowledge, and Theo’s rollback rehearsal passed in 48 seconds.',
     },
   },
   {
@@ -189,7 +176,7 @@ export default function LiveChief({ className = '' }: { className?: string }) {
     <LivePanel
       size="compact"
       className={className}
-      says="The Chief of Staff’s conversation, the first screen of the Workspace: James asks for the platform to be ready for Friday’s pilot; the Chief of Staff sends the work to Otis and Ada and brings Theo in for the rollback, later forwards Ada’s proposal and Otis’s knowledge page as cards for James to decide, and on its own hands an unclaimed note to Otis."
+      says="The Chief of Staff’s conversation, the first screen of the Workspace: James asks for the platform to be ready for Friday’s pilot; the Chief of Staff sends the work to Otis and Ada and brings Theo in for the rollback, later forwards Ada’s proposal as a card for James to decide and says Otis’s on-call page is live in knowledge, and on its own hands an unclaimed note to Otis."
     >
       <LiveWorkspace><Screen /></LiveWorkspace>
     </LivePanel>

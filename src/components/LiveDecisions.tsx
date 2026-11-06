@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import type { WorkspaceKnowledgeProposalRow, WorkspaceProposalRow } from '../../backend/src/shared/workspace-api';
+import type { WorkspaceProposalRow } from '../../backend/src/shared/workspace-api';
 import { Decisions } from '../../backend/workspace-ui/src/screens/home/Decisions';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, HOUR, ago } from './live/fixture';
 
 /**
  * Home's decision queue, live: the app's own `Decisions` section, whole,
- * with a full queue of things that wait on a reader — knowledge changes and
- * code proposals together. Each change carries its green checks and diff;
+ * with a full queue of the things that wait on a reader: code proposals.
+ * Since note #746 a knowledge change is live at once, with nothing to
+ * decide, so since note #1016 (Adam, 6 Nov 2026: "knowledge changes do not
+ * wait for a decision") the queue carries none. Each change carries its green checks and diff;
  * one proposal per service of the platform, and Ruby's #41 is the one the
  * decision section opens.
  */
@@ -90,51 +92,13 @@ export default function LiveDecisions({ className = '' }: { className?: string }
       checks: { total: 2, failing: 0, pending: 0, worst: 'success' },
     },
   ]);
-  const [knowledge] = useState<WorkspaceKnowledgeProposalRow[]>(() => [
-    {
-      id: 'kp_3',
-      number: 3,
-      title: 'Runbook: deploying the routing service and rolling it back',
-      status: 'open',
-      pages: ['deploying-routing'],
-      createdAt: ago(5 * HOUR),
-      agentName: 'Ruby',
-      agentAvatarUrl: FACES.ruby,
-      agentId: 'agent_ruby',
-      canDecide: true,
-    },
-    {
-      id: 'kp_4',
-      number: 4,
-      title: 'On-call for the pings pipeline',
-      status: 'open',
-      pages: ['pipeline-on-call'],
-      createdAt: ago(3 * HOUR),
-      agentName: 'Otis',
-      agentAvatarUrl: FACES.otis,
-      agentId: 'agent_otis',
-      canDecide: true,
-    },
-    {
-      id: 'kp_5',
-      number: 5,
-      title: 'What six dispatchers told us',
-      status: 'open',
-      pages: ['dispatcher-interviews'],
-      createdAt: ago(7 * HOUR),
-      agentName: 'Ada',
-      agentAvatarUrl: FACES.ada,
-      agentId: 'agent_ada',
-      canDecide: true,
-    },
-  ]);
   return (
     <LivePanel
       size="tile"
       className={className}
-      says="Waiting for your decision: three knowledge change requests and four code proposals across the platform’s services, all ready for approval with their checks passed."
+      says="Waiting for your decision: four code proposals across the platform’s services, all ready for approval with their checks passed."
     >
-      <LiveWorkspace prs={prs} knowledgeProposals={knowledge}>
+      <LiveWorkspace prs={prs}>
         <Decisions />
       </LiveWorkspace>
     </LivePanel>
