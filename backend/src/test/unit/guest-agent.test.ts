@@ -377,9 +377,9 @@ describe('GuestAgentService — making one', () => {
     expect((waiting.answer as { status: { state: string; linePosition: number } }).status).toMatchObject({ state: 'waiting', linePosition: 1 });
     const gone = await x.service.create({ address: 'c' });
     const goneKey = (gone.answer as { key: string }).key;
-    x.advance(20_000);
+    x.advance(50_000);
     expect((await x.service.status(key)).linePosition).toBe(1);
-    x.advance(20_000); // c stopped polling 40 s ago; b polled 20 s ago
+    x.advance(50_000); // c stopped polling 100 s ago; b polled 50 s ago (grace 90 s)
     await x.service.deleteByVisitor(first.key);
     await x.service.tick();
     await x.service.idle();

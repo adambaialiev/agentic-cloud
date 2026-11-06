@@ -54,8 +54,8 @@ export const GUEST_AGENT_LIMITS = {
   sparesTarget: 1,
   /** Places in the waiting line. */
   lineMax: 20,
-  /** A waiting visitor must have polled within this to keep their place. */
-  linePollGraceMs: 30_000,
+  /** A waiting visitor must have polled within this to keep their place (90 s: Chrome slows a background tab's timers). */
+  linePollGraceMs: 90_000,
   /** Agents made in a UTC day, everyone together. */
   globalPerDay: 40,
   /** Live agents per address. */
