@@ -373,7 +373,7 @@ export interface WorkspaceAgentRow {
    */
   removeAsk?: WorkspaceRepoAsk & { reason?: string };
   /** A sealed public guide (note #1010): its screen lists the visitors' conversations. */
-  sealed?: 'public-guide';
+  sealed?: 'public-guide' | 'guest';
 }
 
 /** One of a member's agents as their People plate and page draw it. */
