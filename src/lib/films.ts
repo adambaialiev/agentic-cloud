@@ -78,4 +78,10 @@ export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-tenth-1280x720.m
 /* Since note #973 a phone gets the tall cut of the same film (Iris, note
    #972, 1:28, 1080x1920 master in Drive), encoded the same way at 720x1280:
    4.9 MB. Its poster is in the site bundle, as every poster is. */
-export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-tenth-720x1280.mp4';
+/* Since note #1019 a phone gets Iris's eleventh vertical cut (note #1018,
+   Adam's two changes of 6 Nov 2026, 08:12 UTC: Iris's and Maya's phones side
+   by side in "The team", the whole Bookface page in "The result"): 1:19, the
+   wide cut's length, 720x1280, 4.8 MB (4,817,700 bytes, SSIM 0.998 against
+   the 1080x1920 master in Drive); same encode, no poster. The desk keeps the
+   tenth wide cut. */
+export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-eleventh-720x1280.mp4';
