@@ -66,6 +66,7 @@ import { OrgGitBackupService, describeOrgGitSweep } from './services/org-git-bac
 import { backfillLegacyOrgOwnership } from './services/org-ownership-backfill.js';
 import { OrgCiService } from './services/org-ci.js';
 import { DatabaseBucketBackup } from './services/database-bucket-backup.js';
+import { MediaBucketMirror } from './services/media-bucket-mirror.js';
 import { createCopyHealth } from './services/copy-health.js';
 import { createReleaseCheck, updatesUrlFrom } from './services/copy-release-check.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
@@ -1038,8 +1039,10 @@ if (ORG_GIT_BACKUP_INTERVAL_MS > 0) {
   console.log('[config] ORG_GIT_BACKUPS=disabled (ORG_GIT_BACKUP_INTERVAL_MS=0)');
 }
 // The database into a bucket (note #807): a private copy's backups live in
-// its own Fly account, taken by this process on a timer. Our own backend has
-// no BACKUP_S3_* and keeps its host script (infra/db-backup).
+// its own Fly account, taken by this process on a timer. Since note #1032 our
+// own backend does it too, into Cloudflare R2 off Fly (DB_BACKUP_INTERVAL_HOURS=6,
+// DB_BACKUP_LOCK_DAYS=30 for the bucket's lock, DB_BACKUP_MONITOR_JOB=db-r2
+// while the Hetzner host script still reports as `db`).
 const BACKUP_S3 = {
   endpoint: process.env.BACKUP_S3_ENDPOINT?.trim() || '',
   name: process.env.BACKUP_S3_BUCKET?.trim() || '',
@@ -1054,18 +1057,81 @@ const dbBackupsOn = Boolean(sqliteDb && sqliteDbPath && BACKUP_S3.endpoint && BA
 if (sqliteDb && sqliteDbPath && dbBackupsOn) {
   const everyHours = DB_BACKUP_EVERY_HOURS;
   const keep = parsePositiveIntEnv('DB_BACKUP_KEEP', 14);
+  const keepWeekly = parseNonNegativeIntEnv('DB_BACKUP_KEEP_WEEKLY', 8);
+  const lockDays = parseNonNegativeIntEnv('DB_BACKUP_LOCK_DAYS', 0);
+  const monitorJob = process.env.DB_BACKUP_MONITOR_JOB?.trim() || 'db';
   new DatabaseBucketBackup({
     dbPath: sqliteDbPath,
     backup: (destination) => sqliteDb.backup(destination),
     bucket: BACKUP_S3,
     keep,
+    keepWeekly,
+    lockDays,
     log: (line) => console.log(`[DbBackup] ${line}`),
     record: (status, detail) => {
       lastDbBackup = { at: new Date().toISOString(), ok: status === 'ok', ...(status === 'ok' ? {} : { detail }) };
-      backupMonitor?.record('db', status, detail);
+      backupMonitor?.record(monitorJob, status, detail);
     },
   }).start(everyHours * 60 * 60_000, 10 * 60_000);
-  console.log(`[config] DB_BACKUPS=every ${everyHours}h into ${BACKUP_S3.name}, keeping ${keep}`);
+  console.log(`[config] DB_BACKUPS=every ${everyHours}h into ${BACKUP_S3.name}, keeping ${keep} dailies + ${keepWeekly} weeklies`
+    + (lockDays ? `, lock ${lockDays}d` : '') + `, reporting as ${monitorJob}`);
+}
+// The platform's media, mirrored nightly into the backups bucket (note #1032):
+// with the control plane on Fly, media only in a Fly bucket has no copy off
+// Fly. Production only, by MEDIA_MIRROR=on; a copy's media and backups share
+// one account, so a mirror there buys nothing.
+if (parseBoolEnv('MEDIA_MIRROR', false)) {
+  const media = {
+    endpoint: process.env.MEDIA_S3_ENDPOINT?.trim() || '',
+    name: process.env.MEDIA_S3_BUCKET?.trim() || '',
+    accessKeyId: process.env.MEDIA_S3_ACCESS_KEY_ID?.trim() || '',
+    secretAccessKey: process.env.MEDIA_S3_SECRET_ACCESS_KEY?.trim() || '',
+    ...(process.env.MEDIA_S3_REGION?.trim() ? { region: process.env.MEDIA_S3_REGION.trim() } : {}),
+  };
+  if (media.endpoint && media.name && media.accessKeyId && media.secretAccessKey && BACKUP_S3.endpoint && BACKUP_S3.name && BACKUP_S3.accessKeyId && BACKUP_S3.secretAccessKey) {
+    const everyHours = parsePositiveIntEnv('MEDIA_MIRROR_INTERVAL_HOURS', 24);
+    new MediaBucketMirror({
+      source: media,
+      target: BACKUP_S3,
+      log: (line) => console.log(`[MediaMirror] ${line}`),
+      record: (status, detail) => backupMonitor?.record('media', status, detail),
+    }).start(everyHours * 60 * 60_000, 20 * 60_000);
+    console.log(`[config] MEDIA_MIRROR=every ${everyHours}h, ${media.name} into ${BACKUP_S3.name}/media/`);
+  } else {
+    console.warn('[config] MEDIA_MIRROR=on needs MEDIA_S3_* and BACKUP_S3_*; not started');
+  }
+}
+// The central code host's repos into the backups bucket (note #1032): the
+// host already bundles and uploads on request (/internal/backup/run, the
+// org hosts' path); this is the clock for OUR central host, whose Hetzner
+// nightly went to the Storage Box. Opt-in by CENTRAL_GIT_BACKUP=on. The first
+// run of a fresh state uploads every repo and may outlive the HTTP call; the
+// host finishes it anyway and the next run is incremental.
+if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
+  if (gitHostClient && BACKUP_S3.endpoint && BACKUP_S3.name && BACKUP_S3.accessKeyId && BACKUP_S3.secretAccessKey) {
+    const everyHours = parsePositiveIntEnv('CENTRAL_GIT_BACKUP_INTERVAL_HOURS', 24);
+    const runCentralGitBackup = async () => {
+      try {
+        const r = await gitHostClient.runBackup({
+          endpoint: BACKUP_S3.endpoint, bucket: BACKUP_S3.name,
+          accessKeyId: BACKUP_S3.accessKeyId, secretAccessKey: BACKUP_S3.secretAccessKey,
+        });
+        const detail = `${r.repos} repos, ${r.uploaded} uploaded (${r.uploadedBytes} bytes), ${r.unchanged} unchanged, ${r.pruned} pruned`
+          + (r.failed.length ? `, ${r.failed.length} failed (first: ${r.failed[0]!.repo}: ${r.failed[0]!.error.slice(0, 120)})` : '');
+        console.log(`[CentralGitBackup] ${detail}`);
+        backupMonitor?.record('git-r2', r.failed.length || r.repos === 0 ? 'fail' : 'ok', detail);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[CentralGitBackup] failed: ${message}`);
+        backupMonitor?.record('git-r2', 'fail', message);
+      }
+    };
+    setInterval(runCentralGitBackup, everyHours * 60 * 60_000).unref();
+    setTimeout(runCentralGitBackup, 15 * 60_000).unref();
+    console.log(`[config] CENTRAL_GIT_BACKUP=every ${everyHours}h into ${BACKUP_S3.name}/git/`);
+  } else {
+    console.warn('[config] CENTRAL_GIT_BACKUP=on needs the git host and BACKUP_S3_*; not started');
+  }
 }
 // A private copy's health page and diagnostics bundle (note #813), for its
 // admins. Every part is asked live: the code host and router by their

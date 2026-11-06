@@ -1,0 +1,21 @@
+# The backups' watchdog, off Fly (note #1032). See README.md.
+# Deploy: CLOUDFLARE_API_TOKEN=<a token with Account:Workers Scripts:Edit> npx wrangler@latest deploy
+# Secrets (Worker secrets, never vars): TELEGRAM_OPS_BOT_TOKEN, TELEGRAM_OPS_CHAT_ID, WATCHDOG_KEY.
+name = "backup-watchdog"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+account_id = "2acc98ccfb2a55a86ba0314e7955f657"
+workers_dev = true
+
+[triggers]
+crons = ["17 */6 * * *"]
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "acc-platform-backups"
+
+[vars]
+BUCKET_NAME = "acc-platform-backups"
+DB_MAX_AGE_HOURS = "8"
+GIT_MAX_AGE_HOURS = "72"
+MEDIA_MAX_AGE_HOURS = "0"

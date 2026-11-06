@@ -1,5 +1,10 @@
 # Database backup (`ia-backend`)
 
+> **Being replaced (note #1032).** The backend's own `database-bucket-backup`
+> now writes the database to Cloudflare R2, off Fly, every 6 hours
+> (`docs/control-plane-on-fly.md`). This job and the Storage Box keep running
+> in parallel until the Hetzner teardown.
+
 Nightly off-box copy of the platform database, straight from the box it lives
 on to the Storage Box.
 
