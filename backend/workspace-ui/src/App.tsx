@@ -98,6 +98,7 @@ import { WorkspaceProvider } from './workspace/WorkspaceProvider.js';
 import { useWorkspace } from './workspace/useWorkspace.js';
 import { RequiredSetup, SetupDone } from './onboarding/RequiredSetup.js';
 import { SetupLoadingSkeleton } from './onboarding/SetupLoadingSkeleton.js';
+import { PRIVATE_COPY } from '../../src/shared/private-copy.js';
 import { setupLikely } from './onboarding/setup-hint.js';
 
 /**
@@ -422,8 +423,11 @@ function WorkspaceRoutes() {
   // "Open Workspace" (the owner, 2026-10-11). Until the session is read,
   // the visitor's page stands, so a stranger never waits on it.
   const visitor = state.status !== 'signed-in';
-  // The app catalogue (note #756) is a door of the same kind.
-  if (publicPage?.kind === 'apps' && visitor) return <AppsScreen />;
+  // The app catalogue (note #756) is a door of the same kind — on our own
+  // platform only. In a company's own Agentic Cloud the apps directory is
+  // the workplace's, members only (note #1014): a stranger meets the
+  // sign-in like any other screen, and reads it once signed in.
+  if (publicPage?.kind === 'apps' && visitor && !PRIVATE_COPY) return <AppsScreen />;
   if (publicPage?.kind === 'person' && publicPage.handle && visitor) {
     return <PublicAddressScreen key={publicPage.handle} handle={publicPage.handle} />;
   }

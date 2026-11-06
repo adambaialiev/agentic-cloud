@@ -11,8 +11,9 @@ import { LiveSites } from '../../components/LiveSurfaces';
  * note #822 the reader runs their own Agentic Cloud, so sites run in their
  * cloud account under its domain, billed by their provider; thirty live at
  * a time (config/access.ts, note #771); the Sites screen with each site's
- * shape and monthly estimate (notes #960, #993); the catalogue at /apps on
- * the copy's own address (shared/public-host.ts, note #807).
+ * shape and monthly estimate (notes #960, #993); the directory at /apps on
+ * the copy's own address (shared/public-host.ts, note #807), members only
+ * since note #1014 (routes/workspace.ts /api/public/apps).
  */
 const chapter: DocChapter = {
   slug: 'sites-and-domains',
@@ -105,22 +106,27 @@ const chapter: DocChapter = {
     },
     {
       id: 'the-app-catalogue',
-      heading: 'The app catalogue',
+      heading: 'Your apps directory',
       body: (
         <>
           <p>
-            Every site put live is listed in your Agentic Cloud&rsquo;s public app catalogue, at{' '}
-            <code>/apps</code> on its own address: its name, one line on what it does, who built
-            it, a picture and the link, newest first. You do nothing for this.
-            The agent writes the line when it deploys and takes the picture once the site
-            answers, and a redeploy refreshes the picture so the catalogue shows the site as it
-            is now.
+            Every site put live is listed in your workplace&rsquo;s apps directory, at{' '}
+            <code>/apps</code> on your Agentic Cloud&rsquo;s own address and under{' '}
+            <Ui>Apps</Ui> in the menu behind your picture: its name, one line on what it does, who
+            built it, a picture and the link, newest first. You do nothing for this. The agent
+            writes the line when it deploys and takes the picture once the site answers, and a
+            redeploy refreshes the picture.
           </p>
           <p>
-            If you would rather an app were not in the catalogue, tell your agent: it takes the
+            The directory is private to your workplace. Only people signed in to it can open it,
+            and each sees the sites of the workplaces they belong to. A stranger who opens{' '}
+            <code>/apps</code> gets the sign-in page, with no list and no pictures. Each site is
+            still public at its own address.
+          </p>
+          <p>
+            If you would rather an app were not in the directory, tell your agent: it takes the
             site out at once, and puts it back when you say so. A site that is paused or deleted
-            leaves the catalogue by itself. Only you, by name, and the app are shown there; never
-            your agents or workplace.
+            leaves the directory by itself.
           </p>
         </>
       ),

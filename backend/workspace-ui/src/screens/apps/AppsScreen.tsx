@@ -11,6 +11,10 @@
  * Signed in, it is a Workspace screen under the Workspace's own header with
  * Back. Categories and usage signals wait until the catalogue is big enough
  * to need them (the owner, 2026-10-15).
+ *
+ * In a company's own Agentic Cloud it is not public (note #1014): App.tsx
+ * sends a stranger to the sign-in, the route answers 401 without a session,
+ * and a member reads only their own workplaces' sites.
  */
 
 import { useEffect, useState } from 'react';
@@ -22,6 +26,7 @@ import { errorMessage } from '../../ui/format.js';
 import { PersonFace } from '../../ui/PersonFace.js';
 import { relative } from '../../ui/time.js';
 import { PublicHead } from '../repos/PublicRepoScreen.js';
+import { PRIVATE_COPY } from '../../../../src/shared/private-copy.js';
 
 /** `ember-coffee.agentbuilt.app`, without the scheme — what the card prints under the name. */
 function hostOf(url: string): string {
@@ -90,6 +95,9 @@ export function AppsScreen() {
             ? `Built and launched here, newest first${count ? ` · ${count === 1 ? '1 app' : `${count} apps`}` : ''}`
             : 'Built and launched here, newest first'}
         </p>
+        {/* A company's own Agentic Cloud (note #1014): the directory is the
+            workplace's, and the page says who can see it. */}
+        {PRIVATE_COPY ? <p className="sub" id="appsPrivate">Only people in your workplace can see this page.</p> : null}
       </div>
       {error ? (
         <div className="public-repo-error" id="appsError">

@@ -119,6 +119,8 @@ The result names `<prefix>-handover.txt` (readable by this user alone). It holds
 2. open the first-admin link in a **new** browser tab and make the first account, which becomes the admin. It works once, and only while there is no account; everyone after them joins through an invite link, and an admin approves each person;
 3. delete the file.
 
+Tell them too that the sites their agents publish are public at their own addresses, but the list of them, the apps directory at `/apps` on their domain, is private: only people signed in to a workplace can open it, and a stranger gets the sign-in page.
+
 Tell them too that email is not set up yet: when they want it, an admin opens Mail in the Workspace and follows "Set up email". It needs their mail provider's details (a Resend key, or any provider's SMTP settings), adds about $4 a month to their Fly bill for the mail receiver, and asks for a few more DNS records.
 
 Keep `<prefix>-copy.json` in this folder, and ask your person to keep a copy somewhere safe: the upgrade reads it, and once the install is done it holds names and addresses only, no keys.

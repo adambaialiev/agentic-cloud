@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildAgentbuiltInstallLines } from '../../services/agent-service.js';
 
 /**
@@ -22,4 +22,14 @@ describe('buildAgentbuiltInstallLines', () => {
     const config = writtenConfig(buildAgentbuiltInstallLines('https://api.example.test', 'ab_tok'));
     expect(config.appsDomain).toBeUndefined();
   });
+
+  it("tells a copy's CLI that the apps directory is members only, and ours nothing (note #1014)", async () => {
+    expect(writtenConfig(buildAgentbuiltInstallLines('https://api.example.test', 'ab_tok')).catalogueMembersOnly).toBeUndefined();
+    vi.stubEnv('PRIVATE_COPY', '1');
+    vi.resetModules();
+    const copy = await import('../../services/agent-service.js');
+    expect(writtenConfig(copy.buildAgentbuiltInstallLines('https://agents.theirco.test', 'ab_tok')).catalogueMembersOnly).toBe(true);
+  });
 });
+
+afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });

@@ -82,6 +82,15 @@ describe('PUBLIC_HOST', () => {
     expect(handles.normalizeHandle('https://agents.theirco.test/acme')).toBe('acme');
   });
 
+  it("names the catalogue: ours the public one, a copy's the workplace's members-only directory (note #1014)", async () => {
+    vi.stubEnv('PRIVATE_COPY', '');
+    expect((await freshHostModule()).CATALOGUE_NAME).toBe('the public catalogue');
+    vi.stubEnv('PRIVATE_COPY', '1');
+    const copy = await freshHostModule();
+    expect(copy.CATALOGUE_NAME).toBe("the workplace's apps directory (members only)");
+    expect(copy.CATALOGUE_FULL_NAME).not.toContain('public');
+  });
+
   it('a development origin without a dot stays ours', async () => {
     vi.stubEnv('WORKSPACE_URL', 'http://localhost:5175');
     expect((await freshHostModule()).PUBLIC_HOST).toBe('agenticcloudcomputer.com');
