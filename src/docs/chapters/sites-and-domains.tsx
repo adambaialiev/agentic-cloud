@@ -18,6 +18,11 @@ import { LiveSites } from '../../components/LiveSurfaces';
  * domain is the site's own under the copy's domain (APPS_DOMAIN, which the
  * installer sets to it, infra/copy-installer), not agentbuilt.app; addCustomDomain
  * (services/deployment-service.ts) adds a certificate and never removes it.
+ * Thirty re-confirmed (note #1020): a workplace inside an own Agentic Cloud
+ * has no org.fly of its own (its machines run on the copy's account), so
+ * isHostedWorkplace holds it to HOSTED_SITE_LIMIT, 30. ORG_DEPLOYMENT_LIMIT
+ * (50) is only for a workplace that connected a Fly account of its own. The
+ * test copy's /api/org/cloud answered sites limit 30 on 6 Nov.
  */
 const chapter: DocChapter = {
   slug: 'sites-and-domains',
