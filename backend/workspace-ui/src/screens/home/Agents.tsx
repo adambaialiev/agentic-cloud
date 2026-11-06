@@ -54,6 +54,7 @@ import {
 } from './agent-words.js';
 import { useNewAgent } from './useNewAgent.js';
 import { freshChatsLabel, freshChatsQuestion, freshChatsResult } from './fresh-chat-words.js';
+import { GuestsCard } from './GuestsCard.js';
 
 /**
  * One quiet line of identity facts — the model and its effort, or the cores
@@ -366,6 +367,7 @@ export function Agents() {
       </div>
       <FreshChatsDoor agents={list} />
       <TeamAgents />
+      <GuestsCard now={now} />
     </div>
   );
 }

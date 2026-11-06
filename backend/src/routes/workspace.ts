@@ -33,6 +33,7 @@ import {
   type WorkspacePublicGuideVisitsAnswer,
 } from '../shared/public-guide.js';
 import { isSealedAgent } from '../types/user.js';
+import { GUEST_AGENT_LIMITS, type GuestCreateAnswer, type GuestDeleteAnswer, type GuestMessageAnswer, type GuestStatus, type GuestStopAnswer, type GuestTurnStatus, type WorkspaceGuestsAnswer } from '../shared/guest-agent.js';
 import type {
   WorkspaceMailAddressClaimAnswer,
   WorkspaceMailApproval,
@@ -3453,6 +3454,88 @@ self.addEventListener('activate', (event) => {
     return status ? res.json(status satisfies PublicAskStatus) : res.status(404).json({ error: 'No such question.' });
   });
 
+  /**
+   * Guests' own agents (note #1038; contract: shared/guest-agent.ts). Anyone,
+   * signed out, makes a sealed agent of their own, talks to it and deletes
+   * it. The visitor's key rides the X-Guest-Key header; the address keys
+   * in-memory limits only (as for the guide) and is never stored.
+   */
+  const guestOwner = async (auth: { userId: string; orgId?: string | null }): Promise<boolean> => {
+    const settings = deps.guestAgents ? await deps.guestAgents.settings().catch(() => null) : null;
+    return Boolean(settings && settings.userId === auth.userId && (settings.orgId ?? null) === (auth.orgId ?? null));
+  };
+  const guestKey = (req: Request): string | undefined => {
+    const value = req.headers?.['x-guest-key'];
+    const key = Array.isArray(value) ? value[0] : value;
+    return typeof key === 'string' ? key.trim() : undefined;
+  };
+  const guestOriginRefused = (req: Request, res: Response): boolean => {
+    publicHeaders(res);
+    if (deps.workspaceWebOrigin && !requestHasWorkspaceOrigin(req, deps.workspaceWebOrigin, deps.workspaceWebCompatibleOrigins)) {
+      res.status(403).json({ state: 'invalid', error: 'Make your agent on agenticcloudcomputer.com.' });
+      return true;
+    }
+    return false;
+  };
+  const withFace = <T extends { agent: { name: string; avatarUrl: string | null } | null }>(status: T): T => (
+    status.agent ? { ...status, agent: { ...status.agent, avatarUrl: status.agent.avatarUrl ?? agentFaceUrl(status.agent.name) ?? null } } : status
+  );
+  const restingGuestStatus = (): GuestStatus => ({
+    state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
+    messagesLeft: null, linePosition: null, until: null, removedReason: null, turnstileSiteKey: null,
+    limits: { messageMaxChars: GUEST_AGENT_LIMITS.messageMaxChars, quietMinutes: 30, lifetimeHours: 3, messagesMax: GUEST_AGENT_LIMITS.messagesMax },
+  });
+
+  router.get('/api/public/guest', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    const status = deps.guestAgents ? await deps.guestAgents.status(guestKey(req)).catch((error) => {
+      console.warn('[guest] status failed:', error);
+      return null;
+    }) : null;
+    return res.json(withFace(status ?? restingGuestStatus()) satisfies GuestStatus);
+  });
+
+  router.post('/api/public/guest', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    if (!deps.guestAgents) return res.json({ status: restingGuestStatus() } satisfies GuestCreateAnswer);
+    const body = (req.body ?? {}) as { turnstileToken?: unknown };
+    const result = await deps.guestAgents.create({ key: guestKey(req), turnstileToken: body.turnstileToken, address: publicAskAddress(req) })
+      .catch((error) => {
+        console.warn('[guest] create failed:', error);
+        return { httpStatus: 200, answer: { status: restingGuestStatus() } as GuestCreateAnswer };
+      });
+    const answer = 'status' in result.answer ? { ...result.answer, status: withFace(result.answer.status) } : result.answer;
+    return res.status(result.httpStatus).json(answer);
+  });
+
+  router.delete('/api/public/guest', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    if (!deps.guestAgents) return res.json({ status: restingGuestStatus() } satisfies GuestDeleteAnswer);
+    const status = await deps.guestAgents.deleteByVisitor(guestKey(req));
+    return res.json({ status: withFace(status) } satisfies GuestDeleteAnswer);
+  });
+
+  router.post('/api/public/guest/messages', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    if (!deps.guestAgents) return res.json({ state: 'status', status: restingGuestStatus() } satisfies GuestMessageAnswer);
+    const body = (req.body ?? {}) as { text?: unknown };
+    const result = await deps.guestAgents.message(guestKey(req), body.text);
+    const answer = result.answer.state === 'status' ? { ...result.answer, status: withFace(result.answer.status) } : result.answer;
+    return res.status(result.httpStatus).json(answer satisfies GuestMessageAnswer);
+  });
+
+  router.get('/api/public/guest/turns/:turnId', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    const status = deps.guestAgents ? await deps.guestAgents.turnStatus(guestKey(req), String(req.params.turnId ?? '')) : null;
+    return status ? res.json(status satisfies GuestTurnStatus) : res.status(404).json({ error: 'No such turn.' });
+  });
+
+  router.post('/api/public/guest/turns/:turnId/stop', async (req, res) => {
+    if (guestOriginRefused(req, res)) return;
+    const state = deps.guestAgents ? await deps.guestAgents.stopTurn(guestKey(req), String(req.params.turnId ?? '')) : null;
+    return state ? res.json({ state } satisfies GuestStopAnswer) : res.status(404).json({ error: 'No such turn.' });
+  });
+
   router.get('/api/public/people/:handle', async (req, res) => {
     publicHeaders(res);
     const person = await publicPerson(String(req.params.handle ?? ''), req);
@@ -3957,9 +4040,10 @@ self.addEventListener('activate', (event) => {
 
     // One workplace's fleet. The human owns the records, but an agent is
     // permanently attached to the org where it was created.
+    // Guests' agents (note #1038) are not the person's fleet: they live in the Guests group.
     const fleet = listAgents(auth.profile.telegram).filter((agent) => (
       agent.orgId ? agent.orgId === auth.orgId : auth.orgId === auth.legacyOrgId
-    ));
+    ) && agent.sealed !== 'guest');
 
     // Two live reads per agent, taken ONCE and reused by both the ordering and
     // the row itself, so the list cannot sort on one answer and render another.
@@ -5007,6 +5091,8 @@ self.addEventListener('activate', (event) => {
       // instead of one that 503s.
       noteFiles: Boolean(deps.mediaStorage),
       ...(quota ? { quota } : {}),
+      // Guests' agents are made in this person's workplace (note #1038): the Guests group asks for them.
+      ...(await guestOwner(auth) ? { guestsHere: true as const } : {}),
     } satisfies WorkspaceStateAnswer);
   });
 
@@ -5740,7 +5826,7 @@ self.addEventListener('activate', (event) => {
     const scoped = listAgents(auth.profile.telegram)
       .filter((agent) => (
         agent.orgId ? agent.orgId === auth.orgId : auth.orgId === auth.legacyOrgId
-      ));
+      ) && agent.sealed !== 'guest');
     const live = scoped
       .filter((agent) => deps.agentLifecycle?.isAgentWorking?.(auth.userId, agent.id))
       .map((agent) => ({
@@ -8609,6 +8695,38 @@ self.addEventListener('activate', (event) => {
     if (!agent || !isSealedAgent(agent) || !deps.publicGuide) return res.status(404).json({ error: 'No such agent on this account' });
     const visit = await deps.publicGuide.getVisit(agent.id, String(req.params.visitId ?? ''));
     return visit ? res.json({ visit } satisfies WorkspacePublicGuideVisitAnswer) : res.status(404).json({ error: 'That visit is no longer kept.' });
+  });
+
+  /**
+   * The Guests screen (note #1038): every guest's agent, live first, then
+   * the last 90 days of transcripts. Read by the person whose workplace
+   * guests are made in, and only by them; they read, and may delete, but
+   * never type into a guest's conversation.
+   */
+  router.get('/api/guests', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!deps.guestAgents || !await guestOwner(auth)) return res.status(404).json({ error: 'Guests are not made in this workplace.' });
+    const list = await deps.guestAgents.listForOwner();
+    const face = <T extends { name: string; avatarUrl: string | null }>(row: T): T => ({ ...row, avatarUrl: row.avatarUrl ?? agentFaceUrl(row.name) ?? null });
+    return res.json({ ...list, live: list.live.map(face), past: list.past.map(face) } satisfies WorkspaceGuestsAnswer);
+  });
+
+  router.get('/api/guests/:agentId', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!deps.guestAgents || !await guestOwner(auth)) return res.status(404).json({ error: 'Guests are not made in this workplace.' });
+    const transcript = await deps.guestAgents.transcriptForOwner(String(req.params.agentId ?? ''));
+    if (!transcript) return res.status(404).json({ error: 'That guest is no longer kept.' });
+    return res.json({ ...transcript, avatarUrl: transcript.avatarUrl ?? agentFaceUrl(transcript.name) ?? null });
+  });
+
+  router.delete('/api/guests/:agentId', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!deps.guestAgents || !await guestOwner(auth)) return res.status(404).json({ error: 'Guests are not made in this workplace.' });
+    const removed = await deps.guestAgents.deleteByOwner(String(req.params.agentId ?? ''));
+    return removed ? res.json({ ok: true }) : res.status(404).json({ error: 'That guest is already gone.' });
   });
 
   router.get('/api/agents/:id/runtime', async (req, res) => {

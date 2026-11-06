@@ -75,6 +75,7 @@ import { VoiceField } from '../../voice/VoiceField.js';
 import { agentClockMoves } from '../home/agent-words.js';
 import { agentDoor } from '../home/agent-door.js';
 import { AgentRow, FreshChatsDoor, NewAgentDoor, PendingAgentRow } from '../home/Agents.js';
+import { GuestsCard } from '../home/GuestsCard.js';
 import { KnowledgeProposalRow, ProposalRow } from '../home/Decisions.js';
 import { TeamAgents } from '../home/TeamAgents.js';
 import { UnreadMessages } from '../home/UnreadMessages.js';
@@ -391,6 +392,7 @@ function AgentSheet({ currentId, onClose, still, pages, moves, onPageBack }: {
             : null}
           {searching ? null : <FreshChatsDoor agents={others} />}
           {searching ? null : <TeamAgents />}
+          {searching ? null : <GuestsCard now={now} />}
         </div>
       </WindowNavigation>
       </div>

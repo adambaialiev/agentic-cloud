@@ -26,6 +26,7 @@
  */
 
 import { estimateGuestHourlyUsd } from './fly-cost-estimates.js';
+import { GUEST_AGENT_MACHINE_SIZE_ID } from '../shared/guest-agent.js';
 
 export type AgentCpuKind = 'shared' | 'performance';
 
@@ -101,6 +102,13 @@ export const WORKSPACE_MACHINE_SIZE = agentMachineSizeById(WORKSPACE_MACHINE_SIZ
  */
 export const SEALED_AGENT_MACHINE_SIZE_ID = 'shared-2x';
 export const SEALED_AGENT_MACHINE_SIZE = agentMachineSizeById(SEALED_AGENT_MACHINE_SIZE_ID)!;
+
+/**
+ * A guest's own agent's machine (note #1038; Adam, 6 Nov 2026): two DEDICATED
+ * cores and 4 GB — the machine the product sells, which is the point of the
+ * taste. The id is the contract's (shared/guest-agent.ts).
+ */
+export const GUEST_AGENT_MACHINE_SIZE = agentMachineSizeById(GUEST_AGENT_MACHINE_SIZE_ID)!;
 
 /**
  * Which rung a machine is standing on, by its actual shape — never by a

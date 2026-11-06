@@ -5799,6 +5799,57 @@ export function agentCliRoutes(deps: RouteDeps): Router {
    * Left out, the defaults, exactly as before. The answer names the pair the
    * agent will run on either way.
    */
+  /**
+   * Guests' own agents on or off (note #1038): the Workspace Agent's switch,
+   * for its own person's workplace. On, a visitor of the home page can make
+   * a sealed agent there, spending this person's Claude seat; off, the
+   * public route rests and the spare is deleted. GET says where it stands.
+   */
+  router.get('/agents/guests', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!auth.purpose) return res.status(403).json({ error: 'Guests are switched by the Workspace Agent alone.' });
+    if (!deps.guestAgents) return res.status(503).json({ error: 'Guests are not available on this backend.' });
+    const settings = await deps.guestAgents.settings();
+    const list = await deps.guestAgents.listForOwner();
+    const mine = settings?.userId === auth.userId && settings.orgId === auth.orgId;
+    return res.json({
+      enabled: Boolean(settings?.enabled && mine),
+      elsewhere: Boolean(settings?.enabled && !mine),
+      live: list.live.length,
+      madeToday: list.madeToday,
+      limits: list.limits,
+      message: settings?.enabled
+        ? mine
+          ? `Guests are ON in this workplace: ${list.live.length} of ${list.limits.liveMax} live, ${list.madeToday} of ${list.limits.globalPerDay} made today, ${list.limits.sparesTarget} spare kept ready.`
+          : 'Guests are ON in another workplace on this platform, not this one.'
+        : 'Guests are OFF: the home page cannot make an agent.',
+    });
+  });
+
+  router.post('/agents/guests', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!auth.purpose) return res.status(403).json({ error: 'Guests are switched by the Workspace Agent alone.' });
+    if (!deps.guestAgents || !deps.orgStorage || !auth.orgId) return res.status(503).json({ error: 'Guests are not available on this backend.' });
+    const body = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof body.enabled !== 'boolean') return res.status(400).json({ error: 'Send { enabled: true | false }: `agentbuilt agent guests on` or `off`.' });
+    const membership = await deps.orgStorage.getMembership(auth.orgId, auth.userId).catch(() => null);
+    if (membership?.role !== 'admin') return res.status(403).json({ error: 'Only a workplace admin\'s Workspace Agent can switch guests on.' });
+    const current = await deps.guestAgents.settings();
+    if (current?.enabled && (current.userId !== auth.userId || current.orgId !== auth.orgId)) {
+      return res.status(409).json({ error: 'Guests are already ON in another workplace on this platform; that one must switch them off first.' });
+    }
+    await deps.guestAgents.setEnabled(auth.userId, auth.orgId, body.enabled);
+    return res.json({
+      ok: true,
+      enabled: body.enabled,
+      message: body.enabled
+        ? 'Guests are ON: a visitor of the home page can now make a sealed agent in this workplace, on its own 2-core machine, thinking with your person\'s Claude seat (it rests at 50% of the 5-hour window or 70% of the week). A spare is being prepared; their agents appear on the Guests screen.'
+        : 'Guests are OFF: the home page cannot make an agent. Live ones finish their 30 quiet minutes; the spare is deleted.',
+    });
+  });
+
   router.post('/agents', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;

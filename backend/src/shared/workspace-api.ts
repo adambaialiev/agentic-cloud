@@ -373,7 +373,7 @@ export interface WorkspaceAgentRow {
    */
   removeAsk?: WorkspaceRepoAsk & { reason?: string };
   /** A sealed public guide (note #1010): its screen lists the visitors' conversations. */
-  sealed?: 'public-guide';
+  sealed?: 'public-guide' | 'guest';
 }
 
 /** One of a member's agents as their People plate and page draw it. */
@@ -667,6 +667,8 @@ export interface WorkspaceOwnJoinRequest {
 
 export interface WorkspaceStateAnswer {
   org: WorkspaceOrgSummary | null;
+  /** Visitors of the home page make their own agents in this person's workplace (note #1038): draw the Guests group. */
+  guestsHere?: true;
   /**
    * Set while the viewer is WAITING on an admin somewhere else. Every account
    * comes with a workplace of its own, so a person who signed up to join a

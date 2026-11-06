@@ -65,6 +65,8 @@ export function isPublicGuide(agent: Pick<AgentRecord, 'sealed' | 'cli'> | null 
 export function seatTooFullForPublic(
   seat: Pick<OrgSeatDocument, 'status' | 'cooldownUntil' | 'usage'> | null | undefined,
   now = Date.now(),
+  /** The shares at which to rest; the guide's by default (guests rest earlier, note #1038). */
+  limits: { fiveHourPercent: number; weekPercent: number } = { fiveHourPercent: PUBLIC_GUIDE_LIMITS.restFiveHourPercent, weekPercent: PUBLIC_GUIDE_LIMITS.restWeekPercent },
 ): { until: string | null } | null {
   if (!seat) return { until: null };
   if (seat.status === 'dead' || seat.status === 'disabled') return { until: null };
@@ -81,8 +83,8 @@ export function seatTooFullForPublic(
     if (Number.isFinite(resets) && resets <= now) return null;
     return { until: Number.isFinite(resets) ? new Date(resets).toISOString() : null };
   };
-  return full('five_hour', PUBLIC_GUIDE_LIMITS.restFiveHourPercent)
-    ?? full('seven_day', PUBLIC_GUIDE_LIMITS.restWeekPercent);
+  return full('five_hour', limits.fiveHourPercent)
+    ?? full('seven_day', limits.weekPercent);
 }
 
 /** What the backend's agent layer lends this service. */

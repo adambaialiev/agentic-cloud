@@ -10,9 +10,10 @@
  * Knowledge page: sealed-public-agent.
  */
 
-/** The one sealed kind there is today. Stored on AgentRecord.sealed. */
+/** The home page's guide. Stored on AgentRecord.sealed. */
 export const PUBLIC_GUIDE_KIND = 'public-guide' as const;
-export type SealedAgentKind = typeof PUBLIC_GUIDE_KIND;
+/** The sealed kinds: the guide (#1010) and a visitor's own agent (#1038, shared/guest-agent.ts). */
+export type SealedAgentKind = typeof PUBLIC_GUIDE_KIND | 'guest';
 
 /**
  * The repository a guide reads: this name, in the guide's own workplace, and
