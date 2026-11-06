@@ -557,7 +557,7 @@ async function drainB() {
   // Platform jobs (today: the mirror) have no GitHub side to post to — their
   // sha reaches GitHub only when the mirror job itself succeeds.
   if (!job.platform) {
-    await postStatus(job.sha, job.context, 'pending', `Running on ia-ci-runner → ${path.basename(logFile)}`);
+    await postStatus(job.sha, job.context, 'pending', `Running on ${process.env.CI_HOST_LABEL || 'ia-ci-runner'} → ${path.basename(logFile)}`);
   }
   // Lane A files a pending the moment it starts; lane B used to file nothing
   // until its verdict, so for the minutes a deploy ran the Mini App had no row
@@ -570,7 +570,7 @@ async function drainB() {
   // finished check into one that spins forever. Nothing below starts until this
   // settles, so those two posts cannot invert. It costs the job one failed POST
   // of latency (15s at worst, no ladder) on a backend that is already sick.
-  await postIngest(job, 'pending', 'Running on ia-ci-runner');
+  await postIngest(job, 'pending', `Running on ${process.env.CI_HOST_LABEL || 'ia-ci-runner'}`);
   log(`start ${job.kind} @ ${job.sha.slice(0, 7)} → ${logFile}`);
   const started = Date.now();
   const child = spawn('bash', [SCRIPT, job.kind, job.sha], {
@@ -595,7 +595,7 @@ async function drainB() {
     const ok = code === 0 || skipped;
     log(`done ${job.kind} @ ${job.sha.slice(0, 7)}: ${skipped ? 'skipped' : ok ? 'success' : `exit ${code}`} in ${mins}m`);
     const description = skipped ? 'Skipped — nothing this job deploys changed since it last shipped'
-      : ok ? `Passed in ${mins}m on ia-ci-runner`
+      : ok ? `Passed in ${mins}m on ${process.env.CI_HOST_LABEL || 'ia-ci-runner'}`
         : `Failed (exit ${code}) in ${mins}m — log: ${path.basename(logFile)}`;
     trackIngest(postIngest(job, skipped ? 'skipped' : ok ? 'success' : 'failure', description,
       ok ? undefined : logTailB64Of(logFile)));

@@ -260,6 +260,15 @@ export class GitHostClient {
     };
   }
 
+  /**
+   * The host's weekly upkeep (note #1032): trash past its window purged, then
+   * `git gc` on every repo. The host answers when the run ends.
+   */
+  async runMaintenance(): Promise<{ code: number; seconds: number; tail: string }> {
+    const body = await this.call('POST', '/internal/maintenance/run', {}) as { code?: number; seconds?: number; tail?: string };
+    return { code: Number(body.code ?? -1), seconds: Number(body.seconds ?? 0), tail: String(body.tail ?? '') };
+  }
+
   async statRepo(userId: string, name: string): Promise<GitHostRepoStat> {
     const body = await this.call('POST', '/internal/repos/stat', { userId, name });
     const protectedBranches = (body as { protectedBranches?: unknown }).protectedBranches;

@@ -28,7 +28,10 @@ PROD_HOST="${IA_PROD_HOST:?IA_PROD_HOST is unset: add the backend host to /etc/i
 DEPLOY_ROOT=/opt/infinite-agents
 # The git host lives on ia-media, beside MinIO — a different box from the
 # backend, reached with the same root key.
-GIT_HOST_HOST="${IA_GIT_HOST_HOST:?IA_GIT_HOST_HOST is unset: add the git host to /etc/ia-ci/env}"
+# Since note #1032 the central code host is the Fly app IA_GIT_HOST_APP and
+# no box answers SSH for it; IA_GIT_HOST_HOST is needed only by the old path.
+GIT_HOST_HOST="${IA_GIT_HOST_HOST:-}"
+[ -n "$GIT_HOST_HOST" ] || [ -n "${IA_GIT_HOST_APP:-}" ] || { echo "neither IA_GIT_HOST_HOST nor IA_GIT_HOST_APP is set" >&2; exit 1; }
 GIT_HOST_ROOT=/opt/agentgit
 
 echo "=== $KIND @ $SHA on $(hostname) ($(date -u +%FT%TZ)) ==="
@@ -41,6 +44,69 @@ echo "=== $KIND @ $SHA on $(hostname) ($(date -u +%FT%TZ)) ==="
 # deploys alive, loudly. Exit 2 = the BUILD ITSELF failed: the commit does not
 # build, and retrying it locally would only reach the same verdict after
 # executing the very code this split exists to keep off the box.
+# --- CI on Fly (note #1032 stage 3) -----------------------------------------
+# On Fly the dispatcher has no dockerd: DOCKER_HOST=ssh://ia-ci-builder points
+# its docker CLI at the builder machine (app CI_BUILDER_APP), which is started
+# for an image job and stopped when it ends. Every step of a job still runs
+# here; only docker itself, and the smoke tests that must sit beside it, run
+# on the builder. With a local dockerd (the Hetzner box) all of this is a no-op.
+builder_remote() { [[ "${DOCKER_HOST:-}" == ssh://* ]]; }
+fly_api() { curl -fsS -m 60 -H "Authorization: Bearer $FLY_API_TOKEN" -H 'content-type: application/json' "$@"; }
+json_get() { node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{let v=JSON.parse(d);for(const k of process.argv[1].split(".").filter(Boolean)){v=v==null?v:v[k]}process.stdout.write(v==null?"":String(v))})' "$1"; }
+BUILDER_ID=""
+builder_down() {
+  [ -n "$BUILDER_ID" ] || return 0
+  fly_api -X POST "https://api.machines.dev/v1/apps/${CI_BUILDER_APP:-ia-ci-builder}/machines/$BUILDER_ID/stop" >/dev/null 2>&1 \
+    && echo "builder $BUILDER_ID stopped" || echo "builder $BUILDER_ID: stop failed (it costs money until stopped)" >&2
+}
+builder_up() {
+  builder_remote || return 0
+  local api="https://api.machines.dev/v1/apps/${CI_BUILDER_APP:-ia-ci-builder}/machines" state
+  BUILDER_ID=$(fly_api "$api" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const m=JSON.parse(d);process.stdout.write(m.length===1?m[0].id:"")})')
+  [ -n "$BUILDER_ID" ] || { echo "the builder app must have exactly one machine" >&2; return 1; }
+  trap builder_down EXIT
+  state=$(fly_api "$api/$BUILDER_ID" | json_get state)
+  if [ "$state" != started ]; then
+    fly_api -X POST "$api/$BUILDER_ID/start" >/dev/null || true
+    fly_api "$api/$BUILDER_ID/wait?state=started&timeout=60" >/dev/null || true
+  fi
+  for _ in $(seq 1 60); do
+    if docker info >/dev/null 2>&1; then echo "builder $BUILDER_ID ready (was $state)"; return 0; fi
+    sleep 2
+  done
+  echo "the builder did not answer docker within 2 minutes" >&2
+  return 1
+}
+# smoke_test <dir> [VAR=value ...]: the image's smoke test, on the machine
+# whose dockerd holds the image (it publishes ports on 127.0.0.1 there).
+smoke_test() {
+  local dir="$1"; shift
+  if builder_remote; then
+    tar -C "$dir" -cf - . | ssh ia-ci-builder \
+      "rm -rf /root/smoke && mkdir -p /root/smoke && tar -xf - -C /root/smoke && cd /root/smoke && env $(printf '%q ' "$@") bash ./smoke-test.sh"
+  else
+    env "$@" "$dir/smoke-test.sh"
+  fi
+}
+# roll_app_image <app> <image>: move every machine of a Fly app onto an image
+# and wait until each is started and the app's /health answers. For our own
+# central code host, which follows every green code-host image (note #1032).
+roll_app_image() {
+  local app="$1" image="$2" api="https://api.machines.dev/v1/apps/$1/machines" id cfg
+  for id in $(fly_api "$api" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{for(const m of JSON.parse(d))console.log(m.id)})'); do
+    cfg=$(fly_api "$api/$id" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{const m=JSON.parse(d);m.config.image=process.argv[1];process.stdout.write(JSON.stringify({config:m.config}))})' "$image")
+    fly_api -X POST "$api/$id" -d "$cfg" >/dev/null
+    fly_api "$api/$id/wait?state=started&timeout=120" >/dev/null || true
+    echo "$app machine $id now on $image"
+  done
+  for _ in $(seq 1 30); do
+    curl -fsS -m 10 "https://$app.fly.dev/health" >/dev/null 2>&1 && { echo "$app answers /health"; return 0; }
+    sleep 4
+  done
+  echo "$app did not answer /health after the roll" >&2
+  return 1
+}
+
 request_remote_build() {
   local kind="$1" resp id state
   resp=$(curl -fsS -m 20 -X POST http://127.0.0.1:8787/build \
@@ -436,6 +502,13 @@ case "$KIND" in
     ;;
 
   deploy-git-host)
+    # Since note #1032 the central code host is a Fly app running the code-host
+    # image, and the git-host-image job rolls it onto every green build. There
+    # is no box left to ship these files to.
+    if [ -n "${IA_GIT_HOST_APP:-}" ]; then
+      echo "the central code host is the Fly app $IA_GIT_HOST_APP: it follows the git-host-image job — skipped"
+      exit 78
+    fi
     # The git host had no pipeline at all: every change to it meant an SSH
     # session and a file copied by hand. On 2026-08-11 that finally cost
     # something — scp landed git-host.mjs root-owned 0600, the unit runs as
@@ -677,6 +750,7 @@ REMOTE
     fi
     record_attempt   # tried, whatever happens next: a failure is red, not retried by unrelated merges
     command -v docker >/dev/null || { echo "docker is not installed on this runner — see infra/ci-runner/README.md" >&2; exit 1; }
+    builder_up
     : "${FLY_API_TOKEN:?FLY_API_TOKEN unset in /etc/ia-ci/env — cannot push to registry.fly.io}"
     : "${GHCR_PUSH_TOKEN:?GHCR_PUSH_TOKEN unset in /etc/ia-ci/env — cannot push the public image to ghcr.io}"
     # The ghcr account that owns the public package, and the docker-login user
@@ -747,9 +821,8 @@ REMOTE
     # The pinned versions go in too: the smoke test asserts the image actually
     # carries what this build asked for. Without them it only proves the CLIs
     # run, which is what let an image with a stale Codex through on 2026-09-11.
-    IMAGE_TAG="fly-machine-image:$LABEL" \
-      CLAUDE_VERSION="$CLAUDE_VERSION" CODEX_VERSION="$CODEX_VERSION" OPENCODE_VERSION="$OPENCODE_VERSION" \
-      ./infra/fly-machine-image/smoke-test.sh
+    smoke_test infra/fly-machine-image IMAGE_TAG="fly-machine-image:$LABEL" \
+      CLAUDE_VERSION="$CLAUDE_VERSION" CODEX_VERSION="$CODEX_VERSION" OPENCODE_VERSION="$OPENCODE_VERSION"
 
     # Registry auth without flyctl: the Fly registry takes the API token as a
     # docker password, so the runner needs no extra tooling.
@@ -801,6 +874,7 @@ REMOTE
     fi
     record_attempt   # tried, whatever happens next: a failure is red, not retried by unrelated merges
     command -v docker >/dev/null || { echo "docker is not installed on this runner — see infra/ci-runner/README.md" >&2; exit 1; }
+    builder_up
     : "${GHCR_PUSH_TOKEN:?GHCR_PUSH_TOKEN unset in /etc/ia-ci/env — cannot push the public image to ghcr.io}"
     # The ghcr account that owns the public package, and the docker-login user
     # for it. Config, not source: the repository carries no account name, and a
@@ -816,14 +890,14 @@ REMOTE
 
     STAGE=$(mktemp -d)
     cp infra/git-host-image/Dockerfile infra/git-host-image/entrypoint.sh "$STAGE"/
-    cp infra/git-host/git-host.mjs infra/git-host/backup.mjs "$STAGE"/
+    cp infra/git-host/git-host.mjs infra/git-host/backup.mjs infra/git-host/maintain-repos.sh "$STAGE"/
     cp -r infra/git-host/hooks "$STAGE/hooks"
     docker build -t "git-host-image:$LABEL" "$STAGE"
     rm -rf "$STAGE"
 
     # The gate: boots the container, proves health, the control API's secret,
     # fail-closed git auth, and volume ownership. Never pushes a broken image.
-    IMAGE_TAG="git-host-image:$LABEL" ./infra/git-host-image/smoke-test.sh
+    smoke_test infra/git-host-image IMAGE_TAG="git-host-image:$LABEL"
 
     printf '%s' "$GHCR_PUSH_TOKEN" | docker login ghcr.io --username "$GHCR_OWNER" --password-stdin
     docker tag "git-host-image:$LABEL" "$PUBLIC_IMAGE_REF"
@@ -840,6 +914,12 @@ REMOTE
     # image only for code hosts not yet created: an existing one keeps its own
     # image until it is rolled deliberately.
     ssh $SSH_OPTS "root@$PROD_HOST" "/usr/local/bin/set-machine-image --git-host '$PUBLIC_IMAGE_REF'"
+    # Our own central code host follows every green build (note #1032): it
+    # runs this image on Fly, so rolling it IS its deploy (deploy-git-host,
+    # which shipped files to the Hetzner box, now skips when this is set).
+    if [ -n "${IA_GIT_HOST_APP:-}" ]; then
+      roll_app_image "$IA_GIT_HOST_APP" "$PUBLIC_IMAGE_REF"
+    fi
 
     docker image rm "git-host-image:$LABEL" "$PUBLIC_IMAGE_REF" >/dev/null 2>&1 || true
     ;;
@@ -855,6 +935,7 @@ REMOTE
     fi
     record_attempt
     command -v docker >/dev/null || { echo "docker is not installed on this runner — see infra/ci-runner/README.md" >&2; exit 1; }
+    builder_up
     : "${GHCR_PUSH_TOKEN:?GHCR_PUSH_TOKEN unset in /etc/ia-ci/env — cannot push the public image to ghcr.io}"
     : "${GHCR_OWNER:?GHCR_OWNER unset in /etc/ia-ci/env — the ghcr.io account that owns the public image}"
 
@@ -870,7 +951,7 @@ REMOTE
 
     # The gate: secret required, foreign workplace refused, idempotent send,
     # unprivileged process, fail-closed start. Never pushes a broken image.
-    IMAGE_TAG="msg-host-image:$LABEL" ./infra/msg-host-image/smoke-test.sh
+    smoke_test infra/msg-host-image IMAGE_TAG="msg-host-image:$LABEL"
 
     printf '%s' "$GHCR_PUSH_TOKEN" | docker login ghcr.io --username "$GHCR_OWNER" --password-stdin
     docker tag "msg-host-image:$LABEL" "$PUBLIC_IMAGE_REF"
@@ -901,6 +982,7 @@ REMOTE
     fi
     record_attempt
     command -v docker >/dev/null || { echo "docker is not installed on this runner — see infra/ci-runner/README.md" >&2; exit 1; }
+    builder_up
     : "${FLY_API_TOKEN:?FLY_API_TOKEN unset in /etc/ia-ci/env — cannot push to registry.fly.io}"
     # The agent and site images are the ones our own fleet runs right now:
     # read from production's settings, never guessed.

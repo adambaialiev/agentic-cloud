@@ -243,3 +243,39 @@ on ia-media. Timeline:
 
 Pushes were refused for **26 seconds**. Nothing on ia-media was deleted: the
 repos are still there, and so is the old Caddyfile (`Caddyfile.bak-n1032`).
+
+## Stage 3 — CI (prepared 6 Nov 2026)
+
+Lane B and the dispatcher leave `ia-ci-runner`. Lane A (`ia-ci-jobs`) is unchanged.
+
+| | `ia-ci` (dispatcher) | `ia-ci-builder` |
+|---|---|---|
+| Runs | `daemon.mjs` and every lane B job, as the box did | `dockerd` and `sshd`, nothing else |
+| Size | shared-cpu-2x, 2 GB, always on | performance-4x, 8 GB, **started by an image job and stopped when it ends** |
+| Volume | 20 GB: `/data/runner` (work clone, logs, artifacts, copy-test state) and `/data/opt-ia-ci` (the daemon's code, kept current by `self-update`) | 50 GB: docker's data and its own SSH host keys |
+| Keys | everything `/etc/ia-ci/env` held, plus `DEPLOY_SSH_KEY` and `BUILDER_SSH_KEY`, all as Fly secrets | `BUILDER_SSH_PUBKEY` only |
+| Reached at | `http://ia-ci.internal:8787`, private network only: the code host's webhooks and lane A's results | `ia-ci-builder.internal:22`, from the dispatcher only |
+
+Both run one image (`infra/ci-fly/Dockerfile`), with `CI_ROLE` choosing what it
+does. The dispatcher's docker CLI drives the builder with
+`DOCKER_HOST=ssh://ia-ci-builder`, so every step of `run-job.sh` stays where it
+was. Only docker itself runs on the builder, plus the smoke tests that must
+sit beside it (`smoke_test` ships the test's folder there and runs it). The
+builder holds no credential: registry logins live in the dispatcher's docker
+client and travel with each push.
+
+What changed in the jobs, all conditional, so the Hetzner box behaves as before:
+
+- `builder_up` / `builder_down` start and stop the builder around the four
+  docker jobs (`machine-image`, `git-host-image`, `msg-host-image`,
+  `copy-release`).
+- With `IA_GIT_HOST_APP=ia-git`, `git-host-image` rolls the central code host
+  onto every green build (`roll_app_image`), and `deploy-git-host`, which
+  shipped files to ia-media, skips.
+- Statuses say where lane B ran (`CI_HOST_LABEL`).
+
+**The weekly repo upkeep on Fly.** `maintain-repos.sh` (trash past 14 days
+purged, `git gc` on every repo) is now in the code-host image, behind
+`POST /internal/maintenance/run`. The backend runs it once per ISO week
+(`CENTRAL_GIT_MAINTENANCE=on`, stamped beside the database), as it does the
+backups.

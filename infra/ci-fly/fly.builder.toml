@@ -1,0 +1,20 @@
+# CI on Fly: the builder (note #1032 stage 3). dockerd + sshd, no services,
+# no deploy keys: the dispatcher's docker CLI drives it over SSH and holds
+# every credential itself. Started by an image job, stopped when it ends.
+# Its one secret: BUILDER_SSH_PUBKEY.
+# Deploy with the dispatcher's image:
+#   fly deploy -c infra/ci-fly/fly.builder.toml --image registry.fly.io/ia-ci:<tag>
+app = "ia-ci-builder"
+primary_region = "ams"
+
+[env]
+  CI_ROLE = "builder"
+
+[[mounts]]
+  source = "builder_data"
+  destination = "/data"
+  initial_size = "50gb"
+
+[[vm]]
+  size = "performance-4x"
+  memory = "8gb"

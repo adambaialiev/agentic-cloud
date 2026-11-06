@@ -560,7 +560,7 @@ describe('host image jobs repoint production', () => {
   for (const family of ['git-host', 'msg-host']) {
     it(`${family}-image repoints only after the smoke test passed and the push landed`, () => {
       const text = job(`${family}-image`);
-      const smoke = text.indexOf(`./infra/${family}-image/smoke-test.sh`);
+      const smoke = text.indexOf(`smoke_test infra/${family}-image `);
       const push = text.indexOf('docker push "$PUBLIC_IMAGE_REF"');
       const repoint = text.indexOf(`/usr/local/bin/set-machine-image --${family} '$PUBLIC_IMAGE_REF'`);
       expect(smoke).toBeGreaterThan(-1);

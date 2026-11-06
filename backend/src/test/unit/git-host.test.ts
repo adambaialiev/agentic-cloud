@@ -2017,3 +2017,30 @@ describe('git-host control API on the private network only (note #1032)', () => 
     }
   }, 30_000);
 });
+
+/** The weekly upkeep on request (note #1032): maintain-repos.sh, run by the host itself. */
+describe('git-host repo upkeep on request (note #1032)', () => {
+  it('runs maintain-repos.sh over the repos and reports how it ended', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentgit-maint-'));
+    execFileSync('git', ['init', '-q', '--bare', join(dir, 'repos', 'u1', 'one.git')]);
+    const { NODE_OPTIONS: _ignored, ...cleanEnv } = process.env;
+    const host = spawn(process.execPath, [HOST_SCRIPT], {
+      env: { ...cleanEnv, PORT: '0', REPOS_ROOT: join(dir, 'repos'), GIT_HOST_SECRET: SECRET, BACKEND_URL: 'http://127.0.0.1:9' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      const m = await waitForLine(host, /listening on 127\.0\.0\.1:(\d+)/, 'git-host');
+      const res = await fetch(`http://127.0.0.1:${m[1]}/internal/maintenance/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-git-host-secret': SECRET }, body: '{}',
+      });
+      const body = await res.json() as { code: number; tail: string };
+      expect(res.status).toBe(200);
+      expect(body.code).toBe(0);
+      expect(body.tail).toContain('finished: 1 repo(s), 0 failure(s)');
+      expect(existsSync(join(dir, 'maintenance.lock'))).toBe(true);
+    } finally {
+      host.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});

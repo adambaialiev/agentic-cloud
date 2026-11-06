@@ -1,0 +1,27 @@
+# CI on Fly: the dispatcher (note #1032 stage 3). See Dockerfile.
+# No [http_service]: nothing outside the organisation reaches it. The code
+# host posts webhooks and lane A machines post results over the private
+# network, to http://ia-ci.internal:8787.
+# Secrets (fly secrets, never here): everything /etc/ia-ci/env held on the
+# Hetzner box, plus DEPLOY_SSH_KEY and BUILDER_SSH_KEY.
+# Deploy (from the repo root):
+#   fly deploy infra -c infra/ci-fly/fly.dispatcher.toml --dockerfile infra/ci-fly/Dockerfile
+app = "ia-ci"
+primary_region = "ams"
+
+[env]
+  CI_ROLE = "dispatcher"
+  CI_HOST_LABEL = "ia-ci on Fly"
+  CI_BUILDER_APP = "ia-ci-builder"
+  IA_GIT_HOST_APP = "ia-git"
+  PORT = "8787"
+
+[[mounts]]
+  source = "ci_data"
+  destination = "/data"
+  initial_size = "20gb"
+  snapshot_retention = 7
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

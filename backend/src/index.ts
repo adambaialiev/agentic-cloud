@@ -1146,6 +1146,35 @@ if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
     console.warn('[config] CENTRAL_GIT_BACKUP=on needs the git host and BACKUP_S3_*; not started');
   }
 }
+// The central code host's weekly upkeep (note #1032): on Hetzner a systemd
+// timer ran maintain-repos.sh (trash purge, git gc); on Fly the host has no
+// timers, so this is its clock. Once per ISO week, remembered beside the
+// database, checked every 6 hours. Opt-in by CENTRAL_GIT_MAINTENANCE=on.
+if (parseBoolEnv('CENTRAL_GIT_MAINTENANCE', false) && gitHostClient) {
+  const stampFile = sqliteDbPath ? `${dirnameNode(sqliteDbPath)}/central-git-maintenance.last` : '';
+  const isoWeekOf = (d: Date) => {
+    const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const day = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - day);
+    const week = Math.ceil(((t.getTime() - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86_400_000 + 1) / 7);
+    return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  };
+  const runCentralGitMaintenance = async () => {
+    const week = isoWeekOf(new Date());
+    if (stampFile && (await readFileNode(stampFile, 'utf8').then((t) => t.trim()).catch(() => '')) === week) return;
+    try {
+      const r = await gitHostClient.runMaintenance();
+      console.log(`[CentralGitMaintenance] exit ${r.code} in ${r.seconds}s: ${r.tail.split('\n').slice(-1)[0] ?? ''}`);
+      if (r.code !== 0) await opsNotifier?.(`🔴 code host upkeep failed (exit ${r.code})\n${r.tail.slice(-1500)}`).catch(() => undefined);
+      if (stampFile) await writeFileNode(stampFile, `${week}\n`).catch(() => undefined);
+    } catch (error) {
+      console.warn(`[CentralGitMaintenance] failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  setInterval(runCentralGitMaintenance, 6 * 60 * 60_000).unref();
+  setTimeout(runCentralGitMaintenance, 30 * 60_000).unref();
+  console.log('[config] CENTRAL_GIT_MAINTENANCE=once an ISO week (trash purge, git gc)');
+}
 // A private copy's health page and diagnostics bundle (note #813), for its
 // admins. Every part is asked live: the code host and router by their
 // public names, the mail receiver over the private network by the app name
