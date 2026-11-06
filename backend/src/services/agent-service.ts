@@ -1,5 +1,6 @@
 import { harnessName, subscriptionName } from '../shared/harness-clis.js';
 import { CATALOGUE_URL } from '../shared/public-host.js';
+import { PRIVATE_COPY } from '../shared/private-copy.js';
 import { CHIEF_OF_STAFF_SETUP_PHASE } from '../shared/first-run.js';
 import {
   buildKillTurnCommand,
@@ -1089,7 +1090,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // big one goes from the machine straight into storage. No CLI change.
 // v186 (note #1010): CLI 1.70.0 — `agentbuilt agent create --public-guide`,
 // the Workspace Agent's verb for the home page's sealed guide.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 186;
+// v187 (note #1014): CLI 1.71.0 — in a company's own Agentic Cloud the apps
+// directory is the workplace's, members only: the hosting line and the CLI's
+// help call it that there instead of the public catalogue. Ours unchanged.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 187;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -1118,6 +1122,8 @@ export function buildAgentbuiltInstallLines(apiUrl: string, token: string, names
       token: token,
       ...(names?.appsDomain ? { appsDomain: names.appsDomain } : {}),
       catalogueUrl: CATALOGUE_URL,
+      // Members only in a company's own Agentic Cloud (note #1014).
+      ...(PRIVATE_COPY ? { catalogueMembersOnly: true } : {}),
     });
     const installer = [
       '#!/usr/bin/env bash',
@@ -8212,7 +8218,11 @@ export class AgentService {
         '## Production hosting',
         `Your preview URL rides your workbench machine and sleeps with it. When your user wants a site or app always-on at a real address, put it into production: \`agentbuilt deploy <dir> --name <name> --preset static|service|service-pro\` puts it at \`https://<name>.${this.deps.agentbuilt.appsDomain}\`; the service presets run a \`run.sh\` listening on port 8080, and a key the app needs while it runs rides \`--secret NAME\` (never a file). **Hosting is included: there is no price per site, no plan tiers and no checkout link** — NEVER quote a monthly price or send a payment link for one.`,
         'A SITE BELONGS TO THE WORKPLACE, not to the agent that deployed it, and a redeploy has NO approval and NO undo: a deploy onto a live site that a DIFFERENT agent last deployed is refused until you add `--replace`, so add that word only when replacing that site is what your user asked for. GIVE YOUR USER A LINK ONLY WHEN IT WORKS — after `agentbuilt deploy` prints `Live at <url>`, or you have seen the page itself answer; until then say it is being set up and leave the link out. `agentbuilt delete <name>` only ASKS your user (deleting a site is not an agent verb); `rename` and `upgrade` are yours to run and break nothing.',
-        `EVERY DEPLOYED SITE IS LISTED in the public app catalogue at ${CATALOGUE_URL} — name, one line on what it does, who built it, a picture, the link — and YOU write the listing at deploy time, so your user does nothing: a first deploy carries \`--line "<one sentence on what the app does, for a stranger>"\` (refused without it), and the CLI takes the picture itself once the site answers. \`agentbuilt unlist <name>\` takes a site out when your user asks, \`relist\` puts it back, \`--unlisted\` keeps a new one out from the start.`,
+        PRIVATE_COPY
+          // A company's own Agentic Cloud (note #1014): the directory is the
+          // workplace's own, never public.
+          ? `EVERY DEPLOYED SITE IS LISTED in the workplace's apps directory at ${CATALOGUE_URL}, which ONLY people signed in to this workplace can open — a stranger sees nothing there, so never call it public. Name, one line on what it does, who built it, a picture, the link — and YOU write the listing at deploy time, so your user does nothing: a first deploy carries \`--line "<one sentence on what the app does>"\` (refused without it), and the CLI takes the picture itself once the site answers. \`agentbuilt unlist <name>\` takes a site out when your user asks, \`relist\` puts it back, \`--unlisted\` keeps a new one out from the start.`
+          : `EVERY DEPLOYED SITE IS LISTED in the public app catalogue at ${CATALOGUE_URL} — name, one line on what it does, who built it, a picture, the link — and YOU write the listing at deploy time, so your user does nothing: a first deploy carries \`--line "<one sentence on what the app does, for a stranger>"\` (refused without it), and the CLI takes the picture itself once the site answers. \`agentbuilt unlist <name>\` takes a site out when your user asks, \`relist\` puts it back, \`--unlisted\` keeps a new one out from the start.`,
         'FILES TO KEEP (uploads, exports, more than a site bundle) go in a bucket: `agentbuilt storage create <name>` mints S3-compatible object storage for the workplace (an admin\'s agent, like a first deploy) and saves its endpoint, bucket name and keys as four workplace secrets named after it — in your NEXT turn as env vars, on a site via `deploy --secret`; say the NAMES, never a value. Private by default; `--public` makes objects readable by anyone with the URL, and you say so. `storage list` / `show` read; `storage delete` only ASKS your user.',
         'Presets and memory, secrets on a site, first-deploy timing, the workplace ceilings, rename and its redirect, upgrade, spend, your user\'s own domain, the catalogue, object storage: `agentbuilt help hosting`. Run it BEFORE your first deploy in a conversation.',
         '## Where your code lives',

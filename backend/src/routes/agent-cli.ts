@@ -1,5 +1,5 @@
 import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_KIND, PUBLIC_GUIDE_MODEL } from '../shared/public-guide.js';
-import { CATALOGUE_URL } from '../shared/public-host.js';
+import { CATALOGUE_FULL_NAME, CATALOGUE_NAME, CATALOGUE_URL } from '../shared/public-host.js';
 import { harnessName, isHarnessCli } from '../shared/harness-clis.js';
 import { autoApproveChecksBlocker, autoApproveTime, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { memberHasLiveSeat } from '../services/org-seat-signin.js';
@@ -510,18 +510,18 @@ export function agentCliRoutes(deps: RouteDeps): Router {
 
   /**
    * The catalogue sentence a deploy's answer ends with (note #756): where
-   * the site stands in the public catalogue after this deploy, and the one
+   * the site stands in the catalogue after this deploy, and the one
    * thing to do when it is not there yet. Said on every deploy, because the
    * listing is written at deploy time and nowhere else.
    */
   const listingWords = (doc: DeploymentDocument, opts: { picturePending: boolean }): string => {
-    if (doc.listing?.hiddenByOperator) return ` An operator has taken "${doc.name}" out of the public catalogue.`;
-    if (doc.listing?.listed === false) return ` "${doc.name}" is NOT in the public catalogue (unlisted); \`agentbuilt relist ${doc.name}\` puts it back.`;
+    if (doc.listing?.hiddenByOperator) return ` An operator has taken "${doc.name}" out of ${CATALOGUE_NAME}.`;
+    if (doc.listing?.listed === false) return ` "${doc.name}" is NOT in ${CATALOGUE_NAME} (unlisted); \`agentbuilt relist ${doc.name}\` puts it back.`;
     if (!doc.listing?.line) {
-      return ` "${doc.name}" is not in the public catalogue yet: it has no line. \`agentbuilt listing ${doc.name} --line "<one sentence on what it does>"\` lists it.`;
+      return ` "${doc.name}" is not in ${CATALOGUE_NAME} yet: it has no line. \`agentbuilt listing ${doc.name} --line "<one sentence on what it does>"\` lists it.`;
     }
     const where = doc.status === 'live' ? 'is in' : 'will be in';
-    return ` "${doc.name}" ${where} the public catalogue at ${CATALOGUE_URL} ("${doc.listing.line}")`
+    return ` "${doc.name}" ${where} ${CATALOGUE_NAME} at ${CATALOGUE_URL} ("${doc.listing.line}")`
       + (opts.picturePending ? '; the CLI takes its picture once the site answers.' : '.')
       + ` \`agentbuilt unlist ${doc.name}\` takes it out if your user asks.`;
   };
@@ -943,12 +943,12 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     const updated = (await configured.storage.get(doc.id)) ?? { ...doc, listing };
     const described = describe(updated, configured.service.url(updated), auth);
     const message = (() => {
-      if (body.listed === false) return `"${updated.name}" is out of the public catalogue. \`agentbuilt relist ${updated.name}\` puts it back whenever your user wants it there.`;
+      if (body.listed === false) return `"${updated.name}" is out of ${CATALOGUE_NAME}. \`agentbuilt relist ${updated.name}\` puts it back whenever your user wants it there.`;
       if (described.listing.listed) {
-        return `"${updated.name}" is in the public catalogue at ${CATALOGUE_URL}: "${updated.listing?.line}".`
+        return `"${updated.name}" is in ${CATALOGUE_NAME} at ${CATALOGUE_URL}: "${updated.listing?.line}".`
           + (described.listing.picture ? '' : ` It has no picture yet: \`agentbuilt listing ${updated.name} --retake\` takes one from a machine with Chrome, or \`--picture <file.png>\` uploads yours.`);
       }
-      if (updated.listing?.hiddenByOperator) return `An operator has taken "${updated.name}" out of the public catalogue; relisting does not override that.`;
+      if (updated.listing?.hiddenByOperator) return `An operator has taken "${updated.name}" out of ${CATALOGUE_NAME}; relisting does not override that.`;
       if (updated.status !== 'live') return `"${updated.name}" is listed, and appears in the catalogue once it is live again (it is ${updated.status}).`;
       return `"${updated.name}" is listed but has no line yet, so the catalogue does not show it: \`agentbuilt listing ${updated.name} --line "<one sentence on what it does>"\`.`;
     })();
@@ -1303,7 +1303,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
         // before the catalogue is told, in the answer, how to get one.
         if (listingLine === undefined && !unlisted) {
           return res.status(400).json({
-            error: `Every deployed site is listed in the public app catalogue (${CATALOGUE_URL}), so a first deploy says what the app does:`
+            error: `Every deployed site is listed in ${CATALOGUE_FULL_NAME} (${CATALOGUE_URL}), so a first deploy says what the app does:`
               + ' add `--line "<one sentence on what it does, for a stranger>"` to the same command (at most 160 characters),'
               + ' or `--unlisted` if your user does not want it in the catalogue. Nothing was deployed.',
             listingLineRequired: true,

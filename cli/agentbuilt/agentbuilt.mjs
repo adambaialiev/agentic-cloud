@@ -37,18 +37,21 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.70.0';
+const VERSION = '1.71.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
  * private copy's own from the config the backend writes on every machine.
  */
 const NAMES = (() => {
-  const names = { appsDomain: 'agentbuilt.app', catalogueUrl: 'https://agenticcloudcomputer.com/apps' };
+  const names = { appsDomain: 'agentbuilt.app', catalogueUrl: 'https://agenticcloudcomputer.com/apps', catalogue: 'the public app catalogue' };
   try {
     const config = JSON.parse(readFileSync(path.join(os.homedir(), '.agentbuilt', 'config.json'), 'utf8'));
     if (typeof config.appsDomain === 'string' && /^[a-z0-9.-]+$/.test(config.appsDomain)) names.appsDomain = config.appsDomain;
     if (typeof config.catalogueUrl === 'string' && /^https:\/\/[a-z0-9.-]+\/[a-z0-9/-]*$/.test(config.catalogueUrl)) names.catalogueUrl = config.catalogueUrl;
+    // A company's own Agentic Cloud (note #1014): the directory is the
+    // workplace's, members only, never public.
+    if (config.catalogueMembersOnly === true) names.catalogue = "the workplace's apps directory (only people signed in to this workplace can open it)";
   } catch {
     // No config yet (a fresh machine, a laptop): our names.
   }
@@ -225,13 +228,13 @@ That turn is quiet: nothing is written to your user unless you write it.
       machine, and waits for the address to answer (a couple of minutes; a few
       more the very first time). --no-wait returns as soon as the build starts.
       Redeploy of a live name: syncs the directory and is live in seconds.
-      EVERY DEPLOYED SITE IS LISTED in the public app catalogue at
+      EVERY DEPLOYED SITE IS LISTED in ${NAMES.catalogue} at
       ${NAMES.catalogueUrl} (name, one line, who built it, a
       picture, the link), so a first deploy carries --line: one sentence on
       what the app does, for a stranger (at most 160 characters). The CLI
       takes the picture itself with this machine's Chrome once the site
       answers, on every deploy. --unlisted keeps a site out from the start.
-  agentbuilt unlist <name>        take a site out of the public catalogue (when your user asks)
+  agentbuilt unlist <name>        take a site out of the catalogue (when your user asks)
   agentbuilt relist <name>        put it back
   agentbuilt listing <name> [--line "<what it does>"] [--retake | --picture <file.png>]
       Its catalogue entry; with a flag, change the line, retake the picture
@@ -801,7 +804,7 @@ const HELP_TOPICS = {
     lead: "Preview versus production, what a deploy does and refuses, and what to say to your user about cost and links.",
     paragraphs: [
       "Your preview URL rides your workbench machine — visitors can wake it, but that costs them a ~10-second stall and it shares the machine with your work. When your user wants a site or app always-on at a real address, put it into production: `agentbuilt deploy <dir> --name <name> --preset static|service|service-pro` puts it at `https://<name>." + NAMES.appsDomain + "` — `static` serves files as they are, `service` runs an app around the clock (512 MB memory), `service-pro` is the same on 1 GB. Both service presets need a `run.sh` in the dir that listens on port 8080.",
-      "EVERY DEPLOYED SITE IS LISTED in the public app catalogue at " + NAMES.catalogueUrl + " — the place where an app made here is found: newest first, each with its name, one line on what it does, who built it (your user, by the name on their public page), a picture and the link. The agent that deploys writes the listing, so the maker does nothing: a FIRST deploy carries `--line \"<one sentence on what the app does, for a stranger>\"` (at most 160 characters; refused without it), a redeploy keeps the line unless you pass a new one, and the CLI takes the picture itself with this machine's Chrome once the site answers — on every deploy, so the catalogue shows the site as it is now. If the CLI could not take one (no Chrome here, or the deploy stopped waiting before the address answered), `agentbuilt listing <name> --retake` takes it later and `--picture <file.png>` uploads one of yours. When your user does not want an app in the catalogue, `agentbuilt unlist <name>` takes it out at once and `agentbuilt relist <name>` puts it back; `--unlisted` on the first deploy keeps it out from the start. A deleted, paused or stopped site leaves the catalogue by itself and a live one returns; a rename follows the new address. `agentbuilt status <name>` says where a site stands in the catalogue. Nothing about the agent or the workplace is shown there — only the person and what they made.",
+      "EVERY DEPLOYED SITE IS LISTED in " + NAMES.catalogue + " at " + NAMES.catalogueUrl + " — the place where an app made here is found: newest first, each with its name, one line on what it does, who built it (your user, by the name on their public page), a picture and the link. The agent that deploys writes the listing, so the maker does nothing: a FIRST deploy carries `--line \"<one sentence on what the app does, for a stranger>\"` (at most 160 characters; refused without it), a redeploy keeps the line unless you pass a new one, and the CLI takes the picture itself with this machine's Chrome once the site answers — on every deploy, so the catalogue shows the site as it is now. If the CLI could not take one (no Chrome here, or the deploy stopped waiting before the address answered), `agentbuilt listing <name> --retake` takes it later and `--picture <file.png>` uploads one of yours. When your user does not want an app in the catalogue, `agentbuilt unlist <name>` takes it out at once and `agentbuilt relist <name>` puts it back; `--unlisted` on the first deploy keeps it out from the start. A deleted, paused or stopped site leaves the catalogue by itself and a live one returns; a rename follows the new address. `agentbuilt status <name>` says where a site stands in the catalogue. Nothing about the agent or the workplace is shown there — only the person and what they made.",
       "A SERVICE THAT NEEDS A KEY WHILE IT RUNS — a bot token, an API key — gets it with `--secret NAME` on `agentbuilt deploy` (repeat the flag for more): the platform sets YOUR saved secret of that name as an environment variable on the site's machine, so the app reads it from its environment and the value never passes through you or into the deployed files. Never write a key into those files instead; that is exactly what the flag is for. The list sticks across redeploys (`--secret` replaces it, `--no-secrets` clears it, `agentbuilt status` names it), and every deploy reads the values from the DEPLOYING agent's own secrets — so a redeploy by an agent that is not handed one of them is refused, and a rotated key reaches the site on its next deploy. A static site cannot take one.",
       "**Hosting is included. There is no price per site, no plan tiers and no checkout link.** A workplace admin's agent may create, revive, resize or remove infrastructure; a member's agent may redeploy an existing live site. `agentbuilt list` prints what is running. A SITE BELONGS TO THE WORKPLACE: `agentbuilt list / status / logs / restart / rename / domain` reach every site of the workplace, and any agent may redeploy any live one. A redeploy has NO approval and NO undo and the public sees it at once — so a deploy onto a live site that a DIFFERENT agent last deployed is refused until you add `--replace`, and the refusal says who deployed it and when. Add that word only when replacing that site is what your user asked for; if you merely needed a name for something new, choose another. `agentbuilt status <name>` says who deployed a site last. NEVER quote a monthly price or a per-plan allowance for a site, and never send a payment link for one; if you have an older memory of $5/$10/$20 hosting or of plan-sized site allowances, it is wrong.",
       "A first deploy takes a couple of minutes: the machine is built, and its address answers as soon as it is (no DNS record and no certificate to wait for since 2026-10-16). `agentbuilt deploy` waits and prints `Live at <url>` only once the site itself answers; if it stops waiting first, the site is still on its way and your user gets a message with the link the moment it works. GIVE YOUR USER A LINK ONLY WHEN IT WORKS — they must never follow a link of yours and find it broken. So hand over the URL only after `Live at`, or after you have seen the page itself come back; otherwise tell them it is being set up and that the platform will message them the link, and leave the link out. Until the address is up it answers `No such preview.` with a 404, and a check that found no page — an error, a 404, an empty result — has seen nothing live. Redeploys to a live name are instant. `agentbuilt list` / `status` / `logs` / `restart` manage what runs.",

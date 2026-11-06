@@ -11721,6 +11721,47 @@ describe('the app catalogue (note #756): /api/public/apps', () => {
     for (const leak of ['agent-a', 'agent-x', 'Zed', 'user-2']) expect(words).not.toContain(leak);
   });
 
+  it('in a company\'s own Agentic Cloud: nothing for a stranger, and a member reads only their own workplaces\' sites (note #1014)', async () => {
+    // Adam, 6 Nov 2026: "workplace's apps directory should not be public".
+    // Ours stays the public showcase (the test above); a copy's is the
+    // workplace's own.
+    const { deps, userStorage } = await buildDeps();
+    await userStorage.createProfile('user-2', { email: 'ben@example.com', displayName: 'Ben' });
+    deps.privateCopy = true;
+    const orgStorage = new InMemoryOrgStorage();
+    await orgStorage.addMember({ orgId: 'org-a', userId: 'user-1', role: 'admin' });
+    await orgStorage.addMember({ orgId: 'org-b', userId: 'user-2', role: 'admin' });
+    deps.orgStorage = orgStorage;
+    const deploymentStorage = new InMemoryDeploymentStorage();
+    const make = (name: string, over: Record<string, unknown>) => deploymentStorage.create({
+      userId: 'user-1', agentId: 'agent-a', preset: 'static', status: 'live', name, listing: { line: `${name}.` }, ...over,
+    } as never);
+    await make('acme-crm', { orgId: 'org-a' });
+    await make('bravo-wiki', { orgId: 'org-b', userId: 'user-2' });
+    await make('no-workplace', {});
+    deps.deploymentStorage = deploymentStorage;
+    deps.deploymentService = { url: (d: { name: string }) => `https://${d.name}.agents.example.com` } as never;
+    const ask = async (headers: Record<string, string>) => {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/public/apps', 'get')(mockRequest({ headers }), res);
+      return res;
+    };
+
+    // A stranger: refused, and not one name, line or picture in the answer.
+    const stranger = await ask({});
+    expect(stranger.statusCode).toBe(401);
+    expect(stranger.headers['cache-control']).toBe('no-store');
+    expect(stranger.headers['x-robots-tag']).toContain('noindex');
+    for (const name of ['acme-crm', 'bravo-wiki', 'no-workplace']) expect(JSON.stringify(stranger.body)).not.toContain(name);
+
+    // Signed in: their own workplace's sites only; a site with no workplace is nobody's to see.
+    const ada = await ask(authHeader(42));
+    expect(ada.statusCode).toBe(200);
+    expect((ada.body as { apps: Array<{ name: string }> }).apps.map((a) => a.name)).toEqual(['acme-crm']);
+    const ben = await ask(authHeader(43));
+    expect((ben.body as { apps: Array<{ name: string }> }).apps.map((a) => a.name)).toEqual(['bravo-wiki']);
+  });
+
   it('puts the most recently PUBLISHED site on top: a redeployed old site outranks a newer one (note #767)', async () => {
     // "Recent" to a visitor is the latest deploy, not the day the name was
     // first taken. A record from before lastDeployAt was kept orders by its

@@ -8,6 +8,7 @@
  * this module also compiles for the public site, which has neither Node's
  * types nor a server environment. Anything unset or malformed is ours.
  */
+import { PRIVATE_COPY } from './private-copy.js';
 export const DEFAULT_PUBLIC_HOST = 'agenticcloudcomputer.com';
 
 const HOST_SHAPE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
@@ -32,3 +33,11 @@ export const PUBLIC_HOST = configuredPublicHost();
 
 /** Where every deployed site is listed (note #756). */
 export const CATALOGUE_URL = `https://${PUBLIC_HOST}/apps`;
+
+/**
+ * What that list is called in an agent's words. Ours is the public
+ * showcase. A company's own Agentic Cloud keeps it to the people of each
+ * workplace (note #1014), so an agent there never calls it public.
+ */
+export const CATALOGUE_NAME = PRIVATE_COPY ? "the workplace's apps directory (members only)" : 'the public catalogue';
+export const CATALOGUE_FULL_NAME = PRIVATE_COPY ? "the workplace's apps directory (members only)" : 'the public app catalogue';

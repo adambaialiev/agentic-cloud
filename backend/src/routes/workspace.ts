@@ -3468,10 +3468,13 @@ self.addEventListener('activate', (event) => {
    */
   const CATALOGUE_MEMO_MS = 20_000;
   const publishedAt = (doc: { createdAt: string; lastDeployAt?: string }) => doc.lastDeployAt ?? doc.createdAt;
-  let catalogueMemo: { at: number; answer: WorkspaceAppCatalogueAnswer } | null = null;
-  const appCatalogue = async (): Promise<WorkspaceAppCatalogueAnswer> => {
-    if (catalogueMemo && Date.now() - catalogueMemo.at < CATALOGUE_MEMO_MS) return catalogueMemo.answer;
-    if (!deps.deploymentStorage || !deps.deploymentService) return { apps: [] };
+  /** Every listed entry with the workplace its site belongs to, which never
+   *  crosses to a reader: a private copy filters on it (note #1014). */
+  type CatalogueRow = { orgId?: string; entry: WorkspaceAppCatalogueEntry };
+  let catalogueMemo: { at: number; rows: CatalogueRow[] } | null = null;
+  const appCatalogue = async (): Promise<CatalogueRow[]> => {
+    if (catalogueMemo && Date.now() - catalogueMemo.at < CATALOGUE_MEMO_MS) return catalogueMemo.rows;
+    if (!deps.deploymentStorage || !deps.deploymentService) return [];
     const docs = (await deps.deploymentStorage.listAll())
       .filter((doc) => siteIsListed(doc))
       .sort((a, b) => publishedAt(b).localeCompare(publishedAt(a)));
@@ -3491,10 +3494,10 @@ self.addEventListener('activate', (event) => {
       builders.set(userId, builder);
       return builder;
     };
-    const apps: WorkspaceAppCatalogueEntry[] = [];
+    const rows: CatalogueRow[] = [];
     for (const doc of docs) {
       const pictureUrlValue = await pictureUrl(doc.listing?.picture?.storagePath);
-      apps.push({
+      rows.push({ ...(doc.orgId ? { orgId: doc.orgId } : {}), entry: {
         name: doc.name,
         url: deps.deploymentService.url(doc),
         line: doc.listing?.line ?? '',
@@ -3502,17 +3505,35 @@ self.addEventListener('activate', (event) => {
         ...(pictureUrlValue ? { pictureUrl: pictureUrlValue } : {}),
         publishedAt: publishedAt(doc),
         createdAt: doc.createdAt,
-      });
+      } });
     }
-    const answer = { apps };
-    catalogueMemo = { at: Date.now(), answer };
-    return answer;
+    catalogueMemo = { at: Date.now(), rows };
+    return rows;
   };
 
-  router.get('/api/public/apps', async (_req, res) => {
+  /**
+   * Our own platform: the public showcase, anyone, no sign-in.
+   *
+   * A company's own Agentic Cloud (PRIVATE_COPY): its apps directory is NOT
+   * public (Adam, 6 Nov 2026, note #1014: "workplace's apps directory should
+   * not be public"). A stranger gets 401 and not one row; a signed-in person
+   * sees only the sites of the workplaces they belong to. A site with no
+   * workplace on its record is shown to nobody there: closed, not open, when
+   * in doubt. The listing itself (deploy --line, unlist, relist) is unchanged.
+   */
+  router.get('/api/public/apps', async (req, res) => {
     publicHeaders(res);
     try {
-      return res.json(await appCatalogue() satisfies WorkspaceAppCatalogueAnswer);
+      if (!deps.privateCopy) {
+        return res.json({ apps: (await appCatalogue()).map((row) => row.entry) } satisfies WorkspaceAppCatalogueAnswer);
+      }
+      if (typeof res.setHeader === 'function') res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      const viewer = await publicViewer(req);
+      if (!viewer) return res.status(401).json({ error: 'Sign in to see the apps of your workplace.' });
+      const memberships = deps.orgStorage ? await deps.orgStorage.listMembershipsByUser(viewer.userId).catch(() => []) : [];
+      const mine = new Set(memberships.map((membership) => membership.orgId));
+      const apps = (await appCatalogue()).filter((row) => row.orgId && mine.has(row.orgId)).map((row) => row.entry);
+      return res.json({ apps } satisfies WorkspaceAppCatalogueAnswer);
     } catch (error) {
       console.warn('[apps] the catalogue could not be read:', error);
       return res.status(503).json({ error: 'The app catalogue could not be read just now. Try again in a minute.' });
