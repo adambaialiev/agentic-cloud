@@ -106,9 +106,17 @@ describe('the words on a person’s row', () => {
   it('names the agents no longer here whose hours are in their total (note #644)', () => {
     expect(formerAgentsLine({})).toBe('');
     expect(formerAgentsLine({ formerAgents: [] })).toBe('');
-    expect(formerAgentsLine({ formerAgents: [{ name: 'Ruby', workedMs: 11_400_000 }] })).toBe('including Ruby 3h 10m, no longer here');
+    expect(formerAgentsLine({ formerAgents: [{ name: 'Ruby', workedMs: 11_400_000 }] })).toBe('including Ruby, no longer here');
     expect(formerAgentsLine({ formerAgents: [{ name: 'Ruby', workedMs: 11_400_000 }, { name: 'Max', workedMs: 720_000 }, { name: 'Kit', workedMs: 60_000 }] }))
-      .toBe('including Ruby 3h 10m, Max 12m and Kit 1m, no longer here');
+      .toBe('including Ruby, Max and Kit, no longer here');
+    // Names only (note #1027): no time beside any of them, and two agents
+    // that shared a name are said once, where the longer-working one stood.
+    expect(formerAgentsLine({ formerAgents: [
+      { name: 'Oscar', workedMs: 86_400_000 }, { name: 'Nina', workedMs: 44_760_000 }, { name: 'Theo', workedMs: 11_640_000 },
+      { name: 'Nina', workedMs: 12_660_000 }, { name: 'Theo', workedMs: 420_000 }, { name: 'Gus', workedMs: 120_000 },
+    ] })).toBe('including Oscar, Nina, Theo and Gus, no longer here');
+    expect(formerAgentsLine({ formerAgents: [{ name: 'Willow', workedMs: 42_720_000 }, { name: 'Willow', workedMs: 39_960_000 }] }))
+      .toBe('including Willow, no longer here');
     expect(peopleWorkedLine(null)).toBe('');
     expect(peopleWorkedLine({ workedMs: 0 })).toBe('');
     expect(peopleWorkedLine({ workedMs: 41 * 3_600_000 + 20 * 60_000 })).toBe('agents worked 1d 17h');

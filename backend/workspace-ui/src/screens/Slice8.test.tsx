@@ -2047,7 +2047,7 @@ describe('organizations', () => {
     expect(await screen.findByRole('heading', { name: 'Mira Chen' })).toBeTruthy();
     // All time, since note #925: the hours lead the contribution's figures.
     expect(document.querySelector('#orgMemberWorked [data-stat="hours"]')!.textContent).toBe('3.3agent hours');
-    expect(document.querySelector('#orgMemberWorked .cago')!.textContent).toBe('including Ruby 50m, no longer here');
+    expect(document.querySelector('#orgMemberWorked .cago')!.textContent).toBe('including Ruby, no longer here');
   });
 
   it('the member screen changes a role and removes, returning to the people', async () => {

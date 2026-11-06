@@ -312,7 +312,7 @@ describe('the People page', () => {
     expect(stats('#orgMemberWorked')).toEqual(['30 agent hours', '17 changes merged', '2.4M tokens · Claude Code', '610K tokens · Codex']);
     // No helper sentence under the figures (note #1009); a former agent is a fact.
     expect([...document.querySelectorAll('#orgMemberWorked .cago')].map((line) => line.textContent))
-      .toEqual(['including Ruby 50m, no longer here']);
+      .toEqual(['including Ruby, no longer here']);
     const changes = [...document.querySelectorAll('#orgMemberMerged .memberchange')] as HTMLElement[];
     expect(changes.map((row) => [row.querySelector('.mctitle')!.textContent, row.querySelector('.mcfacts')!.textContent]))
       .toEqual([
