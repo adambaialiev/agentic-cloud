@@ -156,7 +156,9 @@ import { HarnessCliUpdater } from './services/harness-cli-updater.js';
 import { InMemoryPendingTurnStorage } from './services/pending-turn-storage.js';
 import { InMemoryStoppedUserMessageStorage } from './services/stopped-user-message-storage.js';
 import { InMemoryAgentActivityStore } from './services/agent-activity-store.js';
-import { VoiceTranscriptionService } from './services/voice-transcription-service.js';
+import { VoiceTranscriptionService, voicePauseReasonFor } from './services/voice-transcription-service.js';
+import { WorkplaceVoiceService } from './services/workplace-voice.js';
+import { OpenRouterAccountClient } from './services/openrouter-account.js';
 import { PROCESS_SHUTDOWN_ABORT_REASON } from './agent/abort-reason.js';
 import { consumeSystemdListenFd } from './services/systemd-listen.js';
 import { RetiredSandboxClient } from './services/retired-sandbox-client.js';
@@ -1322,7 +1324,6 @@ const userSandboxManager = new UserDevelopmentEnvironmentManager(
   managedServerService,
 );
 const sessionManager = new SessionManager(sandboxClient);
-const voiceTranscriptionService = new VoiceTranscriptionService({});
 const agentConfigService = new AgentConfigService(configDocSource);
 // Pinned harness-CLI versions (config/harnessCliVersions) — written only by
 // scripts/harness-cli-versions.mjs; read by the pre-sleep updater and the
@@ -1504,7 +1505,6 @@ const agentService = new AgentService({
   userSandboxManager,
   notifyWorkspace: (input) => workspaceNotifications.notify(input),
   mediaStorage,
-  voiceTranscriptionService,
   agentConfigService,
   aiModel: AI_MODEL,
   managedServerService,
@@ -1957,9 +1957,15 @@ const deps: RouteDeps = {
   ...(MAIL_INGEST_SECRET ? { mailIngestSecret: MAIL_INGEST_SECRET } : {}),
   // Note attachments keep their bytes here; absent → notes are words-only.
   ...(mediaStorage ? { mediaStorage } : {}),
-  // Workspace dictation uses the shared transcription provider and is reached
-  // only after the browser session is verified.
-  voiceTranscriptionService,
+  // Workspace dictation, on each workplace's own OpenRouter key and model
+  // (note #1026); reached only after the browser session is verified.
+  workplaceVoice: new WorkplaceVoiceService({
+    orgStorage,
+    orgSecrets,
+    openRouter: new OpenRouterAccountClient(),
+    transcriber: new VoiceTranscriptionService(),
+    pauseReasonFor: voicePauseReasonFor,
+  }),
   // The knowledge gate's two halves, and they travel together: the ask that
   // reaches the owner, and the decision that lands or refuses.
   requestKnowledgeApproval: (args) => agentService.requestKnowledgeApproval(args),

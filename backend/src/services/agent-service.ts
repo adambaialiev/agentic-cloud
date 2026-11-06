@@ -118,7 +118,6 @@ import type { SecretStorage } from './secret-storage.js';
 import type { SessionStorage } from './session-storage.js';
 import type { UserStorage } from './user-storage.js';
 import type { UserDevelopmentEnvironmentManager } from './user-sandbox-manager.js';
-import type { VoiceTranscriptionService } from './voice-transcription-service.js';
 import { type ManagedServerService } from './managed-server-service.js';
 import { parseFlyServerRecordId, parseFlyServerRecordTarget, buildFlyServerRecordId, buildFlySandboxId, isFlySandboxId } from './fly-sandbox-id.js';
 import { MachineWakeError, type FlySandboxClient } from './fly-sandbox-client.js';
@@ -2511,7 +2510,6 @@ export class AgentService {
        */
       flySandboxClient?: FlySandboxClient;
       mediaStorage?: MediaStorage;
-      voiceTranscriptionService?: Pick<VoiceTranscriptionService, 'transcribe'>;
       agentConfigService?: Pick<
         AgentConfigService,
         | 'getTelegramModel'

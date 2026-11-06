@@ -219,6 +219,8 @@ import { inferContentType, SESSION_ATTACHMENT_MAX_BYTES } from '../services/sess
 import { imageDimensions } from '../utils/image-dimensions.js';
 import { canServeInline, isInlineImageFile } from '../shared/inline-files.js';
 import { VoiceTranscriptionError, redactProviderMessage } from '../services/voice-transcription-service.js';
+import { VoiceUnavailableError } from '../services/workplace-voice.js';
+import { registerVoiceRoutes } from './voice.js';
 import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES } from '../shared/voice-transcription.js';
 import { getOptionalErrorMessage } from '../utils/error-message.js';
 import { OrgSpendError } from '../services/org-spend.js';
@@ -2951,6 +2953,13 @@ self.addEventListener('activate', (event) => {
     return { orgId: membership.orgId, userId: auth.userId, canDeleteForever: membership.role === 'admin' };
   }, { allowPermanentDelete: true });
   registerRadioRoutes(router, '/api/radio', deps, authenticate, async (auth) => isAdminAccount(auth.profile));
+  // A workplace's voice-to-text key and model (note #1026): read by every
+  // member of the workplace being viewed, written by its admins only.
+  registerVoiceRoutes(router, deps, async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    return { userId: auth.userId, orgId: auth.orgId, admin: Boolean(auth.orgId) && auth.orgRole === 'admin' };
+  });
 
   /** Shared org secrets are an admin cupboard; personal namespaces have no role gate. */
   const canManageSharedSecrets = (auth: MiniAppAuth): boolean => (
@@ -5831,7 +5840,9 @@ self.addEventListener('activate', (event) => {
     async (req, res) => {
       const auth = await authenticate(req, res);
       if (!auth) return;
-      if (!deps.voiceTranscriptionService) {
+      // Every recording is paid by the key the WORKPLACE saved (note #1026):
+      // no workplace, or no key, is "not set up yet" — never a platform key.
+      if (!deps.workplaceVoice || !auth.orgId) {
         return res.status(503).json({
           error: VOICE_ERROR_SENTENCES[VOICE_ERROR_CODES.notConfigured],
           code: VOICE_ERROR_CODES.notConfigured,
@@ -5844,8 +5855,7 @@ self.addEventListener('activate', (event) => {
         .trim()
         .toLowerCase();
       try {
-        const result = await deps.voiceTranscriptionService.transcribe({
-          userId: auth.userId,
+        const result = await deps.workplaceVoice.transcribe(auth.orgId, {
           audio,
           contentType,
           fileName: 'workspace-recording',
@@ -5855,6 +5865,11 @@ self.addEventListener('activate', (event) => {
         // The provider's own refusals were logged by the service with its
         // status and message; what is left to log here is what never reached
         // a provider. Never the key, never the recording.
+        // Off or paused for this workplace: OpenRouter was never asked, the
+        // sentence is the one the recorder shows (note #1023's codes).
+        if (error instanceof VoiceUnavailableError) {
+          return res.status(503).json({ error: VOICE_ERROR_SENTENCES[error.code], code: error.code });
+        }
         const code = error instanceof VoiceTranscriptionError ? error.code : undefined;
         if (code !== 'out_of_credit' && code !== 'key_rejected' && code !== 'upstream_error') {
           console.warn(
@@ -5870,8 +5885,7 @@ self.addEventListener('activate', (event) => {
         // offers no "Try recording again" (note #1023).
         const settled = code === 'out_of_credit' ? VOICE_ERROR_CODES.outOfCredit
           : code === 'key_rejected' ? VOICE_ERROR_CODES.keyRejected
-            : code === 'not_configured' ? VOICE_ERROR_CODES.notConfigured
-              : null;
+            : null;
         if (settled) {
           return res.status(503).json({ error: VOICE_ERROR_SENTENCES[settled], code: settled });
         }

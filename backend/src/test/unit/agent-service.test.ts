@@ -141,9 +141,6 @@ function createAgentService(args: {
     loadSkills: ReturnType<typeof vi.fn>;
     updateSkills?: ReturnType<typeof vi.fn>;
   };
-  voiceTranscriptionService?: {
-    transcribe: ReturnType<typeof vi.fn>;
-  };
   mediaStorage?: {
     uploadObject: ReturnType<typeof vi.fn>;
     createReadAccess: ReturnType<typeof vi.fn>;
@@ -204,7 +201,6 @@ function createAgentService(args: {
     } as never,
     ...(args.mediaStorage ? { mediaStorage: args.mediaStorage as never } : {}),
     ...(args.agentChatStorage ? { agentChatStorage: args.agentChatStorage } : {}),
-    ...(args.voiceTranscriptionService ? { voiceTranscriptionService: args.voiceTranscriptionService } : {}),
     ...(args.telegramSkillsService ? { telegramSkillsService: args.telegramSkillsService as never } : {}),
     ...(args.agentConfigService ? { agentConfigService: args.agentConfigService as never } : {}),
     ...(args.pendingTurnStorage ? { pendingTurnStorage: args.pendingTurnStorage as never } : {}),

@@ -1,8 +1,8 @@
 import pathPosix from 'node:path/posix';
-import { toFile } from 'openai';
 import { SESSION_ATTACHMENT_MAX_BYTES } from './session-attachments.js';
-import { getOpenAIClient, resolveOpenAIApiKey } from './openai-client.js';
 import { getOptionalErrorMessage } from '../utils/error-message.js';
+import type { VoicePauseReason } from '../shared/voice.js';
+import type { VoiceTranscriber, VoiceTranscriberResult } from './workplace-voice.js';
 
 export interface TranscriptionUsageTokens {
   type: 'tokens';
@@ -37,8 +37,6 @@ export type VoiceTranscriptionUsage =
   | undefined;
 
 const OPENROUTER_TRANSCRIPTION_URL = 'https://openrouter.ai/api/v1/audio/transcriptions';
-const DEFAULT_OPENROUTER_VOICE_TRANSCRIPTION_MODEL = 'openai/whisper-large-v3';
-const DEFAULT_OPENAI_VOICE_TRANSCRIPTION_MODEL = 'gpt-4o-transcribe';
 
 const OPENROUTER_RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 const OPENROUTER_RETRY_MAX_ATTEMPTS = 3;
@@ -68,18 +66,10 @@ function parseRetryAfterMs(headerValue: string | null): number | undefined {
   return undefined;
 }
 
-export const DEFAULT_VOICE_TRANSCRIPTION_MODEL = (
-  process.env.VOICE_TRANSCRIPTION_MODEL?.trim()
-  || DEFAULT_OPENROUTER_VOICE_TRANSCRIPTION_MODEL
-);
-
-type VoiceTranscriptionProvider = 'openrouter' | 'openai';
-
 type VoiceTranscriptionErrorCode =
   | 'invalid_audio'
-  | 'not_configured'
-  /** The provider's account has no credit left (OpenRouter 402, OpenAI's
-   *  `insufficient_quota`). Configuration, not a passing fault (note #1023). */
+  /** The account behind the workplace's key has no credit left (OpenRouter
+   *  402). Configuration, not a passing fault (note #1023). */
   | 'out_of_credit'
   /** The provider refused the key itself (401). Configuration too. */
   | 'key_rejected'
@@ -101,15 +91,14 @@ export class VoiceTranscriptionError extends Error {
 
 /** The code a provider's HTTP refusal means for us. 402 and 401 are not worth
  *  a retry and not worth a second recording either. */
-function classifyUpstreamStatus(status: number | undefined, providerCode?: unknown): VoiceTranscriptionErrorCode {
-  if (status === 402 || providerCode === 'insufficient_quota') return 'out_of_credit';
+function classifyUpstreamStatus(status: number | undefined): VoiceTranscriptionErrorCode {
+  if (status === 402) return 'out_of_credit';
   if (status === 401) return 'key_rejected';
   return 'upstream_error';
 }
 
-/** A provider's message with anything key-shaped taken out. OpenAI's 401
- *  quotes a masked prefix of the key it was given; nothing of a key belongs
- *  in the journal, masked or not. */
+/** A provider's message with anything key-shaped taken out: nothing of a
+ *  key belongs in the journal, masked or not. */
 export function redactProviderMessage(message: string, apiKey?: string | null): string {
   let clean = message;
   if (apiKey && apiKey.length >= 8) clean = clean.split(apiKey).join('[key]');
@@ -121,24 +110,20 @@ export function redactProviderMessage(message: string, apiKey?: string | null): 
     .slice(0, 400);
 }
 
-export interface VoiceTranscriptionResult {
-  text: string;
-  model: string;
-  usage: VoiceTranscriptionUsage;
+/** What pauses a workplace's voice-to-text (note #1026): a failure no
+ *  retry and no second recording can fix. Anything else is a passing fault. */
+export function voicePauseReasonFor(error: unknown): VoicePauseReason | null {
+  if (!(error instanceof VoiceTranscriptionError)) return null;
+  return error.code === 'out_of_credit' ? 'out_of_credit' : error.code === 'key_rejected' ? 'key_rejected' : null;
 }
 
-export interface VoiceTranscriptionServiceDeps {
-  apiKey?: string;
-  model?: string;
-  provider?: VoiceTranscriptionProvider;
-}
-
+/** One recording, on the workplace's own key and model (note #1026). */
 export interface VoiceTranscriptionRequest {
-  userId: string;
+  apiKey: string;
+  model: string;
   audio: Buffer;
   contentType: string;
   fileName: string;
-  sessionId?: string;
 }
 
 const TRANSCRIPTION_FILE_EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
@@ -167,29 +152,6 @@ const OPENROUTER_AUDIO_FORMAT_BY_EXTENSION: Record<string, string> = {
   '.wav': 'wav',
   '.webm': 'webm',
 };
-
-function resolveVoiceTranscriptionProvider(
-  configuredProvider: string | undefined,
-  model: string,
-): VoiceTranscriptionProvider {
-  const provider = configuredProvider?.trim().toLowerCase();
-  if (provider === 'openrouter' || provider === 'openai') {
-    return provider;
-  }
-
-  if (provider) {
-    console.warn(
-      `[voice-transcription] Unsupported VOICE_TRANSCRIPTION_PROVIDER=${provider}; inferring provider from model.`,
-    );
-  }
-
-  return model.includes('/') ? 'openrouter' : 'openai';
-}
-
-function resolveOpenRouterApiKey(configuredApiKey?: string): string | null {
-  const apiKey = configuredApiKey?.trim() || process.env.OPENROUTER_API_KEY?.trim();
-  return apiKey || null;
-}
 
 function resolveTranscriptionUploadFileName(fileName: string, contentType: string): string {
   const trimmedFileName = fileName.trim();
@@ -358,32 +320,14 @@ async function transcribeWithOpenRouter(args: {
   );
 }
 
-export class VoiceTranscriptionService {
-  private readonly configuredApiKey?: string;
-  private readonly model: string;
-  private readonly provider: VoiceTranscriptionProvider;
-
-  constructor(private readonly deps: VoiceTranscriptionServiceDeps) {
-    this.configuredApiKey = deps.apiKey?.trim() || undefined;
-    const configuredModel = deps.model?.trim() || process.env.VOICE_TRANSCRIPTION_MODEL?.trim();
-    this.provider = resolveVoiceTranscriptionProvider(
-      deps.provider ?? process.env.VOICE_TRANSCRIPTION_PROVIDER,
-      configuredModel || DEFAULT_VOICE_TRANSCRIPTION_MODEL,
-    );
-    this.model = configuredModel || (
-      this.provider === 'openai'
-        ? DEFAULT_OPENAI_VOICE_TRANSCRIPTION_MODEL
-        : DEFAULT_OPENROUTER_VOICE_TRANSCRIPTION_MODEL
-    );
-  }
-
-  getAvailabilityError(): string | null {
-    return this.getApiKey()
-      ? null
-      : `Voice transcription is unavailable because the server ${this.getApiKeyDisplayName()} is not configured.`;
-  }
-
-  async transcribe(args: VoiceTranscriptionRequest): Promise<VoiceTranscriptionResult> {
+/**
+ * Turns one recording into words through OpenRouter, the only provider
+ * (Adam, note #1026 point 6). It holds no key and no model: the workplace's
+ * own come with every request (`WorkplaceVoiceService`), so nothing here
+ * reads the process environment and no platform account pays for voice.
+ */
+export class VoiceTranscriptionService implements VoiceTranscriber {
+  async transcribe(args: VoiceTranscriptionRequest): Promise<VoiceTranscriberResult> {
     if (args.audio.byteLength <= 0) {
       throw new VoiceTranscriptionError('Audio body is required.', 'invalid_audio', 400);
     }
@@ -405,92 +349,40 @@ export class VoiceTranscriptionService {
       );
     }
 
-    const apiKey = this.getApiKey();
-    if (!apiKey) {
-      throw new VoiceTranscriptionError(
-        `Voice transcription is unavailable because the server ${this.getApiKeyDisplayName()} is not configured.`,
-        'not_configured',
-        503,
-      );
-    }
-
     let transcript: { text: string; usage: VoiceTranscriptionUsage };
     try {
-      transcript = this.provider === 'openrouter'
-        ? await transcribeWithOpenRouter({
-          apiKey,
-          audio: args.audio,
-          contentType,
-          fileName: args.fileName,
-          model: this.model,
-        })
-        : await this.transcribeWithOpenAI(apiKey, args.audio, contentType, args.fileName);
+      transcript = await transcribeWithOpenRouter({
+        apiKey: args.apiKey,
+        audio: args.audio,
+        contentType,
+        fileName: args.fileName,
+        model: args.model,
+      });
     } catch (error) {
       const failure = error instanceof VoiceTranscriptionError
         ? error
-        : this.fromProviderError(error);
+        : new VoiceTranscriptionError(
+          `OpenRouter transcription request failed: ${getOptionalErrorMessage(error) ?? 'unknown error'}`,
+          'upstream_error',
+          502,
+        );
       // One line per failed recording, whatever the provider said (note
       // #1023): before this the route folded every refusal into a bare 502
       // and the journal stayed silent while every recording failed.
       console.warn(
-        `[voice-transcription] transcription failed: provider=${this.provider} model=${this.model} `
+        `[voice-transcription] transcription failed: provider=openrouter model=${args.model} `
         + `upstream=${failure.upstreamStatus ?? 'no answer'} code=${failure.code} `
-        + `message=${JSON.stringify(redactProviderMessage(failure.message, apiKey))}`,
+        + `message=${JSON.stringify(redactProviderMessage(failure.message, args.apiKey))}`,
       );
       throw failure;
     }
-    const { text, usage } = transcript;
 
+    const usage = transcript.usage;
     return {
-      text,
-      model: this.model,
-      usage,
-    };
-  }
-
-  /** An OpenAI SDK error (or anything else thrown on the way) as one of ours. */
-  private fromProviderError(error: unknown): VoiceTranscriptionError {
-    const status = isRecord(error) ? getFiniteNumber(error.status) : undefined;
-    const providerCode = isRecord(error) ? error.code : undefined;
-    const code = classifyUpstreamStatus(status, providerCode);
-    const name = this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
-    return new VoiceTranscriptionError(
-      `${name} transcription request failed: ${getOptionalErrorMessage(error) ?? 'unknown error'}`,
-      code,
-      code === 'upstream_error' ? 502 : 503,
-      status,
-    );
-  }
-
-  private getApiKey(): string | null {
-    return this.provider === 'openrouter'
-      ? resolveOpenRouterApiKey(this.configuredApiKey)
-      : resolveOpenAIApiKey(this.configuredApiKey);
-  }
-
-  private getApiKeyDisplayName(): string {
-    return this.provider === 'openrouter' ? 'OpenRouter API key' : 'OpenAI API key';
-  }
-
-  private async transcribeWithOpenAI(
-    apiKey: string,
-    audio: Buffer,
-    contentType: string,
-    fileName: string,
-  ): Promise<{ text: string; usage: VoiceTranscriptionUsage }> {
-    const openai = getOpenAIClient(apiKey);
-    const file = await toFile(
-      audio,
-      resolveTranscriptionUploadFileName(fileName, contentType),
-      { type: contentType },
-    );
-    const transcript = await openai.audio.transcriptions.create({
-      file,
-      model: this.model || DEFAULT_OPENAI_VOICE_TRANSCRIPTION_MODEL,
-    });
-    return {
-      text: typeof transcript.text === 'string' ? transcript.text.trim() : '',
-      usage: transcript.usage as VoiceTranscriptionUsage,
+      text: transcript.text,
+      ...(usage?.type === 'cost' ? { costUsd: usage.cost_usd } : {}),
+      ...(usage?.type === 'cost' && usage.seconds !== undefined ? { seconds: usage.seconds } : {}),
+      ...(usage?.type === 'duration' ? { seconds: usage.seconds } : {}),
     };
   }
 }

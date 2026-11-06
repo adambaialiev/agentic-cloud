@@ -38,6 +38,7 @@ import { workspaceRoutes } from '../backend/src/routes/workspace.js';
 import { workspaceRootRoutes } from '../backend/src/routes/workspace-root.js';
 import type { RouteDeps } from '../backend/src/routes/deps.js';
 import { InMemoryQuickNoteStorage } from '../backend/src/services/quick-note-storage.js';
+import { InMemoryOrgStorage } from '../backend/src/services/org-storage.js';
 import { InMemoryUserStorage } from '../backend/src/services/user-storage.js';
 import { SecretCipher } from '../backend/src/services/secret-cipher.js';
 import {
@@ -89,12 +90,21 @@ const quickNoteStorage = new InMemoryQuickNoteStorage();
 const uploads: Array<{ bytes: number; contentType: string }> = [];
 const sentMessages: string[] = [];
 const sentFiles: string[][] = [];
-const voiceTranscriptionService = {
-  transcribe: async (args: { audio: Buffer; contentType: string }) => {
+// The workplace's own key and model are the service's business (note #1026);
+// this harness only needs the words back and what the route handed over.
+// Voice-to-text belongs to a WORKPLACE (note #1026): a recording with no
+// workplace is "not set up". The account joins one for the recording steps
+// below and leaves it before the steps that need a personal Home.
+const orgStorage = new InMemoryOrgStorage();
+const voiceOrg = await orgStorage.createOrg({ name: 'Harness', createdByUserId: 'harness' });
+const workplaceVoice = {
+  answer: async () => ({ state: 'on', model: { id: 'fake', name: 'Fake' }, admins: [], canChange: true }),
+  models: async () => ({ models: [], pricesCheckedAt: null }),
+  transcribe: async (_orgId: string, args: { audio: Buffer; contentType: string }) => {
     uploads.push({ bytes: args.audio.byteLength, contentType: args.contentType });
-    return { text: 'ship it on Friday', model: 'fake', usage: null };
+    return { text: 'ship it on Friday', model: 'fake' };
   },
-} as unknown as RouteDeps['voiceTranscriptionService'];
+} as unknown as RouteDeps['workplaceVoice'];
 
 const agentLifecycle = {
   createAgent: async () => ({ ok: true as const }),
@@ -125,12 +135,18 @@ const deps = {
   workspaceUiDir: SHELL,
   workspaceUiDefault: 'react',
   agentLifecycle,
-  voiceTranscriptionService,
+  workplaceVoice,
+  orgStorage,
   quickNoteStorage,
 } as unknown as RouteDeps;
 
 const app = express();
 app.use(express.json());
+// What the microphones read before recording (note #1026): in this world the
+// workplace's voice-to-text is on, whichever Home the account stands on.
+app.get('/workspace/api/voice', (_req, res) => {
+  res.json({ state: 'on', model: { id: 'fake', name: 'Fake' }, admins: [], canChange: true });
+});
 app.use('/workspace', workspaceRoutes(deps));
 // The shell itself answers at the root of the domain (public-addresses).
 app.use(workspaceRootRoutes({ workspaceUiDir: deps.workspaceUiDir }));
@@ -231,7 +247,9 @@ try {
   });
 
   // 2. The chat composer, with words already in the box: dictation has to land
-  //    beside them rather than replace them.
+  //    beside them rather than replace them. In a workplace, which is what
+  //    voice-to-text is paid by (note #1026).
+  await orgStorage.addMember({ orgId: voiceOrg.orgId, userId: me.userId, role: 'admin' });
   await page.goto(`${ORIGIN}/chat/felix`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#agentChatText', { timeout: 15_000 });
   // Exercise the browser's REAL permission path before substituting our
@@ -453,10 +471,15 @@ try {
   //    note's microphone opens the SAME full-screen dialog, and its depth is
   //    covered by scripts/verify-voice-on-a-note.mts. What is worth proving
   //    here is only that the two screens really do share the one recorder.
+  // Back to a personal account: its Home is the overview this step needs.
+  await orgStorage.removeMember(voiceOrg.orgId, me.userId);
   await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#screenOverview #newNoteBtn', { timeout: 15_000 });
   await page.click('#newNoteBtn');
   await page.waitForSelector('#screenNoteNew #noteText', { timeout: 15_000 });
+  // The recording is still paid by a workplace, so the account rejoins one
+  // before it speaks.
+  await orgStorage.addMember({ orgId: voiceOrg.orgId, userId: me.userId, role: 'admin' });
   await installMicrophone(page);
   await page.type('#noteText', 'Bring the drill on Thursday.\nAsk about the gate.\nThe code is on the fridge.');
   check('a note is dictated into too', Boolean(await page.$('.voicefield > #noteText')));

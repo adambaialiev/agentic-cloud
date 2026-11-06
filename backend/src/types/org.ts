@@ -192,6 +192,31 @@ export interface OrgDocument {
    */
   invitesAllowed?: { at: string; by: string };
   /**
+   * Voice-to-text settings (note #1026). The key itself is an org secret
+   * (`VOICE_OPENROUTER_KEY`, `OrgSecretsService`), never here and never in an
+   * agent's environment; this records who saved it, and the model an admin
+   * picked (absent: DEFAULT_VOICE_MODEL). Written only by an admin's own
+   * request on the Workplace screen — no agent verb reaches it.
+   */
+  voice?: {
+    model?: string;
+    modelChangedAt?: string;
+    modelChangedByName?: string;
+    keySavedAt?: string;
+    keySavedByName?: string;
+  };
+  /**
+   * Set when OpenRouter refused a recording for a reason no retry fixes: the
+   * account ran out of credit (402) or the key no longer works (401/403).
+   * Recordings stop at once with that reason; the backend asks OpenRouter
+   * again at most every two minutes and clears it when the answer is good,
+   * when a recording succeeds, or when an admin saves a key. A field of its
+   * own so the recording path never rewrites the admin's settings.
+   */
+  voicePaused?: { reason: 'out_of_credit' | 'key_rejected'; at: string; checkedAt?: string };
+  /** This calendar month's recordings, for the admin's line (note #1026). */
+  voiceUsage?: { month: string; recordings: number; seconds: number; costUsd: number };
+  /**
    * Workstream 3's interface: the client's own Fly org, where agent machines
    * and deploys land. Absent until the client connects one — the org layer
    * only carries the pointer, provisioning owns what it means.

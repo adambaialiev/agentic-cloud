@@ -47,7 +47,12 @@ import { OrgGitService, orgKnowledgeShelfNamespace } from '../../services/org-gi
 import { PLATFORM_CREDENTIAL_USAGE_REFRESH_MS } from '../../services/platform-credential-pool.js';
 import { InMemoryQuickNoteStorage } from '../../services/quick-note-storage.js';
 import { QUICK_NOTES_MAX_PER_USER } from '../../types/quick-note.js';
-import { VoiceTranscriptionError } from '../../services/voice-transcription-service.js';
+import { VoiceTranscriptionError, voicePauseReasonFor } from '../../services/voice-transcription-service.js';
+import { VOICE_KEY_SECRET_NAME, WorkplaceVoiceService } from '../../services/workplace-voice.js';
+import { OrgSecretsService } from '../../services/org-secrets.js';
+import { DEFAULT_VOICE_MODEL } from '../../shared/voice.js';
+
+const VOICE_TEST_KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef01234567';
 import { VOICE_ERROR_SENTENCES } from '../../shared/voice-transcription.js';
 import {
   InMemoryWorkspaceWebAuthStorage,
@@ -316,72 +321,93 @@ describe('telegram mini app routes', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('transcribes an authenticated Workspace recording without returning provider metadata', async () => {
-    const { deps } = await buildDeps();
-    const transcribe = vi.fn().mockResolvedValue({
-      text: 'Ship the new onboarding flow.',
-      model: 'provider/model-that-stays-server-side',
-      usage: { type: 'duration', seconds: 3 },
+  /** A workplace user-1 belongs to, with voice-to-text on its own key
+   *  (note #1026) when `key` is set. */
+  async function withVoice(deps: Partial<RouteDeps>, opts: {
+    role?: 'admin' | 'member';
+    key?: boolean;
+    transcribe?: ReturnType<typeof vi.fn>;
+    checkKey?: ReturnType<typeof vi.fn>;
+  } = {}) {
+    const orgStorage = new InMemoryOrgStorage();
+    const org = await orgStorage.createOrg({ name: 'Acme', createdByUserId: 'user-1' });
+    await orgStorage.addMember({ orgId: org.orgId, userId: 'user-1', role: opts.role ?? 'admin' });
+    const orgSecrets = new OrgSecretsService(new InMemorySecretStorage());
+    if (opts.key) await orgSecrets.setOrgSecret(org.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+    const transcribe = opts.transcribe ?? vi.fn().mockResolvedValue({ text: 'Ship the new onboarding flow.', costUsd: 0.001, seconds: 3 });
+    const checkKey = opts.checkKey ?? vi.fn().mockResolvedValue('ok');
+    deps.orgStorage = orgStorage;
+    deps.workplaceVoice = new WorkplaceVoiceService({
+      orgStorage,
+      orgSecrets,
+      openRouter: { checkKey: checkKey as never, creditLeft: vi.fn().mockResolvedValue(3), transcriptionModels: vi.fn().mockResolvedValue([]) },
+      transcriber: { transcribe: transcribe as never },
+      pauseReasonFor: voicePauseReasonFor,
     });
-    deps.voiceTranscriptionService = { transcribe };
+    return { orgId: org.orgId, orgStorage, orgSecrets, transcribe, checkKey };
+  }
+
+  const recording = (headers: Record<string, string> = {}) => mockRequest({
+    headers: { ...authHeader(42), 'Content-Type': 'audio/webm;codecs=opus', ...headers },
+    body: Buffer.from('recorded-audio'),
+  });
+
+  it('transcribes on the workplace key and model without returning provider metadata', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { key: true });
     const res = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'audio/webm;codecs=opus' },
-      body: Buffer.from('recorded-audio'),
-    }), res);
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ text: 'Ship the new onboarding flow.' });
-    expect(transcribe).toHaveBeenCalledWith({
-      userId: 'user-1',
+    expect(voice.transcribe).toHaveBeenCalledWith({
+      apiKey: VOICE_TEST_KEY,
+      model: DEFAULT_VOICE_MODEL,
       audio: Buffer.from('recorded-audio'),
       contentType: 'audio/webm',
       fileName: 'workspace-recording',
     });
   });
 
-  it('keeps Workspace transcription behind launch auth and reports an unavailable service', async () => {
+  it('keeps Workspace transcription behind the session, and says "not set up" with no workplace key', async () => {
     const { deps } = await buildDeps();
-    const transcribe = vi.fn();
-    deps.voiceTranscriptionService = { transcribe };
+    const voice = await withVoice(deps);
     const unauthenticated = createMockResponse();
     await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
       headers: { 'Content-Type': 'audio/webm' },
       body: Buffer.from('audio'),
     }), unauthenticated);
     expect(unauthenticated.statusCode).toBe(401);
-    expect(transcribe).not.toHaveBeenCalled();
 
-    delete deps.voiceTranscriptionService;
+    const noKey = createMockResponse();
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), noKey);
+    expect(noKey.statusCode).toBe(503);
+    expect(noKey.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_not_configured, code: 'voice_not_configured' });
+    expect(voice.transcribe).not.toHaveBeenCalled();
+
+    delete deps.workplaceVoice;
     const unavailable = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
-      body: Buffer.from('audio'),
-    }), unavailable);
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), unavailable);
     expect(unavailable.statusCode).toBe(503);
     expect(unavailable.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_not_configured, code: 'voice_not_configured' });
   });
 
   it('keeps transcription provider failures private and preserves safe audio refusals', async () => {
     const { deps } = await buildDeps();
-    const transcribe = vi.fn()
-      .mockRejectedValueOnce(new VoiceTranscriptionError('Voice transcription expects an audio recording.', 'invalid_audio', 400))
-      .mockRejectedValueOnce(new Error('upstream key and gateway details'));
-    deps.voiceTranscriptionService = { transcribe };
+    await withVoice(deps, {
+      key: true,
+      transcribe: vi.fn()
+        .mockRejectedValueOnce(new VoiceTranscriptionError('Voice transcription expects an audio recording.', 'invalid_audio', 400))
+        .mockRejectedValueOnce(new Error('upstream key and gateway details')),
+    });
 
     const invalid = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'text/plain' },
-      body: Buffer.from('not audio'),
-    }), invalid);
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording({ 'Content-Type': 'text/plain' }), invalid);
     expect(invalid.statusCode).toBe(400);
     expect(invalid.body).toEqual({ error: 'Voice transcription expects an audio recording.' });
 
     const upstream = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
-      body: Buffer.from('audio'),
-    }), upstream);
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), upstream);
     expect(upstream.statusCode).toBe(502);
     expect(upstream.body).toEqual({ error: 'Could not transcribe that recording. Try again.', code: 'voice_failed' });
     expect(JSON.stringify(upstream.body)).not.toContain('key');
@@ -389,43 +415,114 @@ describe('telegram mini app routes', () => {
 
   // Note #1023: a provider that is out of credit or refuses the key is
   // configuration, so the route answers 503 with a stable code and a sentence
-  // that says who can fix it — never the provider's own words.
+  // that says who can fix it — never the provider's own words. Note #1026:
+  // the workplace pauses, and the next recording is refused without asking
+  // OpenRouter at all.
   it.each([
     ['out of credit', 'out_of_credit', 402, 'voice_out_of_credit', 'run out of credit'],
     ['a rejected key', 'key_rejected', 401, 'voice_key_rejected', 'key no longer works'],
-  ] as const)('answers 503 with a stable code for %s', async (_case, serviceCode, upstreamStatus, code, words) => {
+  ] as const)('answers 503 with a stable code for %s, and pauses the workplace', async (_case, serviceCode, upstreamStatus, code, words) => {
     const { deps } = await buildDeps();
-    deps.voiceTranscriptionService = {
+    const voice = await withVoice(deps, {
+      key: true,
       transcribe: vi.fn().mockRejectedValue(new VoiceTranscriptionError(
         'OpenRouter transcription request failed: This request\u2019s maximum cost exceeds your available credits.',
         serviceCode, 503, upstreamStatus,
       )),
-    };
-    const res = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
-      body: Buffer.from('audio'),
-    }), res);
-    expect(res.statusCode).toBe(503);
-    expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES[code], code });
-    expect((res.body as { error: string }).error).toContain(words);
-    expect(JSON.stringify(res.body)).not.toMatch(/OpenRouter|credits\.|40[12]/);
+    });
+    for (let i = 0; i < 2; i++) {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), res);
+      expect(res.statusCode).toBe(503);
+      expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES[code], code });
+      expect((res.body as { error: string }).error).toContain(words);
+      expect(JSON.stringify(res.body)).not.toMatch(/OpenRouter|credits\.|40[12]/);
+    }
+    expect(voice.transcribe).toHaveBeenCalledTimes(1);
+    expect((await voice.orgStorage.getOrg(voice.orgId))?.voicePaused?.reason).toBe(serviceCode);
   });
 
   it('keeps a passing upstream fault a plain 502 with the voice_failed code', async () => {
     const { deps } = await buildDeps();
-    deps.voiceTranscriptionService = {
+    await withVoice(deps, {
+      key: true,
       transcribe: vi.fn().mockRejectedValue(new VoiceTranscriptionError(
         'OpenRouter transcription request failed: 503 Service Unavailable', 'upstream_error', 502, 503,
       )),
-    };
+    });
     const res = createMockResponse();
-    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
-      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
-      body: Buffer.from('audio'),
-    }), res);
+    await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), res);
     expect(res.statusCode).toBe(502);
     expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_failed, code: 'voice_failed' });
+  });
+
+  it('shows a member who pays and who can change voice-to-text, and refuses their changes', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { role: 'member', key: true });
+    const read = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), read);
+    expect(read.statusCode).toBe(200);
+    expect(read.body).toMatchObject({ state: 'on', canChange: false, model: { id: DEFAULT_VOICE_MODEL } });
+    expect(read.body).not.toHaveProperty('admin');
+    expect(JSON.stringify(read.body)).not.toContain(VOICE_TEST_KEY.slice(-6));
+
+    for (const [path, method, body] of [
+      ['/api/voice/key', 'put', { key: 'sk-or-v1-another-key-entirely-0000000000' }],
+      ['/api/voice/key', 'delete', undefined],
+      ['/api/voice/model', 'put', { model: 'openai/whisper-large-v3' }],
+    ] as const) {
+      const res = createMockResponse();
+      await getRouteHandler(deps, path, method)(mockRequest({ headers: authHeader(42), body }), res);
+      expect(res.statusCode).toBe(403);
+    }
+    expect(voice.checkKey).not.toHaveBeenCalled();
+    expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBe(VOICE_TEST_KEY);
+  });
+
+  it('lets an admin save a key OpenRouter accepts, choose a model and remove the key', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { role: 'admin' });
+    const before = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), before);
+    expect(before.body).toMatchObject({ state: 'off', canChange: true, admin: { key: null } });
+
+    const saved = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key', 'put')(mockRequest({ headers: authHeader(42), body: { key: VOICE_TEST_KEY } }), saved);
+    expect(saved.statusCode).toBe(200);
+    expect(saved.body).toMatchObject({ state: 'on', admin: { key: { preview: `sk-or-v1-…${VOICE_TEST_KEY.slice(-4)}` }, creditLeftUsd: 3 } });
+    expect(JSON.stringify(saved.body)).not.toContain(VOICE_TEST_KEY);
+    expect(voice.checkKey).toHaveBeenCalledWith(VOICE_TEST_KEY);
+
+    const model = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/model', 'put')(mockRequest({ headers: authHeader(42), body: { model: 'openai/whisper-large-v3-turbo' } }), model);
+    expect(model.body).toMatchObject({ model: { id: 'openai/whisper-large-v3-turbo', name: 'Whisper Large V3 Turbo' } });
+
+    const removed = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key', 'delete')(mockRequest({ headers: authHeader(42) }), removed);
+    expect(removed.body).toMatchObject({ state: 'off' });
+  });
+
+  it('answers "off" to an account in no workplace, and refuses its changes', async () => {
+    const { deps } = await buildDeps();
+    await withVoice(deps);
+    deps.orgStorage = new InMemoryOrgStorage();
+    const read = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), read);
+    expect(read.statusCode).toBe(200);
+    expect(read.body).toMatchObject({ state: 'off', canChange: false, admins: [] });
+    const write = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key', 'put')(mockRequest({ headers: authHeader(42), body: { key: VOICE_TEST_KEY } }), write);
+    expect(write.statusCode).toBe(403);
+  });
+
+  it('refuses a key OpenRouter does not accept, keeping nothing', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { checkKey: vi.fn().mockResolvedValue('rejected') });
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key', 'put')(mockRequest({ headers: authHeader(42), body: { key: VOICE_TEST_KEY } }), res);
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ code: 'voice_key_rejected' });
+    expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
   });
 
   it('puts the landing agent\u2019s name and face on a knowledge page', async () => {

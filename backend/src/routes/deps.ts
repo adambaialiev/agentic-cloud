@@ -48,7 +48,7 @@ import type { SecretStorage } from '../services/secret-storage.js';
 import type { OrgStorage } from '../services/org-storage.js';
 import type { OrgHandleService } from '../services/org-handles.js';
 import type { OrgSeatSignInFlow } from '../services/org-seat-signin-flow.js';
-import type { VoiceTranscriptionService } from '../services/voice-transcription-service.js';
+import type { WorkplaceVoiceService } from '../services/workplace-voice.js';
 import type { WorkspaceWebAuthService } from '../services/workspace-web-auth.js';
 import type { WorkspaceNotificationService } from '../services/workspace-notifications.js';
 import type { RadioStation } from '../services/radio-station.js';
@@ -177,12 +177,12 @@ export interface RouteDeps {
    */
   mediaStorage?: MediaStorage;
   /**
-   * Turns a short recording from any Workspace prose field into text. The
-   * shared transcription service keeps the Workspace independent of uneven
-   * browser SpeechRecognition implementations. Absent →
-   * the authenticated endpoint reports that dictation is unavailable.
+   * Turns a short recording from any Workspace prose field into text, on
+   * the workplace's own OpenRouter key and model (note #1026), and holds the
+   * admin's voice-to-text settings. Absent → the transcribe route and the
+   * settings routes answer that voice-to-text is unavailable.
    */
-  voiceTranscriptionService?: Pick<VoiceTranscriptionService, 'transcribe'>;
+  workplaceVoice?: WorkplaceVoiceService;
   /** Internal git repos (docs/agent-git-phase1.md). Absent → those routes 503. */
   gitRepoStorage?: GitRepoStorage;
   gitHostClient?: GitHostClient;

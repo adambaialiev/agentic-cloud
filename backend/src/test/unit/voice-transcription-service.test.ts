@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   VoiceTranscriptionError,
   VoiceTranscriptionService,
-  type VoiceTranscriptionServiceDeps,
+  voicePauseReasonFor,
 } from '../../services/voice-transcription-service.js';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -13,31 +13,15 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
-function createDeps(): VoiceTranscriptionServiceDeps {
-  return {
-    userStorage: {
-      deductBalance: vi.fn().mockResolvedValue(true),
-      getBalance: vi.fn().mockResolvedValue(1000),
-      getProfile: vi.fn().mockResolvedValue(undefined),
-    } as unknown as VoiceTranscriptionServiceDeps['userStorage'],
-    usageService: {
-      checkSpendAllowance: vi.fn().mockResolvedValue({ allowed: true }),
-    } as unknown as VoiceTranscriptionServiceDeps['usageService'],
-    eventEmitter: {
-      emit: vi.fn(),
-    } as unknown as VoiceTranscriptionServiceDeps['eventEmitter'],
-    apiKey: 'test-openrouter-key',
-    model: 'openai/whisper-large-v3',
-    provider: 'openrouter',
-  };
-}
-
+/** OpenRouter only, and no key or model of its own (note #1026): both come
+ *  with every request, from the workplace. */
 function createService(): VoiceTranscriptionService {
-  return new VoiceTranscriptionService(createDeps());
+  return new VoiceTranscriptionService();
 }
 
 const REQUEST = {
-  userId: 'user-1',
+  apiKey: 'test-openrouter-key',
+  model: 'openai/whisper-large-v3',
   audio: Buffer.from('fake-audio-bytes'),
   contentType: 'audio/ogg',
   fileName: 'recording.ogg',
@@ -65,6 +49,19 @@ describe('VoiceTranscriptionService OpenRouter retries', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.text).toBe('hello world');
+  });
+
+  it('sends the workplace key and model, and reports what OpenRouter says it cost', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ text: ' hi ', usage: { cost: 0.0007, seconds: 12.5 } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await createService().transcribe(REQUEST);
+
+    expect(result).toEqual({ text: 'hi', costUsd: 0.0007, seconds: 12.5 });
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer test-openrouter-key');
+    expect(JSON.parse(String(init?.body)).model).toBe('openai/whisper-large-v3');
   });
 
   it('gives up after exhausting retries on repeated 429s', async () => {
@@ -191,15 +188,10 @@ describe('VoiceTranscriptionService provider refusals', () => {
     expect(logged(warn)).toContain('upstream=no answer code=upstream_error');
   });
 
-  it('calls OpenAI insufficient_quota out of credit too', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const service = new VoiceTranscriptionService({ ...createDeps(), provider: 'openai', model: 'gpt-4o-mini-transcribe', apiKey: 'sk-proj-secretsecret' });
-    vi.spyOn(service as unknown as { transcribeWithOpenAI: () => Promise<never> }, 'transcribeWithOpenAI')
-      .mockRejectedValue(Object.assign(new Error('429 You exceeded your current quota. Key sk-proj-****cret'), { status: 429, code: 'insufficient_quota' }));
-
-    await expect(service.transcribe(REQUEST)).rejects.toMatchObject({ code: 'out_of_credit', statusCode: 503, upstreamStatus: 429 });
-    const lines = logged(warn);
-    expect(lines).toContain('provider=openai');
-    expect(lines).not.toContain('sk-proj');
+  it('says which failures pause a workplace', () => {
+    expect(voicePauseReasonFor(new VoiceTranscriptionError('x', 'out_of_credit', 503, 402))).toBe('out_of_credit');
+    expect(voicePauseReasonFor(new VoiceTranscriptionError('x', 'key_rejected', 503, 401))).toBe('key_rejected');
+    expect(voicePauseReasonFor(new VoiceTranscriptionError('x', 'upstream_error', 502, 500))).toBeNull();
+    expect(voicePauseReasonFor(new Error('x'))).toBeNull();
   });
 });
