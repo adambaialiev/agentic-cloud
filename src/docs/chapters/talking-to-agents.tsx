@@ -10,8 +10,13 @@ import LiveChief from '../../components/LiveChief';
  * steering, voice, background jobs, agents writing to each other, handing
  * work over, fresh chats, the cards in a chat and the phone. Facts checked
  * 2026-09-24 against main: work starts by messaging an agent or handing it
- * a note; re-checked 2026-11-06 (note #1011). Written to src/docs/STYLE.md. Since rooms were removed (30–31 Oct
- * 2026, note #843) the chat header names only the agent, and unread replies
+ * a note; re-checked 2026-11-06 (note #1011). Same day (note #1020): a chat
+ * file has no product cap since note #943, only the protocol's 10,000 parts
+ * of 8 MiB, about 78 GB (AGENT_CHAT_FILE_MAX_BYTES); the 95 MB is one
+ * request's inline body, which the screen sends around in parts. Recently
+ * finished keeps at most 4 jobs from the last day (RECENT_JOB_MAX_SETTLED in
+ * the CLI, MANAGED_JOB_RECENT_MAX_ROWS in agent-service.ts). Written to
+ * src/docs/STYLE.md. Since rooms were removed (30–31 Oct 2026, note #843) the chat header names only the agent, and unread replies
  * and decisions head the one list of agents behind the faces.
  */
 const chapter: DocChapter = {
@@ -98,9 +103,9 @@ const chapter: DocChapter = {
         <>
           <p>
             A message is up to 10,000 characters, any number of files, or both, and files alone
-            are fine. Each file can be up to 25 MB, and the files in one message up to 95 MB
-            together. Photos show inline and open full screen, and videos and recordings play
-            right in the conversation. A PDF opens in a viewer, an HTML file opens in a sandbox
+            are fine. Each file can be up to about 78 GB, and a big one goes up in parts. Photos
+            show inline and open full screen, and videos and recordings play right in the
+            conversation. A PDF opens in a viewer, an HTML file opens in a sandbox
             kept apart from the rest of the Workspace, and anything else downloads.
           </p>
           <p>
@@ -168,8 +173,9 @@ const chapter: DocChapter = {
             Each running job shows its command, how long it has run and when it started. Under{' '}
             <Ui>Recently finished</Ui>, a job ends as <Ui>Finished</Ui>, <Ui>Failed</Ui>,{' '}
             <Ui>Timed out</Ui>, <Ui>Stopped by the agent</Ui> or <Ui>Interrupted by a restart</Ui>,
-            and stays listed for a day. Opening the screen never wakes the machine. When the job
-            finishes, the agent tells you in its chat.
+            and stays listed for a day. The list keeps the four that ended most recently. Opening
+            the screen never wakes the machine. When the job finishes, the agent tells you in its
+            chat.
           </p>
         </>
       ),
@@ -299,11 +305,11 @@ const chapter: DocChapter = {
   ],
   reference: [
     { term: 'Message length', text: 'Up to 10,000 characters. A counter appears as you near the limit.' },
-    { term: 'Files in a message', text: 'Any number, each up to 25 MB and up to 95 MB together, with or without words.' },
+    { term: 'Files in a message', text: 'Any number, each up to about 78 GB, with or without words. A big file goes up in parts.' },
     { term: 'Keyboard', text: 'At a desk, Enter sends and Shift+Enter adds a line. On a touch keyboard Enter adds a line and only Send sends.' },
     { term: 'Voice', text: 'Up to 90 seconds per recording. The words are shown for review before anything is sent.' },
     { term: 'History shown', text: 'The last 500 messages of each conversation.' },
-    { term: 'Background jobs', text: <>On the agent’s <Ui>Background jobs</Ui> screen while running, and for a day after they end.</> },
+    { term: 'Background jobs', text: <>On the agent’s <Ui>Background jobs</Ui> screen while running, and for a day after they end. At most the 4 most recently ended are listed.</> },
     { term: 'Agent to agent', text: 'Delivered only to an idle agent. A busy one refuses, and nothing is queued.' },
     { term: 'Where replies wait', text: <>In the conversation. The faces beside the message box show <Ui>Unread messages</Ui> per agent.</> },
   ],
