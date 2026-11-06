@@ -217,3 +217,29 @@ and 1 GB of swap, and a 10 GB volume at `/data`.
    holding the old address.
 5. Check: a push, a proposal and its merge, a CI pip, a knowledge read, the
    recovery token's clone, and an R2 bundle run from the new host.
+
+## Stage 2 — the cutover (6 Nov 2026, 18:15 UTC)
+
+Just before the window, the CI queue was empty and no git process was running
+on ia-media. Timeline:
+
+1. 18:15:16 — `agentgit` on ia-media is stopped and masked, and pushes are
+   refused from here.
+2. 18:15:17 — final rsync: 31 files and 310 KB changed since the last pass,
+   taking 3 s.
+3. 18:15:24 — the refs of all 24 repos are identical on both hosts (a sha256
+   of `for-each-ref` per repo).
+4. 18:15:35 — the backend's `GIT_HOST_CONTROL_URL` becomes
+   `http://ia-git.internal:8080`. Until stage 4, an `/etc/hosts` line on
+   ia-backend points that name at the machine's private address, reached
+   through ia-backend's WireGuard peer.
+5. 18:15:39 — `git.agentbuilt.app` is switched to Fly with A and AAAA records
+   at TTL 60. The certificate had been issued beforehand through
+   `_acme-challenge`.
+6. 18:15:41 — ia-media's Caddy now forwards `git.agentbuilt.app` to
+   `ia-git.fly.dev`, for resolvers still holding the old address.
+7. 18:15:42 — health answers both through Fly and through the old address.
+   `/internal/*` answers 404 to the public on both paths.
+
+Pushes were refused for **26 seconds**. Nothing on ia-media was deleted: the
+repos are still there, and so is the old Caddyfile (`Caddyfile.bak-n1032`).
