@@ -8,7 +8,7 @@ import { emptyState, scriptedApi, signedIn, signedOut, workspaceScript, type Cal
 /**
  * Our own sign-up door while new sign-ups are closed (note #823, the owner,
  * 2026-10-28: only the private copy is offered). Walking up says so and
- * points at the private copy's page and hello@, with no form; an invite
+ * points at the private copy's page and adam@, with no form; an invite
  * link into an open workplace still opens the form and carries the link, so
  * the request to join goes with the account; and an account in no
  * workplace waits rather than founding one.
