@@ -25,7 +25,6 @@ import {
    its section 10 (src/lib/ask-api.ts). Every word below is the design's. */
 
 export const ASK_HEADING = 'Ask an agent that reads the code.';
-export const ASK_AGENT_LINE = 'Claude Code on Sonnet · reads the public code and docs';
 export const ASK_QUESTIONS = [
   'Does every agent get its own computer?',
   'What happens when my Claude plan runs out?',
@@ -34,12 +33,16 @@ export const ASK_QUESTIONS = [
 export const ASK_PLACEHOLDER = 'Ask about Agentic Cloud Computer';
 export const ASK_PLACEHOLDER_PHONE = 'Ask about the product';
 /* The one line of fine print on the page (design, open point 4, kept by
-   Adam): the visitor should know they are read. */
-export const ASK_FINE_PRINT = 'The founder reads every conversation, to learn what people ask. Nothing about you is kept beyond what you type.';
+   Adam): the visitor should know they are read. Since note #1015 (Adam,
+   6 Nov 2026, 07:36 UTC: "too much helper text") it is the shortest true
+   line, and the Privacy Policy, which carries the full facts since note
+   #1013 (90 days, no address, processed by Claude), is one tap away. */
+export const ASK_FINE_PRINT = 'The founder reads every question.';
+export const ASK_PRIVACY_LINK = 'Privacy';
+export const ASK_PRIVACY_PATH = '/privacy';
 /* "fresh from each release" until note #1011 (6 Nov 2026): the guide reads
    the repository's main branch, fetched again when its copy is more than 15
    minutes old (services/public-guide-machine.ts), not a release. */
-export const ASK_MARGIN_REST = 'The open-source code and the docs, kept up to date within 15 minutes. Every answer lists the files it came from.';
 export const ASK_FAILED = 'Something went wrong on our side, and that question was not counted. Ask it again in a minute.';
 export const ASK_BUSY = 'A few questions are ahead of yours. Ask again in a minute.';
 
@@ -159,6 +162,20 @@ function WallLink({ href, children }: { href: string; children: string }) {
       {children}
       {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
       <ExternalArrow />
+    </a>
+  );
+}
+
+function PrivacyLink() {
+  const newTab = useNewTab();
+  return (
+    <a
+      href={ASK_PRIVACY_PATH}
+      {...(newTab ? NEW_TAB : {})}
+      className="underline decoration-hint/40 underline-offset-2 transition-colors hover:text-white hover:decoration-white focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    >
+      {ASK_PRIVACY_LINK}
+      {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
     </a>
   );
 }
@@ -344,24 +361,25 @@ export function AskTheCode() {
   const showQuestions = !resting && !limited && (turns.length === 0 || current?.state === 'declined');
   const answeredFiles = current && (current.state === 'answered') ? current.files : [];
 
-  const marginTitle = current && pending && current.files.length > 0 ? 'Reading' : current?.state === 'answered' && current.files.length > 0 ? 'It read' : 'What it reads';
-  const marginFiles = marginTitle === 'What it reads' ? [] : current!.files;
+  /* The margin holds the files an answer came from, and nothing at rest
+     (note #1015). */
+  const marginFiles = current && (pending || current.state === 'answered') ? current.files : [];
+  const marginTitle = pending ? 'Reading' : 'It read';
 
   return (
     <Screen id="ask" label="Ask an agent">
       <h2 className={`[text-wrap:balance] ${H2}`}>{ASK_HEADING}</h2>
 
-      {/* The visible agent (decision 1): its face, its name, what it is. */}
+      {/* The visible agent (decision 1): its face and its name. Since note
+          #1015 the name alone: the heading already says what it reads, and
+          "Claude Code on Sonnet" lives in the docs. */}
       <div data-ask-agent className={`mt-5 flex items-center gap-3 type-sm text-hint sm:mt-7 sm:type-base ${resting ? 'grayscale' : ''}`}>
         {agent?.avatarUrl ? (
           <img src={agent.avatarUrl} alt="" width={32} height={32} className={`h-8 w-8 shrink-0 rounded-full object-cover ${resting ? 'opacity-55' : ''}`} />
         ) : (
           <span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-full bg-panel-soft" />
         )}
-        <span>
-          {name ? <><b className="font-semibold text-white">{name}</b> · </> : null}
-          {ASK_AGENT_LINE}
-        </span>
+        {name ? <b className="font-semibold text-white">{name}</b> : null}
       </div>
 
       <div className="mt-5 grid gap-14 sm:mt-7 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -474,22 +492,26 @@ export function AskTheCode() {
                     Ask
                   </button>
                 </form>
-                <p id="ask-fine-print" className="mt-2.5 type-xs text-hint">{ASK_FINE_PRINT}</p>
+                <p id="ask-fine-print" className="mt-2.5 type-xs text-hint">
+                  {ASK_FINE_PRINT}{' '}
+                  <PrivacyLink />
+                </p>
               </>
             )}
           </div>
         </div>
 
-        {/* The margin on a desk: what it reads at rest, the files as it opens
-            them, then what it read, each linked to the public code. */}
-        <aside data-ask-margin aria-label="Files it read" className="hidden border-l border-hint/16 pl-6 type-sm text-hint lg:block">
-          <p className="mb-3 type-sm font-semibold text-white">{marginTitle}</p>
-          {marginFiles.length > 0 ? (
+        {/* The margin on a desk: the files as it opens them, then what it
+            read, each linked to the public code. Empty at rest (note #1015);
+            its column stays, so an answer never moves the box. */}
+        {marginFiles.length > 0 ? (
+          <aside data-ask-margin aria-label="Files it read" className="hidden border-l border-hint/16 pl-6 type-sm text-hint lg:block">
+            <p className="mb-3 type-sm font-semibold text-white">{marginTitle}</p>
             <FileList files={marginFiles} reading={pending} />
-          ) : (
-            <p className="leading-relaxed">{ASK_MARGIN_REST}</p>
-          )}
-        </aside>
+          </aside>
+        ) : (
+          <div aria-hidden="true" className="hidden lg:block" />
+        )}
       </div>
     </Screen>
   );
