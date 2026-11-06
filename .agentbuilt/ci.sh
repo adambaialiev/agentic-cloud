@@ -153,12 +153,14 @@ install_browser() {
     && VITE_API_BASE_URL=http://localhost:3001 npm run build
 ) > "$logs/frontend.log" 2>&1 & lane_frontend=$!
 
-# The private-copy installer's own tests (note #816): plain node:test, no
+# The private-copy installer's own tests (note #816) and the backup
+# watchdog's (note #1032): plain node:test, no
 # packages, exactly as they run in the public copy of that folder.
 ( cd backend \
     && npm run build \
     && npm run test:core -- --reporter=dot \
-    && node --test ../infra/copy-installer/test/*.test.mjs
+    && node --test ../infra/copy-installer/test/*.test.mjs \
+    && node --test ../infra/backup-watchdog/worker.test.mjs
 ) > "$logs/backend.log" 2>&1 & lane_backend=$!
 
 rc_frontend=0; wait "$lane_frontend" || rc_frontend=$?

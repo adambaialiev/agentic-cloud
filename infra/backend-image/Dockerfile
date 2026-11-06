@@ -30,8 +30,12 @@ ENV NODE_ENV=production \
     PORT=8080
 # openssh-client is for an operator's `fly ssh console` hop onto agent
 # machines; sqlite3 for reading the database by hand. Neither runs at boot.
+# wireguard-tools and iproute2 are for our own platform's backend on Fly
+# (note #1032): it keeps one WireGuard peer per workplace that runs in its own
+# Fly account (services/org-wireguard.ts). Fly's kernel carries WireGuard, so
+# wg-quick works in the machine (proved 6 Nov 2026). A copy never uses them.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates openssh-client sqlite3 \
+ && apt-get install -y --no-install-recommends ca-certificates openssh-client sqlite3 wireguard-tools iproute2 \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/infinite-agents/current
 COPY --from=build /src/backend/dist dist
