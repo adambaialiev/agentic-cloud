@@ -93,3 +93,113 @@ describe('VoiceTranscriptionService OpenRouter retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// Note #1023: every recording failed for days while OpenRouter answered 402
+// and the journal said nothing.
+describe('VoiceTranscriptionService provider refusals', () => {
+  const OUT_OF_CREDIT = {
+    error: {
+      message: "This request's maximum cost exceeds your available credits. Add credits.",
+      code: 402,
+      metadata: { reason: 'weight_exceeds_budget', limit_source: 'openrouter_credits' },
+    },
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function logged(warn: ReturnType<typeof vi.spyOn>): string {
+    return warn.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
+  }
+
+  it('calls a 402 out of credit, answers 503, does not retry, and logs what the provider said', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(OUT_OF_CREDIT, { status: 402 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createService().transcribe(REQUEST)).rejects.toMatchObject({
+      code: 'out_of_credit',
+      statusCode: 503,
+      upstreamStatus: 402,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const lines = logged(warn);
+    expect(lines).toContain('[voice-transcription]');
+    expect(lines).toContain('provider=openrouter');
+    expect(lines).toContain('model=openai/whisper-large-v3');
+    expect(lines).toContain('upstream=402');
+    expect(lines).toContain('code=out_of_credit');
+    expect(lines).toContain('maximum cost exceeds your available credits');
+    expect(lines).not.toContain('test-openrouter-key');
+  });
+
+  it('calls a 401 a rejected key, answers 503, does not retry, and never logs the key', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(
+      { error: { message: 'No auth credentials found for key test-openrouter-key sk-or-v1-abcdef123456', code: 401 } },
+      { status: 401 },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createService().transcribe(REQUEST)).rejects.toMatchObject({
+      code: 'key_rejected',
+      statusCode: 503,
+      upstreamStatus: 401,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const lines = logged(warn);
+    expect(lines).toContain('upstream=401');
+    expect(lines).toContain('code=key_rejected');
+    expect(lines).not.toContain('test-openrouter-key');
+    expect(lines).not.toContain('sk-or-v1-abcdef');
+  });
+
+  it('keeps a repeated 5xx a retryable upstream error and logs the final answer', async () => {
+    vi.stubGlobal('setTimeout', ((cb: () => void) => {
+      cb();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ error: { message: 'Provider returned error', code: 503 } }, { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(createService().transcribe(REQUEST)).rejects.toMatchObject({
+      code: 'upstream_error',
+      statusCode: 502,
+      upstreamStatus: 503,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const lines = logged(warn);
+    expect(lines).toContain('transcription failed: provider=openrouter');
+    expect(lines).toContain('upstream=503 code=upstream_error');
+  });
+
+  it('logs a request that never got an answer as no answer', async () => {
+    vi.stubGlobal('setTimeout', ((cb: () => void) => {
+      cb();
+      return 0 as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockRejectedValue(new TypeError('fetch failed')));
+
+    await expect(createService().transcribe(REQUEST)).rejects.toMatchObject({ code: 'upstream_error' });
+    expect(logged(warn)).toContain('upstream=no answer code=upstream_error');
+  });
+
+  it('calls OpenAI insufficient_quota out of credit too', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const service = new VoiceTranscriptionService({ ...createDeps(), provider: 'openai', model: 'gpt-4o-mini-transcribe', apiKey: 'sk-proj-secretsecret' });
+    vi.spyOn(service as unknown as { transcribeWithOpenAI: () => Promise<never> }, 'transcribeWithOpenAI')
+      .mockRejectedValue(Object.assign(new Error('429 You exceeded your current quota. Key sk-proj-****cret'), { status: 429, code: 'insufficient_quota' }));
+
+    await expect(service.transcribe(REQUEST)).rejects.toMatchObject({ code: 'out_of_credit', statusCode: 503, upstreamStatus: 429 });
+    const lines = logged(warn);
+    expect(lines).toContain('provider=openai');
+    expect(lines).not.toContain('sk-proj');
+  });
+});

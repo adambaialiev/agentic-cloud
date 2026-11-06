@@ -78,6 +78,11 @@ type VoiceTranscriptionProvider = 'openrouter' | 'openai';
 type VoiceTranscriptionErrorCode =
   | 'invalid_audio'
   | 'not_configured'
+  /** The provider's account has no credit left (OpenRouter 402, OpenAI's
+   *  `insufficient_quota`). Configuration, not a passing fault (note #1023). */
+  | 'out_of_credit'
+  /** The provider refused the key itself (401). Configuration too. */
+  | 'key_rejected'
   | 'upstream_error';
 
 export class VoiceTranscriptionError extends Error {
@@ -85,10 +90,35 @@ export class VoiceTranscriptionError extends Error {
     message: string,
     readonly code: VoiceTranscriptionErrorCode,
     readonly statusCode: number,
+    /** What the provider answered, when it answered at all: kept for the log
+     *  line, never shown to the person recording. */
+    readonly upstreamStatus?: number,
   ) {
     super(message);
     this.name = 'VoiceTranscriptionError';
   }
+}
+
+/** The code a provider's HTTP refusal means for us. 402 and 401 are not worth
+ *  a retry and not worth a second recording either. */
+function classifyUpstreamStatus(status: number | undefined, providerCode?: unknown): VoiceTranscriptionErrorCode {
+  if (status === 402 || providerCode === 'insufficient_quota') return 'out_of_credit';
+  if (status === 401) return 'key_rejected';
+  return 'upstream_error';
+}
+
+/** A provider's message with anything key-shaped taken out. OpenAI's 401
+ *  quotes a masked prefix of the key it was given; nothing of a key belongs
+ *  in the journal, masked or not. */
+export function redactProviderMessage(message: string, apiKey?: string | null): string {
+  let clean = message;
+  if (apiKey && apiKey.length >= 8) clean = clean.split(apiKey).join('[key]');
+  return clean
+    .replace(/\b(?:sk|rk|pk)-[A-Za-z0-9_*.-]{4,}/g, '[key]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [key]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400);
 }
 
 export interface VoiceTranscriptionResult {
@@ -306,10 +336,12 @@ async function transcribeWithOpenRouter(args: {
         continue;
       }
 
+      const code = classifyUpstreamStatus(response.status);
       throw new VoiceTranscriptionError(
         `OpenRouter transcription request failed: ${message}`,
-        'upstream_error',
-        502,
+        code,
+        code === 'upstream_error' ? 502 : 503,
+        response.status,
       );
     }
 
@@ -382,21 +414,52 @@ export class VoiceTranscriptionService {
       );
     }
 
-    const { text, usage } = this.provider === 'openrouter'
-      ? await transcribeWithOpenRouter({
-        apiKey,
-        audio: args.audio,
-        contentType,
-        fileName: args.fileName,
-        model: this.model,
-      })
-      : await this.transcribeWithOpenAI(apiKey, args.audio, contentType, args.fileName);
+    let transcript: { text: string; usage: VoiceTranscriptionUsage };
+    try {
+      transcript = this.provider === 'openrouter'
+        ? await transcribeWithOpenRouter({
+          apiKey,
+          audio: args.audio,
+          contentType,
+          fileName: args.fileName,
+          model: this.model,
+        })
+        : await this.transcribeWithOpenAI(apiKey, args.audio, contentType, args.fileName);
+    } catch (error) {
+      const failure = error instanceof VoiceTranscriptionError
+        ? error
+        : this.fromProviderError(error);
+      // One line per failed recording, whatever the provider said (note
+      // #1023): before this the route folded every refusal into a bare 502
+      // and the journal stayed silent while every recording failed.
+      console.warn(
+        `[voice-transcription] transcription failed: provider=${this.provider} model=${this.model} `
+        + `upstream=${failure.upstreamStatus ?? 'no answer'} code=${failure.code} `
+        + `message=${JSON.stringify(redactProviderMessage(failure.message, apiKey))}`,
+      );
+      throw failure;
+    }
+    const { text, usage } = transcript;
 
     return {
       text,
       model: this.model,
       usage,
     };
+  }
+
+  /** An OpenAI SDK error (or anything else thrown on the way) as one of ours. */
+  private fromProviderError(error: unknown): VoiceTranscriptionError {
+    const status = isRecord(error) ? getFiniteNumber(error.status) : undefined;
+    const providerCode = isRecord(error) ? error.code : undefined;
+    const code = classifyUpstreamStatus(status, providerCode);
+    const name = this.provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+    return new VoiceTranscriptionError(
+      `${name} transcription request failed: ${getOptionalErrorMessage(error) ?? 'unknown error'}`,
+      code,
+      code === 'upstream_error' ? 502 : 503,
+      status,
+    );
   }
 
   private getApiKey(): string | null {

@@ -218,7 +218,9 @@ import { mintHumanGitToken } from '../services/human-git-token.js';
 import { inferContentType, SESSION_ATTACHMENT_MAX_BYTES } from '../services/session-attachments.js';
 import { imageDimensions } from '../utils/image-dimensions.js';
 import { canServeInline, isInlineImageFile } from '../shared/inline-files.js';
-import { VoiceTranscriptionError } from '../services/voice-transcription-service.js';
+import { VoiceTranscriptionError, redactProviderMessage } from '../services/voice-transcription-service.js';
+import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES } from '../shared/voice-transcription.js';
+import { getOptionalErrorMessage } from '../utils/error-message.js';
 import { OrgSpendError } from '../services/org-spend.js';
 import {
   AGENT_CHAT_MESSAGE_MAX_BYTES,
@@ -5830,7 +5832,10 @@ self.addEventListener('activate', (event) => {
       const auth = await authenticate(req, res);
       if (!auth) return;
       if (!deps.voiceTranscriptionService) {
-        return res.status(503).json({ error: 'Voice-to-text is unavailable right now.' });
+        return res.status(503).json({
+          error: VOICE_ERROR_SENTENCES[VOICE_ERROR_CODES.notConfigured],
+          code: VOICE_ERROR_CODES.notConfigured,
+        });
       }
 
       const audio = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -5847,13 +5852,33 @@ self.addEventListener('activate', (event) => {
         });
         return res.json({ text: result.text });
       } catch (error) {
-        if (error instanceof VoiceTranscriptionError && error.code === 'invalid_audio') {
-          return res.status(400).json({ error: error.message });
+        // The provider's own refusals were logged by the service with its
+        // status and message; what is left to log here is what never reached
+        // a provider. Never the key, never the recording.
+        const code = error instanceof VoiceTranscriptionError ? error.code : undefined;
+        if (code !== 'out_of_credit' && code !== 'key_rejected' && code !== 'upstream_error') {
+          console.warn(
+            `[voice-transcription] /api/transcribe refused: code=${code ?? 'unexpected'} `
+            + `message=${JSON.stringify(redactProviderMessage(getOptionalErrorMessage(error) ?? 'unknown error'))}`,
+          );
         }
-        if (error instanceof VoiceTranscriptionError && error.code === 'not_configured') {
-          return res.status(503).json({ error: 'Voice-to-text is unavailable right now.' });
+        if (code === 'invalid_audio') {
+          return res.status(400).json({ error: (error as Error).message });
         }
-        return res.status(502).json({ error: 'That recording could not be transcribed. Please try again.' });
+        // Out of credit, a rejected key and no key at all are configuration:
+        // 503 with a stable code, so the recorder says who can fix it and
+        // offers no "Try recording again" (note #1023).
+        const settled = code === 'out_of_credit' ? VOICE_ERROR_CODES.outOfCredit
+          : code === 'key_rejected' ? VOICE_ERROR_CODES.keyRejected
+            : code === 'not_configured' ? VOICE_ERROR_CODES.notConfigured
+              : null;
+        if (settled) {
+          return res.status(503).json({ error: VOICE_ERROR_SENTENCES[settled], code: settled });
+        }
+        return res.status(502).json({
+          error: VOICE_ERROR_SENTENCES[VOICE_ERROR_CODES.failed],
+          code: VOICE_ERROR_CODES.failed,
+        });
       }
     },
   );
