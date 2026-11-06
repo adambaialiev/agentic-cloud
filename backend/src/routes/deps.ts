@@ -282,7 +282,7 @@ export interface RouteDeps {
    * New sign-ups on our hosted platform are closed (SIGNUP_CLOSED, note
    * #823, the owner, 2026-10-28: only the private copy is offered). The
    * sign-up door then takes nobody who walks up and points them at
-   * /private-copy and hello@; an account comes only through a live invite
+   * /own-cloud and adam@ (SIGNUP_CLOSED_LINE); an account comes only through a live invite
    * link into a workplace whose invites are open (a marked one, note #805),
    * gets NO spare workplace, and has its request to join filed with it, as
    * in a copy. The public authenticator enrollment makes no new account,

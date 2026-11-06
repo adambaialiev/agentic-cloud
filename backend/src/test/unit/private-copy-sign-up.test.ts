@@ -209,7 +209,7 @@ describe('a private copy takes people by invite (note #808)', () => {
   it('closes our own sign-up with SIGNUP_CLOSED: walk-ups and the old authenticator door refused, a marked workplace\'s link still works (note #823)', async () => {
     const { users, orgStorage, notified, post, get, person } = await start({ invitesClosed: true, signupClosed: true });
 
-    // Walking up: refused in words that point at the private copy and hello@.
+    // Walking up: refused in words that point at the own-cloud guide and adam@.
     const walkUp = await post('auth/email/register', person('mallory'));
     expect(walkUp.status).toBe(403);
     const said = await walkUp.json() as { code: string; error: string };

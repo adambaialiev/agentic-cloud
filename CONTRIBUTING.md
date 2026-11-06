@@ -5,12 +5,16 @@ GNU Affero General Public License, version 3 (see [LICENSE](LICENSE)).
 
 ## Before you send a change
 
+There is no way yet to send a change from outside. The git host has no
+issues, and it takes no pull requests from outside the project. If you want
+to contribute, write to adam@agenticcloudcomputer.com.
+
 Outside contributions need a signed contributor agreement before they can be
 merged. The agreement lets the copyright holder, Agentic Cloud Computer, keep
 the right to relicense the project later, including under other terms, while
-the code you contributed stays available under the AGPL-3.0. Open an issue or
-write to hello@agenticcloudcomputer.com before you start on anything large,
-and we will send you the agreement.
+the code you contributed stays available under the AGPL-3.0. Write to
+adam@agenticcloudcomputer.com before you start on anything large, and we will
+send you the agreement.
 
 ## How changes land
 
@@ -32,5 +36,5 @@ merged automatically. Nothing reaches `main` any other way.
 
 ## Security
 
-Please do not open a public issue for a security problem. Write to
-hello@agenticcloudcomputer.com instead, and give us a chance to fix it first.
+Report a security problem to adam@agenticcloudcomputer.com, and give us a
+chance to fix it before you tell anyone else.
