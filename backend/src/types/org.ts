@@ -213,7 +213,15 @@ export interface OrgDocument {
    * when a recording succeeds, or when an admin saves a key. A field of its
    * own so the recording path never rewrites the admin's settings.
    */
-  voicePaused?: { reason: 'out_of_credit' | 'key_rejected'; at: string; checkedAt?: string };
+  voicePaused?: {
+    reason: 'out_of_credit' | 'key_rejected';
+    at: string;
+    checkedAt?: string;
+    /** USD OpenRouter said was left when it refused. OpenRouter refuses a
+     *  recording while some credit is still there (it reserves the request's
+     *  maximum cost), so the pause lifts only once this has GROWN. */
+    creditAtPause?: number;
+  };
   /** This calendar month's recordings, for the admin's line (note #1026). */
   voiceUsage?: { month: string; recordings: number; seconds: number; costUsd: number };
   /**

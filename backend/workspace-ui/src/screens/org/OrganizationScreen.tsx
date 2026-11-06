@@ -38,6 +38,7 @@ import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { WorkplaceNameForm } from './WorkplaceNameForm.js';
 import { WorkplaceDeleteScreen } from './WorkplaceDeleteScreen.js';
 import { CopyHealthSection } from './CopyHealthSection.js';
+import { VoiceSection } from './VoiceSection.js';
 import { PRIVATE_COPY } from '../../../../src/shared/private-copy.js';
 
 /**
@@ -429,6 +430,8 @@ export function OrganizationScreen() {
           <p className="formhint">Your workplace has one link. It works until you revoke it, and you approve everyone who asks to join.</p>
         </section>
       ) : null}
+      {/* Voice-to-text on the workplace's own key (note #1026). */}
+      {org ? <VoiceSection admin={org.role === 'admin'} /> : null}
       {org ? <CloudSection org={org} onConnected={() => { void refresh(); }} /> : null}
       {org ? <CodeSection org={org} refresh={refresh} /> : null}
       {org ? <BackupsSection org={org} /> : null}

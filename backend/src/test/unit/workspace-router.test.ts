@@ -386,6 +386,10 @@ describe('telegram mini app routes', () => {
     expect(voice.transcribe).not.toHaveBeenCalled();
 
     delete deps.workplaceVoice;
+    const off = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), off);
+    expect(off.statusCode).toBe(200);
+    expect(off.body).toMatchObject({ state: 'off', canChange: false });
     const unavailable = createMockResponse();
     await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), unavailable);
     expect(unavailable.statusCode).toBe(503);

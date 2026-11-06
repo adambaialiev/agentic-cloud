@@ -70,9 +70,10 @@ export function registerVoiceRoutes(router: Router, deps: RouteDeps,
   router.get('/api/voice', async (req, res) => {
     const who = await reader(req, res);
     if (!who) return;
-    if (!service()) return unavailable(res);
-    // No workplace, no key to pay with: off, and nobody here can change that.
-    if (!who.orgId) {
+    // No voice service on this backend, or no workplace (so no key to pay
+    // with): off, and nobody here can change that. Every microphone reads
+    // this before recording, so "off" is an answer, not an error.
+    if (!service() || !who.orgId) {
       return res.json({
         state: 'off',
         model: { id: DEFAULT_VOICE_MODEL, name: voiceModelInfo(DEFAULT_VOICE_MODEL)?.name ?? DEFAULT_VOICE_MODEL },

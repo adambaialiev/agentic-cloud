@@ -28,13 +28,16 @@
  * left — so a flat line is a real answer and a moving one is proof.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { WorkspaceApiError } from '../api/client.js';
 import { useBanner } from '../chrome/useBanner.js';
 import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES, voiceErrorIsSettled } from '../../../src/shared/voice-transcription.js';
 import { useSession } from '../session/useSession.js';
 import { Svg } from '../ui/icons.js';
 import { VoiceReview, type VoiceReviewDraft } from './VoiceReview.js';
+import { VoiceBlocked } from './VoiceBlocked.js';
+import { knownVoiceStatus, noteVoiceOutcome, refreshVoiceStatus, type VoiceStatus } from './voice-status.js';
+import { WorkspaceContext } from '../workspace/context.js';
 import {
   VOICE_RECORDING_MAX_MS, VOICE_WAVE_BARS, VOICE_WAVE_STEP_MS,
   barScale, insertTranscript, levelFromTimeDomain, preferredVoiceMimeType,
@@ -156,6 +159,11 @@ export function VoiceField({ onTranscript, children, review }: {
   const mounted = useRef(true);
   const banner = useBanner();
   const { api } = useSession();
+  /** The workplace's voice-to-text is off or paused: the "not set up" screen
+   *  is open instead of a recording (note #1026). */
+  const [blocked, setBlocked] = useState<VoiceStatus | null>(null);
+  const orgId = useContext(WorkspaceContext)?.state?.org?.orgId;
+  const read = useCallback(<T,>(path: string) => api.api<T>(path), [api]);
   const report = useCallback((message: string, retry = true) => {
     if (fullscreen) { setError(message); setCanRetry(retry); }
     else banner.show(message);
@@ -286,6 +294,7 @@ export function VoiceField({ onTranscript, children, review }: {
         signal: controller.signal,
       });
       if (session.canceled) return;
+      noteVoiceOutcome(null);
       const field = target();
       const merged = field
         ? insertTranscript(
@@ -315,6 +324,9 @@ export function VoiceField({ onTranscript, children, review }: {
     } catch (error) {
       if (!session.canceled) {
         const failure = transcriptionFailure(error);
+        // A settled refusal is remembered, so the next press opens the "not
+        // set up" screen straight away (note #1026).
+        if (!failure.retry && error instanceof WorkspaceApiError) noteVoiceOutcome(error.code ?? null);
         report(failure.message, failure.retry);
       }
     } finally {
@@ -349,6 +361,15 @@ export function VoiceField({ onTranscript, children, review }: {
     if (!field || field.disabled || field.readOnly) return;
     setError('');
     setCanRetry(true);
+    // Known before anybody talks (note #1026): no key, or a paused one, opens
+    // the "not set up" screen and records nothing. Unknown records as before;
+    // the route still refuses, and that answer lands in the same place.
+    const status = knownVoiceStatus();
+    void refreshVoiceStatus(read);
+    if (status && status.state !== 'on') {
+      setBlocked(status);
+      return;
+    }
     if (fullscreen) setReviewOpen(true);
     if (!voiceInputSupported()) {
       report('Voice-to-text is not supported by this browser.');
@@ -406,13 +427,16 @@ export function VoiceField({ onTranscript, children, review }: {
       release(session);
       if (!refused) report(voicePermissionMessage(error));
     }
-  }, [fullscreen, report, finish, release, startMeter, stop, target]);
+  }, [fullscreen, report, finish, read, release, startMeter, stop, target]);
 
   const toggle = useCallback(() => {
     const session = live.current;
     if (!session) { void start(); return; }
     if (state === 'recording') stop(session, true);
   }, [start, state, stop]);
+
+  // Every microphone asks once when it appears; the page shares one answer.
+  useEffect(() => { void refreshVoiceStatus(read); }, [read]);
 
   useEffect(() => {
     mounted.current = true;
@@ -464,6 +488,7 @@ export function VoiceField({ onTranscript, children, review }: {
       >
         {recording ? <Svg name="stop" size={17} /> : state === 'idle' ? <Svg name="mic" size={18} /> : <span className="voicespin" />}
       </button>
+      {blocked ? <VoiceBlocked status={blocked} orgId={orgId} onClose={() => setBlocked(null)} /> : null}
       {reviewOpen && review ? (
         <VoiceReview
           draft={review} state={state} error={error} canRetry={canRetry} wave={wave} metered={metered}

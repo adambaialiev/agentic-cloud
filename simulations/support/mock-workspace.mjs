@@ -783,6 +783,18 @@ export async function startMockWorkspace(repoRoot, options = {}) {
       return true;
     }
 
+    // Voice-to-text (note #1026): every microphone reads this before it
+    // records, and the Workplace screen draws its section from it. In the
+    // fixture world the workplace has saved its own OpenRouter key.
+    if (req.method === 'GET' && url.pathname === '/workspace/api/voice') {
+      if (!expectSession(req, respondJson)) return true;
+      respondJson(200, {
+        state: 'on', model: { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o mini Transcribe' },
+        admins: [], canChange: false,
+      });
+      return true;
+    }
+
     // The Chief of Staff on its own (note #716), read by its cards in the
     // Workplace window: off, as every member starts, with nothing noticed.
     if (req.method === 'GET' && url.pathname === '/workspace/api/recap/agent/proactive') {

@@ -116,21 +116,35 @@ describe('WorkplaceVoiceService', () => {
     await expect(t.service.transcribe(t.orgId, t.recording)).rejects.toMatchObject({ code: 'voice_out_of_credit' });
     expect(await t.service.state(t.orgId)).toMatchObject({ state: 'paused', reason: 'out_of_credit' });
 
-    // Within two minutes nobody asks OpenRouter, and nothing is sent.
+    // Within two minutes nobody asks OpenRouter again, and nothing is sent.
     await expect(t.service.transcribe(t.orgId, t.recording)).rejects.toBeInstanceOf(VoiceUnavailableError);
     expect(t.transcriber.transcribe).toHaveBeenCalledTimes(1);
-    expect(t.openRouter.creditLeft).not.toHaveBeenCalled();
+    expect(t.openRouter.creditLeft).toHaveBeenCalledTimes(1); // once, when it paused
 
     // After two minutes it asks: still empty, still paused.
     t.tick(VOICE_PAUSE_RECHECK_MS + 1);
     expect((await t.service.state(t.orgId)).state).toBe('paused');
-    expect(t.openRouter.creditLeft).toHaveBeenCalledTimes(1);
+    expect(t.openRouter.creditLeft).toHaveBeenCalledTimes(2);
 
     // Topped up on openrouter.ai: the next look after two minutes lifts it.
     vi.mocked(t.openRouter.creditLeft).mockResolvedValue(10);
     t.tick(VOICE_PAUSE_RECHECK_MS + 1);
     expect((await t.service.state(t.orgId)).state).toBe('on');
     await expect(t.service.transcribe(t.orgId, t.recording)).resolves.toMatchObject({ text: 'hello there' });
+  });
+
+  it('stays paused while the credit OpenRouter refused at is unchanged', async () => {
+    // Production on 6 Nov: $0.455 left, and still 402 for every recording.
+    const t = await setup({ creditLeft: vi.fn().mockResolvedValue(0.4551) });
+    await t.service.saveKey(t.orgId, KEY, 'Dana');
+    t.transcriber.transcribe.mockRejectedValueOnce(new Upstream(402));
+    await expect(t.service.transcribe(t.orgId, t.recording)).rejects.toMatchObject({ code: 'voice_out_of_credit' });
+    expect((await t.orgStorage.getOrg(t.orgId))?.voicePaused?.creditAtPause).toBe(0.4551);
+    t.tick(VOICE_PAUSE_RECHECK_MS + 1);
+    expect((await t.service.state(t.orgId)).state).toBe('paused');
+    vi.mocked(t.openRouter.creditLeft).mockResolvedValue(5.4551);
+    t.tick(VOICE_PAUSE_RECHECK_MS + 1);
+    expect((await t.service.state(t.orgId)).state).toBe('on');
   });
 
   it('pauses on a rejected key and saving a new key lifts it', async () => {

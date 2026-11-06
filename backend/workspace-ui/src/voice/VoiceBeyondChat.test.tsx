@@ -7,6 +7,7 @@ import {
   emptyState, noteRecord, scriptedApi, workspaceScript, type Answer,
 } from '../test/fixtures.js';
 import { forgetMicrophone, giveMicrophone, openDialogsInJsdom } from './fake-microphone.js';
+import { forgetVoiceStatus } from './voice-status.js';
 
 /**
  * Dictating somewhere that is not chat (note #365).
@@ -81,7 +82,7 @@ async function dictate(field: string, into: string) {
 }
 
 beforeEach(() => { openDialogsInJsdom(); });
-afterEach(() => { forgetMicrophone(); vi.useRealTimers(); });
+afterEach(() => { forgetMicrophone(); forgetVoiceStatus(); vi.useRealTimers(); });
 
 describe('dictating a note', () => {
   it('opens the full-screen recorder and puts the words in an editor of its own', async () => {

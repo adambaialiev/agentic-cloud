@@ -11,6 +11,7 @@ import {
 import { VOICE_WAVE_BARS, VOICE_WAVE_FLOOR } from './voice-input.js';
 import { WorkspaceApiError } from '../api/client.js';
 import { VoiceField } from './VoiceField.js';
+import { forgetVoiceStatus } from './voice-status.js';
 import { VOICE_ERROR_SENTENCES } from '../../../src/shared/voice-transcription.js';
 
 /**
@@ -44,7 +45,7 @@ const reviewBox = () => screen.getByRole('textbox', { name: 'Your message' }) as
 
 beforeEach(() => { openDialogsInJsdom(); });
 
-afterEach(() => { forgetMicrophone(); });
+afterEach(() => { forgetMicrophone(); forgetVoiceStatus(); });
 
 describe('the microphone in a writing field', () => {
   it('shows the live wave while it records, and the bars follow the room', async () => {

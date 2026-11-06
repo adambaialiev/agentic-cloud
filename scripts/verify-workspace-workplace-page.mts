@@ -136,6 +136,11 @@ app.get('/workspace/api/state', (_req, res) => res.json(state));
 app.get('/workspace/api/agents/live', (_req, res) => res.json({ agents: [], recaps: [], sessionLimits: [] }));
 app.get('/workspace/api/notifications', (_req, res) => res.json({ notifications: [], unread: 0, push: { available: false, subscriptions: 0 } }));
 app.get('/workspace/api/org', (_req, res) => res.json({ org: detail }));
+// Voice-to-text's section on the same screen (note #1026): a member reads
+// who pays and who can change it.
+app.get('/workspace/api/voice', (_req, res) => res.json({
+  state: 'on', model: { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o mini Transcribe' }, admins: [], canChange: false,
+}));
 app.get('/workspace/api/org/seats', (_req, res) => res.json({ seats: [] }));
 app.get('/workspace/api/org/signin', (_req, res) => res.json({ signin: null }));
 app.get('/workspace/api/org/cloud', (_req, res) => res.json({

@@ -33,6 +33,8 @@ import { maskSecretPreview } from './user-secrets.js';
 export const VOICE_KEY_SECRET_NAME = 'VOICE_OPENROUTER_KEY';
 /** How often a paused workplace asks OpenRouter whether it is good again. */
 export const VOICE_PAUSE_RECHECK_MS = 2 * 60_000;
+/** With no figure from the moment of the pause, lift it at this much credit. */
+export const VOICE_PAUSE_LIFT_MIN_USD = 1;
 /** How long OpenRouter's model list and prices are kept. */
 export const VOICE_MODELS_CACHE_MS = 24 * 60 * 60_000;
 /** How long the admin's "credit left" figure is kept. */
@@ -148,8 +150,11 @@ export class WorkplaceVoiceService {
         if (paused.reason === 'key_rejected') {
           good = (await this.deps.openRouter.checkKey(key)) === 'ok';
         } else {
+          // Some credit can be left while OpenRouter still refuses (it holds
+          // back the request's maximum cost): good means somebody added more.
           const left = await this.deps.openRouter.creditLeft(key);
-          good = left !== null && left > 0;
+          const before = paused.creditAtPause;
+          good = left !== null && (before !== undefined ? left > before + 0.005 : left >= VOICE_PAUSE_LIFT_MIN_USD);
         }
       } catch {
         good = false;
@@ -319,7 +324,10 @@ export class WorkplaceVoiceService {
     } catch (error) {
       const pause = this.deps.pauseReasonFor(error);
       if (pause) {
-        await this.deps.orgStorage.updateOrg(orgId, { voicePaused: { reason: pause, at: new Date(this.now()).toISOString() } });
+        const left = pause === 'out_of_credit' ? await this.deps.openRouter.creditLeft(key).catch(() => null) : null;
+        await this.deps.orgStorage.updateOrg(orgId, {
+          voicePaused: { reason: pause, at: new Date(this.now()).toISOString(), ...(left !== null ? { creditAtPause: left } : {}) },
+        });
         this.creditCache.delete(orgId);
         throw new VoiceUnavailableError(voiceErrorCodeFor('paused', pause));
       }
