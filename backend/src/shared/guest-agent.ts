@@ -136,8 +136,10 @@ export interface GuestActivity {
 /**
  * GET /workspace/api/public/guest — read once on load and while waiting
  * (every 5 s) or creating (every 1.5 s). With no key, or a key the server no
- * longer knows, the answer is `none` (or `removed` when the key's agent was
- * deleted within the last day).
+ * longer knows, the answer is `none` — or `resting` (with `until`) when no
+ * agent could be made right now, so the page can draw screen 8 before the
+ * tap — and `removed` when the key's agent was deleted within the last day.
+ * A failed build answers `failed` for an hour.
  */
 export interface GuestStatus {
   state: GuestState;
