@@ -9,6 +9,9 @@ import {
   barScales, forgetMicrophone, giveMicrophone, openDialogsInJsdom, paint, room, stopTrack,
 } from './fake-microphone.js';
 import { VOICE_WAVE_BARS, VOICE_WAVE_FLOOR } from './voice-input.js';
+import { WorkspaceApiError } from '../api/client.js';
+import { VoiceField } from './VoiceField.js';
+import { VOICE_ERROR_SENTENCES } from '../../../src/shared/voice-transcription.js';
 
 /**
  * The microphone at a real call site — the chat composer — rather than at a
@@ -108,13 +111,91 @@ describe('the microphone in a writing field', () => {
 
   it('passes the transcriber’s own refusal on rather than a generic one', async () => {
     giveMicrophone();
-    mount(() => { throw new Error('Voice-to-text is unavailable right now.'); });
+    mount(() => { throw new WorkspaceApiError('That recording was too quiet.', 400, { error: 'That recording was too quiet.' }); });
 
     await act(async () => { fireEvent.click(dictate()); });
     await act(async () => { fireEvent.click(listening()); });
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('unavailable right now'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('too quiet'));
+    expect(screen.getByRole('button', { name: 'Try recording again' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Dictate into Message' })).toBeTruthy();
+  });
+
+  // Note #1023: every recording failed with "Request failed (502)" while the
+  // account that pays for transcription was out of credit.
+  it('says plainly that voice-to-text is out of credit and who can fix it, with no retry', async () => {
+    giveMicrophone();
+    mount(() => {
+      throw new WorkspaceApiError(VOICE_ERROR_SENTENCES.voice_out_of_credit, 503, {
+        error: VOICE_ERROR_SENTENCES.voice_out_of_credit, code: 'voice_out_of_credit',
+      });
+    });
+
+    await act(async () => { fireEvent.click(dictate()); });
+    await act(async () => { fireEvent.click(listening()); });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe(VOICE_ERROR_SENTENCES.voice_out_of_credit);
+    expect(alert.textContent).toContain('run out of credit');
+    expect(alert.textContent).toContain('owner or an admin of this workplace');
+    expect(alert.textContent).not.toMatch(/\b(402|502|503|OpenRouter|API)\b/);
+    expect(screen.queryByRole('button', { name: 'Try recording again' })).toBeNull();
+  });
+
+  it('says the key no longer works when the provider refuses it, with no retry', async () => {
+    giveMicrophone();
+    mount(() => {
+      throw new WorkspaceApiError(VOICE_ERROR_SENTENCES.voice_key_rejected, 503, {
+        error: VOICE_ERROR_SENTENCES.voice_key_rejected, code: 'voice_key_rejected',
+      });
+    });
+
+    await act(async () => { fireEvent.click(dictate()); });
+    await act(async () => { fireEvent.click(listening()); });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('key no longer works');
+    expect(screen.queryByRole('button', { name: 'Try recording again' })).toBeNull();
+  });
+
+  it('says the same out-of-credit sentence from an inline microphone, which has no full-screen recorder', async () => {
+    giveMicrophone();
+    const { api } = scriptedApi({
+      'GET auth/session': () => signedIn(),
+      'POST api/transcribe': () => {
+        throw new WorkspaceApiError(VOICE_ERROR_SENTENCES.voice_out_of_credit, 503, {
+          error: VOICE_ERROR_SENTENCES.voice_out_of_credit, code: 'voice_out_of_credit',
+        });
+      },
+    });
+    render(
+      <SessionProvider api={api}>
+        <BannerProvider>
+          <VoiceField onTranscript={() => {}}><input aria-label="Workplace name" defaultValue="" /></VoiceField>
+        </BannerProvider>
+      </SessionProvider>,
+    );
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Dictate into Workplace name' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Stop recording for Workplace name' })); });
+
+    await waitFor(() => expect(document.body.textContent).toContain(VOICE_ERROR_SENTENCES.voice_out_of_credit));
+    expect(document.body.textContent).not.toContain('Request failed');
+  });
+
+  it('turns an unreadable failure into a plain sentence instead of "Request failed (502)", and keeps retry', async () => {
+    giveMicrophone();
+    // What the client throws when the answer carried no sentence: an error
+    // page from something in between, or an empty body.
+    mount(() => { throw new WorkspaceApiError('Request failed (502)', 502, null); });
+
+    await act(async () => { fireEvent.click(dictate()); });
+    await act(async () => { fireEvent.click(listening()); });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Could not transcribe that recording. Try again.');
+    expect(alert.textContent).not.toContain('Request failed');
+    expect(screen.getByRole('button', { name: 'Try recording again' })).toBeTruthy();
   });
 
   it('says the microphone is off when the browser refuses it', async () => {

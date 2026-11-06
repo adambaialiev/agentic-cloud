@@ -48,6 +48,7 @@ import { PLATFORM_CREDENTIAL_USAGE_REFRESH_MS } from '../../services/platform-cr
 import { InMemoryQuickNoteStorage } from '../../services/quick-note-storage.js';
 import { QUICK_NOTES_MAX_PER_USER } from '../../types/quick-note.js';
 import { VoiceTranscriptionError } from '../../services/voice-transcription-service.js';
+import { VOICE_ERROR_SENTENCES } from '../../shared/voice-transcription.js';
 import {
   InMemoryWorkspaceWebAuthStorage,
   WorkspaceWebAuthService,
@@ -358,7 +359,7 @@ describe('telegram mini app routes', () => {
       body: Buffer.from('audio'),
     }), unavailable);
     expect(unavailable.statusCode).toBe(503);
-    expect(unavailable.body).toEqual({ error: 'Voice-to-text is unavailable right now.' });
+    expect(unavailable.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_not_configured, code: 'voice_not_configured' });
   });
 
   it('keeps transcription provider failures private and preserves safe audio refusals', async () => {
@@ -382,8 +383,49 @@ describe('telegram mini app routes', () => {
       body: Buffer.from('audio'),
     }), upstream);
     expect(upstream.statusCode).toBe(502);
-    expect(upstream.body).toEqual({ error: 'That recording could not be transcribed. Please try again.' });
+    expect(upstream.body).toEqual({ error: 'Could not transcribe that recording. Try again.', code: 'voice_failed' });
     expect(JSON.stringify(upstream.body)).not.toContain('key');
+  });
+
+  // Note #1023: a provider that is out of credit or refuses the key is
+  // configuration, so the route answers 503 with a stable code and a sentence
+  // that says who can fix it — never the provider's own words.
+  it.each([
+    ['out of credit', 'out_of_credit', 402, 'voice_out_of_credit', 'run out of credit'],
+    ['a rejected key', 'key_rejected', 401, 'voice_key_rejected', 'key no longer works'],
+  ] as const)('answers 503 with a stable code for %s', async (_case, serviceCode, upstreamStatus, code, words) => {
+    const { deps } = await buildDeps();
+    deps.voiceTranscriptionService = {
+      transcribe: vi.fn().mockRejectedValue(new VoiceTranscriptionError(
+        'OpenRouter transcription request failed: This request\u2019s maximum cost exceeds your available credits.',
+        serviceCode, 503, upstreamStatus,
+      )),
+    };
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
+      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
+      body: Buffer.from('audio'),
+    }), res);
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES[code], code });
+    expect((res.body as { error: string }).error).toContain(words);
+    expect(JSON.stringify(res.body)).not.toMatch(/OpenRouter|credits\.|40[12]/);
+  });
+
+  it('keeps a passing upstream fault a plain 502 with the voice_failed code', async () => {
+    const { deps } = await buildDeps();
+    deps.voiceTranscriptionService = {
+      transcribe: vi.fn().mockRejectedValue(new VoiceTranscriptionError(
+        'OpenRouter transcription request failed: 503 Service Unavailable', 'upstream_error', 502, 503,
+      )),
+    };
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/transcribe', 'post')(mockRequest({
+      headers: { ...authHeader(42), 'Content-Type': 'audio/webm' },
+      body: Buffer.from('audio'),
+    }), res);
+    expect(res.statusCode).toBe(502);
+    expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_failed, code: 'voice_failed' });
   });
 
   it('puts the landing agent\u2019s name and face on a knowledge page', async () => {

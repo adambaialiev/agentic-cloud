@@ -52,10 +52,13 @@ export interface VoiceReviewDraft {
 /** Recording and review share one modal. The native dialog keeps focus and
  * taps out of whatever is underneath; the portal escapes the chat shell's
  * keyboard transform. The draft still belongs to the screen that opened it. */
-export function VoiceReview({ draft, state, error, wave, metered, onClose, onStop, onRetry }: {
+export function VoiceReview({ draft, state, error, canRetry = true, wave, metered, onClose, onStop, onRetry }: {
   draft: VoiceReviewDraft;
   state: 'idle' | 'requesting' | 'recording' | 'transcribing';
   error: string;
+  /** False when recording again cannot help — voice-to-text is out of credit
+   *  or its key was refused (note #1023) — so the dialog offers no retry. */
+  canRetry?: boolean;
   wave: ReactNode;
   metered: boolean;
   onClose: () => void;
@@ -202,7 +205,7 @@ export function VoiceReview({ draft, state, error, wave, metered, onClose, onSto
             ) : null}
             {(error || sendError) ? <p className="voicereview-error" role="alert">{sendError || error}</p> : null}
             <footer className="voicereview-actions">
-              {error ? <button type="button" className="btn" disabled={busy} onClick={onRetry}>Try recording again</button> : null}
+              {error && canRetry ? <button type="button" className="btn" disabled={busy} onClick={onRetry}>Try recording again</button> : null}
               {/* Attach beside Save, where a running word count used to be.
                   The count was bookkeeping over a screen whose whole job is
                   the words themselves, and the picks below now say how many

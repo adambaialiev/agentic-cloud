@@ -29,7 +29,9 @@
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { WorkspaceApiError } from '../api/client.js';
 import { useBanner } from '../chrome/useBanner.js';
+import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES, voiceErrorIsSettled } from '../../../src/shared/voice-transcription.js';
 import { useSession } from '../session/useSession.js';
 import { Svg } from '../ui/icons.js';
 import { VoiceReview, type VoiceReviewDraft } from './VoiceReview.js';
@@ -40,6 +42,26 @@ import {
 } from './voice-input.js';
 
 type VoiceTarget = HTMLInputElement | HTMLTextAreaElement;
+
+/**
+ * What a failed transcription says, and whether recording again can help
+ * (note #1023). The server's own sentence when it sent one; a plain one when
+ * nothing readable came back — a dropped connection, or an error page from
+ * something in between, which used to surface as "Request failed (502)".
+ * Out of credit and a rejected key are settled: no second recording fixes
+ * them, so the full-screen recorder offers no "Try recording again".
+ */
+export function transcriptionFailure(error: unknown): { message: string; retry: boolean } {
+  if (error instanceof WorkspaceApiError) {
+    const body = error.body as { error?: unknown; code?: unknown } | null;
+    if (voiceErrorIsSettled(body?.code)) {
+      const sentence = typeof body?.error === 'string' && body.error ? body.error : VOICE_ERROR_SENTENCES[body!.code as keyof typeof VOICE_ERROR_SENTENCES];
+      return { message: sentence, retry: false };
+    }
+    if (typeof body?.error === 'string' && body.error) return { message: body.error, retry: true };
+  }
+  return { message: VOICE_ERROR_SENTENCES[VOICE_ERROR_CODES.failed], retry: true };
+}
 type VoiceState = 'idle' | 'requesting' | 'recording' | 'transcribing';
 
 /** The analyser and the frame loop that reads it. Held together because they
@@ -120,6 +142,8 @@ export function VoiceField({ onTranscript, children, review }: {
   const [state, setState] = useState<VoiceState>('idle');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [error, setError] = useState('');
+  /** False only for a failure no second recording can fix. */
+  const [canRetry, setCanRetry] = useState(true);
   const fullscreen = Boolean(review);
   /** True once the analyser is actually running: only then does the ring stop
    *  keeping its own time and follow the microphone instead. */
@@ -132,8 +156,8 @@ export function VoiceField({ onTranscript, children, review }: {
   const mounted = useRef(true);
   const banner = useBanner();
   const { api } = useSession();
-  const report = useCallback((message: string) => {
-    if (fullscreen) setError(message);
+  const report = useCallback((message: string, retry = true) => {
+    if (fullscreen) { setError(message); setCanRetry(retry); }
     else banner.show(message);
   }, [banner, fullscreen]);
   /** Read at the moment the transcript arrives, never captured when the
@@ -290,7 +314,8 @@ export function VoiceField({ onTranscript, children, review }: {
       }
     } catch (error) {
       if (!session.canceled) {
-        report((error as Error)?.message || 'That recording could not be transcribed. Please try again.');
+        const failure = transcriptionFailure(error);
+        report(failure.message, failure.retry);
       }
     } finally {
       release(session);
@@ -323,6 +348,7 @@ export function VoiceField({ onTranscript, children, review }: {
     const field = target();
     if (!field || field.disabled || field.readOnly) return;
     setError('');
+    setCanRetry(true);
     if (fullscreen) setReviewOpen(true);
     if (!voiceInputSupported()) {
       report('Voice-to-text is not supported by this browser.');
@@ -440,7 +466,7 @@ export function VoiceField({ onTranscript, children, review }: {
       </button>
       {reviewOpen && review ? (
         <VoiceReview
-          draft={review} state={state} error={error} wave={wave} metered={metered}
+          draft={review} state={state} error={error} canRetry={canRetry} wave={wave} metered={metered}
           onClose={cancel} onRetry={() => { void start(); }}
           onStop={() => { const session = live.current; if (session && state === 'recording') stop(session, true); }}
         />
