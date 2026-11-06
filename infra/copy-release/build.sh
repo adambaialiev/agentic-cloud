@@ -52,7 +52,7 @@ docker build "${LABELS[@]}" --build-arg RELEASE_SHA="$SHA" -f infra/backend-imag
 echo "== git-host"
 STAGE=$(stage_dir)
 cp infra/git-host-image/Dockerfile infra/git-host-image/entrypoint.sh "$STAGE"/
-cp infra/git-host/git-host.mjs infra/git-host/backup.mjs "$STAGE"/
+cp infra/git-host/git-host.mjs infra/git-host/backup.mjs infra/git-host/maintain-repos.sh "$STAGE"/
 cp -r infra/git-host/hooks "$STAGE/hooks"
 docker build "${LABELS[@]}" -t "$REG:git-host-$VERSION" "$STAGE"
 rm -rf "$STAGE"

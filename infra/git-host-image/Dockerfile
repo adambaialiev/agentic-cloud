@@ -52,6 +52,7 @@ RUN useradd --system --create-home --home-dir /var/lib/agentgit-home \
 # git-host.mjs (`./hooks/<name>`), so they travel beside it.
 COPY git-host.mjs /opt/agentgit/git-host.mjs
 COPY backup.mjs /opt/agentgit/backup.mjs
+COPY maintain-repos.sh /opt/agentgit/maintain-repos.sh
 COPY hooks/ /opt/agentgit/hooks/
 COPY entrypoint.sh /opt/agentgit/entrypoint.sh
 RUN chmod 0755 /opt/agentgit/entrypoint.sh /opt/agentgit/git-host.mjs \

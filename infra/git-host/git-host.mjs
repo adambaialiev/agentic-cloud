@@ -1646,6 +1646,38 @@ const server = createServer(async (req, res) => {
       return json(res, 404, { error: 'no such control route' });
     }
 
+    // Repo upkeep (note #1032): the weekly maintain-repos.sh — trash past its
+    // window purged, then `git gc` on every repo — run on request. A box had a
+    // systemd timer for it; a machine has no timers, so the backend's clock
+    // calls this, as it does for backups. Answers when the run ends (a minute
+    // or two); a caller that gives up early does not stop it, and the script's
+    // own lock makes a second request while one runs a no-op.
+    if (pathname === '/internal/maintenance/run' && req.method === 'POST') {
+      const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'maintain-repos.sh');
+      if (!existsSync(script)) return json(res, 501, { error: 'maintain-repos.sh is not installed beside this host' });
+      const started = Date.now();
+      let out = '';
+      const result = await new Promise((resolve) => {
+        const child = spawn('bash', [script], {
+          env: {
+            ...process.env,
+            REPOS_ROOT,
+            TRASH_ROOT,
+            MAINT_LOCK_FILE: path.join(path.dirname(REPOS_ROOT), 'maintenance.lock'),
+            MAINT_NOTIFY: '/bin/true',
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        child.stdout.on('data', (chunk) => { out = (out + chunk).slice(-8000); });
+        child.stderr.on('data', (chunk) => { out = (out + chunk).slice(-8000); });
+        child.on('close', (code) => resolve({ code }));
+        child.on('error', (error) => resolve({ code: -1, error: String(error.message || error) }));
+      });
+      const tail = out.split('\n').filter(Boolean).slice(-12).join('\n');
+      log(`[maintenance] exit ${result.code} in ${Math.round((Date.now() - started) / 1000)}s`);
+      return json(res, result.code === 0 ? 200 : 500, { code: result.code, seconds: Math.round((Date.now() - started) / 1000), tail });
+    }
+
     // A backup run (byo-git slice 4): bundle-and-upload every changed repo to
     // the bucket the CALLER names — the backend's per-org sweep is the clock,
     // because a host that sleeps between pushes fires no timers of its own.
