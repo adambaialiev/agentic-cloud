@@ -69,7 +69,9 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(AGENT_LINE).not.toMatch(/\n/);
     const section = document.querySelector('#give-your-agent')!;
     expect(section.querySelector('code')!.textContent).toBe(AGENT_LINE);
-    expect(section.querySelector('button')!.textContent).toBe('Copy');
+    // Since note #1034 the button is an icon in a circle; "Copy" is its name.
+    expect(section.querySelector('button')!.getAttribute('aria-label')).toBe('Copy');
+    expect(section.querySelectorAll('button')).toHaveLength(1);
     // It opens the start section since note #835; the first screen's text
     // link jumps there (a "Build yours" button until note #924). Since note
     // #951 link and section carry the action's own name.
@@ -88,11 +90,40 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(section.querySelectorAll('button')).toHaveLength(1);
     expect(section.querySelectorAll('a')).toHaveLength(0);
     expect(section.querySelector('#on-a-phone')).toBeNull();
-    expect(section.querySelector('.hidden, [class*="sm:hidden"]')).toBeNull();
+    expect(section.querySelector('.hidden:not([data-copy-tag]), [class*="sm:hidden"]')).toBeNull();
     expect(section.textContent).not.toMatch(/Send me the line|Write to the founder|from a laptop/);
     // The line wraps on a narrow screen rather than pushing the page sideways.
     expect(section.querySelector('code')!.className).toMatch(/\bbreak-words\b/);
     expect(section.querySelector('code')!.className).toMatch(/\bmin-w-0\b/);
+  });
+
+  // Note #1034 (Adam's yes to note #1033's C3): a 40 px ink circle with the
+  // copy icon; after a tap a check, a small "Copied" tag, and the live region
+  // says it. On a desk a "Copy" tip shows on hover (hidden on a phone).
+  it('copies the line from an icon in a circle and says Copied', async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    try {
+      render(<PrivateCopy />);
+      const button = screen.getByRole('button', { name: 'Copy' });
+      expect(button.querySelector('span.h-10.w-10.rounded-full')).toBeTruthy();
+      const tag = button.querySelector('[data-copy-tag]')!;
+      expect(tag.getAttribute('data-copy-tag')).toBe('tip');
+      expect(tag.className).toMatch(/(^|\s)hidden(\s|$)/);
+      expect(tag.className).toMatch(/sm:group-hover:opacity-100/);
+      expect(button.querySelector('[aria-live]')!.textContent).toBe('');
+      await React.act(async () => { button.click(); });
+      expect(writeText).toHaveBeenCalledWith(AGENT_LINE);
+      expect(button.querySelector('[data-copy-tag]')!.textContent).toBe('Copied');
+      expect(button.querySelector('[data-copy-tag]')!.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+      expect(button.querySelector('[aria-live]')!.textContent).toBe('Copied');
+      await React.act(async () => { vi.advanceTimersByTime(2500); });
+      expect(button.querySelector('[data-copy-tag]')!.getAttribute('data-copy-tag')).toBe('tip');
+      expect(button.querySelector('[aria-live]')!.textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // The guide is what an agent runs from: every flag and every message it

@@ -453,7 +453,7 @@ export function AskTheCode() {
             ) : (
               <>
                 {gate?.kind === 'busy' ? <p data-ask-busy role="status" className="mb-3 type-sm text-hint">{ASK_BUSY}</p> : null}
-                <form onSubmit={submit} className="flex min-h-14 items-center gap-3 rounded-2xl bg-panel-soft py-2 pl-4 pr-2 sm:min-h-[60px] sm:pl-5">
+                <form onSubmit={submit} className="flex min-h-14 items-center gap-3 rounded-2xl bg-panel-soft py-2 pl-4 pr-1.5 sm:min-h-[60px] sm:pl-5 sm:pr-2.5">
                   <label htmlFor="ask-input" className="sr-only">Your question about Agentic Cloud Computer</label>
                   <input
                     id="ask-input"
@@ -466,12 +466,23 @@ export function AskTheCode() {
                     placeholder={phone ? ASK_PLACEHOLDER_PHONE : ASK_PLACEHOLDER}
                     className="ask-input min-w-0 flex-1 bg-transparent type-base text-white placeholder:text-hint focus:outline-none sm:type-md-sm"
                   />
+                  {/* Since note #1034 (the owner's yes of 6 Nov 2026 to note
+                      #1033's A1) a 40 px circle with an up arrow, the Copy
+                      button's shape: grey while the box is empty, ink once
+                      there is a question. "Ask" is its spoken name; the word
+                      left the screen. Its tap area stays 44 px. */}
                   <button
                     type="submit"
-                    disabled={pending || sending}
-                    className="inline-flex min-h-11 shrink-0 items-center rounded-xl bg-white px-4 type-sm font-semibold text-panel transition-colors hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:bg-hint/35 sm:px-[22px]"
+                    aria-label="Ask"
+                    disabled={pending || sending || !draft.trim()}
+                    className="group -my-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
                   >
-                    Ask
+                    <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-full bg-white text-panel transition-colors group-hover:bg-white/85 group-disabled:bg-hint/35 group-disabled:text-panel">
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 19V5" />
+                        <path d="M5.5 11.5L12 5l6.5 6.5" />
+                      </svg>
+                    </span>
                   </button>
                 </form>
               </>

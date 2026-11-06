@@ -142,10 +142,10 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     draw();
     const action = document.querySelector('#give-your-agent')!;
     expect(document.querySelector('#on-a-phone')).toBeNull();
-    expect(action.querySelector('.hidden, [class*="sm:hidden"]')).toBeNull();
+    expect(action.querySelector('.hidden:not([data-copy-tag]), [class*="sm:hidden"]')).toBeNull();
     expect(action.querySelector('h3')!.textContent).toBe('Give this to your agent');
     expect(action.querySelector('code')!.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
-    expect(action.querySelector('button')!.textContent).toBe('Copy');
+    expect(action.querySelector('button')!.getAttribute('aria-label')).toBe('Copy');
     expect(action.querySelectorAll('a')).toHaveLength(0);
     const start = document.querySelector('#start')!.textContent ?? '';
     expect(start).not.toMatch(/Send me the line|Write to the founder|sets it up from a laptop/);

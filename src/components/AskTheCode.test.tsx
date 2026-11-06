@@ -76,6 +76,28 @@ describe('AskTheCode (note #1010)', () => {
     expect(section.textContent).not.toMatch(/What it reads|Claude Code on Sonnet|Nothing about you is kept/);
   });
 
+  // Note #1034 (Adam's yes to note #1033's A1): the send button is a circle
+  // with an up arrow, "Ask" its spoken name only; grey until there is a
+  // question.
+  it('sends with an arrow in a circle, named Ask, that waits for a question', async () => {
+    draw();
+    await flush();
+    const button = screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement;
+    expect(button.getAttribute('type')).toBe('submit');
+    expect(button.textContent).toBe('');
+    expect(button.querySelector('svg')).toBeTruthy();
+    expect(button.querySelector('.rounded-full.h-10.w-10')).toBeTruthy();
+    expect(button.className).toMatch(/\bh-11\b/);
+    expect(button.disabled).toBe(true);
+    const field = screen.getByLabelText('Your question about Agentic Cloud Computer');
+    fireEvent.change(field, { target: { value: '   ' } });
+    expect(button.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: 'Can I use my own GitHub?' } });
+    expect(button.disabled).toBe(false);
+    fireEvent.change(field, { target: { value: '' } });
+    expect(button.disabled).toBe(true);
+  });
+
   it('asks a tapped question, polls it, and draws the answer with the files linked to the public code in a new tab', async () => {
     let reads = 0;
     routes['POST /workspace/api/public/ask'] = () => ({ body: { state: 'accepted', questionId: 'q1', position: 1 } });
@@ -113,6 +135,9 @@ describe('AskTheCode (note #1010)', () => {
     expect(links[1].getAttribute('href')).toBe('https://agenticcloudcomputer.com/acc/agentic-cloud?path=backend/src/agent/harness-auth-failure.ts&file=1');
     for (const link of links) expect(link.getAttribute('target')).toBe('_blank');
     expect(document.querySelector('[data-ask-readlist]')!.textContent).toMatch(/^It read 2 files/);
+    // Answered, the box is free again: grey while empty, ready once typed in.
+    expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Your question about Agentic Cloud Computer'), { target: { value: 'And then?' } });
     expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(false);
     // Answered: polling stops.
     const before = calls.length;

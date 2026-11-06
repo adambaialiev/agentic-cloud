@@ -55,10 +55,19 @@ export const BUILD_YOURS = 'Build your own Agentic Cloud';
 export const AGENT_GUIDE_PATH = '/own-cloud.md';
 export const AGENT_LINE = `Set up our own Agentic Cloud by following https://agenticcloudcomputer.com${AGENT_GUIDE_PATH}`;
 
-/* The line, set as code, with a Copy button. Copying is the page's main
-   action, so the button says what it did ("Copied") for a moment, and a
-   screen reader hears it too. Without clipboard access the line is still
-   plain text to select. */
+/* The line, set as code, with its Copy button. Copying is the page's main
+   action, so the button says what it did for a moment, and a screen reader
+   hears it too. Without clipboard access the line is still plain text to
+   select.
+   Since note #1034 (the owner, 6 Nov 2026, 15:02 UTC, "agree with the
+   recommended" on the options of note #1033, his ask of 14:53 UTC: "can we
+   make copy button and ask button more elegant. Maybe it should be icon
+   button") the button is a 40 px ink circle with the copy icon beside the
+   line, on a phone too: the word "Copy" left the screen and stays its spoken
+   name. After a tap the icon is a check and a small "Copied" tag stands over
+   it (spoken by the live region). On a desk, hovering shows a "Copy" tip
+   there; a phone has no hover. Its tap area stays 44 px. The Ask button
+   (AskTheCode) is the same circle. */
 export function AgentLine() {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -71,20 +80,32 @@ export function AgentLine() {
     }
   };
   return (
-    <div className="flex flex-col gap-3 rounded-2xl bg-panel-soft p-3 sm:flex-row sm:items-center sm:gap-4 sm:p-3 sm:pl-5">
+    <div className="flex items-start gap-2.5 rounded-2xl bg-panel-soft p-3 sm:items-center sm:gap-4 sm:p-3 sm:pl-5">
       <code id="agent-line" className="min-w-0 flex-1 break-words font-mono type-sm leading-relaxed text-white sm:type-base">
         {AGENT_LINE}
       </code>
       <button
         type="button"
         onClick={copy}
+        aria-label="Copy"
         aria-describedby="agent-line"
-        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl bg-white px-5 type-sm font-semibold text-panel transition-colors hover:bg-white/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:self-auto"
+        data-copied={copied ? '' : undefined}
+        className="group relative -m-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
       >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          {copied ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></>}
-        </svg>
-        <span aria-live="polite">{copied ? 'Copied' : 'Copy'}</span>
+        <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-panel transition-colors group-hover:bg-white/85" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            {copied ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></>}
+          </svg>
+        </span>
+        {/* The tag after a tap, and the desk's hover tip in the same place. */}
+        <span
+          aria-hidden="true"
+          data-copy-tag={copied ? 'copied' : 'tip'}
+          className={`pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-lg bg-white px-2 py-[3px] type-xs font-semibold text-panel transition-opacity ${copied ? 'opacity-100' : 'hidden opacity-0 sm:block sm:group-hover:opacity-100'}`}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </span>
+        <span className="sr-only" aria-live="polite">{copied ? 'Copied' : ''}</span>
       </button>
     </div>
   );
