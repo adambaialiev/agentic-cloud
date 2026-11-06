@@ -79,11 +79,20 @@ describe('Your own Agentic Cloud, on the one home page (notes #829, #832)', () =
     expect(document.querySelector('a[href="#start"]')).toBeNull();
     expect(document.querySelector('#start h2')?.textContent).toBe('Build your own Agentic Cloud.');
     for (const section of document.querySelectorAll('main > section')) expect(section.innerHTML, section.id).not.toContain('hello@agenticcloudcomputer.com');
-    // The paste hint under it came off with note #978; the phone keeps its
-    // two doors.
+    // The paste hint under it came off with note #978.
     expect(section.textContent).not.toMatch(/Paste it into/);
-    // Their new-tab hint (note #999) is for a screen reader; the words stay.
-    expect([...section.querySelectorAll('#on-a-phone a')].map((link) => (link.textContent ?? '').replace('(opens in a new tab)', '').trim())).toEqual(['Send me the line', 'Write to the founder']);
+    // Since note #1025 a phone gets the same line and Copy as a desk: one
+    // heading, one line, one button, no links, nothing hidden by screen size.
+    expect([...section.querySelectorAll('h3')].map((h) => h.textContent)).toEqual(['Give this to your agent']);
+    expect(section.querySelectorAll('code')).toHaveLength(1);
+    expect(section.querySelectorAll('button')).toHaveLength(1);
+    expect(section.querySelectorAll('a')).toHaveLength(0);
+    expect(section.querySelector('#on-a-phone')).toBeNull();
+    expect(section.querySelector('.hidden, [class*="sm:hidden"]')).toBeNull();
+    expect(section.textContent).not.toMatch(/Send me the line|Write to the founder|from a laptop/);
+    // The line wraps on a narrow screen rather than pushing the page sideways.
+    expect(section.querySelector('code')!.className).toMatch(/\bbreak-words\b/);
+    expect(section.querySelector('code')!.className).toMatch(/\bmin-w-0\b/);
   });
 
   // The guide is what an agent runs from: every flag and every message it

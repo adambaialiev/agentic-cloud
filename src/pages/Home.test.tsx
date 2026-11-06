@@ -134,21 +134,21 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     }
   });
 
-  // Note #832: a cold email is read on a phone, where the line cannot run.
-  it('gives a phone two doors: the line by mail to yourself, and the founder', () => {
+  // Note #1025 (the owner, 6 Nov 2026): one version for every screen. The
+  // phone's own heading and its two doors (note #832, "Send me the line" and
+  // "Write to the founder") are gone; the line and Copy are for everyone.
+  it('gives a phone the same line and Copy as a desk', () => {
     answer();
     draw();
-    const phone = document.querySelector('#on-a-phone')!;
-    expect(phone.className).toMatch(/\bsm:hidden\b/);
-    expect(document.querySelector('#give-your-agent > .hidden.sm\\:block code')).toBeTruthy();
-    const [line, founderDoor] = [...phone.querySelectorAll('a')];
-    expect(line!.textContent).toMatch(/^Send me the line/);
-    const mail = new URL(line!.getAttribute('href')!);
-    expect(mail.protocol).toBe('mailto:');
-    expect(mail.pathname).toBe('');
-    expect(decodeURIComponent(mail.search)).toContain('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
-    expect(founderDoor!.textContent).toMatch(/^Write to the founder/);
-    expect(founderDoor!.getAttribute('href')).toMatch(/^mailto:adam@agenticcloudcomputer\.com\?/);
+    const action = document.querySelector('#give-your-agent')!;
+    expect(document.querySelector('#on-a-phone')).toBeNull();
+    expect(action.querySelector('.hidden, [class*="sm:hidden"]')).toBeNull();
+    expect(action.querySelector('h3')!.textContent).toBe('Give this to your agent');
+    expect(action.querySelector('code')!.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
+    expect(action.querySelector('button')!.textContent).toBe('Copy');
+    expect(action.querySelectorAll('a')).toHaveLength(0);
+    const start = document.querySelector('#start')!.textContent ?? '';
+    expect(start).not.toMatch(/Send me the line|Write to the founder|sets it up from a laptop/);
   });
 
   // claims-we-never-make, for the new words: no agent counts, no "approves

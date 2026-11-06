@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { H2, PrimaryLink, Screen, SecondaryLink } from '../components/landing-kit';
+import { H2, Screen, SecondaryLink } from '../components/landing-kit';
 import { NEW_TAB, useNewTab } from '../lib/new-tab';
 import { SidesArt } from '../components/CopyArt';
 
@@ -102,39 +102,29 @@ export function Chapter({ id, heading, children }: { id: string; heading: ReactN
 
 /* ── The parts of the one home page (note #832) ─────────────────────────── */
 
-/* The founder's own address, for the phone's second door and the close
-   (note #832, the owner, 29 Oct 2026, 14:05 UTC: "Write to the founder"). */
+/* The founder's own address, for /why-fly's "Write to the founder" (note
+   #832, the owner, 29 Oct 2026, 14:05 UTC). Until note #1025 the phone's
+   second door here used it too. */
 export const FOUNDER_EMAIL = 'adam@agenticcloudcomputer.com';
-const FOUNDER_MAILTO = `mailto:${FOUNDER_EMAIL}?subject=${encodeURIComponent('Our own Agentic Cloud')}`;
-/* "Send me the line" (note #832): a cold email is read on a phone, where the
-   line cannot run. This opens the reader's own mail with the line in it, to
-   send to themselves for the laptop. No address: theirs goes in the To. */
-export const SEND_ME_THE_LINE = `mailto:?subject=${encodeURIComponent('Set up our own Agentic Cloud')}&body=${encodeURIComponent(`Paste this into Claude Code, Codex or any agent with a terminal:\n\n${AGENT_LINE}\n`)}`;
 
 
 /* The page's action, at the top of How to start since note #835 (on the first
-   screen before it). On a laptop, the line and its Copy button; on a phone,
-   where nobody runs it, "Send me the line" and "Write to the founder" (note
-   #832). Under both, the qualifier, so a company on another cloud learns it
-   before the steps. */
+   screen before it): the line and its Copy button, on every screen. From
+   note #832 a phone had its own version instead, "Your agent sets it up from
+   a laptop" with "Send me the line" (the line by mail to yourself) and
+   "Write to the founder"; note #1025 (the owner, 6 Nov 2026, 09:22 UTC: "I
+   don't think it's necessary to have different version for mobile") retired
+   it, so a phone gets exactly what a desk has. On a phone the line wraps
+   inside its panel and Copy sits under it (AgentLine). */
 export function OwnCloudAction() {
   return (
     <div id="give-your-agent" className="mt-8 scroll-mt-20">
-      <div className="hidden sm:block">
-        <h3 className="type-md-sm font-semibold text-white">Give this to your agent</h3>
-        <div className="mt-3">
-          <AgentLine />
-        </div>
-        {/* Since note #835 the steps below say what the agent does with it, so
-            the paragraph that said it here first is gone. */}
+      <h3 className="type-md-sm font-semibold text-white">Give this to your agent</h3>
+      <div className="mt-3">
+        <AgentLine />
       </div>
-      <div className="sm:hidden" id="on-a-phone">
-        <h3 className="type-md-sm font-semibold text-white">Your agent sets it up from a laptop</h3>
-        <div className="mt-5 flex flex-col items-start gap-4">
-          <PrimaryLink href={SEND_ME_THE_LINE}>Send me the line</PrimaryLink>
-          <SecondaryLink href={FOUNDER_MAILTO}>Write to the founder</SecondaryLink>
-        </div>
-      </div>
+      {/* Since note #835 the steps below say what the agent does with it, so
+          the paragraph that said it here first is gone. */}
     </div>
   );
 }
@@ -218,8 +208,8 @@ export function HowToStart() {
       <OwnCloudAction />
       {/* Since note #978 (the owner, 4 Nov 2026, 13:26 UTC: "in the landing
           page each section should be without description text") the section
-          is its heading and its action: the line with Copy on a laptop, the
-          two doors on a phone. The three steps, "What it takes" (the clean
+          is its heading and its action: the line with Copy (on a phone too
+          since note #1025; two doors there until then). The three steps, "What it takes" (the clean
           run's 13 min 24 s, the certificate wait), the paste hint and the
           qualifier "Runs in your own Fly account. Free for now." came off;
           they live in git history and in /own-cloud.md. */}
