@@ -1,7 +1,6 @@
 import type { DocChapter } from '../model';
 import { DocLink, Panel, Ui } from '../model';
 import LiveFleet from '../../components/LiveFleet';
-import LiveCloud from '../../components/LiveCloud';
 import { HERO_FLEET } from '../../components/live/fixture';
 
 /**
@@ -24,37 +23,49 @@ import { HERO_FLEET } from '../../components/live/fixture';
  * Written to src/docs/STYLE.md. Since note #664 (2026-09-25) a new
  * workplace runs on our cloud: there is no cloud for an admin to connect,
  * and deleting a workplace takes its machines and sites with it.
+ * Re-checked 2026-11-06 (note #1011): since note #822 the offer is your own
+ * Agentic Cloud, where invites are on in every workplace (note #808), so the
+ * chapter leads with inviting and says once that a workplace on our own
+ * platform is for one person. Teammates see each agent's one-line recap
+ * (2026-10-28, PR #1458). The hosted Cloud card panel went: note #668 keeps
+ * that card off Workplace settings.
  */
 const chapter: DocChapter = {
   slug: 'workplace-and-people',
   title: 'Workplace and people',
   description:
-    'Why a workplace is yours alone for now, what a workplace holds, why agents stay personal, and how a workplace is renamed or deleted.',
+    'How people join a workplace, what each role may do, what a workplace holds, why agents stay personal, and how a workplace is renamed or deleted.',
   lead: (
     <>
       A workplace is the place your work lives: its agents and notes, its code, knowledge,
       sites and files. You can have as many as you like. This chapter is the people side of one:
-      why it is yours alone for now, what each role may do where there are several people, and
-      what happens when a workplace is renamed, left or deleted.
+      how people join, what each role may do, and what happens when a workplace is renamed, left
+      or deleted.
     </>
   ),
   sections: [
     {
       id: 'inviting-people',
-      heading: 'Teammates: not open yet',
+      heading: 'How to invite people',
       body: (
         <>
           <p>
-            A workplace is for one person right now. Inviting people into it is switched off while
-            we finish the single-person experience, so there is no invite link to make and no
-            request to approve. An invite link made earlier opens on a page that says invites are
-            closed. The people already in a workplace stay in it.
+            In <DocLink href="/#give-your-agent">your own Agentic Cloud</DocLink>, people join by
+            invite. An admin taps the workplace&rsquo;s name at the top of Home, chooses{' '}
+            <Ui>Invite to this workplace</Ui> and shares the link there. A workplace has one link,
+            and it works until an admin revokes it.
           </p>
           <p>
-            When teammates come, each will get their own agents, their own subscription and their
-            own conversations, and share everything else with you. In your own Agentic Cloud they
-            are already here: an admin shares an invite link and approves each person who asks to
-            join (see <DocLink href="/#give-your-agent">Your own Agentic Cloud</DocLink>).
+            Whoever opens the link creates their account on the same page. Their request waits
+            under <Ui>Join requests</Ui> in Workplace settings until an admin presses{' '}
+            <Ui>Approve</Ui>, and that workplace is then their way in. Each person gets their own
+            agents, their own subscription and their own conversations, and shares everything else
+            with you.
+          </p>
+          <p>
+            A workplace on agenticcloudcomputer.com itself is for one person for now. Inviting is
+            switched off there, and an invite link made earlier opens on a page that says invites
+            are closed.
           </p>
         </>
       ),
@@ -65,9 +76,9 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            While a workplace is for one person, you are its admin and the Workspace does not
-            show roles at all: no <Ui>Admin</Ui> badge, no head count. What follows is how roles
-            work in a workplace that already has several people.
+            In a workplace nobody else can join, you are its admin and the Workspace does not
+            show roles at all: no <Ui>Admin</Ui> badge, no head count. In your own Agentic Cloud
+            every workplace can take people, so roles always show.
           </p>
           <p>
             There are two roles. Whoever creates a workplace is its <strong>admin</strong>.
@@ -79,7 +90,8 @@ const chapter: DocChapter = {
             <li>change roles and remove people;</li>
             <li>rename and delete the workplace;</li>
             <li>add, copy or delete a shared key, and decide whose agents receive it;</li>
-            <li>grow the workplace&rsquo;s code storage.</li>
+            <li>grow the workplace&rsquo;s code storage;</li>
+            <li>in your own Agentic Cloud, set up email and open <Ui>This copy</Ui>, its health page.</li>
           </ul>
           <p>
             Any member can create agents, use every repository, knowledge page, note and
@@ -102,8 +114,9 @@ const chapter: DocChapter = {
             their subscription.
           </p>
           <p>
-            Everyone can see that every agent exists: its name, its face, who drives it
-            and whether it is working. What it is working on stays with its owner.
+            Everyone can see that every agent exists: its name, its face, who drives it, whether
+            it is working and the one line on its latest work. The chat behind that line stays
+            with its owner.
           </p>
         </>
       ),
@@ -114,8 +127,8 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Wherever a workplace has a team &mdash; more than one person in it, or invites open
-            &mdash; its people stand first in the <Ui>Workplace</Ui> window, in place of the agent
+            Wherever a workplace has a team &mdash; more than one person in it, or invites open,
+            as in every workplace of your own Agentic Cloud &mdash; its people stand first in the <Ui>Workplace</Ui> window, in place of the agent
             counts, and on the People page, which the account menu&rsquo;s <Ui>People</Ui> row
             opens. Each person is one card: whether they are here now or when they were last
             active, the last thing they themselves did, what their agents did here this week, and
@@ -187,12 +200,14 @@ const chapter: DocChapter = {
         <>
           <p>
             The workplace&rsquo;s name at the top of Home is a menu: every workplace you belong to,
-            then <Ui>Workplace settings</Ui> and <Ui>New workplace</Ui>. Switching changes only what you are looking at. Every agent,
+            then, for an admin where people can join, <Ui>Invite to this workplace</Ui>, then{' '}
+            <Ui>Workplace settings</Ui> and <Ui>New workplace</Ui>. Switching changes only what you are looking at. Every agent,
             repository, note and key stays in the workplace it was made in.
           </p>
           <p>
             <Ui>Workplace settings</Ui> is the workplace&rsquo;s own page: its people, its cloud,
-            its code storage and backups. At the foot, admins
+            its code storage and backups, and for admins of your own Agentic Cloud,{' '}
+            <Ui>This copy</Ui>. At the foot, admins
             have <Ui>Rename this workplace</Ui>. Type the new name and press <Ui>Save name</Ui>;
             nothing else changes.
           </p>
@@ -203,11 +218,6 @@ const chapter: DocChapter = {
             <DocLink href="/docs/your-cloud-and-subscriptions#seats">Your subscriptions</DocLink>.
           </p>
         </>
-      ),
-      panel: (
-        <Panel says="The Cloud card on Workplace settings: Agentic Cloud Computer, free, with nothing to connect; 18 of 20 agents and 3 of 30 sites in use.">
-          <LiveCloud />
-        </Panel>
       ),
     },
     {
@@ -231,7 +241,7 @@ const chapter: DocChapter = {
     },
   ],
   reference: [
-    { term: 'Invite link', text: 'Switched off for now. A workplace is for one person; teammates are coming.' },
+    { term: 'Invite link', text: <>One per workplace, from <Ui>Invite to this workplace</Ui> (admins). An admin approves each request. Switched off for now in a workplace on agenticcloudcomputer.com itself.</> },
     { term: 'Here now', text: 'Active in the last three minutes.' },
     { term: 'Last admin', text: 'Cannot leave, be removed or be made a member until another admin exists.' },
     { term: 'New workplace', text: 'Empty until its Chief of Staff brings a team in. You are its admin.' },

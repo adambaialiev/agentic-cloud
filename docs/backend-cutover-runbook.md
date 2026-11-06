@@ -1,5 +1,7 @@
 # Backend cutover runbook: Render → Hetzner `ia-backend`
 
+> Status (2026-11-06): history. This cutover was done; the backend runs on the Hetzner host and Render is retired. Kept as the record of the move.
+
 Manual, do-it-once procedure to move the live backend off Render onto the
 Hetzner VM. Everything up to this point (VM provisioned, code deployable,
 service **disabled + stopped**, placeholder env) is already done. This runbook is

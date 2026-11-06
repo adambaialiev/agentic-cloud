@@ -24,17 +24,24 @@ import LiveSubscriptions from '../../components/LiveSeats';
  * exist keep running, but nothing here offers a new one: the thirty-site
  * allowance and the "no charge" lines belonged to hosting and went. The
  * Cloud card's panel went with them; it drew the hosted card.
+ *
+ * Re-checked 2026-11-06 (note #1011): OpenCode seats (note #780, live
+ * 2026-10-21) joined Claude and ChatGPT; code lives on the copy's own code
+ * host in the same account; admins' This copy health section (note #813) is
+ * named. What's new and the Upgrade button (notes #1006, #1008) are not
+ * named yet: no release a company can install carries them (latest
+ * 2026.11.01.1 on 6 Nov).
  */
 const chapter: DocChapter = {
   slug: 'your-cloud-and-subscriptions',
   title: 'Cloud and subscriptions',
   description:
-    'Your agents run in your own cloud account and think with your own Claude or ChatGPT subscription: what you pay and to whom, what runs where, and machine sizes.',
+    'Your agents run in your own cloud account and think with your own Claude, ChatGPT or OpenCode subscription: what you pay and to whom, what runs where, machine sizes.',
   lead: (
     <>
       Two things power a workplace. Your own cloud account is where every agent&rsquo;s machine
-      and every site runs. Your Claude or ChatGPT subscription is what the agents think with,
-      signed in once and private to you.
+      and every site runs. Your Claude, ChatGPT or OpenCode subscription is what the agents
+      think with, signed in once and private to you.
     </>
   ),
   sections: [
@@ -51,7 +58,7 @@ const chapter: DocChapter = {
           <ul>
             <li><strong>Us</strong>: nothing. Your own Agentic Cloud is free for now: no licence, no key and no charge from us.</li>
             <li><strong>Cloud</strong>: your cloud provider bills your own account directly for the agents&rsquo; machines, your sites, your files and the Workspace itself.</li>
-            <li><strong>AI</strong>: your Claude or ChatGPT subscription, billed by Anthropic or OpenAI as it always was.</li>
+            <li><strong>AI</strong>: your Claude, ChatGPT or OpenCode subscription, billed by Anthropic, OpenAI or OpenCode as it always was.</li>
             <li><strong>Anything else you connect</strong>, such as a GitHub account: on that provider&rsquo;s own terms.</li>
           </ul>
         </>
@@ -81,10 +88,15 @@ const chapter: DocChapter = {
             </li>
           </ul>
           <p>
-            Repositories live on the platform&rsquo;s own git storage, unless you use a host of your
-            own; see{' '}
+            Repositories live on your Agentic Cloud&rsquo;s own code host, in the same account,
+            unless you use a host of your own; see{' '}
             <DocLink href="/docs/repositories-and-proposals#where-code-lives">Where code lives</DocLink>{' '}
             and the <DocLink href="/privacy">Privacy Policy</DocLink> for the full split.
+          </p>
+          <p>
+            Admins see how it is all doing under <Ui>This copy</Ui> in Workplace settings: one
+            line each for the Workspace, its backups, the disk, the code host, previews and
+            sites, and mail coming in.
           </p>
           <p>
             More agents working at the same time means another subscription (see{' '}
@@ -100,11 +112,12 @@ const chapter: DocChapter = {
         <>
           <p>
             A subscription you have signed in is called a <strong>seat</strong>: a Claude Pro or Max
-            plan, which runs agents on Claude Code, or a ChatGPT Plus or Pro plan, which runs them on
-            Codex (see{' '}
+            plan, which runs agents on Claude Code, a ChatGPT Plus or Pro plan, which runs them on
+            Codex, or an OpenCode subscription, added with its key, which runs them on OpenCode (see{' '}
             <DocLink href="/docs/getting-started#sign-in-a-subscription">Sign in a subscription</DocLink>).
-            The agents run the official Claude Code and Codex CLIs on their own machines; the platform
-            gives them the machines, and the plan itself stays between you and Anthropic or OpenAI.
+            The agents run the official Claude Code, Codex and OpenCode tools on their own machines.
+            The platform gives them the machines, and the plan itself stays between you and its
+            provider.
             It is yours alone. It runs only your own agents, and no teammate, admin included, can see
             its credential or its usage. Several of your agents share one seat, and you can use the
             same seat in several of your workplaces at once.
@@ -127,7 +140,9 @@ const chapter: DocChapter = {
             hit the limit before it resets, and the pace line forecasts when. An agent that
             reaches the limit pauses at <Ui>Session limit</Ui> and picks up again on its own once the
             window resets. When Claude pauses a subscription, usually a billing matter on their side,
-            the seat&rsquo;s screen says so and offers <Ui>Open Claude billing</Ui>.
+            the seat&rsquo;s screen says so and offers <Ui>Open Claude billing</Ui>. OpenCode keeps
+            its usage in its own console, so an OpenCode seat shows none here, and your agent says
+            when a limit is reached.
           </p>
         </>
       ),
@@ -184,7 +199,7 @@ const chapter: DocChapter = {
     },
     {
       term: 'Seat',
-      text: 'One signed-in subscription: Claude Pro or Max (Claude Code) or ChatGPT Plus or Pro (Codex). Private to the person who signed it in; usable in several of their workplaces at once.',
+      text: 'One signed-in subscription: Claude Pro or Max (Claude Code), ChatGPT Plus or Pro (Codex) or an OpenCode key (OpenCode). Private to the person who signed it in; usable in several of their workplaces at once.',
     },
     {
       term: 'Seat status',

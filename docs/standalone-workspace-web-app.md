@@ -21,10 +21,15 @@ identity or delivery channel.
 
 ## Identity and session contract
 
-- A person signs up or returns with a canonical lowercase email address and a
-  password. Passwords are stored only as salted scrypt hashes; a failed login
-  does not reveal whether the email or password was wrong.
-- A new registration is `pending` and receives no session. Its 256-bit random
+- A person signs up by choosing a name on agenticcloudcomputer.com (that
+  address is the account and the sign-in name) and a password of at least ten
+  characters; there is no outside email at the door and nothing is emailed
+  (since 2026-09-17, notes #509 and #562; knowledge page
+  `workspace-authentication`). Passwords are stored only as salted scrypt
+  hashes; a failed login does not reveal whether the name or password was
+  wrong.
+- The confirmation machinery below is now used only when an older account
+  attaches an outside email from Settings. Such a registration is `pending` and receives no session. Its 256-bit random
   confirmation bearer is stored only as a SHA-256 hash, is single-use, and
   expires after **30 minutes**. Issuing a replacement invalidates the previous
   link. The bearer rides in the URL fragment, so it is absent from HTTP access

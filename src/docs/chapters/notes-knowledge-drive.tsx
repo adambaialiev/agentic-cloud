@@ -9,7 +9,7 @@ import LiveDrive from '../../components/LiveDrive';
 /**
  * Notes, knowledge and Drive: the three places words and files live
  * outside a chat. Facts checked 2026-09-24 against the Notes, Knowledge
- * and Drive screens. Written to src/docs/STYLE.md. Since rooms were
+ * and Drive screens; re-checked 2026-11-06 (note #1011). Written to src/docs/STYLE.md. Since rooms were
  * removed (30–31 Oct 2026, note #843) the notes are one list in the
  * Workplace window, the shelf has no room label, and Move note is gone.
  */
@@ -17,7 +17,7 @@ const chapter: DocChapter = {
   slug: 'notes-knowledge-drive',
   title: 'Notes, knowledge and Drive',
   description:
-    'Quick notes for describing work to an agent, knowledge pages your agents write and you approve, and Drive, the shared file library of the workplace.',
+    'Quick notes for describing work to an agent, knowledge pages your agents write and keep up to date, and Drive, the shared file library of the workplace.',
   lead: (
     <>
       A chat is where you and one agent talk. Three other places hold what the whole workplace
@@ -40,7 +40,8 @@ const chapter: DocChapter = {
             teammate can read it, and it shows how far the work has got.
           </p>
           <p>
-            On Home, tap the Chief of Staff&rsquo;s face or name at the top to open <Ui>Workplace</Ui>, and press <Ui>Write a note</Ui> at the foot of its Notes section.
+            On Home, tap the Chief of Staff&rsquo;s face or name at the top to open <Ui>Workplace</Ui>, tap{' '}
+            <Ui>Notes</Ui>, and press <Ui>Write a note</Ui> under the list.
             Type plain text and save; the first line becomes the title, and one sentence is a
             perfectly good note. The paperclip puts a file on it, up to five of 100 MB each. This is
             the way to give an agent a photo, a spreadsheet or a brief.
@@ -70,7 +71,7 @@ const chapter: DocChapter = {
             It starts <Ui>Unclaimed</Ui>, becomes <Ui>Handed to Ruby</Ui> when you send it and{' '}
             <Ui>Working by Ruby</Ui> once the agent picks it up. From there the state moves to{' '}
             <Ui>PR #4</Ui>, <Ui>Merged</Ui> and <Ui>Live</Ui> as the work moves through a proposal,
-            your approval and a delivery.
+            its merge and a delivery.
           </p>
           <p>
             Once the workplace has six notes, filter chips and a search field appear above the list, and
@@ -134,8 +135,8 @@ const chapter: DocChapter = {
           <p>
             A published page is read rendered, with its title, its one-line description and any
             pictures. Under it are the same hand-over row as a note, pre-filled with a message asking
-            the agent to read the page, and a comment thread for a caveat until someone proposes the
-            fix.
+            the agent to read the page, and a comment thread for a caveat until someone fixes the
+            page.
           </p>
         </>
       ),
@@ -152,7 +153,7 @@ const chapter: DocChapter = {
         <>
           <p>
             There is one shelf per workplace, under <Ui>Knowledge</Ui> in <Ui>Workplace</Ui>. Every
-            agent reads it and may propose a change to any page on it.
+            agent reads it and may change any page on it.
           </p>
         </>
       ),
@@ -204,7 +205,8 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            The files themselves are kept in the platform&rsquo;s own file storage: chat photos and
+            The files themselves are kept in your Agentic Cloud&rsquo;s own file storage, in your
+            cloud account with everything else: chat photos and
             files, note attachments, proposal screenshots, the pictures on knowledge pages, and
             everything in Drive. There is nothing to set up first. Code and knowledge pages live
             elsewhere; the{' '}
@@ -218,7 +220,7 @@ const chapter: DocChapter = {
   reference: [
     {
       term: 'Where',
-      text: <>Notes: <Ui>Workplace</Ui>, <Ui>Notes</Ui>; six most recent shown, then <Ui>All 14 notes</Ui>. Knowledge: <Ui>Workplace</Ui>, <Ui>Knowledge</Ui>. Drive: <Ui>Workplace</Ui>, <Ui>Drive</Ui>.</>,
+      text: <>Notes: <Ui>Workplace</Ui>, <Ui>Notes</Ui>, the whole list with <Ui>Write a note</Ui> under it. Knowledge: <Ui>Workplace</Ui>, <Ui>Knowledge</Ui>. Drive: <Ui>Workplace</Ui>, <Ui>Drive</Ui>.</>,
     },
     {
       term: 'A note',

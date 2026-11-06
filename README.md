@@ -1,7 +1,7 @@
 # Agentic Cloud Computer
 
 **A few people, a fleet of agents, huge output.** Agentic Cloud Computer is a shared Workspace in
-the browser where a small team works with persistent AI coworkers. Each agent has a name, a job
+the browser where a small team works with a fleet of persistent AI agents. Each agent has a name, a job
 and its own cloud computer. The agents work in parallel, share the company's notes, knowledge
 pages, repositories and files, and ask a person before anything important ships.
 
@@ -33,22 +33,23 @@ on your own domain. One installer builds it, and nothing of yours is kept by us.
   agents can work side by side.
 - Notes, knowledge pages, Drive, repositories and sites belong to the workplace, so every agent
   in it works from the same context.
-- Code and knowledge changes come back as proposals. Only a person can approve one, and approving
-  is what lands it.
+- Changes to protected code come back as proposals. A person approves one, and approving is what
+  lands it, unless that person switched on auto-merge for their own agents' proposals (checks
+  must still pass). Knowledge pages change the moment an agent writes them, and the owner is told.
 - Each person signs in to their own AI subscription on the provider's own page.
 
 ## What happens during a turn
 
-1. A member opens the Workspace in a browser and messages a coworker.
-2. The backend admits or steers the turn, wakes the coworker machine when necessary and runs the
+1. A member opens the Workspace in a browser and messages an agent.
+2. The backend admits or steers the turn, wakes the agent's machine when necessary and runs the
    selected CLI harness over SSH.
 3. Claude Code or Codex works on the persistent machine with its normal tools and filesystem.
-4. The `agentbuilt` CLI gives the coworker scoped access to Workspace features such as notes,
+4. The `agentbuilt` CLI gives the agent scoped access to Workspace features such as notes,
    repositories, proposals, secrets and deployments.
 5. Progress and the final reply are written back to the Workspace conversation. A proposal becomes
    a human decision card; a completed turn leaves an unread receipt on the Workspace.
 
-The backend does not drive coding models token by token. The coding CLI runs on the coworker
+The backend does not drive coding models token by token. The coding CLI runs on the agent's
 machine and retains its own working session there.
 
 ## Data split
@@ -57,12 +58,14 @@ Customer-controlled resources and platform records are deliberately separate.
 
 | Customer-controlled services | Platform control plane |
 | --- | --- |
-| Agent machines and disks in the workplace's Fly organization | Workplace, membership and agent records |
+| Agent machines and disks, where a workplace brings its own Fly organization | Workplace, membership and agent records |
 | Repositories, media and deployments when BYO integrations are configured | Notes, knowledge pages, proposal and deployment metadata |
 | Provider billing for AI access and cloud resources | Encrypted credentials and saved secrets |
 | The full coding-harness session on each agent machine | A rolling window of recent Workspace chat rows per agent |
 
-In your own Agentic Cloud, both columns live in your own Fly organization.
+A hosted workplace's agent machines run on the platform's own Fly account unless the platform has
+marked it to bring its own. In your own Agentic Cloud, both columns live in your own Fly
+organization.
 
 ## Architecture
 
@@ -82,7 +85,7 @@ In your own Agentic Cloud, both columns live in your own Fly organization.
              |        |        |
              |        |        +---------- platform git + CI
              |        +------------------- SQLite + media storage
-             +---------------------------- customer Fly machines
+             +---------------------------- agent Fly machines
                                                   |
                                       Claude Code / Codex + agentbuilt CLI
 ```
@@ -90,28 +93,28 @@ In your own Agentic Cloud, both columns live in your own Fly organization.
 ### Main components
 
 - **Public frontend** — Vite, React, TypeScript, React Router and Tailwind. Static routes are
-  prerendered by `scripts/prerender.mjs` — `/`, the legal pages, `robots.txt`, `sitemap.xml`
-  and `llms.txt`. The tour and the twelve articles were removed on 2026-09-07; their
+  prerendered by `scripts/prerender.mjs` — every public route, including `/`, `/product`, the
+  documentation under `/docs` and the legal pages, plus `robots.txt`, `sitemap.xml` and `llms.txt`. The tour and the twelve articles were removed on 2026-09-07; their
   addresses are 301s in `public/_redirects`, because the SPA fallback would otherwise answer
   each one with the homepage and a 200. A narrowly routed Pages Function proxies
-  `/workspace` to the backend so the product stays on the main domain. Every product picture
-  on it is a crop of a real simulation capture — see
-  [`docs/marketing-screenshots.md`](docs/marketing-screenshots.md).
-- **Workspace** — `backend/workspace-ui/`, a React shell the backend builds and serves. Browser sessions use a
-  username and rotating authenticator code.
+  `/workspace` to the backend so the product stays on the main domain. The site's product
+  pictures are the Workspace's own components on fixture data (`src/components/Live*.tsx`), not
+  screenshots.
+- **Workspace** — `backend/workspace-ui/`, a React shell the backend builds and serves. People sign in with
+  their name here and a password; an authenticator code is an optional second step.
 - **Backend** — a stateful Node/Express service. It owns Workspace APIs,
   provisioning, SSH turns, schedulers and the platform control plane.
 - **Persistence** — SQLite behind storage interfaces, plus an S3-compatible media store. The
   backend has in-memory implementations for local development and tests.
-- **Coworker machines** — created in the workplace's Fly account and reached over the private
-  network. Each runs one coding CLI harness and the zero-dependency `agentbuilt` CLI.
+- **Agent machines** — created in the platform's Fly account (or a workplace's own, in your own
+  Agentic Cloud) and reached over the private network. Each runs one coding CLI harness and the zero-dependency `agentbuilt` CLI.
 - **Platform git and CI** — protected repositories, owner approval cards and a two-lane CI runner.
 
 ## Repository layout
 
 ```text
 .
-├── src/                     # Public React site, legal pages and guides
+├── src/                     # Public React site, legal pages and documentation (src/docs)
 ├── backend/
 │   ├── src/
 │   │   ├── agent/           # Setup-agent loop and Claude/Codex harnesses
@@ -120,7 +123,7 @@ In your own Agentic Cloud, both columns live in your own Fly organization.
 │   │   ├── types/           # Persisted and API document shapes
 │   │   └── test/            # Unit, integration, live and helper suites
 │   └── scripts/             # Operator and migration tools
-├── cli/agentbuilt/          # CLI baked into coworker machines
+├── cli/agentbuilt/          # CLI baked into agent machines
 ├── infra/                   # Machine images, backend, git, CI, backups and routing
 ├── docs/                    # Current runbooks plus dated design/history records
 ├── scripts/                 # Build, prerender, verification and screenshot tools
@@ -169,8 +172,7 @@ Useful commands:
 
 ## CI and deployment
 
-GitHub Actions is frozen and retained only as historical/specification material. The platform git
-host triggers the two-lane CI runner described in [docs/ci-two-lane-runner.md](docs/ci-two-lane-runner.md):
+The platform git host triggers the two-lane CI runner described in [docs/ci-two-lane-runner.md](docs/ci-two-lane-runner.md):
 
 | Job | Result |
 | --- | --- |
@@ -200,10 +202,11 @@ Production releases keep rollback artifacts. Read
 
    `pr create` is quiet: no card, no notification, no queue row, and the owner cannot decide
    it. `pr ready` is the invitation, and it refuses while the checks on the branch are still
-   running or red (note #293). Knowledge proposals work the same way: `knowledge propose`
-   records quietly and `knowledge proposals ready <n>` invites the owner.
+   running or red (note #293). With the owner's auto-merge on, `pr ready` merges a green
+   proposal instead of asking. Knowledge is not proposed at all: since note #746
+   `knowledge propose` is live the moment it returns.
 
-5. The owner approves or rejects in the Workspace. Do not push or merge on the GitHub mirror.
+5. The owner approves or rejects in the Workspace (or auto-merge merges it). Do not push or merge on the GitHub mirror.
 
 Changes requested by a quick note must use `agentbuilt note start <n>` before work and link the
 proposal with `--note <n>`.
@@ -211,11 +214,9 @@ proposal with `--note <n>`.
 Conventions worth knowing:
 
 - Storage additions need both persistent (`Sqlite*`) and in-memory implementations.
-- New setup-agent capabilities need a schema in `backend/src/agent/tool-definitions.ts` and a
-  handler in `backend/src/agent/tool-executor.ts`.
 - New `agentbuilt` commands normally touch both `cli/agentbuilt/agentbuilt.mjs` and
   `backend/src/routes/agent-cli.ts`.
-- Anything baked into existing coworker machines needs the correct update channel and version
+- Anything baked into existing agent machines needs the correct update channel and version
   bump. Read [docs/machine-update-channels.md](docs/machine-update-channels.md) first.
 
 ## Further reading

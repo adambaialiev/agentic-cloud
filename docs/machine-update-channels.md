@@ -10,7 +10,7 @@ machines only — silently, with every test green.
 | Layer | What lives there | Owner | Reaches existing machines? |
 |---|---|---|---|
 | **Home** (`/home/agent`, on the volume) | `CLAUDE.md` / `AGENTS.md`, `~/.claude/settings.json`, `~/.codex/config.toml`, `~/.agentbuilt/`, `~/.boot.d/` | The **identity write** | Yes — next turn, when the version moved |
-| **CLI version** | which `claude` / `codex` is installed | The **pin** in the config store | Yes — next sleep, or a tap in Telegram |
+| **CLI version** | which `claude` / `codex` is installed | The **pin** in the config store | Yes — at its next sleep |
 | **Rootfs** (everything else) | `entrypoint.sh`, sshd config, OS packages, the baked CLIs, the home skeleton | The **machine image** | Yes — rolled while the machine sleeps |
 
 The volume survives everything. The rootfs is replaced wholesale by an image
@@ -68,15 +68,14 @@ something new, it needs a bump.
 
 The pinned versions live in one config document (`config/harnessCliVersions`),
 written **only** by `npm --prefix backend run cli:versions` — a deliberate human
-act, never an automatic follow of npm `latest`. Three readers, and they must all
-agree:
+act, never an automatic follow of npm `latest`. Two readers, and they must both
+agree (a third, the Telegram menu's Version view with its Update button,
+left with Telegram in September 2026; nothing in the Workspace replaced it):
 
 - **Existing machines**: `HarnessCliUpdater` compares the installed version
   against the pin just before the idle reaper stops the machine, and
   `npm install -g <pkg>@<pin>` if they differ. Free: the machine is already
   idle and nobody is waiting.
-- **The Telegram menu**: the Version view shows the installed version and offers
-  an Update button when it differs from the pin.
 - **New machines**: the image build asks the backend for the pin
   (`GET /api/harness-cli-versions`) and bakes exactly those versions.
 

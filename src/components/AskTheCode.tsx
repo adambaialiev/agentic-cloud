@@ -36,7 +36,10 @@ export const ASK_PLACEHOLDER_PHONE = 'Ask about the product';
 /* The one line of fine print on the page (design, open point 4, kept by
    Adam): the visitor should know they are read. */
 export const ASK_FINE_PRINT = 'The founder reads every conversation, to learn what people ask. Nothing about you is kept beyond what you type.';
-export const ASK_MARGIN_REST = 'The open-source code and the docs, fresh from each release. Every answer lists the files it came from.';
+/* "fresh from each release" until note #1011 (6 Nov 2026): the guide reads
+   the repository's main branch, fetched again when its copy is more than 15
+   minutes old (services/public-guide-machine.ts), not a release. */
+export const ASK_MARGIN_REST = 'The open-source code and the docs, kept up to date within 15 minutes. Every answer lists the files it came from.';
 export const ASK_FAILED = 'Something went wrong on our side, and that question was not counted. Ask it again in a minute.';
 export const ASK_BUSY = 'A few questions are ahead of yours. Ask again in a minute.';
 

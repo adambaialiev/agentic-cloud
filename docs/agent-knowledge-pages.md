@@ -2,8 +2,9 @@
 
 Decided 2026-08-15. The sibling of the repository system: repos hold code an
 agent runs, knowledge holds **pages a user reads**. One knowledge page is one
-HTML file, and every change to one is proposed by an agent and approved by the
-owner — the same gate, the same absent `approve` verb.
+HTML file. Until note #746 (12 Oct 2026) every change to one was proposed by
+an agent and approved by the owner; since then a change is live the moment the
+agent makes it, and the owner is told (see "The gate — removed" below).
 
 The two systems are deliberately not one. A repo is a tree an agent clones,
 branches and merges; a knowledge page is a single document with a name. Giving

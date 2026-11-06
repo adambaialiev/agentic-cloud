@@ -10,6 +10,9 @@ import { LiveAddSecret } from '../../components/LiveForms';
  * Since rooms were removed (30–31 Oct 2026, note #843) a shared key is the
  * whole workplace's: admins' agents only or every agent, or one agent's
  * own. "A key belongs to a room" became "Keeping a key apart".
+ * Re-checked 2026-11-06 (note #1011): Secrets is a row of the Workplace
+ * window that opens its own screen (note #960); a bucket's keys are grouped
+ * under it (note #768).
  */
 const chapter: DocChapter = {
   slug: 'secrets',
@@ -89,7 +92,7 @@ const chapter: DocChapter = {
         </>
       ),
       panel: (
-        <Panel says="The Secrets section in Workplace: four shared keys, each with its name, the line saying what it is for and never its value, and the row that adds another.">
+        <Panel says="The Secrets screen: four shared keys, each with its name, the line saying what it is for and never its value, and the row that adds another.">
           <LiveSecrets />
         </Panel>
       ),
@@ -163,7 +166,7 @@ const chapter: DocChapter = {
   reference: [
     {
       term: 'Where',
-      text: <>Home, <Ui>Workplace</Ui>, <Ui>Secrets</Ui>. With six or more keys, one <Ui>secrets</Ui> row opens the full list with a search field.</>,
+      text: <>Home, <Ui>Workplace</Ui>, <Ui>Secrets</Ui>, a screen of its own. With six or more keys the list has a search field. A storage bucket&rsquo;s four keys are grouped under the bucket.</>,
     },
     {
       term: 'Name',

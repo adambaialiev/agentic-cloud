@@ -1,5 +1,7 @@
 # Hetzner Cloud Provider Integration
 
+> Status (2026-11-06): history. Nothing in the backend imports `services/hetzner-client.ts` any more and the managed-server tools below no longer exist. Agents' machines and sites run on Fly machines (`services/fly-client.ts`).
+
 This backend provisions managed cloud servers on Hetzner Cloud.
 
 ## Environment

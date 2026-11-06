@@ -1,5 +1,7 @@
 # The product pictures on the public site
 
+> Status (2026-11-06): still true of the Workspace screens on the site. Since note #965 the home page also opens with a film of the product in use (`src/lib/films.ts`), a recording rather than a live panel.
+
 There are none left, and that is the point.
 
 Every screen of the Workspace on agenticcloudcomputer.com is the Workspace's

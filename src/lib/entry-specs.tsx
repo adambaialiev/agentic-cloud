@@ -190,8 +190,11 @@ export const AGENTS_FOR_YOUR_TEAM: EntrySpec = {
     },
     {
       heading: 'Nothing protected ships without a person.',
+      /* "Code and knowledge changes queue as proposals" until note #1011:
+         since note #746 (12 Oct 2026) a knowledge change is live at once,
+         with nothing to approve. */
       body:
-        'Code and knowledge changes queue as proposals with their checks. An agent cannot merge, '
+        'Changes to protected code queue as proposals with their checks. An agent cannot merge, '
         + 'approve, delete or widen access to a secret.',
       panel: <LiveDecisions />,
     },

@@ -1,5 +1,7 @@
 # The platform repo on our own git host — and the end of lane B
 
+> Status (2026-11-06): done. The platform's code lives on our own git host, and since 2026-11-01 it is the public `agentic-cloud` repository (AGPL-3.0). The design below is the record of how it got there.
+
 Direction set by Owner 2026-08-13; this doc is the design. It reverses a
 decision recorded one day earlier in `agent-git-project-repos.md` ("the
 platform monorepo stays on GitHub permanently"), and the reversal is worth a

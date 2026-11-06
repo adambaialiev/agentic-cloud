@@ -1,86 +1,39 @@
-# Deployment Guide - Cloudflare Pages
+# Deployment
 
-The web surface is a **static landing page** (no authentication, no backend calls). It deploys to Cloudflare Pages automatically on every push to `main` via GitHub Actions.
+How a change to this repository reaches production. This is the platform's own deployment. To
+install your own Agentic Cloud in your company's Fly.io organization, follow
+[public/own-cloud.md](public/own-cloud.md) instead.
 
-> The backend is a long-running Node process, not a Cloudflare Worker — see [`infra/backend-host/`](infra/backend-host/) and [`docs/backend-cutover-runbook.md`](docs/backend-cutover-runbook.md). `.github/workflows/backend-deploy.yml` ships it on pushes under `backend/**`.
+## The path
 
-## Prerequisites
+Every change lands on `main` through a proposal on the platform's own git host
+([docs/platform-on-own-git.md](docs/platform-on-own-git.md)). The CI runner
+([docs/ci-two-lane-runner.md](docs/ci-two-lane-runner.md)) then runs each job for the new commit
+and records it as a commit status:
 
-1. **Cloudflare Account** — create a free account at [cloudflare.com](https://cloudflare.com) and enable Cloudflare Pages.
-2. **GitHub Repository** — connected to GitHub Actions.
+| Status | What it does |
+| --- | --- |
+| `ci/checks` | Frontend and backend tests, the build, lint, and the real-Chrome checks |
+| `deploy/site` | Builds the public site and uploads `dist/` to Cloudflare Pages (`wrangler.toml`) |
+| `deploy/prod` | Builds the backend artifact, restarts the backend with a guard, and checks its health |
+| `deploy/git-host` | Updates the platform git service |
 
-## Setup Instructions
+Other jobs build the agent machine image, the git host and messaging images, the database backup
+service and the release an own Agentic Cloud installs; most of them skip a commit that does not
+touch their files.
+The job definitions are in `infra/ci-runner/run-job.sh` and `infra/ci-runner/daemon.mjs`.
 
-### Step 1: Create the Cloudflare Pages Project
+The GitHub Actions workflows in `.github/workflows` have not run since Actions froze on
+2026-07-30, and nothing deploys through them. Credentials (Cloudflare, Fly) live on the CI runner, never in the repository.
 
-1. Log in to your Cloudflare dashboard.
-2. Navigate to **Workers & Pages** → **Create Application** → **Pages** → **Upload Assets**.
-3. Project name: `infinite-agents`. Skip the upload — GitHub Actions handles deployment.
-4. Note your **Account ID** from the URL: `https://dash.cloudflare.com/<YOUR_ACCOUNT_ID>/pages`.
+## The backend
 
-### Step 2: Create a Cloudflare API Token
+The backend is a long-running Node process on its own host, not a Cloudflare Worker. Its host
+setup is in [infra/backend-host/](infra/backend-host/), and the cutover and rollback steps are in
+[docs/backend-cutover-runbook.md](docs/backend-cutover-runbook.md). `backend/wrangler.toml` is
+legacy: the backend does not run on the Workers runtime.
 
-1. Go to [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens).
-2. Click **Create Token**.
-3. Use the **Edit Cloudflare Workers** template, or create a custom token with:
-   - **Account** → **Cloudflare Pages** → **Edit**
-   - **Zone** → **Zone** → **Read**
-   - **Account Resources**: include your specific account
-4. Copy the generated token.
+## Checking that it arrived
 
-### Step 3: Configure GitHub Secrets
-
-Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
-
-| Secret Name | Value |
-|-------------|-------|
-| `CLOUDFLARE_API_TOKEN` | Your Cloudflare API token from Step 2 |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID from Step 1 |
-| `API_BASE_URL` | Backend API URL, injected as `VITE_API_BASE_URL` at build (the static landing does not call it) |
-
-### Step 4: Push to Main
-
-```bash
-git push origin main
-```
-
-GitHub Actions will install dependencies, run `npm run build`, and deploy `dist/` to Cloudflare Pages.
-
-## Workflow Files
-
-- **`.github/workflows/deploy-cloudflare.yml`** — deploys the landing page on every push to `main`.
-- **`.github/workflows/ci-cd.yml`** — lint, build, tests, and Pages deploy on `main`.
-- **`.github/workflows/preview-deploy.yml`** — preview deployments for pull requests.
-
-## Manual Deployment
-
-From the GitHub Actions tab: **Actions** → **Deploy to Cloudflare Pages** → **Run workflow**. Or locally:
-
-```bash
-npm run build
-npx wrangler pages deploy dist --project-name=infinite-agents
-```
-
-## Configuration Files
-
-- **`wrangler.toml`** — Cloudflare Pages configuration (the landing page).
-- **`backend/wrangler.toml`** — legacy; the backend does not run on the Workers runtime.
-
-## Troubleshooting
-
-### Build Failures
-- Check the GitHub Actions logs for detailed error messages.
-- Verify the build works locally: `npm run build`.
-
-### Deployment Failures
-- Verify `CLOUDFLARE_API_TOKEN` has Cloudflare Pages permissions.
-- Confirm `CLOUDFLARE_ACCOUNT_ID` is correct and the Pages project name matches.
-
-### Environment Variables
-- **Cloudflare Dashboard**: Workers & Pages → your project → Settings → Environment Variables.
-- **GitHub Secrets**: for values needed during the build.
-
-## Additional Resources
-
-- [Cloudflare Pages Documentation](https://developers.cloudflare.com/pages/)
-- [Wrangler Action Documentation](https://github.com/cloudflare/wrangler-action)
+Merged is not live. Wait for the commit's `deploy/site` or `deploy/prod` status to go green, then
+load the page or call the route that changed.
