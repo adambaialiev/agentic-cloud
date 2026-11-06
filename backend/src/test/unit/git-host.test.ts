@@ -1982,3 +1982,38 @@ describe('git-host shell scripts', () => {
     expect(script).toContain('respond @internal_foreign 404');
   });
 });
+
+/**
+ * Our central host on Fly (note #1032): with CONTROL_PRIVATE_ONLY=1 the
+ * control API refuses anything that came through Fly's public proxy (which
+ * stamps Fly-Client-IP), even with the right secret; a private-network call
+ * carries no such header and is served. Git itself is unaffected.
+ */
+describe('git-host control API on the private network only (note #1032)', () => {
+  it('refuses /internal/* through the public proxy, serves it privately, and leaves /health alone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentgit-private-'));
+    const { NODE_OPTIONS: _ignored, ...cleanEnv } = process.env;
+    const host = spawn(process.execPath, [HOST_SCRIPT], {
+      env: { ...cleanEnv, PORT: '0', REPOS_ROOT: join(dir, 'repos'), GIT_HOST_SECRET: SECRET, BACKEND_URL: 'http://127.0.0.1:9', CONTROL_PRIVATE_ONLY: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    try {
+      const m = await waitForLine(host, /listening on 127\.0\.0\.1:(\d+)/, 'git-host');
+      const base = `http://127.0.0.1:${m[1]}`;
+      const create = (headers: Record<string, string>) => fetch(`${base}/internal/repos`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-git-host-secret': SECRET, ...headers },
+        body: JSON.stringify({ userId: 'u1', name: 'private-only' }),
+      });
+      expect((await create({ 'fly-client-ip': '203.0.113.9' })).status).toBe(404);
+      expect(existsSync(join(dir, 'repos', 'u1', 'private-only.git'))).toBe(false);
+      expect((await create({})).status).toBe(200);
+      expect(existsSync(join(dir, 'repos', 'u1', 'private-only.git'))).toBe(true);
+      const health = await fetch(`${base}/health`, { headers: { 'fly-client-ip': '203.0.113.9' } });
+      expect(health.status).toBe(200);
+    } finally {
+      host.kill();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});

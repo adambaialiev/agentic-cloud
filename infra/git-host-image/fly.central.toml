@@ -1,0 +1,46 @@
+# Our own central code host on Fly (git.agentbuilt.app), note #1032 stage 2.
+# The same image as every workplace host and every private copy's, with two
+# differences: always on (every agent pushes here; a wake per push is not
+# worth the saving), and CONTROL_PRIVATE_ONLY=1, which keeps /internal/* off
+# the public proxy, the layer Caddy gave the Hetzner host.
+#
+# Secrets (fly secrets, never here): GIT_HOST_SECRET, CI_WEBHOOK_URL,
+# CI_WEBHOOK_SECRET, RECOVERY_TOKEN_SHA256, RECOVERY_TOKEN_OWNER,
+# RECOVERY_TOKEN_REPO.
+#
+# Deploy: fly deploy -c infra/git-host-image/fly.central.toml --image <the git-host-sha-… ref FLY_GIT_HOST_IMAGE names>
+app = "ia-git"
+primary_region = "ams"
+swap_size_mb = 1024
+
+[env]
+  HOST = "::"
+  PORT = "8080"
+  DATA_ROOT = "/data"
+  BACKEND_URL = "https://api.agenticcloudcomputer.com"
+  DISK_MAX_USED_PERCENT = "80"
+  CONTROL_PRIVATE_ONLY = "1"
+
+[[mounts]]
+  source = "git_data"
+  destination = "/data"
+  initial_size = "10gb"
+  snapshot_retention = 7
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  grace_period = "30s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

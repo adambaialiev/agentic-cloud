@@ -183,3 +183,37 @@ often a dozen times a day.
   repo pushed since the first. Now the run is **at most once per UTC day**,
   recorded in `central-git-backup.last` beside the database and checked
   hourly.
+
+## Stage 2 — the code host (prepared 6 Nov 2026)
+
+`ia-git`, in our Fly organization in `ams`, runs the `git-host` image that
+every workplace host and private copy already use, configured by
+`infra/git-host-image/fly.central.toml`: always on, shared-cpu-1x with 1 GB
+and 1 GB of swap, and a 10 GB volume at `/data`.
+
+**What the Hetzner host had that the image does not**, and where each went:
+
+| On ia-media | On Fly |
+|---|---|
+| Caddy refusing `/internal/*` to anyone but the backend's address | `CONTROL_PRIVATE_ONLY=1`: the host refuses `/internal/*` on anything that came through Fly's public proxy (it stamps `Fly-Client-IP`). The backend calls it over the private network: from `ia-backend` through its WireGuard peer until stage 4, natively after that. |
+| `/etc/agentgit/agentgit.env` | Fly secrets (`GIT_HOST_SECRET`, `CI_WEBHOOK_URL`, `CI_WEBHOOK_SECRET`, `RECOVERY_TOKEN_*`) and `[env]` |
+| hooks (`pre-receive` history guard, `post-receive`) | in the image already (`infra/git-host/hooks`) |
+| nightly bundles to the Storage Box | the backend's `CENTRAL_GIT_BACKUP` to R2 (stage 1); the image's curl (Ubuntu 24.04, 8.5) signs for R2, as ia-media's did |
+| `maintain-repos.sh` (trash purge, gc) weekly | not in the image yet; a later stage schedules it |
+| 512 MB request body limit (Caddy) | none at the proxy |
+
+**The cutover, in order:**
+
+1. Copy the repos to the new volume in advance: `rsync` pulled from ia-media by
+   the Fly machine, with a temporary key that is removed afterwards.
+2. Pre-issue the certificate with a DNS-01 `_acme-challenge` record, and set
+   `git.agentbuilt.app` to a short TTL.
+3. Just before the window: confirm no CI run is in flight and no agent is
+   mid-turn on a repo.
+4. Window: stop and mask `agentgit` on ia-media (pushes are refused), run a
+   final rsync, compare every repo's refs one by one, then point the backend's
+   `GIT_HOST_CONTROL_URL` at the private address. Flip `git.agentbuilt.app` to
+   the Fly app, and set ia-media's Caddy to forward to it for resolvers still
+   holding the old address.
+5. Check: a push, a proposal and its merge, a CI pip, a knowledge read, the
+   recovery token's clone, and an R2 bundle run from the new host.

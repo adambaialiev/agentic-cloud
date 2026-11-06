@@ -19,6 +19,8 @@
 //   REPOS_ROOT           bare repos live at <root>/<userId>/<name>.git
 //   TRASH_ROOT           deleted repos wait here (default <REPOS_ROOT>/../trash)
 //   GIT_HOST_SECRET      shared secret for /internal/* and backend callbacks
+//   CONTROL_PRIVATE_ONLY '1': /internal/* answers only over the private
+//                        network, never through Fly's public proxy (note #1032)
 //   BACKEND_URL          e.g. https://api.example.com
 //   DISK_MAX_USED_PERCENT   refuse NEW repos above this (default 80)
 //   CI_WEBHOOK_URL       the ONE dispatcher a repo's CI may notify
@@ -58,6 +60,8 @@ const REPOS_ROOT = process.env.REPOS_ROOT || '/var/lib/agentgit/repos';
  */
 const TRASH_ROOT = process.env.TRASH_ROOT || path.join(path.dirname(REPOS_ROOT), 'trash');
 const SECRET = process.env.GIT_HOST_SECRET || '';
+/** '1': refuse /internal/* to anything that came through Fly's public proxy (see the request handler). */
+const CONTROL_PRIVATE_ONLY = process.env.CONTROL_PRIVATE_ONLY === '1';
 const BACKEND_URL = (process.env.BACKEND_URL || '').replace(/\/+$/, '');
 // The address on commits the host makes itself (merges, the empty main): ours,
 // or a private copy's own (note #807).
@@ -1587,6 +1591,15 @@ const server = createServer(async (req, res) => {
   }
 
   if (pathname.startsWith('/internal/')) {
+    // Our central host on Fly (note #1032): the control API answers only on
+    // the private network. Fly's proxy stamps every request it forwards from
+    // the internet with Fly-Client-IP, and a client cannot remove a header the
+    // proxy adds; a call over 6PN never passes the proxy. This is the layer
+    // Caddy gave the Hetzner host (/internal/* only from the backend's IP),
+    // kept in front of the secret rather than replaced by it.
+    if (CONTROL_PRIVATE_ONLY && req.headers['fly-client-ip'] !== undefined) {
+      return json(res, 404, { error: 'not found' });
+    }
     if (!secretMatches(req.headers['x-git-host-secret'])) {
       return json(res, 401, { error: 'bad host secret' });
     }
