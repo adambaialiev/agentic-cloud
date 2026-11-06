@@ -63,7 +63,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(links.some((link) => link.closest('footer'))).toBe(true);
   });
 
-  it('runs six screens: the film, the workplace, the own cloud, ask the agent, how to build yours, the footer', () => {
+  it('runs six screens: the film, the workplace, the own cloud, how to build yours, ask the agent, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -72,9 +72,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(headings).toEqual([
       HOME_HEADLINE,
       OWN_CLOUD_HEADING,
-      ASK_HEADING,
       'Build your own Agentic Cloud.',
+      ASK_HEADING,
     ]);
+    // Note #1012 (Adam, 6 Nov 2026, 05:50 UTC): the Ask screen is last, and
+    // the footer is the only thing under it.
+    const ask = document.querySelector('main > section#ask')!;
+    expect(ask.nextElementSibling?.tagName).toBe('FOOTER');
     // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
     // screens: the film, the workplace drawing, the own cloud, how to build
     // yours, the footer. The headline is the page's one h1, not drawn.
@@ -456,7 +460,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'ask', 'start',
+      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start', 'ask',
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);

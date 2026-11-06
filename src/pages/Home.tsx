@@ -296,13 +296,15 @@ export default function Home() {
 
       {/* ── The second wow: all of it in your own cloud ─────────────────── */}
       <OwnCloud />
+      <HowToStart />
+
       {/* ── Ask an agent that reads the code (note #1010) ─────────────── */}
       {/* Adam, 5 Nov 2026: a visible agent that answers visitors' questions
-          from the public code. Its own screen right after the code is said
-          to be open, so the agent reads what the heading above just named,
-          and right before the one action. */}
+          from the public code. Since note #1012 (Adam, 6 Nov 2026, 05:50
+          UTC: "the agent section should be the last. Only the footer should
+          be below") it is the page's last screen, after "Build your own
+          Agentic Cloud.", with only the footer under it. */}
       <AskTheCode />
-      <HowToStart />
 
       <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide mark />
     </main>
