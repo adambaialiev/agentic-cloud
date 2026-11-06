@@ -166,22 +166,49 @@ export class DatabaseBucketBackup {
     return this.running;
   }
 
-  /** Every `intervalMs`, the first after `firstAfterMs`; failures are told, never thrown. */
-  start(intervalMs: number, firstAfterMs: number): void {
-    const tick = () => {
-      this.run().then((result) => {
+  /**
+   * Age of the newest backup in the bucket, or null when there is none (or
+   * the bucket cannot be listed, in which case a backup is taken anyway).
+   */
+  async newestAgeMs(): Promise<number | null> {
+    try {
+      const times = (await this.listKeys()).map(backupKeyTime).filter((t): t is Date => t !== null);
+      if (times.length === 0) return null;
+      const newest = Math.max(...times.map((t) => t.getTime()));
+      return (this.options.now?.() ?? new Date()).getTime() - newest;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A backup whenever the newest one in the bucket is `intervalMs` old,
+   * checked every `checkEveryMs` (default 30 min, at most the interval) and
+   * first after `firstAfterMs`. The bucket is the clock, not this process
+   * (note #1032): production restarts on every deploy, a dozen times a day,
+   * and a timer that started over at each boot took a backup after every one
+   * of them, each kept for the bucket lock's 30 days. Failures are told,
+   * never thrown.
+   */
+  start(intervalMs: number, firstAfterMs: number, checkEveryMs = 30 * 60_000): void {
+    const tick = async () => {
+      const age = await this.newestAgeMs();
+      // A little slack, so a check that lands a minute early does not wait a whole round.
+      if (age !== null && age < intervalMs - Math.min(5 * 60_000, intervalMs / 10)) return;
+      try {
+        const result = await this.run();
         const line = `${result.key}: ${result.tables} tables, ${result.bytes} bytes (${result.gzippedBytes} gzipped), ${result.kept} kept`
           + (result.removed.length ? `, removed ${result.removed.length}` : '');
         this.options.log?.(line);
         this.options.record?.('ok', line);
-      }).catch((error) => {
+      } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         this.options.log?.(`backup failed: ${message}`);
         this.options.record?.('fail', message);
-      });
+      }
     };
-    setTimeout(tick, firstAfterMs).unref();
-    setInterval(tick, intervalMs).unref();
+    setTimeout(() => { void tick(); }, firstAfterMs).unref();
+    setInterval(() => { void tick(); }, Math.min(checkEveryMs, intervalMs)).unref();
   }
 
   private async runOnce(): Promise<DatabaseBucketBackupResult> {

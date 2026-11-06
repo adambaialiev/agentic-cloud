@@ -150,3 +150,36 @@ The copy came back on the new machine with `Persistence: SQLite
 User-visible downtime was **81.5 s**, of which **40 s** was creating the new
 machine, a step that production does the day before. The old machine and
 volume were then deleted, so the copy-release gate finds a single backend.
+
+## Stage 1 — backups to R2 (6 Nov 2026)
+
+The owner made two bucket-scoped R2 keys (admins-only secrets
+`BACKUP_R2_ACCESS_KEY_ID`/`_SECRET_ACCESS_KEY` to read and write,
+`BACKUP_R2_READ_*` to read only). Their scopes were checked before use:
+
+- the write key can add objects, but cannot delete one (the lock answers 409)
+  and cannot reach any other bucket (403);
+- the read key can list and get, and is refused a write (403).
+
+`ia-backend` then got `BACKUP_S3_*` (the write key), `DB_BACKUP_INTERVAL_HOURS=6`,
+`DB_BACKUP_LOCK_DAYS=30`, `DB_BACKUP_MONITOR_JOB=db-r2`, `CENTRAL_GIT_BACKUP=on`,
+`MEDIA_MIRROR=on`, and `db-r2,git-r2,media` added to `BACKUP_MONITOR_JOBS`. The
+Storage Box jobs keep running beside these until the teardown.
+
+**Seeding the repo bundles.** A fresh state uploads every repo, which can take
+longer than the backend's HTTP call allows. The first run was made by hand on
+the host, through the same route (`POST <GIT_HOST_CONTROL_URL>/internal/backup/run`
+with the `x-git-host-secret` header): 24 repos, 784 MB, 98 s, none failed.
+
+**Two fixes the live switch-on showed.** Production restarts on every deploy,
+often a dozen times a day.
+
+- The database backup ran 10 minutes after each boot. That made a 38 MB
+  archive per deploy, each held for the lock's 30 days. Now **the bucket is
+  the clock**: every 30 minutes the backend checks the newest archive and only
+  takes one when it is at least the interval old.
+- The repo bundles are keyed by day, and the lock refuses to overwrite a
+  same-day key. A second run on the same day would therefore fail on every
+  repo pushed since the first. Now the run is **at most once per UTC day**,
+  recorded in `central-git-backup.last` beside the database and checked
+  hourly.

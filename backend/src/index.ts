@@ -72,6 +72,7 @@ import { createReleaseCheck, updatesUrlFrom } from './services/copy-release-chec
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
+import { readFile as readFileNode, writeFile as writeFileNode } from 'node:fs/promises';
 import { DEFAULT_MAIL_DOMAIN, MAIL_DOMAIN } from './shared/workspace-mail.js';
 import { FlyAppOrgContextResolver } from './services/fly-app-org-context.js';
 import { OrgSpendService } from './services/org-spend.js';
@@ -1105,12 +1106,22 @@ if (parseBoolEnv('MEDIA_MIRROR', false)) {
 // host already bundles and uploads on request (/internal/backup/run, the
 // org hosts' path); this is the clock for OUR central host, whose Hetzner
 // nightly went to the Storage Box. Opt-in by CENTRAL_GIT_BACKUP=on. The first
-// run of a fresh state uploads every repo and may outlive the HTTP call; the
-// host finishes it anyway and the next run is incremental.
+// run of a fresh state uploads every repo and may outlive the HTTP call; seed
+// it by hand (docs/control-plane-on-fly.md), after which runs are incremental.
 if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
   if (gitHostClient && BACKUP_S3.endpoint && BACKUP_S3.name && BACKUP_S3.accessKeyId && BACKUP_S3.secretAccessKey) {
-    const everyHours = parsePositiveIntEnv('CENTRAL_GIT_BACKUP_INTERVAL_HOURS', 24);
+    // At most one run per UTC day, remembered beside the database. A bundle's
+    // key is the day (git/<ns>/<repo>/<day>.bundle), and the R2 bucket's lock
+    // refuses to overwrite it: a second run on the same day, which every
+    // deploy's restart used to start, would fail on each repo pushed since
+    // the first. The file survives restarts; losing it costs one refused run.
+    const centralGitStamp = sqliteDbPath ? `${dirnameNode(sqliteDbPath)}/central-git-backup.last` : '';
     const runCentralGitBackup = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      if (centralGitStamp) {
+        const last = await readFileNode(centralGitStamp, 'utf8').then((text) => text.trim()).catch(() => '');
+        if (last === today) return;
+      }
       try {
         const r = await gitHostClient.runBackup({
           endpoint: BACKUP_S3.endpoint, bucket: BACKUP_S3.name,
@@ -1120,15 +1131,17 @@ if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
           + (r.failed.length ? `, ${r.failed.length} failed (first: ${r.failed[0]!.repo}: ${r.failed[0]!.error.slice(0, 120)})` : '');
         console.log(`[CentralGitBackup] ${detail}`);
         backupMonitor?.record('git-r2', r.failed.length || r.repos === 0 ? 'fail' : 'ok', detail);
+        if (centralGitStamp && r.repos > 0) await writeFileNode(centralGitStamp, `${today}\n`).catch(() => undefined);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[CentralGitBackup] failed: ${message}`);
         backupMonitor?.record('git-r2', 'fail', message);
       }
     };
-    setInterval(runCentralGitBackup, everyHours * 60 * 60_000).unref();
+    // Checked hourly; the stamp keeps it to one run a day.
+    setInterval(runCentralGitBackup, 60 * 60_000).unref();
     setTimeout(runCentralGitBackup, 15 * 60_000).unref();
-    console.log(`[config] CENTRAL_GIT_BACKUP=every ${everyHours}h into ${BACKUP_S3.name}/git/`);
+    console.log(`[config] CENTRAL_GIT_BACKUP=once a UTC day into ${BACKUP_S3.name}/git/`);
   } else {
     console.warn('[config] CENTRAL_GIT_BACKUP=on needs the git host and BACKUP_S3_*; not started');
   }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -172,5 +172,40 @@ describe('checkSnapshot', () => {
     await db.backup(copy);
     expect(checkSnapshot(copy)).toEqual({ tables: 2 });
     db.close();
+  });
+});
+
+describe('the bucket is the clock (note #1032)', () => {
+  const HOUR = 3_600_000;
+  async function scheduled(existingAgeHours: number | null) {
+    const now = new Date('2026-10-27T03:00:00.000Z');
+    const existing = existingAgeHours === null ? [] : [
+      `db/backend-${new Date(now.getTime() - existingAgeHours * HOUR).toISOString().replace(/[:.]/g, '-')}.db.gz`,
+    ];
+    const { bucket, backup } = await setup(14, existing);
+    return { bucket, backup, before: bucket.objects.size };
+  }
+
+  it('does not take a backup at boot when the newest is younger than the interval', async () => {
+    const { bucket, backup, before } = await scheduled(1);
+    expect(await backup.newestAgeMs()).toBe(HOUR);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    try {
+      backup.start(6 * HOUR, 1000);
+      await vi.advanceTimersByTimeAsync(1000);
+    } finally { vi.useRealTimers(); }
+    expect(bucket.objects.size).toBe(before);
+  });
+
+  it('takes one when the newest is older than the interval, or there is none', async () => {
+    for (const age of [7, null]) {
+      const { bucket, backup, before } = await scheduled(age);
+      vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+      try {
+        backup.start(6 * HOUR, 1000);
+        await vi.advanceTimersByTimeAsync(1000);
+      } finally { vi.useRealTimers(); }
+      await vi.waitFor(() => expect(bucket.objects.size).toBe(before + 1));
+    }
   });
 });
