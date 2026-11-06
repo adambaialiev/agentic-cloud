@@ -36,7 +36,7 @@ const chapter: DocChapter = {
   slug: 'your-cloud-and-subscriptions',
   title: 'Cloud and subscriptions',
   description:
-    'Your agents run in your own cloud account and think with your own Claude, ChatGPT or OpenCode subscription: what you pay and to whom, what runs where, machine sizes.',
+    'Your agents run in your own cloud and think with your own Claude, ChatGPT or OpenCode subscription: what you pay and to whom, voice-to-text, machine sizes.',
   lead: (
     <>
       Two things power a workplace. Your own cloud account is where every agent&rsquo;s machine
@@ -59,6 +59,7 @@ const chapter: DocChapter = {
             <li><strong>Us</strong>: nothing. Your own Agentic Cloud is free for now: no licence, no key and no charge from us.</li>
             <li><strong>Cloud</strong>: your cloud provider bills your own account directly for the agents&rsquo; machines, your sites, your files and the Workspace itself.</li>
             <li><strong>AI</strong>: your Claude, ChatGPT or OpenCode subscription, billed by Anthropic, OpenAI or OpenCode as it always was.</li>
+            <li><strong>Voice-to-text</strong>: your workplace&rsquo;s own OpenRouter key, billed by OpenRouter for each minute of speech (see <DocLink href="/docs/your-cloud-and-subscriptions#voice-to-text">How to turn on voice-to-text</DocLink>).</li>
             <li><strong>Anything else you connect</strong>, such as a GitHub account: on that provider&rsquo;s own terms.</li>
           </ul>
         </>
@@ -153,6 +154,34 @@ const chapter: DocChapter = {
       ),
     },
     {
+      id: 'voice-to-text',
+      heading: 'How to turn on voice-to-text',
+      body: (
+        <>
+          <p>
+            Voice-to-text lets anyone in the workplace speak a message and check the words before
+            sending. Your workplace pays for it with its own OpenRouter key, so it stays off until an
+            admin saves one. Until then the microphone says it is not set up yet.
+          </p>
+          <p>
+            An admin makes a key at openrouter.ai and adds credit there. On the Workplace screen,
+            under <Ui>Voice-to-text</Ui>, they press <Ui>Turn on with an OpenRouter key</Ui> and paste
+            it. OpenRouter checks the key before it is kept, and no agent ever sees it.
+          </p>
+          <p>
+            The same section picks the model that listens. Each one shows its price a minute, and
+            GPT-4o mini Transcribe is the default. Only an admin, in the Workspace, can change the key
+            or the model.
+          </p>
+          <p>
+            When the account runs out of credit, voice-to-text pauses for everyone and the microphone
+            says why. Add credit at openrouter.ai and it comes back by itself within a couple of
+            minutes.
+          </p>
+        </>
+      ),
+    },
+    {
       id: 'machine-sizes',
       heading: 'Machine sizes',
       body: (
@@ -212,6 +241,10 @@ const chapter: DocChapter = {
     {
       term: 'Windows',
       text: <>Claude: <Ui>5 hours</Ui>, <Ui>7 days</Ui>, a weekly window per model, and <Ui>Extra usage</Ui> when set. Pace: ahead of, under, or right on an even pace; within three points counts as even.</>,
+    },
+    {
+      term: 'Voice-to-text',
+      text: <>Off until an admin saves the workplace&rsquo;s OpenRouter key, under <Ui>Voice-to-text</Ui> on the Workplace screen. Seven tested models, or any OpenRouter transcription model. Agents cannot change it.</>,
     },
     {
       term: 'Machine sizes',

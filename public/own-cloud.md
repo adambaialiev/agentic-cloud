@@ -121,6 +121,8 @@ The result names `<prefix>-handover.txt` (readable by this user alone). It holds
 
 Tell them too that the sites their agents publish are public at their own addresses, but the list of them, the apps directory at `/apps` on their domain, is private: only people signed in to a workplace can open it, and a stranger gets the sign-in page.
 
+Tell them too that voice-to-text is not set up yet: the microphone is there, and it says so. An admin turns it on in the Workspace, under Workplace › Voice-to-text, with the company's own OpenRouter key (made at openrouter.ai, with credit added there). OpenRouter bills that account directly, about $0.18 an hour of speech with the default model.
+
 Tell them too that email is not set up yet: when they want it, an admin opens Mail in the Workspace and follows "Set up email". It needs their mail provider's details (a Resend key, or any provider's SMTP settings), adds about $4 a month to their Fly bill for the mail receiver, and asks for a few more DNS records.
 
 Keep `<prefix>-copy.json` in this folder, and ask your person to keep a copy somewhere safe: the upgrade reads it, and once the install is done it holds names and addresses only, no keys.
@@ -165,4 +167,4 @@ The reasons behind exit code 3:
 
 ## What it costs
 
-Your own Agentic Cloud is free for now: no licence, no key and no charge from us. Fly bills the company's account directly for the machines and disks: the plan shows Fly's list prices (about $17 a month before any agent), plus about $0.09 an hour for each agent while it is awake. Email, once an admin turns it on, adds about $4 a month. The agents use the company's own Claude or ChatGPT plans.
+Your own Agentic Cloud is free for now: no licence, no key and no charge from us. Fly bills the company's account directly for the machines and disks: the plan shows Fly's list prices (about $17 a month before any agent), plus about $0.09 an hour for each agent while it is awake. Email, once an admin turns it on, adds about $4 a month. The agents use the company's own Claude or ChatGPT plans. Voice-to-text, once an admin saves the company's OpenRouter key, is billed by OpenRouter: about $0.18 an hour of speech with the default model, and a model can be picked by its price.

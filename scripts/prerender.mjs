@@ -297,6 +297,8 @@ becomes their own email address on its domain.
 - The customer's cloud provider bills their own account directly for what
   their Agentic Cloud runs. Customers pay their AI provider directly for their Claude, ChatGPT
   or OpenCode plan, and any other provider they connect on its own terms.
+  Voice-to-text runs on each workplace's own OpenRouter key, which an admin
+  saves in the Workspace; OpenRouter bills that account by the minute.
   Several agents can share one seat, and more seats run more agents at once.
 
 ## Data and control

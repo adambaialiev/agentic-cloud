@@ -154,6 +154,11 @@ const chapter: DocChapter = {
             rather than the audio, and voice never works for keys, sign-in codes or the name you
             type to confirm a deletion.
           </p>
+          <p>
+            Voice-to-text is paid by your workplace&rsquo;s own OpenRouter key. Until an admin{' '}
+            <DocLink href="/docs/your-cloud-and-subscriptions#voice-to-text">turns it on</DocLink>,
+            the microphone says it is not set up yet and records nothing.
+          </p>
         </>
       ),
     },
