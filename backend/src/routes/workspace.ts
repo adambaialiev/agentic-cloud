@@ -3469,9 +3469,20 @@ self.addEventListener('activate', (event) => {
     const key = Array.isArray(value) ? value[0] : value;
     return typeof key === 'string' ? key.trim() : undefined;
   };
-  const guestOriginRefused = (req: Request, res: Response): boolean => {
+  /**
+   * `read`: a GET. Browsers send no Origin on a same-origin GET (the Fetch
+   * spec adds it only to cross-origin requests and to non-GET/HEAD ones),
+   * so the page's own reads arrive without one and must pass (note #1043:
+   * the strict check answered the real page 403). A GET that DOES carry a
+   * foreign Origin, or says it is cross-site, is still refused. POST and
+   * DELETE always carry Origin from a browser and keep the strict check.
+   */
+  const guestOriginRefused = (req: Request, res: Response, options: { read?: boolean } = {}): boolean => {
     publicHeaders(res);
-    if (deps.workspaceWebOrigin && !requestHasWorkspaceOrigin(req, deps.workspaceWebOrigin, deps.workspaceWebCompatibleOrigins)) {
+    const origin = req.headers?.origin;
+    const site = req.headers?.['sec-fetch-site'];
+    const sameSiteRead = options.read && !origin && site !== 'cross-site';
+    if (deps.workspaceWebOrigin && !sameSiteRead && !requestHasWorkspaceOrigin(req, deps.workspaceWebOrigin, deps.workspaceWebCompatibleOrigins)) {
       res.status(403).json({ state: 'invalid', error: 'Make your agent on agenticcloudcomputer.com.' });
       return true;
     }
@@ -3487,7 +3498,7 @@ self.addEventListener('activate', (event) => {
   });
 
   router.get('/api/public/guest', async (req, res) => {
-    if (guestOriginRefused(req, res)) return;
+    if (guestOriginRefused(req, res, { read: true })) return;
     const status = deps.guestAgents ? await deps.guestAgents.status(guestKey(req)).catch((error) => {
       console.warn('[guest] status failed:', error);
       return null;
@@ -3525,7 +3536,7 @@ self.addEventListener('activate', (event) => {
   });
 
   router.get('/api/public/guest/turns/:turnId', async (req, res) => {
-    if (guestOriginRefused(req, res)) return;
+    if (guestOriginRefused(req, res, { read: true })) return;
     const status = deps.guestAgents ? await deps.guestAgents.turnStatus(guestKey(req), String(req.params.turnId ?? '')) : null;
     return status ? res.json(status satisfies GuestTurnStatus) : res.status(404).json({ error: 'No such turn.' });
   });

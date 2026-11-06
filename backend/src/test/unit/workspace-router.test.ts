@@ -11937,6 +11937,42 @@ describe('the app catalogue (note #756): /api/public/apps', () => {
   });
 });
 
+describe('the guests\' public door (notes #1038, #1043)', () => {
+  const status = vi.fn(async () => ({ state: 'none', agent: null }));
+  const turnStatus = vi.fn(async () => ({ turnId: 't-1', state: 'working' }));
+  const create = vi.fn(async () => ({ httpStatus: 201, answer: { key: 'k', status: { state: 'creating', agent: null } } }));
+  const deps = (): Partial<RouteDeps> => ({
+    workspaceWebOrigin: WORKSPACE_ORIGIN,
+    guestAgents: { status, turnStatus, create } as never,
+  });
+
+  it('answers the page\'s own GETs, which a browser sends with no Origin', async () => {
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'get')(mockRequest({}), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ state: 'none' });
+    const same = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest/turns/:turnId', 'get')(mockRequest({ headers: { 'Sec-Fetch-Site': 'same-origin' }, params: { turnId: 't-1' } }), same);
+    expect(same.statusCode).toBe(200);
+  });
+
+  it('still refuses a GET from another site, and a POST without the site\'s Origin', async () => {
+    const foreign = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'get')(mockRequest({ headers: { Origin: 'https://evil.example' } }), foreign);
+    expect(foreign.statusCode).toBe(403);
+    const crossSite = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest/turns/:turnId', 'get')(mockRequest({ headers: { 'Sec-Fetch-Site': 'cross-site' }, params: { turnId: 't-1' } }), crossSite);
+    expect(crossSite.statusCode).toBe(403);
+    const bare = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'post')(mockRequest({ body: {} }), bare);
+    expect(bare.statusCode).toBe(403);
+    expect(create).not.toHaveBeenCalled();
+    const ok = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'post')(mockRequest({ headers: { Origin: WORKSPACE_ORIGIN }, body: {} }), ok);
+    expect(ok.statusCode).toBe(201);
+  });
+});
+
 describe('the public guide\'s door (note #1010)', () => {
   const ask = vi.fn();
   const status = vi.fn();
