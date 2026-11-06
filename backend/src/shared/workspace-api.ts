@@ -667,6 +667,8 @@ export interface WorkspaceOwnJoinRequest {
 
 export interface WorkspaceStateAnswer {
   org: WorkspaceOrgSummary | null;
+  /** Visitors of the home page make their own agents in this person's workplace (note #1038): draw the Guests group. */
+  guestsHere?: true;
   /**
    * Set while the viewer is WAITING on an admin somewhere else. Every account
    * comes with a workplace of its own, so a person who signed up to join a

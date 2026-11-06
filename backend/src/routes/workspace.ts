@@ -3460,6 +3460,10 @@ self.addEventListener('activate', (event) => {
    * it. The visitor's key rides the X-Guest-Key header; the address keys
    * in-memory limits only (as for the guide) and is never stored.
    */
+  const guestOwner = async (auth: { userId: string; orgId?: string | null }): Promise<boolean> => {
+    const settings = deps.guestAgents ? await deps.guestAgents.settings().catch(() => null) : null;
+    return Boolean(settings && settings.userId === auth.userId && (settings.orgId ?? null) === (auth.orgId ?? null));
+  };
   const guestKey = (req: Request): string | undefined => {
     const value = req.headers?.['x-guest-key'];
     const key = Array.isArray(value) ? value[0] : value;
@@ -5087,6 +5091,8 @@ self.addEventListener('activate', (event) => {
       // instead of one that 503s.
       noteFiles: Boolean(deps.mediaStorage),
       ...(quota ? { quota } : {}),
+      // Guests' agents are made in this person's workplace (note #1038): the Guests group asks for them.
+      ...(await guestOwner(auth) ? { guestsHere: true as const } : {}),
     } satisfies WorkspaceStateAnswer);
   });
 
@@ -8697,10 +8703,6 @@ self.addEventListener('activate', (event) => {
    * guests are made in, and only by them; they read, and may delete, but
    * never type into a guest's conversation.
    */
-  const guestOwner = async (auth: { userId: string; orgId?: string | null }): Promise<boolean> => {
-    const settings = deps.guestAgents ? await deps.guestAgents.settings().catch(() => null) : null;
-    return Boolean(settings && settings.userId === auth.userId && (settings.orgId ?? null) === (auth.orgId ?? null));
-  };
   router.get('/api/guests', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;

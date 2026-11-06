@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { GuestState, GuestTranscriptRecord, WorkspaceGuestsAnswer } from '../../../../src/shared/guest-agent.js';
 import { useSession } from '../../session/useSession.js';
+import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { Markdown } from '../../render/Markdown.js';
 import { relative } from '../../ui/time.js';
 
@@ -31,6 +32,8 @@ const STATE_WORDS: Partial<Record<GuestState, string>> = {
  */
 export function GuestsCard({ now }: { now: number }) {
   const { api } = useSession();
+  // Asked only where guests are made: everyone else is never sent a read that would answer 404.
+  const here = Boolean(useWorkspace().state?.guestsHere);
   const [list, setList] = useState<WorkspaceGuestsAnswer | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -47,10 +50,11 @@ export function GuestsCard({ now }: { now: number }) {
   }, [api]);
 
   useEffect(() => {
+    if (!here) return undefined;
     const first = setTimeout(() => { void read(); }, 0);
     const timer = setInterval(() => { void read(); }, expanded ? 10_000 : 60_000);
     return () => { clearTimeout(first); clearInterval(timer); };
-  }, [read, expanded]);
+  }, [read, expanded, here]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -73,7 +77,7 @@ export function GuestsCard({ now }: { now: number }) {
     void read();
   }, [api, read]);
 
-  if (!list) return null;
+  if (!here || !list) return null;
   const rows = [
     ...list.live.map((row) => ({ ...row, live: true as const, meta: [STATE_WORDS[row.state] ?? row.state, `${row.messages} message${row.messages === 1 ? '' : 's'}`, `made ${relative(row.createdAt, now) || 'just now'}`].join(' · ') })),
     ...list.past.map((row) => ({ ...row, live: false as const, meta: [`${row.messages} message${row.messages === 1 ? '' : 's'}`, REMOVED_WORDS[row.removedReason ?? 'quiet'] ?? 'removed', relative(row.removedAt ?? row.createdAt, now) || 'just now', ...(row.costUsd ? [`$${row.costUsd.toFixed(2)} at API prices`] : [])].join(' · ') })),
