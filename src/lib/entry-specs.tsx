@@ -189,12 +189,13 @@ export const AGENTS_FOR_YOUR_TEAM: EntrySpec = {
       panelFirst: true,
     },
     {
-      heading: 'Nothing protected ships without a person.',
+      heading: 'A person decides what protected code ships.',
       /* "Code and knowledge changes queue as proposals" until note #1011:
          since note #746 (12 Oct 2026) a knowledge change is live at once,
          with nothing to approve. */
       body:
-        'Changes to protected code queue as proposals with their checks. An agent cannot merge, '
+        'Changes to protected code queue as proposals with their checks, and wait for a yes unless '
+        + 'the owner has turned on auto-merge. An agent cannot merge, '
         + 'approve, delete or widen access to a secret.',
       panel: <LiveDecisions />,
     },

@@ -66,10 +66,18 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  * Same day, 08:56 UTC (note #935): licensing is off and the product is free
  * for now, so section 2 holds no licence or update-key record and no
  * agreement, and says no payment record is kept for either offer.
+ *
+ * 2026-11-06 (note #1013, Adam: "ok"): "Questions to the agent on our home
+ * page" in section 3 — the home page guide of note #1010 (knowledge page
+ * sealed-public-agent). A visit's questions and answers are kept 90 days in
+ * public_guide_visits (PUBLIC_GUIDE_LIMITS.transcriptDays) with no address,
+ * user agent or cookie; the address only keys an in-memory hourly limit; the
+ * visit id lives in the tab's sessionStorage; the founder reads them in
+ * Visits; the guide is Claude Code on the founder's own Claude subscription.
  */
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="November 1, 2026">
+    <LegalLayout title="Privacy Policy" effectiveDate="November 6, 2026">
       <LegalSection title="1. Who we are">
         <p>
           Agentic Cloud Computer makes a shared Workspace for a company&rsquo;s AI agents. We offer it
@@ -123,6 +131,15 @@ export default function PrivacyPolicy() {
           browser says (such as google.com, never the page you were on), and the first page you opened
           here. If you create an account, that note is saved with it, so we can tell which places bring
           people to us. It is not used for anything else, and nobody else receives it.
+        </p>
+        <p>
+          <b className="text-white">Questions to the agent on our home page.</b> Anyone can ask the
+          agent on our home page about the product, signed out. We keep the questions you type and
+          its answers for 90 days, and the founder reads them to learn what people ask. We store no
+          address, cookie or account with them: your internet address is only used, in memory, to
+          count your questions per hour, and your browser keeps a random visit number for the open
+          tab. The questions and answers are processed by Anthropic&rsquo;s Claude, on the
+          founder&rsquo;s own Claude subscription.
         </p>
         <p>
           <b className="text-white">Recent Workspace conversations.</b> We store a rolling window of

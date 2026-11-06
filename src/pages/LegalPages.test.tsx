@@ -81,6 +81,17 @@ describe('Terms of Service', () => {
 });
 
 describe('Privacy Policy', () => {
+  // Note #1013 (Adam, 6 Nov 2026): the home page's guide (note #1010).
+  it('says what the home page agent keeps: 90 days, no address, the founder reads it, processed by Claude', () => {
+    render(<PrivacyPolicy />);
+    const body = document.body.textContent ?? '';
+    expect(body).toMatch(/Questions to the agent on our home page\./);
+    expect(body).toMatch(/We keep the questions you type and\s+its answers for 90 days, and the founder reads them/);
+    expect(body).toMatch(/We store no\s+address, cookie or account with them/);
+    expect(body).toMatch(/processed by Anthropic’s Claude, on the\s+founder’s own Claude subscription/);
+    expect(body).toMatch(/November 6, 2026/);
+  });
+
   it('says a builder page’s numbers are shown only to its person, and names no Leaderboard (note #824)', () => {
     render(<PrivacyPolicy />);
 

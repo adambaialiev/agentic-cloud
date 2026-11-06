@@ -111,6 +111,10 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       expect((drawing.getAttribute('aria-label') ?? '').length).toBeGreaterThan(200);
       const words = drawing.textContent ?? '';
       for (const part of ['Chief of Staff', 'Your yes', 'Desks', 'Memory', 'Keys', 'Code and checks', 'jobs', 'proposals']) expect(words, part).toContain(part);
+      // Note #1013: auto-merge is part of the drawing, and the old promise is gone.
+      expect(words).toContain('auto-merge');
+      expect(words).toMatch(/told either way/);
+      expect(words).not.toMatch(/nothing goes live/);
       for (const name of ['Ruby', 'Milo', 'Otis', 'Ada']) expect(words, name).toContain(name);
       // Only agents on the floor (the owner, 31 Oct): the one person drawn is you.
       expect(words).not.toMatch(/Lena|James|Priya/);

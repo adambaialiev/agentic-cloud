@@ -303,7 +303,7 @@ describe('Landing', () => {
     // the Chief of Staff carry the promise now. Never "every change is a
     // proposal": a site can deploy without a card.
     const body = (document.body.textContent ?? '').replace(/\s+/g, ' ');
-    expect(body).toContain('Every push is tested, nothing merges without your yes, and what you approve can go live on its own.');
+    expect(body).toContain('Every push is tested, a change waits for your yes or merges itself once you turn on auto-merge, and you’re told either way.');
     expect(body).toContain('It never approves anything itself. That is always your call.');
     // Knowledge changes land at once since note #746: never say a person
     // approves each one. The agents keep the memory themselves, with nothing
@@ -376,7 +376,7 @@ describe('Landing', () => {
     expect(lede).toContain('made for fast agentic work');
     // The owner, 2026-10-25: say that the git comes with CI/CD.
     expect(lede).toContain('CI/CD');
-    expect(lede).toContain('nothing merges or goes live until you say so');
+    expect(lede).toContain('nothing merges until you say so or turn on auto-merge');
     const panel = git.querySelector('.ws-live')!;
     expect(panel.querySelector('h1')?.textContent).toBe('northstar-routing');
     // No ids on this panel: it is composed so that it can stand beside the

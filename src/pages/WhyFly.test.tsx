@@ -94,7 +94,8 @@ describe('Why your Agentic Cloud runs on Fly (note #838)', () => {
     expect(body).not.toMatch(/must (stay|run) on Fly|move off Fly|leave Fly|\bour own (microVM|Firecracker)|Sprites/i);
     expect(body).not.toMatch(/\bcopy\b/i);
     expect(body).not.toMatch(/bin\/bash/);
-    expect(body).toMatch(/about \$0\.86 a day while it stood, plus about \$0\.09 an hour for each awake agent/);
+    expect(body).toMatch(/The installer estimates about \$0\.57 a day at Fly’s published prices for the Workspace, the code host and the router with their disks, plus about \$0\.09 an hour for each awake agent/);
+    expect(body).not.toMatch(/0\.86/);
   });
 
   it('is linked from the home page’s own-cloud chapter', () => {

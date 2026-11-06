@@ -41,7 +41,7 @@ import { Icon, type IconName } from './CopyArt';
  */
 
 const SAYS =
-  'A floor plan of the workplace. You come in at the front desk, where the Chief of Staff takes what you ask for and sends out the jobs. One open floor, with a desk and a computer for every agent in one row: Ruby and Otis are at work, their screens lit by the jobs that reached them, while Milo’s and Ada’s computers sleep. Along the wall, shared by every desk: Memory, where agents read before every job; Keys, added once and used by name; and Code and checks, with sites, Drive and email. Proposals come back to your yes, by the door.';
+  'A floor plan of the workplace. You come in at the front desk, where the Chief of Staff takes what you ask for and sends out the jobs. One open floor, with a desk and a computer for every agent in one row: Ruby and Otis are at work, their screens lit by the jobs that reached them, while Milo’s and Ada’s computers sleep. Along the wall, shared by every desk: Memory, where agents read before every job; Keys, added once and used by name; and Code and checks, with sites, Drive and email. Proposals come back to your yes by the door, or merge by themselves when you have turned on auto-merge, and you are told either way.';
 
 /* ── The pieces the plan is made of ────────────────────────────────────── */
 
@@ -160,7 +160,10 @@ function FrontDesk({ id, x, y }: { id: string; x: number; y: number }) {
   );
 }
 
-/* Your yes: a counter with a proposal on it and the stamp beside it. */
+/* Your yes: a counter with a proposal on it and the stamp beside it. Since
+   note #1013 (Adam, 6 Nov 2026: "auto merge should be part of the drawing")
+   its label says the other way a change lands: by itself, once the owner has
+   turned on auto-merge, and the owner is told either way. */
 function YesCounter({ x, y }: { x: number; y: number }) {
   return (
     <g>
@@ -304,7 +307,7 @@ function PlanWide() {
       {/* The lobby: the Chief of Staff at the front desk, your yes by the door */}
       <Title x={134} y={44} title="Chief of Staff" sub="hands out jobs, follows up" />
       <FrontDesk id={id} x={222} y={128} />
-      <Title x={134} y={300} title="Your yes" sub="nothing goes live without it" />
+      <Title x={134} y={300} title="Your yes or auto-merge" sub="you’re told either way" />
       <YesCounter x={222} y={372} />
 
       {/* One open floor: a desk for every agent, in one row */}
@@ -379,9 +382,9 @@ function PlanTall() {
         follows up
       </text>
       <YesCounter x={150} y={250} />
-      <Title x={214} y={238} title="Your yes" sub="nothing goes live" />
+      <Title x={214} y={238} title="Your yes" sub="or auto-merge," />
       <text x={214} y={276} fontSize={13} className="fill-hint">
-        without it
+        told either way
       </text>
 
       {/* One open floor: the desks in two rows */}

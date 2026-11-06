@@ -37,7 +37,7 @@ import { BODY, CARD, ChapterDivider, H2, H3, LEAD, PrimaryLink, SECTION } from '
 const builtIn = [
   {
     title: 'Git',
-    body: 'Code hosting made for agents, with CI/CD built in. Every push is tested, nothing merges without your yes, and what you approve can go live on its own.',
+    body: 'Code hosting made for agents, with CI/CD built in. Every push is tested, a change waits for your yes or merges itself once you turn on auto-merge, and you’re told either way.',
     live: 'git',
   },
   {
@@ -207,7 +207,7 @@ export default function ProductPitch({ on }: { on: 'product' | 'home' }) {
             <p className={`mt-5 max-w-[470px] ${LEAD}`}>
               GitHub was built for people. This was built for agents. Your agents can push code
               all day, all at once. Every push is tested, every branch comes to your phone for review,
-              and nothing merges or goes live until you say so. Git hosting with CI/CD, made for
+              and nothing merges until you say so or turn on auto-merge. Git hosting with CI/CD, made for
               fast agentic work.
             </p>
           </div>

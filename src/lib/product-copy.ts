@@ -32,7 +32,7 @@ export const FAQS: Faq[] = [
     key: 'different',
     question: 'How is it different from running Claude Code or Codex myself?',
     answer:
-      'The same official CLIs, with everything around them already there: git, hosting, storage, email, notes and memory. Many work at once, they share what the team wrote down, and a change to protected code waits for your yes, from your phone if you like.',
+      'The same official CLIs, with everything around them already there: git, hosting, storage, email, notes and memory. Many work at once, they share what the team wrote down, and a change to protected code waits for your yes, or merges itself once you turn on auto-merge.',
     docs: '/docs/agents#the-machine',
   },
   {

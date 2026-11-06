@@ -169,17 +169,20 @@ export default function WhyFly() {
         <div className="max-w-[420px]"><AgentDayArt /></div>
       </section>
 
-      {/* The cost is our own test installation's, in claims-we-never-make's
-          terms; the time is the clean run of 29 Oct (note #834). */}
+      {/* The cost is the installer's own estimate at Fly's published prices
+          (infra/copy-installer/install.mjs, SHAPES and PRICE: $17.41 a month,
+          read 6 Nov 2026, note #1013), in claims-we-never-make's terms; it was
+          our test installation's $0.86 a day, measured before note #946 took
+          the mail receiver out. The time is the clean run of 29 Oct (note #834). */}
       <section id="one-account" className={`${SECTION} pb-8 sm:pb-10`}>
         <ChapterDivider />
         <h2 className={`max-w-[760px] [text-wrap:balance] ${H2}`}>One account of yours. One bill.</h2>
         <p className={`mt-5 max-w-[36rem] [text-wrap:pretty] ${LEAD}`}>
           Your own Agentic Cloud is one Fly organization of yours: one sign-in for your agent, one
           bill you read yourself, nothing on our side. In our clean run on 29 October, one command
-          took a new organization to ready in 13 min 24 s. Our own test installation cost about
-          $0.86 a day while it stood, plus about $0.09 an hour for each awake agent, paid to
-          Fly. Vercel’s nearest offer, Bring Your Own Cloud, runs only your functions in your own
+          took a new organization to ready in 13 min 24 s. The installer estimates about $0.57 a day at
+          Fly’s published prices for the Workspace, the code host and the router with their disks,
+          plus about $0.09 an hour for each awake agent, paid to Fly. Vercel’s nearest offer, Bring Your Own Cloud, runs only your functions in your own
           AWS account, on Enterprise plans, and Vercel still routes the requests.<Cite ids={['vercel-byoc']} />
         </p>
       </section>
