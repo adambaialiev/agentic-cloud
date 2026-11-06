@@ -32,14 +32,11 @@ export const ASK_QUESTIONS = [
 ] as const;
 export const ASK_PLACEHOLDER = 'Ask about Agentic Cloud Computer';
 export const ASK_PLACEHOLDER_PHONE = 'Ask about the product';
-/* The one line of fine print on the page (design, open point 4, kept by
-   Adam): the visitor should know they are read. Since note #1015 (Adam,
-   6 Nov 2026, 07:36 UTC: "too much helper text") it is the shortest true
-   line, and the Privacy Policy, which carries the full facts since note
-   #1013 (90 days, no address, processed by Claude), is one tap away. */
-export const ASK_FINE_PRINT = 'The founder reads every question.';
-export const ASK_PRIVACY_LINK = 'Privacy';
-export const ASK_PRIVACY_PATH = '/privacy';
+/* No fine print under the box since note #1017 (Adam, 6 Nov 2026, 08:06 UTC:
+   'remove "The founder reads every question. Privacy"'). Until then one line
+   (note #1015) said the founder reads every question, with the Privacy
+   Policy linked; the policy still carries the full facts about the guide
+   (note #1013: 90 days, no address, processed by Claude). */
 /* "fresh from each release" until note #1011 (6 Nov 2026): the guide reads
    the repository's main branch, fetched again when its copy is more than 15
    minutes old (services/public-guide-machine.ts), not a release. */
@@ -162,20 +159,6 @@ function WallLink({ href, children }: { href: string; children: string }) {
       {children}
       {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
       <ExternalArrow />
-    </a>
-  );
-}
-
-function PrivacyLink() {
-  const newTab = useNewTab();
-  return (
-    <a
-      href={ASK_PRIVACY_PATH}
-      {...(newTab ? NEW_TAB : {})}
-      className="underline decoration-hint/40 underline-offset-2 transition-colors hover:text-white hover:decoration-white focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-    >
-      {ASK_PRIVACY_LINK}
-      {newTab ? <span className="sr-only"> (opens in a new tab)</span> : null}
     </a>
   );
 }
@@ -480,7 +463,6 @@ export function AskTheCode() {
                     maxLength={ASK_MAX_CHARS}
                     autoComplete="off"
                     enterKeyHint="send"
-                    aria-describedby="ask-fine-print"
                     placeholder={phone ? ASK_PLACEHOLDER_PHONE : ASK_PLACEHOLDER}
                     className="ask-input min-w-0 flex-1 bg-transparent type-base text-white placeholder:text-hint focus:outline-none sm:type-md-sm"
                   />
@@ -492,10 +474,6 @@ export function AskTheCode() {
                     Ask
                   </button>
                 </form>
-                <p id="ask-fine-print" className="mt-2.5 type-xs text-hint">
-                  {ASK_FINE_PRINT}{' '}
-                  <PrivacyLink />
-                </p>
               </>
             )}
           </div>

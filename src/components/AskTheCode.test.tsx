@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AnswerText,
   ASK_FAILED,
-  ASK_FINE_PRINT,
   ASK_HEADING,
   ASK_QUESTIONS,
   AskTheCode,
@@ -59,7 +58,7 @@ describe('AskTheCode (note #1010)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('draws the screen at rest: heading, the agent, three questions, the box and the fine print', async () => {
+  it('draws the screen at rest: heading, the agent, three questions and the box, with no fine print', async () => {
     draw();
     await flush();
     const section = document.querySelector('#ask')!;
@@ -68,13 +67,10 @@ describe('AskTheCode (note #1010)', () => {
     expect(section.querySelector('[data-ask-agent]')!.textContent).toBe('Wren');
     expect([...section.querySelectorAll('[data-ask-questions] button')].map((b) => b.textContent)).toEqual([...ASK_QUESTIONS]);
     expect(screen.getByLabelText('Your question about Agentic Cloud Computer').getAttribute('maxlength')).toBe('500');
-    // The fine print is one short true line with the Privacy Policy linked, in a new tab.
-    const fine = section.querySelector('#ask-fine-print')!;
-    expect(fine.textContent).toBe(`${ASK_FINE_PRINT} Privacy (opens in a new tab)`);
-    expect(ASK_FINE_PRINT).toBe('The founder reads every question.');
-    const privacy = fine.querySelector('a')!;
-    expect(privacy.getAttribute('href')).toBe('/privacy');
-    expect(privacy.getAttribute('target')).toBe('_blank');
+    // No fine print under the box (note #1017): no founder line, no Privacy link.
+    expect(section.querySelector('#ask-fine-print')).toBeNull();
+    expect(section.querySelector('a[href="/privacy"]')).toBeNull();
+    expect(section.textContent).not.toMatch(/founder reads/i);
     // No margin at rest, and none of the old helper lines anywhere.
     expect(section.querySelector('[data-ask-margin]')).toBeNull();
     expect(section.textContent).not.toMatch(/What it reads|Claude Code on Sonnet|Nothing about you is kept/);
