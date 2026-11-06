@@ -87,15 +87,16 @@ export function personAgentCountLine(agents: number): string {
 /**
  * The agents somebody no longer has, whose hours are in their total — the
  * one place a deleted agent is still named, longest first: "including Ruby
- * 3h 10m and Max 12m, no longer here". '' when there are none.
+ * and Max, no longer here". Names only (note #1027): the cell's own number
+ * already says the hours, and a time beside every name turned the line into
+ * a ledger. Two agents that shared a name read as one. '' when there are none.
  */
 export function formerAgentsLine(person: Pick<WorkspaceOrgMember, 'formerAgents'>): string {
-  const former = person.formerAgents ?? [];
-  if (former.length === 0) return '';
-  const parts = former.map((agent) => `${agent.name} ${durationWords(agent.workedMs)}`);
-  const list = parts.length === 1
-    ? parts[0]
-    : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  const names = [...new Set((person.formerAgents ?? []).map((agent) => agent.name))];
+  if (names.length === 0) return '';
+  const list = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
   return `including ${list}, no longer here`;
 }
 
