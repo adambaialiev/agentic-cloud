@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.71.0';
+const VERSION = '1.72.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -452,6 +452,15 @@ Orchestrating the workplace (Workspace Agent only — another agent is refused):
       and reads only a public copy of the code. It answers visitors' questions
       on the home page; the newest guide is the one the page asks. Sealed is
       decided here, once: an existing agent cannot be sealed later.
+  agentbuilt agent guests [on|off|status]
+      Only when your user asked (note #1038): whether a visitor of the home
+      page, signed out, can make a SEALED Claude Code agent of their own in
+      this workplace — a dedicated 2-core machine, Sonnet at high, every tool
+      with a shell, a network closed to all but the public repository and the
+      package registries, deleted after 30 quiet minutes. It thinks with your
+      user's Claude seat and rests at 50% of the 5-hour window or 70% of the
+      week. Their agents are on the Guests group of your user's agents list,
+      read-only; nobody, you included, can message one. Admins only.
   agentbuilt agent model "<name-or-id>" [--model <model>] [--effort <effort>]
       Change one of your user's agents' model, effort or both — the same
       change as the model picker on that agent's screen, with the same
@@ -6746,6 +6755,19 @@ async function agent(args) {
         headers: { 'Content-Type': 'application/json' },
       });
       console.log(result.message ?? (result.agent ? `${result.agent.name} is arriving.` : 'A new agent is being set up.'));
+      break;
+    }
+    case 'guests': {
+      // Guests' own agents on or off (note #1038), the Workspace Agent's switch.
+      const [action = 'status', extra] = agentRest;
+      if (extra !== undefined || !['on', 'off', 'status'].includes(action)) fail('usage: agentbuilt agent guests [on|off|status]');
+      const result = action === 'status'
+        ? await api('GET', 'api/agent-cli/agents/guests')
+        : await api('POST', 'api/agent-cli/agents/guests', {
+          body: JSON.stringify({ enabled: action === 'on' }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+      console.log(result.message ?? (result.enabled ? 'Guests are ON.' : 'Guests are OFF.'));
       break;
     }
     case 'model': {

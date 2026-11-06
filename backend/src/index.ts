@@ -41,6 +41,10 @@ import { SqliteStoppedUserMessageStorage } from './services/sqlite/sqlite-stoppe
 import { SqliteAgentActivityStore } from './services/sqlite/sqlite-agent-activity-store.js';
 import { InMemoryPublicGuideStorage, SqlitePublicGuideStorage } from './services/public-guide-storage.js';
 import { PublicGuideService } from './services/public-guide-service.js';
+import { GuestAgentService } from './services/guest-agent-service.js';
+import { GuestModelDoor, GUEST_MODEL_DOOR_PATH } from './services/guest-model-door.js';
+import { InMemoryGuestAgentStorage, SqliteGuestAgentStorage } from './services/guest-agent-storage.js';
+import { GUEST_AGENT_KIND } from './shared/guest-agent.js';
 import type { GuideSource } from './services/public-guide-machine.js';
 import type { AgentRecord } from './types/user.js';
 import { PUBLIC_GUIDE_REPO_NAME } from './shared/public-guide.js';
@@ -1954,8 +1958,49 @@ const publicGuideService = new PublicGuideService({
 });
 publicGuideService.start();
 
+// Guests' own agents (note #1038): the visitor's sealed agent on a dedicated
+// machine. Its Claude Code reaches the model only through the door below,
+// which swaps a per-turn key for the seat token here, so the token never
+// reaches a machine a stranger has a shell on.
+const guestModelDoor = new GuestModelDoor();
+const guestDoorUrl = AGENTBUILT_API_URL.startsWith('https://') ? `${AGENTBUILT_API_URL.replace(/\/+$/, '')}${GUEST_MODEL_DOOR_PATH}` : null;
+const guestTurnstile = process.env.TURNSTILE_SECRET_KEY && process.env.TURNSTILE_SITE_KEY
+  ? { secretKey: process.env.TURNSTILE_SECRET_KEY, siteKey: process.env.TURNSTILE_SITE_KEY }
+  : null;
+const guestAgentService = new GuestAgentService({
+  storage: sqliteDb ? new SqliteGuestAgentStorage(sqliteDb) : new InMemoryGuestAgentStorage(),
+  host: {
+    createRecord: async (userId, orgId) => {
+      const created = await agentService.startAgentCreationFromMiniApp(userId, 'claude', orgId, { awaitName: true, concurrent: true, sealed: GUEST_AGENT_KIND });
+      if (!created.ok) return { error: created.reason };
+      return created.agent ? { id: created.agent.id, name: created.agent.name } : { error: 'The record was not reserved in time.' };
+    },
+    agent: async (userId, agentId) => {
+      const agent = await agentService.publicGuideAgent(userId, agentId);
+      return agent?.sealed === GUEST_AGENT_KIND ? agent : null;
+    },
+    sandbox: (userId, agentId) => agentService.publicGuideSandbox(userId, agentId),
+    source: (userId, agent) => agentService.publicGuideSource(userId, agent),
+    deleteAgent: async (userId, agentId) => {
+      const deleted = await agentService.deleteAgentFromMiniApp(userId, agentId);
+      return deleted.ok || /already gone/i.test(deleted.reason);
+    },
+    guestAgentIds: (userId) => agentService.guestAgentIds(userId),
+  },
+  door: guestModelDoor,
+  doorUrl: guestDoorUrl,
+  pool: platformCredentialPool,
+  seats: orgStorage,
+  sandboxClient: () => sessionManager.getSandboxClient(),
+  turnstile: guestTurnstile,
+  idleStopMs: FLY_IDLE_STOP_MINUTES * 60_000,
+});
+guestAgentService.start();
+console.log(`[config] GUEST_AGENTS door=${guestDoorUrl ?? 'off (AGENTBUILT_API_URL is not https)'}, turnstile=${guestTurnstile ? 'on' : 'off'}`);
+
 const deps: RouteDeps = {
   publicGuide: publicGuideService,
+  guestAgents: guestAgentService,
   ...(workspaceWebAuth && WORKSPACE_ORIGIN
     ? {
       workspaceWebAuth,
@@ -2272,6 +2317,8 @@ app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 app.use('/api/webhooks/mail/inbound', express.raw({ type: () => true, limit: '26mb' }));
 app.use('/api/agent-cli/git/ci-webhook', express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-result', express.raw({ type: () => true, limit: '256kb' }));
+// The guests' model door (note #1038): the body passes byte for byte, so it is parsed raw, before JSON.
+app.use(GUEST_MODEL_DOOR_PATH, express.raw({ type: () => true, limit: '32mb' }), (req, res) => { void guestModelDoor.handle(req, res); });
 app.use(express.json());
 
 // ── Routes ──

@@ -1,4 +1,6 @@
+import type { SealedAgentKind } from '../shared/public-guide.js';
 import type { PublicGuideService } from '../services/public-guide-service.js';
+import type { GuestAgentService } from '../services/guest-agent-service.js';
 import type { CopyMailSetup } from '../services/copy-mail-setup.js';
 import type { CopyHealth } from '../services/copy-health.js';
 import type { CopyUpgrade } from '../services/copy-upgrade.js';
@@ -523,6 +525,12 @@ export interface RouteDeps {
    * screen. Absent → the public route says the guide is resting.
    */
   publicGuide?: Pick<PublicGuideService, 'ask' | 'status' | 'overview' | 'listVisits' | 'getVisit'>;
+  /**
+   * Guests' own agents (note #1038): the six public routes, the owner's
+   * Guests screen, and the Workspace Agent's on/off switch. Absent → the
+   * public route says guests are resting.
+   */
+  guestAgents?: Pick<GuestAgentService, 'status' | 'create' | 'message' | 'turnStatus' | 'stopTurn' | 'deleteByVisitor' | 'deleteByOwner' | 'listForOwner' | 'transcriptForOwner' | 'settings' | 'setEnabled' | 'isGuestAgent'>;
   agentLifecycle?: {
     /**
      * `cli` is the harness picked at creation — the one choice an agent
@@ -541,7 +549,7 @@ export interface RouteDeps {
       /** Workspace context at the instant creation was requested. */
       orgId?: string | null,
       /** `awaitName`: answer once the record is reserved, with its name (note #710); `concurrent`: several at once, outside the person's one-at-a-time lock (note #726); `model` / `effort`: what it thinks with, already judged against the catalog, stored on the record as a pick (note #757). */
-      options?: { awaitName?: boolean; concurrent?: boolean; model?: string; effort?: string; sealed?: 'public-guide' },
+      options?: { awaitName?: boolean; concurrent?: boolean; model?: string; effort?: string; sealed?: SealedAgentKind },
     ): Promise<
       /** `agent` is the record reserved before the machine is built (note
        *  #710): its name, so a coordinator can say who is arriving. Absent on

@@ -174,8 +174,10 @@ import {
   pricedAgentMachineSizes,
   WORKSPACE_MACHINE_SIZE,
   SEALED_AGENT_MACHINE_SIZE,
+  GUEST_AGENT_MACHINE_SIZE,
 } from '../config/agent-machine-sizes.js';
 import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_KIND, PUBLIC_GUIDE_MODEL, type SealedAgentKind } from '../shared/public-guide.js';
+import { GUEST_AGENT_EFFORT, GUEST_AGENT_KIND, GUEST_AGENT_MODEL } from '../shared/guest-agent.js';
 import type { GuideSource } from './public-guide-machine.js';
 import { agentMachineShapeOf, recordAgentMachineShapes } from './agent-machine-observer.js';
 import { COST_ESTIMATE_DISCLAIMER } from '../config/fly-cost-estimates.js';
@@ -1092,7 +1094,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v187 (note #1014): CLI 1.71.0 — in a company's own Agentic Cloud the apps
 // directory is the workplace's, members only: the hosting line and the CLI's
 // help call it that there instead of the public catalogue. Ours unchanged.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 187;
+// v188 (note #1038): CLI 1.72.0 — `agentbuilt agent guests [on|off|status]`,
+// the Workspace Agent's switch for guests' own agents on the home page.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 188;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -3208,7 +3212,9 @@ export class AgentService {
       return { ok: false, reason: 'A sealed public guide is a Claude Code agent.' };
     }
     if (options?.sealed) {
-      options = { ...options, model: PUBLIC_GUIDE_MODEL, effort: PUBLIC_GUIDE_EFFORT };
+      options = options.sealed === GUEST_AGENT_KIND
+        ? { ...options, model: GUEST_AGENT_MODEL, effort: GUEST_AGENT_EFFORT }
+        : { ...options, model: PUBLIC_GUIDE_MODEL, effort: PUBLIC_GUIDE_EFFORT };
     }
     const profile = await this.deps.userStorage.getProfile(userId);
     if (!options?.concurrent && this.telegramMiniAppCreationsInFlight.has(userId)) {
@@ -3527,6 +3533,8 @@ export class AgentService {
       // Every agent this owner has in the same immutable org is visible;
       // other orgs remain outside both the roster and recipient lookup.
       .filter(inSenderOrg)
+      // Guests' agents (note #1038) are the visitors': not on any agent's roster.
+      .filter((agent) => agent.sealed !== GUEST_AGENT_KIND)
       .map((agent) => ({
         id: agent.id,
         name: agent.name,
@@ -4184,6 +4192,10 @@ export class AgentService {
   }): Promise<AgentPeerMessageResult> {
     const { target, audience } = args;
     if (target.purpose) return { ok: false, code: 'unavailable', reason: 'Open Workspace Agent on Home to talk to it.' };
+    // A guest's agent (note #1038) talks only to the visitor who made it.
+    if (target.sealed === GUEST_AGENT_KIND) {
+      return { ok: false, code: 'unavailable', reason: `${target.name} belongs to a visitor of the home page: only they talk to it. Read its conversation on the Guests screen.` };
+    }
     const toUser = audience === 'user';
     // What every "could not prepare" refusal ends with. The point of saying it
     // in each one is that nothing is half-done: no turn started, so pressing
@@ -4816,6 +4828,12 @@ export class AgentService {
     if (!sandboxId) return null;
     this.touchTelegramAgentActivity(userId, ensured.agent);
     return sandboxId;
+  }
+
+  /** Every guest's agent on the owner's profile (note #1038): the guest sweeper's orphan check. */
+  async guestAgentIds(userId: string): Promise<string[]> {
+    const agents = (await this.deps.userStorage.getProfile(userId))?.telegram?.agents ?? {};
+    return Object.values(agents).filter((agent) => agent?.sealed === GUEST_AGENT_KIND).map((agent) => agent.id);
   }
 
   async publicGuideSource(userId: string, agent: AgentRecord): Promise<GuideSource | null> {
@@ -7726,6 +7744,8 @@ export class AgentService {
     if (agent.purpose === 'workspace-briefing') return { cpuKind: WORKSPACE_MACHINE_SIZE.cpuKind, cpus: WORKSPACE_MACHINE_SIZE.cpus, memoryMb: WORKSPACE_MACHINE_SIZE.memoryMb };
     // A sealed guide only answers questions (Adam, 5 Nov 2026): shared cores,
     // whatever the workplace builds its other agents on.
+    // A guest's agent (note #1038): two DEDICATED cores, whatever the workplace builds.
+    if (agent.sealed === GUEST_AGENT_KIND) return { cpuKind: GUEST_AGENT_MACHINE_SIZE.cpuKind, cpus: GUEST_AGENT_MACHINE_SIZE.cpus, memoryMb: GUEST_AGENT_MACHINE_SIZE.memoryMb };
     if (isSealedAgent(agent)) return { cpuKind: SEALED_AGENT_MACHINE_SIZE.cpuKind, cpus: SEALED_AGENT_MACHINE_SIZE.cpus, memoryMb: SEALED_AGENT_MACHINE_SIZE.memoryMb };
     const chosen = await this.orgAgentMachineSizeId(userId, agent);
     if (!chosen) return undefined;

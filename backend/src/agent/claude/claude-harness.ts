@@ -90,6 +90,7 @@ import { dedicatedLimitMessage, modelLimitMessage, NO_SEAT_MESSAGE, paymentRequi
 import { resolveUserSecretEnv } from '../../services/user-secrets.js';
 import { buildGuideSetupCommand, buildSealedClaudeCommand, type GuideSource } from '../../services/public-guide-machine.js';
 import { isSealedAgent } from '../../types/user.js';
+import { GUEST_AGENT_KIND } from '../../shared/guest-agent.js';
 import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_MODEL } from '../../shared/public-guide.js';
 import { quoteShellArg } from '../../utils/shell-quote.js';
 import { ClaudeTurnTokens, creditTurnTokens } from '../turn-tokens.js';
@@ -273,6 +274,11 @@ export function createClaudeHarnessRunner(harnessDeps: ClaudeHarnessDeps): Agent
     // (opus · high); effort resolution is model-aware.
     // A sealed guide (note #1010) is the same thing whoever asks: its model
     // and effort are the kind's, never a record's pick.
+    // A guest's agent (note #1038) talks only to the visitor who made it, through
+    // the public route: no owner chat, no agent message, no event turn reaches it.
+    if (targetAgent?.sealed === GUEST_AGENT_KIND) {
+      throw new Error(`${targetAgent.name} belongs to a visitor of the home page: only they talk to it.`);
+    }
     const sealed = isSealedAgent(targetAgent);
     const requestedModel = sealed
       ? PUBLIC_GUIDE_MODEL
