@@ -245,14 +245,17 @@ export function buildGuestSetupScript(source: GuestMachineSource, options: { ext
     `[ "$(stat -c %U ${GUEST_HOME})" = "${GUEST_USER}" ] || chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_HOME}`,
     `install -d -m 0750 -o ${GUEST_EGRESS_USER} -g ${GUEST_EGRESS_USER} ${GUEST_EGRESS_LOG_DIR}`,
     // Runner, proxy, allow-list and instructions, reinstalled whenever their fingerprint moves.
-    `if [ "$(cat ${GUEST_ROOT}/.setup-version 2>/dev/null || true)" != "${version}" ]; then`,
+    // The marker lives BESIDE what it vouches for (the root filesystem), and any missing
+    // file reinstalls all of them: a fresh root filesystem under an old marker on the
+    // volume once skipped the install and left no runner (note #1045).
+    `if [ "$(cat ${GUEST_LIB}/.setup-version 2>/dev/null || true)" != "${version}" ] || [ ! -x ${GUEST_RUNNER_PATH} ] || [ ! -f ${GUEST_EGRESS_PATH} ] || [ ! -f ${GUEST_EGRESS_ALLOW_PATH} ] || [ ! -f ${GUEST_INSTRUCTIONS_PATH} ]; then`,
     `  install -d -m 0755 -o root -g root ${GUEST_LIB}`,
     install(GUEST_RUNNER_PATH, buildGuestRunnerScript(source.doorUrl), '0755'),
     install(GUEST_EGRESS_PATH, buildGuestEgressScript(), '0644'),
     install(GUEST_EGRESS_ALLOW_PATH, `${allow.join('\n')}\n`, '0644'),
     install(GUEST_INSTRUCTIONS_PATH, guestInstructionsFor(source.agentName), '0644'),
     `  pkill -u ${GUEST_EGRESS_USER} -f ${GUEST_EGRESS_PATH} 2>/dev/null || true`,
-    `  echo '${version}' > ${GUEST_ROOT}/.setup-version`,
+    `  echo '${version}' > ${GUEST_LIB}/.setup-version`,
     'fi',
     // The proxy: running, as its own user, or started.
     `if ! pgrep -u ${GUEST_EGRESS_USER} -f ${GUEST_EGRESS_PATH} >/dev/null 2>&1; then`,
@@ -271,6 +274,7 @@ export function buildGuestSetupScript(source: GuestMachineSource, options: { ext
     `  mv ${GUEST_CHECKOUT}.new ${GUEST_CHECKOUT}`,
     'fi',
     `[ "$(stat -c %U ${GUEST_CHECKOUT})" = "${GUEST_USER}" ] || chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_CHECKOUT}`,
+    `[ -x ${GUEST_RUNNER_PATH} ] || { echo "guest setup: the runner is missing after install" >&2; exit 74; }`,
     `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.name ${quoteShellArg(source.agentName)}`,
     `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.email guest-agent@agenticcloudcomputer.com`,
   ].join('\n');

@@ -106,6 +106,13 @@ describe('the guest machine\'s setup', () => {
     expect(GUEST_CHECKOUT.startsWith('/data/')).toBe(true);
   });
 
+  it('reinstalls the runner whenever it is missing, whatever the marker says, and refuses to finish without it (note #1045)', () => {
+    expect(script).toContain('cat /usr/local/lib/acc-guest/.setup-version');
+    expect(script).not.toContain('/data/guest/.setup-version');
+    expect(script).toContain('[ ! -x /usr/local/lib/acc-guest/turn ]');
+    expect(script).toContain('exit 74');
+  });
+
   it('keeps the agent\'s home closed and other processes hidden', () => {
     expect(script).toContain('chmod 0750 /home/agent');
     expect(script).toContain('hidepid');
