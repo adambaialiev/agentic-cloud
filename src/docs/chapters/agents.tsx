@@ -18,7 +18,10 @@ import { LiveNewAgent } from '../../components/LiveForms';
  * and its reference row are gone; catching up is a question for the Chief
  * of Staff. Rooms were removed on 30–31 Oct 2026 (note #843): the
  * "Rooms" section became "One list of agents", the Room row and the move
- * picker are gone, and separation is another workplace.
+ * picker are gone, and separation is another workplace. Re-checked
+ * 2026-11-06 (note #1011): OpenCode is the third choice (note #780,
+ * NEW_AGENT_CLIS, OpenCode Go models in shared/model-catalog.ts, default
+ * glm-5.3 at high), and the machines run in the company's own cloud account.
  */
 const chapter: DocChapter = {
   slug: 'agents',
@@ -28,9 +31,9 @@ const chapter: DocChapter = {
   lead: (
     <>
       An agent is a teammate you message with work. Each one has a name, its own cloud computer,
-      and its own conversation with you. It runs either <Ui>Claude Code</Ui>{' '}
-      on your Claude subscription or <Ui>Codex</Ui> on your ChatGPT subscription, chosen when it
-      is created and kept for life. Everything it builds waits for it in its home folder between
+      and its own conversation with you. It runs <Ui>Claude Code</Ui> on your Claude
+      subscription, <Ui>Codex</Ui> on your ChatGPT subscription or <Ui>OpenCode</Ui> on your
+      OpenCode Go subscription, chosen when it is created and kept for life. Everything it builds waits for it in its home folder between
       turns.
     </>
   ),
@@ -43,7 +46,8 @@ const chapter: DocChapter = {
           <p>
             Your Chief of Staff brings in the agents a job needs, but a new project often wants one of its own.
             Tap the faces beside the message box on Home and press <Ui>New agent</Ui> under your agents. The
-            dialog asks one question: <Ui>Claude Code</Ui> or <Ui>Codex</Ui>. That is the whole form.
+            dialog asks one question: <Ui>Claude Code</Ui>, <Ui>Codex</Ui> or <Ui>OpenCode</Ui>. That
+            is the whole form.
           </p>
           <p>
             The name and picture are assigned for you, from a pool of human names you are not
@@ -63,7 +67,7 @@ const chapter: DocChapter = {
         </>
       ),
       panel: (
-        <Panel says="The New agent question: what should it run, with the two choices, Claude Code on your Claude subscription or Codex on your ChatGPT subscription.">
+        <Panel says="The New agent question: what should it run, with the three choices, Claude Code on your Claude subscription, Codex on your ChatGPT subscription or OpenCode on your OpenCode Go subscription.">
           <LiveNewAgent />
         </Panel>
       ),
@@ -136,9 +140,15 @@ const chapter: DocChapter = {
               offer medium through ultra; the luna models stop at max, and <code>gpt-5.5</code> at
               xhigh.
             </li>
+            <li>
+              <strong>OpenCode</strong>: the OpenCode Go models, <code>glm-5.3</code>, the default,
+              plus <code>kimi-k3</code>, <code>deepseek-v4-pro</code>, <code>qwen3.8-max</code>,{' '}
+              <code>mimo-v2.6-pro</code>, <code>glm-5.3-flash</code> and{' '}
+              <code>deepseek-v4.1-flash</code>. Each offers its own levels, and some have none.
+            </li>
           </ul>
           <p>
-            The default effort is <strong>high</strong> for both. The heavy levels, xhigh, max and
+            The default effort is <strong>high</strong> wherever the model has it. The heavy levels, xhigh, max and
             ultra, are marked <Ui>Much more compute</Ui>: they think much longer and spend the
             subscription much faster. Worth it on a hard problem, expensive as an everyday setting.
           </p>
@@ -156,7 +166,7 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Each agent has a dedicated virtual computer on the cloud, with a full shell, outbound
+            Each agent has a dedicated virtual computer in your company&rsquo;s cloud account, with a full shell, outbound
             internet and git. New agents are built on <strong>2 dedicated cores and 4 GB</strong>. The
             other sizes are in{' '}
             <DocLink href="/docs/your-cloud-and-subscriptions#machine-sizes">Machine sizes</DocLink>.
@@ -229,10 +239,10 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Machines update themselves: each is brought up to the pinned version of Claude Code or
-            Codex just before it goes to sleep. Most of the time there is nothing to do. The
-            software card on the agent&rsquo;s screen shows where it stands, and when a version is
-            waiting you can press <Ui>Update Claude Code</Ui>, <Ui>Update Codex</Ui> or{' '}
+            Machines update themselves: each is brought up to the pinned version of Claude Code,
+            Codex or OpenCode just before it goes to sleep. Most of the time there is nothing to do.
+            The software card on the agent&rsquo;s screen shows where it stands, and when a version
+            is waiting you can press <Ui>Update Claude Code</Ui> (or Codex, or OpenCode) or{' '}
             <Ui>Update machine software</Ui> yourself. The last one asks first, because it restarts
             the machine for about a minute; files are kept. Both buttons are locked while the agent
             is working.
@@ -259,7 +269,7 @@ const chapter: DocChapter = {
   reference: [
     { term: 'Where', text: <>Home, the faces beside the message box. Tap a card for the chat; tap the name or face in the chat header for the agent&rsquo;s own screen.</> },
     { term: 'Name and picture', text: 'Assigned from a pool of human names, skipping names you already use. Not chosen or changed by you.' },
-    { term: 'Default model', text: <><code>opus</code> for Claude Code, <code>gpt-6.1-sol</code> for Codex, both at effort <strong>high</strong>.</> },
+    { term: 'Default model', text: <><code>opus</code> for Claude Code, <code>gpt-6.1-sol</code> for Codex, <code>glm-5.3</code> for OpenCode, all at effort <strong>high</strong>.</> },
     { term: 'More at once', text: 'More agents working at the same time means another subscription.' },
     { term: 'Default machine', text: '2 dedicated cores and 4 GB. Its owner can resize it from its screen.' },
     { term: 'Sleep', text: 'About three quiet minutes after the last turn. Wakes in seconds on a message.' },

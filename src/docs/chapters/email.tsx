@@ -9,12 +9,15 @@ import { LiveMailCompose } from '../../components/LiveForms';
  * for you, and the Mail screen. Facts checked 2026-09-24 against the Mail
  * screens, the Settings "Your address" card, MailApprovalCard, mail-outbox,
  * mail-wake and mail-ingest. Written to src/docs/STYLE.md.
+ * Re-checked 2026-11-06 (note #1011): in your own Agentic Cloud addresses
+ * are on its own domain (MAIL_DOMAIN, note #804) and email starts once an
+ * admin sets it up (MailNotSetUp, MailSetupScreen, note #946).
  */
 const chapter: DocChapter = {
   slug: 'email',
   title: 'Email',
   description:
-    'Your own email address on agenticcloudcomputer.com: how an agent reads and answers mail as you, the inbox, files, waking an agent when mail arrives, and the limits.',
+    'Your own email address on your domain: how an agent reads and answers mail as you, the inbox, files, waking an agent when mail arrives, and the limits.',
   lead: (
     <>
       Every person here gets an email address of their own, and it is the one the outside world
@@ -64,10 +67,16 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Your address is your own name at <code>agenticcloudcomputer.com</code>, chosen at
-            sign-up. You need no outside email account and connect no mail provider. If you signed
-            up before addresses existed, choose one in <Ui>Settings</Ui> under <Ui>Your address</Ui>{' '}
-            with <Ui>Take this address</Ui>.
+            Your address is your own name at your Agentic Cloud&rsquo;s domain, such as{' '}
+            <code>agents.yourcompany.com</code>, chosen at sign-up. You need no outside email
+            account of your own. If you signed up before addresses existed, choose one in{' '}
+            <Ui>Settings</Ui> under <Ui>Your address</Ui> with <Ui>Take this address</Ui>.
+          </p>
+          <p>
+            Email starts once an admin sets it up. Until then <Ui>Mail</Ui> says{' '}
+            <Ui>Email is not set up yet</Ui>, and an admin&rsquo;s <Ui>Set up email</Ui> connects a
+            sending provider and lists the records to add to your domain. Mail turns on by itself
+            once they are in.
           </p>
           <p>
             One address per person, for keeps: it cannot be renamed, and once a name is yours it
@@ -171,8 +180,8 @@ const chapter: DocChapter = {
           <p>
             <Ui>Spam</Ui> is where a message lands when nothing vouched for its sender, and where a
             blocked sender&rsquo;s messages go. Each row there says why. A message that fails the
-            checks proving where it came from is marked forged, and one claiming an address on{' '}
-            <code>agenticcloudcomputer.com</code> without proving it always is. <Ui>Not spam</Ui>{' '}
+            checks proving where it came from is marked forged, and one claiming an address on
+            your own domain without proving it always is. <Ui>Not spam</Ui>{' '}
             is the way back to the inbox.
           </p>
           <p>
@@ -231,7 +240,11 @@ const chapter: DocChapter = {
   reference: [
     {
       term: 'Your address',
-      text: <>Your name at <code>agenticcloudcomputer.com</code>. 3 to 32 characters: lowercase letters and digits, with single dots or hyphens between them. Names like support, billing, admin, postmaster and noreply are refused.</>,
+      text: <>Your name at your Agentic Cloud&rsquo;s domain. 3 to 32 characters: lowercase letters and digits, with single dots or hyphens between them. Names like support, billing, admin, postmaster and noreply are refused.</>,
+    },
+    {
+      term: 'Setting it up',
+      text: <>Admins only: <Ui>Set up email</Ui>, in <Ui>Mail</Ui> or under <Ui>This copy</Ui> in Workplace settings. A sending provider and the records on your domain. It turns on once they check out.</>,
     },
     {
       term: 'Where',

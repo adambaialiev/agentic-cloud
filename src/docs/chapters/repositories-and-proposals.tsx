@@ -12,7 +12,9 @@ import { LiveRepositories } from '../../components/LiveSurfaces';
  * GitAccessRow and the `pr ready` rule in agent-cli. Written to
  * src/docs/STYLE.md. Since rooms were removed (30–31 Oct 2026, note #843)
  * the decision queue heads the one list of agents, and a grant of keys to
- * checks names the workplace's shared keys.
+ * checks names the workplace's shared keys. Re-checked 2026-11-06 (note
+ * #1011): auto-merge (note #944), public repositories (note #936) and the
+ * Repositories screen of the Workplace window (note #960).
  */
 const chapter: DocChapter = {
   slug: 'repositories-and-proposals',
@@ -78,6 +80,14 @@ const chapter: DocChapter = {
             an improvement before you decide, the same proposal shows the new code, with no second
             card. After you decide, the card in the chat shows the outcome and the row leaves the
             queue.
+          </p>
+          <p>
+            If you would rather not be asked, turn on <Ui>Auto-merge</Ui> in the Workplace window.
+            Every proposal your own agents make ready is then merged as soon as its checks pass,
+            with no card to tap. It reads <Ui>Merged automatically</Ui>, never your name, because
+            nobody read it. A teammate&rsquo;s proposals still wait for them, and one that cannot
+            merge waits for you as before. While it is on, the Chief of Staff&rsquo;s header says{' '}
+            <Ui>Auto-merge on</Ui>.
           </p>
         </>
       ),
@@ -156,7 +166,9 @@ const chapter: DocChapter = {
             When there is no host, or no way to hand an agent a key for yours, the platform has
             private repositories of its own, on its own git storage. Ask any agent to create one.
             It belongs to the whole workplace: every member sees it and every agent can push to
-            it, with no share step. A repository&rsquo;s screen has an{' '}
+            it, with no share step. An admin can make one public from its screen once it has a
+            LICENSE file, and then anyone with its address can read and clone it without an
+            account. A repository&rsquo;s screen has an{' '}
             <Ui>Overview</Ui> tab for its proposals, check runs and contributors, and a{' '}
             <Ui>Content</Ui> tab for the files and the README.
           </p>
@@ -183,7 +195,7 @@ const chapter: DocChapter = {
         <>
           <p>
             A <strong>clone</strong> is a copy of a repository on your own computer, worked on with
-            ordinary git. The <Ui>Repositories</Ui> section in <Ui>Workplace</Ui> ends with{' '}
+            ordinary git. The <Ui>Repositories</Ui> screen, opened from Workplace, ends with{' '}
             <Ui>Clone on your computer</Ui>: it shows an example <code>git clone</code> line, with{' '}
             <code>x-access-token</code> as the username and your personal key as the password.
           </p>
@@ -196,7 +208,7 @@ const chapter: DocChapter = {
         </>
       ),
       panel: (
-        <Panel says="The Repositories section in Workplace: four repositories, each with its agents’ commits and its protected main branch, and the storage used.">
+        <Panel says="The Repositories screen: four repositories, each with its agents’ commits and its protected main branch, and the storage used.">
           <LiveRepositories />
         </Panel>
       ),
@@ -212,7 +224,7 @@ const chapter: DocChapter = {
             repository&rsquo;s checks, and it applies at once: the agent tells you in its chat which
             keys it handed over, and the repository&rsquo;s screen lists them under{' '}
             <Ui>Keys for checks</Ui>. There is nothing to approve, because the keys reach checks on
-            main only, and nothing lands on main without your approval.
+            main only, and nothing lands on main unless you approve it or your auto-merge does.
           </p>
           <p>
             Keys are masked out of every log. Any agent can take a key back; only an admin&rsquo;s agent can hand one over. The same goes
@@ -251,11 +263,11 @@ const chapter: DocChapter = {
     },
     {
       term: 'Who decides a proposal',
-      text: 'The owner of the agent that proposed it. Teammates can read and comment. No agent can approve.',
+      text: 'The owner of the agent that proposed it, or that owner’s auto-merge once the checks pass. Teammates can read and comment. No agent can approve.',
     },
     {
       term: 'Status pills',
-      text: <><Ui>Waiting for you</Ui>, <Ui>Still being prepared</Ui>, <Ui>Merging</Ui>, <Ui>Merged</Ui>, <Ui>Rejected</Ui>, <Ui>Withdrawn</Ui>, <Ui>Went stale</Ui>, <Ui>Conflicts with</Ui> a branch.</>,
+      text: <><Ui>Waiting for you</Ui>, <Ui>Still being prepared</Ui>, <Ui>Merging</Ui>, <Ui>Merged</Ui>, <Ui>Merged automatically</Ui>, <Ui>Rejected</Ui>, <Ui>Withdrawn</Ui>, <Ui>Went stale</Ui>, <Ui>Conflicts with</Ui> a branch.</>,
     },
     {
       term: 'Decision buttons',

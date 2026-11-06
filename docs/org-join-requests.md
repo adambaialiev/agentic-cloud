@@ -1,5 +1,7 @@
 # Reusable workplace invite links
 
+> Status (2026-11-06): invite links are switched off in an ordinary workplace (owner, 2026-10-11). They work in your own Agentic Cloud (note #808, `invitesClosed: !PRIVATE_COPY` in `backend/src/index.ts`) and in a workplace the platform marks (note #805). Everything below describes the flow where it is on.
+
 A web invite link accepts requests from multiple signed-in people. It does not expire: it stays live until an admin revokes it. The link does not name a recipient and grants no membership by itself — the admin's approval is the gate, which is what makes a standing link safe to hand out.
 
 The visitor sees the workplace and their current account, then explicitly requests to join. There is at most one pending request per workplace and person, including simultaneous submissions or submissions through different links. The pending screen includes a durable request ID in its address and can check the decision after the original link is revoked.

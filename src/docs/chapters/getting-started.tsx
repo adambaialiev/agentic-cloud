@@ -20,6 +20,12 @@ import { LiveFirstGreeting, LiveFirstPlan, LiveFirstSignIn, LiveSignIn, LiveSign
  * src/docs/STYLE.md. Since note #664 (2026-09-25) there is no cloud step: a
  * new workplace runs on the cloud. Since rooms were removed (30–31 Oct
  * 2026, note #843) the Chief of Staff opens no room for the first team.
+ * Re-checked 2026-11-06 (note #1011): the machines run in the company's own
+ * cloud account, addresses are on the copy's own domain (MAIL_DOMAIN), a
+ * copy installs without email so a reset link waits for Mail to be set up
+ * (note #946), knowledge changes are live with no proposal (note #746),
+ * auto-merge (note #944), and OpenCode Go is a third kind of subscription
+ * (note #780), added from Your subscriptions rather than the first card.
  */
 const chapter: DocChapter = {
   slug: 'getting-started',
@@ -31,7 +37,7 @@ const chapter: DocChapter = {
       All you need is a browser. You create an account and land in a conversation with your Chief
       of Staff. You tell it what you are working on and sign in the Claude or ChatGPT plan your
       agents think with. It brings in the agents the work needs, each on a computer of its own
-      on the cloud. The first result arrives in that same
+      in your company&rsquo;s cloud account. The first result arrives in that same
       conversation, a few minutes later. This chapter walks through it, then how to get back in
       tomorrow.
     </>
@@ -51,10 +57,10 @@ const chapter: DocChapter = {
             at once. Nothing is emailed to you and there is no link to wait for.
           </p>
           <p>
-            The address is a new one, on the platform&rsquo;s own domain. You type only the part
-            before the @, and the page tells you as you type whether the name is free. Choose it
-            with care: it is the name you sign in with, and it is a real inbox that people can write
-            to (see <DocLink href="/docs/email">Email</DocLink>).
+            The address is a new one, on your Agentic Cloud&rsquo;s own domain. You type only the
+            part before the @, and the page tells you as you type whether the name is free. Choose
+            it with care: it is the name you sign in with, and once an admin has set up email it is
+            a real inbox that people can write to (see <DocLink href="/docs/email">Email</DocLink>).
           </p>
           <p>
             The first account&rsquo;s workplace is created with it and named after its owner for
@@ -101,8 +107,9 @@ const chapter: DocChapter = {
             Your agents think with a subscription you already pay for, so the Chief of Staff&rsquo;s
             answer to your first message asks for it. Under its answer is a card with two rows:{' '}
             <Ui>Claude</Ui> for a Claude Pro or Max subscription, <Ui>Codex</Ui> for a ChatGPT Plus
-            or Pro subscription. Tap the one you have. You can add the other kind later, and more of
-            either. It is the only thing to connect: your agents&rsquo; computers run on the cloud.
+            or Pro subscription. Tap the one you have. You can add the other kind later, an
+            OpenCode Go subscription too, and more of each. It is the only thing to connect: your
+            agents&rsquo; computers already run in your company&rsquo;s cloud account.
           </p>
           <p>
             <strong>Claude</strong>: press <Ui>Open the Claude sign-in</Ui>, approve on Claude&rsquo;s
@@ -169,8 +176,9 @@ const chapter: DocChapter = {
           </p>
           <p>
             Each agent works on its own computer. Close the tab, and when you come back the faces
-            beside the message box show which agents have replied. Work that touches protected code or
-            a knowledge page comes back as a proposal for you to approve; read{' '}
+            beside the message box show which agents have replied. Work that touches protected code
+            comes back as a proposal for you to approve, unless you have turned on auto-merge for
+            your agents. Read{' '}
             <DocLink href="/docs/repositories-and-proposals#the-proposal-loop">The proposal loop</DocLink>{' '}
             when your first one arrives.
           </p>
@@ -192,15 +200,16 @@ const chapter: DocChapter = {
             out work or read your mail, and it reports back here.
           </p>
           <p>
-            Tap its face or its name at the top to open the <Ui>Workplace</Ui> in a window over the conversation: how many
-            agents are working, your mail, your subscriptions, and the shared shelves for
-            notes, files, code, knowledge and keys.
+            Tap its face or its name at the top to open the <Ui>Workplace</Ui> in a window over the
+            conversation: the people here and their agents, your messages and mail, your
+            subscriptions, your auto-merge switch, and a row each for notes, Drive, code, knowledge,
+            sites and keys.
           </p>
           <p>
             The faces beside the message box open your agents in one list, with{' '}
             <Ui>Waiting for your decision</Ui> above them once an agent has proposed something. To
-            catch up after a day away, ask the Chief of Staff. Your picture at the top right opens Settings and the
-            list of people.
+            catch up after a day away, ask the Chief of Staff. Your picture at the top right opens a
+            menu: Settings, the people here, and every app launched here.
           </p>
         </>
       ),
@@ -223,7 +232,8 @@ const chapter: DocChapter = {
           <p>
             <Ui>Forgot your password?</Ui> sends a reset link to your recovery email. A new account
             has none until you add one, and without it a forgotten password means a lost account:
-            nobody can reset it for you. Add one today, in Settings.
+            nobody can reset it for you. Add one today, in Settings. The reset link and the recovery
+            email both need email: until an admin has set it up under <Ui>Mail</Ui>, Settings says so.
           </p>
         </>
       ),
@@ -239,7 +249,7 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Your picture on Home opens <Ui>Settings</Ui>: your name and picture, your address, and
+            <Ui>Settings</Ui>, from your picture on Home, holds your name and picture, your address, and
             the <Ui>Access</Ui> card. Three things there are worth doing on day one.
           </p>
           <ul>
@@ -263,14 +273,14 @@ const chapter: DocChapter = {
   reference: [
     { term: 'Sign up', text: 'Through the one-time link the installer prints, for the first account, or through an invite link an admin approves. The first account’s workplace is created with it, and its owner is the admin.' },
     { term: 'Names', text: 'First and last name, up to 64 characters each.' },
-    { term: 'Address', text: 'The part before the @, on the platform’s own domain. One per person, and it cannot be changed later.' },
+    { term: 'Address', text: 'The part before the @, on your Agentic Cloud’s own domain. One per person, and it cannot be changed later.' },
     { term: 'Password', text: 'At least 10 characters, at most 256.' },
-    { term: 'Before the first job', text: 'Say what you are working on, then sign in a plan, both in the Chief of Staff’s conversation. There is no cloud to connect.' },
-    { term: 'Subscriptions accepted', text: 'Claude Pro or Max, for Claude Code agents. ChatGPT Plus or Pro, for Codex agents.' },
+    { term: 'Before the first job', text: 'Say what you are working on, then sign in a plan, both in the Chief of Staff’s conversation. There is no cloud to connect: the installer did that.' },
+    { term: 'Subscriptions accepted', text: 'Claude Pro or Max, for Claude Code agents. ChatGPT Plus or Pro, for Codex agents. OpenCode Go, by its API key, for OpenCode agents.' },
     { term: 'The Chief of Staff’s computer', text: 'Built once, when your plan lands: fifteen seconds to a minute.' },
     { term: 'The first team', text: 'The agents the work needs, usually two, on the plan you signed in. A workplace is empty until then.' },
     { term: 'Password reset link', text: 'Goes to the confirmed recovery email, works once, for thirty minutes, and signs out every browser.' },
-    { term: 'Recovery email', text: 'Optional but strongly advised. Confirmed through a link that lasts thirty minutes. An address on the platform’s own domain is refused.' },
+    { term: 'Recovery email', text: 'Optional but strongly advised. Confirmed through a link that lasts thirty minutes, once an admin has set up email. An address on your Agentic Cloud’s own domain is refused.' },
     { term: 'Authenticator security', text: 'Optional. Time-based codes from any authenticator app. Recovery codes are shown once; turning it off needs a current code.' },
   ],
 };

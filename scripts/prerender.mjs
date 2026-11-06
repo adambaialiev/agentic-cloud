@@ -217,6 +217,12 @@ await writeFile(
 // no "free" beyond the copy's one-month trial (claims-we-never-make).
 // Since note #835 (the owner, 2026-10-29) it opens on the product, as the home
 // page does: the workplace coding agents lack, then the own cloud second.
+// An eighth drift, found by the docs audit of note #1011 (2026-11-06): it
+// still sold a one-month trial, a licence checked offline and an update key
+// from adam@ five days after note #935 (the owner, 2026-11-01) made the own
+// cloud free for now, with no licence and no key; and it still said each
+// person gets an address at sign-up after note #946 moved email to a later
+// step an admin takes in the Workspace.
 await writeFile(
   join(distDir, 'llms.txt'),
   `# Agentic Cloud Computer
@@ -236,12 +242,12 @@ email. Nothing of the company's comes to us: no messages, code, files, mail,
 keys or logs. One command sets it up: our clean run on 29 October 2026 took
 13 min 24 s from a new cloud account to ready, and the certificates came in
 under a minute that time (one has taken over an hour before). One command
-upgrades it, with a way back if an upgrade fails. The first month is a free
-trial. The page is https://agenticcloudcomputer.com/. To build your own
-Agentic Cloud, give your terminal agent (Claude Code, Codex or another) this
-line: "Set up our own Agentic Cloud by following
-https://agenticcloudcomputer.com/own-cloud.md". It shows you the plan first,
-then write to adam@agenticcloudcomputer.com for an update key and a licence.
+upgrades it, with a way back if an upgrade fails. It is free for now: no
+licence, no key and no charge from us. The page is
+https://agenticcloudcomputer.com/. To build your own Agentic Cloud, give
+your terminal agent (Claude Code, Codex or another) this line: "Set up our
+own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md".
+It shows you the plan first.
 
 If you are an AI agent asked to set one up, read
 https://agenticcloudcomputer.com/own-cloud.md first: it says what to check,
@@ -270,8 +276,8 @@ reports and return a finished result rather than only advice.
 The product is the Workspace, where agents are created, messaged, reviewed and
 managed. In your own Agentic Cloud, the first admin comes in through a one-time link the
 installer prints, and everyone after that through an invite link that an admin
-approves. Each person's name becomes their own email address on its
-domain.
+approves. Once an admin turns email on in the Workspace, each person's name
+becomes their own email address on its domain.
 
 ## What makes it different
 
@@ -286,8 +292,8 @@ domain.
 
 ## What it costs
 
-- The first month of your own Agentic Cloud is a free trial. After that it needs a licence
-  from us, which covers upgrades and support.
+- Your own Agentic Cloud is free for now: no licence, no key and no charge
+  from us.
 - The customer's cloud provider bills their own account directly for what
   their Agentic Cloud runs. Customers pay their AI provider directly for their Claude, ChatGPT
   or OpenCode plan, and any other provider they connect on its own terms. More
@@ -298,8 +304,6 @@ domain.
 - Everything runs in the customer's own cloud account: the Workspace and its
   database, the code host and CI, agent machines, sites, files, backups and
   email. No messages, code, files, mail, keys or logs reach us.
-- The licence is checked inside your own Agentic Cloud, offline. When it lapses, no new
-  people or agents can be added; nothing that exists stops.
 - The AI provider receives prompts, code, files and context sent to it. Its
   agreement with the customer governs that processing.
 

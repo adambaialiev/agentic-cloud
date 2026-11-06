@@ -1,5 +1,7 @@
 # CI status in the Mini App — design
 
+> Status (2026-11-06): "the Mini App" below is today's Workspace in the browser; the Telegram Mini App was retired in September 2026.
+
 > **Implemented 2026-08-11** (storage + ingest + daemon sender + the pip,
 > Checks card / "Approve anyway", and commit-history surfaces). Deviations
 > from the below, chosen during the build: stale `pending`s are translated to

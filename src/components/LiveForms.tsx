@@ -136,7 +136,7 @@ export function LiveJobs({ className = '' }: { className?: string }) {
 
 export function LiveNewAgent({ className = '' }: { className?: string }) {
   return (
-    <LivePanel size="wide" className={className} says="The New agent question: it gets a conversation in this Workspace and its own cloud machine, and keeps this choice for life. What should it run? Two choices, Claude Code, which runs on your Claude subscription, and Codex, which runs on your ChatGPT subscription, then Cancel.">
+    <LivePanel size="wide" className={className} says="The New agent question: it gets a conversation in this Workspace and its own cloud machine, and keeps this choice for life. What should it run? Three choices: Claude Code, which runs on your Claude subscription, Codex, which runs on your ChatGPT subscription, and OpenCode, which runs on your OpenCode Go subscription, then Cancel.">
       <LiveWorkspace>
         <div className="ask" role="dialog">
           <h3>New agent</h3>

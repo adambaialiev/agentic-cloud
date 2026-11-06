@@ -1,5 +1,7 @@
 # Workspace Recap conversation — note #399
 
+> Status (2026-11-06): history. The Home recap card, its microphone and its Conversation link are gone; this conversation became the Chief of Staff's, which is Home itself (note #715; `backend/workspace-ui/src/screens/home/RecapChatScreen.tsx`). The briefing is drawn on no screen since 31 Oct 2026.
+
 The Home recap has a bottom-right microphone and a Conversation link. The microphone opens the existing full-screen recorder; the person reviews the transcript before sending. The registered workplace-scoped `/workspace/recap?org=…` destination retains the conversation and accepts text or voice follow-ups. It uses the shared chat header, viewport, message styling, composer and microphone.
 
 ## Dedicated runtime

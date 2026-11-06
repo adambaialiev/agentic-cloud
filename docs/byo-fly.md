@@ -1,5 +1,7 @@
 # BYO-Fly — build record
 
+> Status (2026-11-06): build record. Since note #664 (2026-09-25) a new workplace on our platform runs on the platform's Fly account and connects no cloud (section 8); since note #801 only a workplace the platform marks brings its own Fly account. Your own Agentic Cloud, the whole platform in your own Fly organization, is a different thing: `public/own-cloud.md`.
+
 The contract is the account knowledge page **byo-fly-design** (approved
 2026-08-23). This file is the code-side record: what each slice changed, the
 hard-wired assumptions being unwound, and the operator steps that went with

@@ -2,7 +2,8 @@
 
 > **Retired customer flow (2026-09-01, note 212):** coworkers converse in
 > one shared Workspace and run against member-owned Claude or ChatGPT seats.
-> Browser access uses a username and authenticator code. The factory bot,
+> Browser access uses the name of your address and a password (since
+> 2026-09-14; an authenticator code is an optional second factor). The factory bot,
 > per-agent bots, customer webhook routes, signed Mini App launches and
 > customer Telegram notifications are no longer mounted. Passages below are
 > implementation and migration history, not the current customer contract. See

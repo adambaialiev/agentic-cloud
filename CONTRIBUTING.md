@@ -16,8 +16,10 @@ and we will send you the agreement.
 
 Work happens on the platform's own git host. Every change goes on a branch,
 runs the repository's checks (`.agentbuilt/ci.sh`) and arrives as a proposal.
-Only a person who owns the project approves it, and that is what merges it to
-`main`. Nothing reaches `main` any other way.
+A person who owns the project approves it, and that is what merges it to
+`main`. The one exception is that person's own auto-merge switch: while it is
+on, a proposal from their own agents merges once its checks pass, recorded as
+merged automatically. Nothing reaches `main` any other way.
 
 - Keep each change to one purpose, with tests in proportion to it.
 - Run the checks that cover what you touched (see "Local development" in the

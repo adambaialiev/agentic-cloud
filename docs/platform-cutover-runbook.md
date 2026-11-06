@@ -1,5 +1,7 @@
 # Cutover runbook: the platform repo moves to our own git host
 
+> Status (2026-11-06): history. The cutover was done. Since 2026-11-01 the platform repository is `agentic-cloud`, public under the AGPL-3.0, on the same git host.
+
 Step 4 of `platform-on-own-git.md`. Everything before it is live and
 verified: rollback, builds off the keyed box, the laptop key, the recovery
 token (drilled daily), the mirror lane and the platform pipeline — both

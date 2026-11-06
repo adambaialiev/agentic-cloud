@@ -397,7 +397,9 @@ agent told to run it on the old binary would have nowhere to go.
 
 Knowledge proposals follow the same rule since the owner asked for it the
 same day: `knowledge propose` is quiet and `agentbuilt knowledge proposals
-ready <n>` is the invitation — see docs/agent-knowledge-pages.md.
+ready <n>` is the invitation — see docs/agent-knowledge-pages.md. That gate
+was removed with note #746 (12 Oct 2026): a knowledge change is live the
+moment `knowledge propose` returns, and the owner is told, not asked.
 
 ## Auto-merge (note #944, 2026-11-01)
 

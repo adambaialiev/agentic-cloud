@@ -74,7 +74,7 @@ export const FAQS: Faq[] = [
     key: 'breaking',
     question: 'What stops an agent from breaking something?',
     answer:
-      'Protected code and knowledge changes come back as proposals with the exact change and its checks. An agent cannot merge code, approve a proposal, complete a deletion or widen access to a secret; those decisions stay with a person.',
+      'Changes to protected code come back as proposals with the exact change and its checks. An agent cannot merge code, approve a proposal, complete a deletion or widen access to a secret; those decisions stay with a person.',
     docs: '/docs/repositories-and-proposals#the-proposal-loop',
   },
   {
@@ -158,8 +158,9 @@ export const FOOTER_PITCH = 'Claude Code, Codex and OpenCode agents, with everyt
 export const PRODUCT_HEADLINE = 'Everything an agent needs to finish the job.';
 
 /* "Free, on the plan you already pay for." until note #822 (the owner,
-   2026-10-28): only the private copy is offered, and a copy is free only in
-   its one-month trial or for a design partner (claims-we-never-make), so the
-   line says where it runs instead. */
+   2026-10-28): only the private copy is offered, and a copy was then free
+   only in its one-month trial or for a design partner, so the line says where
+   it runs instead. Since note #935 (2026-11-01) your own Agentic Cloud is free
+   for now, with no licence and no key (claims-we-never-make). */
 export const BUILT_IN_LINE =
   'Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for.';

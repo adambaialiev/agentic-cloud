@@ -1,5 +1,7 @@
 # BYO git — the build record
 
+> Status (2026-11-06): built and proven on 2026-08-23, but dormant. A workplace on our platform keeps its repositories, checks and code backups on the platform's central git host and CI, not in its own Fly account (knowledge page `byo-git-design`). In your own Agentic Cloud the code host and CI run in your account (`public/own-cloud.md`).
+
 The code-side record of the **byo-git-design** knowledge page (workstream 4:
 per-client git hosts and backups in the client's own Fly org). The page is the
 contract; this file records what each slice actually did and the traps it hit,

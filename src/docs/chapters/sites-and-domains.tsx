@@ -7,8 +7,12 @@ import { LiveSites } from '../../components/LiveSurfaces';
  * production address; the three shapes, your own domain, renames and
  * upgrades, deletion and where sites appear. Facts checked 2026-09-24
  * against the site screen, Home's Sites section and the deploy commands.
- * Written to src/docs/STYLE.md. Since note #664 (2026-09-25) sites run on
- * our cloud, ten live at a time per workplace.
+ * Written to src/docs/STYLE.md. Re-checked 2026-11-06 (note #1011): since
+ * note #822 the reader runs their own Agentic Cloud, so sites run in their
+ * cloud account under its domain, billed by their provider; thirty live at
+ * a time (config/access.ts, note #771); the Sites screen with each site's
+ * shape and monthly estimate (notes #960, #993); the catalogue at /apps on
+ * the copy's own address (shared/public-host.ts, note #807).
  */
 const chapter: DocChapter = {
   slug: 'sites-and-domains',
@@ -19,8 +23,8 @@ const chapter: DocChapter = {
     <>
       When an agent builds something, you get to see it two ways. First a preview link, on the
       agent&rsquo;s own computer, for work in progress. Then, when you want it always on at a real
-      address, a production site on the cloud, up whether the agent is awake or not.
-      Hosting is included, the site belongs to the workplace, and deleting it is yours to decide.
+      address, a production site in your cloud, up whether the agent is awake or not.
+      The site belongs to the workplace, and deleting it is yours to decide.
     </>
   ),
   sections: [
@@ -42,8 +46,8 @@ const chapter: DocChapter = {
           </p>
           <p>
             When the page is right, say &ldquo;put it live&rdquo;. The agent deploys it and comes
-            back with a production address, <code>name.agentbuilt.app</code>, where it stays up on
-            its own. The first deploy takes a couple of minutes while the machine is built and the
+            back with a production address under your Agentic Cloud&rsquo;s domain, such as{' '}
+            <code>name.agents.yourcompany.com</code>, where it stays up on its own. The first deploy takes a couple of minutes while the machine is built and the
             address and its certificate come up, and the agent reports the address once it
             answers. After that, a redeploy to the same name is instant.
           </p>
@@ -74,9 +78,12 @@ const chapter: DocChapter = {
             </li>
           </ul>
           <p>
-            Hosting is included. There is no price per site, no tiers and no checkout. Sites run on
-            the cloud beside your agents&rsquo; machines, up to ten live at a time in a workplace (see{' '}
+            Sites run in your cloud account beside your agents&rsquo; machines, up to 30 live at a
+            time in a workplace (see{' '}
             <DocLink href="/docs/your-cloud-and-subscriptions#what-runs-there">What runs where</DocLink>).
+            We charge nothing for them. Your cloud provider bills your account, and a site never
+            sleeps, so its cost runs whether anyone visits or not (see{' '}
+            <DocLink href="/docs/your-cloud-and-subscriptions#what-you-pay">What you pay</DocLink>).
             An always-on app can use the workplace&rsquo;s saved keys, such as a chat bot&rsquo;s
             token. The agent names the key when it deploys, and the key never goes into the
             app&rsquo;s files (see{' '}
@@ -91,7 +98,7 @@ const chapter: DocChapter = {
         </>
       ),
       panel: (
-        <Panel says="The Sites section in Workplace: the dispatch app and the routing service, both running around the clock, and the docs website, each live at its own address and each last published by an agent.">
+        <Panel says="The Sites screen: the dispatch app and the routing service, both running around the clock, and the docs website, each live at its own address and each last published by an agent.">
           <LiveSites />
         </Panel>
       ),
@@ -102,9 +109,9 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            Every site put live here is listed in the public app catalogue at{' '}
-            <a href="https://agenticcloudcomputer.com/apps">agenticcloudcomputer.com/apps</a>: its name, one line on what it
-            does, who built it, a picture and the link, newest first. You do nothing for this.
+            Every site put live is listed in your Agentic Cloud&rsquo;s public app catalogue, at{' '}
+            <code>/apps</code> on its own address: its name, one line on what it does, who built
+            it, a picture and the link, newest first. You do nothing for this.
             The agent writes the line when it deploys and takes the picture once the site
             answers, and a redeploy refreshes the picture so the catalogue shows the site as it
             is now.
@@ -214,13 +221,16 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            <Ui>Workplace</Ui> shows a <Ui>Sites</Ui> section once the workplace has its first site. Each row is
-            one site: its name, the agent that deployed it, when it was last updated, whether it is
-            a <Ui>site</Ui> or an <Ui>app</Ui>, and a state badge when it is not simply live.
+            The Workplace window shows a <Ui>Sites</Ui> row once the workplace has its first site,
+            and it opens the Sites screen. Each row there is one site: its name, the agent that
+            deployed it, when it was last updated, its shape and what it is estimated to cost a
+            month, and a state badge when it is not simply live. The line under the title gives
+            the total.
           </p>
           <p>
             Tap a row for the site&rsquo;s screen: the live address, which opens the site, who
-            deployed it first and last, and a delete request when there is one. A teammate&rsquo;s
+            deployed it first and last, its machine and estimate under <Ui>Running it</Ui>, and a
+            delete request when there is one. A teammate&rsquo;s
             agent appears as that, with its face.
           </p>
         </>
@@ -234,7 +244,7 @@ const chapter: DocChapter = {
     },
     {
       term: 'Site address',
-      text: <>Always <code>name.agentbuilt.app</code>. A custom domain is added beside it, never instead of it.</>,
+      text: <>Always a name under your Agentic Cloud&rsquo;s domain, such as <code>name.agents.yourcompany.com</code>. A custom domain is added beside it, never instead of it.</>,
     },
     {
       term: 'Site name',
@@ -242,9 +252,9 @@ const chapter: DocChapter = {
     },
     {
       term: 'Shapes',
-      text: 'A website, an always-on app (512 MB), or an always-on app on the bigger machine (1 GB). An app needs a start script that listens on the port the platform expects; the agent knows.',
+      text: 'A website (static), an always-on app (service, 512 MB), or an always-on app on the bigger machine (service-pro, 1 GB). An app needs a start script that listens on the port the platform expects; the agent knows.',
     },
-    { term: 'How many', text: 'Up to ten a workplace, counted while live or being set up. Take one down to put up another.' },
+    { term: 'How many', text: 'Up to 30 a workplace, counted while live or being set up. Take one down to put up another.' },
     { term: 'Upload size', text: 'Up to 64 MB of packed site content per deploy.' },
     {
       term: 'States',

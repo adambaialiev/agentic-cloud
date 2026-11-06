@@ -4,7 +4,7 @@ A guide for an AI agent (Claude Code, Codex or any agent with a terminal) asked 
 
 Your own Agentic Cloud is the whole Agentic Cloud Computer platform (the Workspace, the agents' machines, git hosting, sites, files and email) installed in the company's own Fly.io organization, on a domain of theirs. One installer builds it. Email is not part of the install: once it is up, an admin turns it on from the Workspace whenever they want it. Nothing of theirs is kept by us: the only time the installer reaches us is to download a release, with no sign-in. It needs nothing from us: no key, no licence, no email. The product is free for now.
 
-It takes one command. In our clean run on 29 October 2026 it went from a new Fly organization to ready in 13 min 24 s; Fly issued the domain's certificates in under a minute that time, but one has taken over an hour before, and then you wait and run the same command again. Follow the steps in order. The page for people is https://agenticcloudcomputer.com/own-cloud.
+It takes one command. In our clean run on 29 October 2026 it went from a new Fly organization to ready in 13 min 24 s; Fly issued the domain's certificates in under a minute that time, but one has taken over an hour before, and then you wait and run the same command again. Follow the steps in order. The page for people is https://agenticcloudcomputer.com.
 
 ## Rules for you
 

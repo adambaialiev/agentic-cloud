@@ -10,7 +10,7 @@ import LiveChief from '../../components/LiveChief';
  * steering, voice, background jobs, agents writing to each other, handing
  * work over, fresh chats, the cards in a chat and the phone. Facts checked
  * 2026-09-24 against main: work starts by messaging an agent or handing it
- * a note. Written to src/docs/STYLE.md. Since rooms were removed (30–31 Oct
+ * a note; re-checked 2026-11-06 (note #1011). Written to src/docs/STYLE.md. Since rooms were removed (30–31 Oct
  * 2026, note #843) the chat header names only the agent, and unread replies
  * and decisions head the one list of agents behind the faces.
  */
@@ -76,8 +76,8 @@ const chapter: DocChapter = {
             you approve on the proposal&rsquo;s own screen. It cannot approve anything.
           </p>
           <p>
-            It can also start by itself when something needs you. Tap its face or name, and under{' '}
-            <Ui>On its own</Ui> switch on <Ui>Start by itself when something needs you</Ui>. It then
+            It can also start by itself when something needs you. Tap its face or name, open{' '}
+            <Ui>Chief of Staff</Ui>, and under <Ui>On its own</Ui> switch on <Ui>Start by itself when something needs you</Ui>. It then
             notices a red build, a proposal still waiting, a report nobody answered, a note nobody
             picked up and new mail. Most of the time it stays quiet. Under{' '}
             <Ui>Without asking, it may</Ui> you choose the few things it may do alone, such as handing
@@ -144,8 +144,8 @@ const chapter: DocChapter = {
       body: (
         <>
           <p>
-            The microphone in the <Ui>Message</Ui> box, labelled <Ui>Dictate</Ui>, turns what you
-            say into text in the box, so you can fix it before sending. The agent gets the words
+            The microphone in the <Ui>Message</Ui> box, labelled <Ui>Dictate</Ui>, opens a recorder
+            that shows what you said as text, so you can fix it before sending. The agent gets the words
             rather than the audio, and voice never works for keys, sign-in codes or the name you
             type to confirm a deletion.
           </p>
