@@ -322,7 +322,7 @@ describe('GuestAgentService — making one', () => {
     expect(made.httpStatus).toBe(201);
     const key = (made.answer as { key: string }).key;
     expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect((made.answer as { status: { state: string } }).status.state).toBe('creating');
+    expect((made.answer as { status: { state: string; estimateSeconds: number } }).status).toMatchObject({ state: 'creating', estimateSeconds: 120 });
     await x.service.idle();
     const status = await x.service.status(key);
     expect(status).toMatchObject({ state: 'ready', agent: { name: 'Juno' }, machine: { cores: 2, memoryGb: 4, dedicated: true }, messagesLeft: 40 });
@@ -341,6 +341,7 @@ describe('GuestAgentService — making one', () => {
     const made = await x.service.create({ address: 'a' });
     const status = (made.answer as { status: { state: string; steps: Array<{ id: string; done: boolean }> } }).status;
     expect(status.steps?.filter((s) => s.done).map((s) => s.id)).toEqual(['computer', 'code']);
+    expect((made.answer as { status: { estimateSeconds: number } }).status.estimateSeconds).toBe(15);
     await x.service.idle();
     expect(await x.service.status((made.answer as { key: string }).key)).toMatchObject({ state: 'ready', agent: { name: 'Juno' } });
     expect((await x.storage.listByPhase(['spare'])).map((r) => r.agentId)).toEqual(['guest-2']);

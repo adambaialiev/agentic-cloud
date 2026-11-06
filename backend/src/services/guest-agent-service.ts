@@ -46,6 +46,7 @@ import {
   GUEST_DECLINED_MARKER,
   GUEST_DECLINED_TEXT,
   GUEST_TURN_FINAL_STATES,
+  GUEST_TURNSTILE_ACTION,
   guestGreeting,
   type GuestActivity,
   type GuestCreateAnswer,
@@ -267,6 +268,8 @@ export class GuestAgentService {
       messages: [],
       turn: null,
       steps: null,
+      estimateSeconds: null,
+      createdAt: null,
       quietUntil: null,
       endsAt: null,
       messagesLeft: null,
@@ -300,7 +303,8 @@ export class GuestAgentService {
       return this.blankStatus('removed', { agent, removedReason: row.removedReason ?? 'quiet' });
     }
     if (row.phase === 'creating') {
-      return this.blankStatus('creating', { agent, steps: row.steps ?? null, machine: { ...GUEST_AGENT_MACHINE, awake: true } });
+      const fromSpare = Boolean(row.steps?.find((s) => s.id === 'computer')?.done && row.steps?.find((s) => s.id === 'code')?.done && row.preparedAt !== row.claimedAt);
+      return this.blankStatus('creating', { agent, steps: row.steps ?? null, estimateSeconds: fromSpare ? 15 : 120, createdAt: row.claimedAt, machine: { ...GUEST_AGENT_MACHINE, awake: true } });
     }
     const now = this.now();
     const turnId = this.runningByAgent.get(row.agentId) ?? null;
@@ -317,6 +321,7 @@ export class GuestAgentService {
       quietUntil: turnId ? null : new Date(Math.min(last + this.limits.quietMs, endsAtMs)).toISOString(),
       endsAt: new Date(endsAtMs).toISOString(),
       messagesLeft: Math.max(0, this.limits.messagesMax - row.messagesUsed),
+      createdAt: row.claimedAt,
     });
   }
 
@@ -361,8 +366,8 @@ export class GuestAgentService {
       const body = new URLSearchParams({ secret: turnstile.secretKey, response: token });
       if (address && address !== 'unknown') body.set('remoteip', address);
       const res = await (this.deps.fetch ?? fetch)('https://challenges.cloudflare.com/turnstile/v0/siteverify', { method: 'POST', body });
-      const answer = await res.json() as { success?: boolean };
-      return answer.success === true;
+      const answer = await res.json() as { success?: boolean; action?: string };
+      return answer.success === true && (!answer.action || answer.action === GUEST_TURNSTILE_ACTION);
     } catch (error) {
       console.warn('[guest] turnstile check failed:', error instanceof Error ? error.message : error);
       return false;

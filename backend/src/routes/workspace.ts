@@ -3477,7 +3477,7 @@ self.addEventListener('activate', (event) => {
     status.agent ? { ...status, agent: { ...status.agent, avatarUrl: status.agent.avatarUrl ?? agentFaceUrl(status.agent.name) ?? null } } : status
   );
   const restingGuestStatus = (): GuestStatus => ({
-    state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, quietUntil: null, endsAt: null,
+    state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
     messagesLeft: null, linePosition: null, until: null, removedReason: null, turnstileSiteKey: null,
     limits: { messageMaxChars: GUEST_AGENT_LIMITS.messageMaxChars, quietMinutes: 30, lifetimeHours: 3, messagesMax: GUEST_AGENT_LIMITS.messagesMax },
   });

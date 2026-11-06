@@ -152,6 +152,10 @@ export interface GuestStatus {
   turn: { turnId: string } | null;
   /** While `creating`. */
   steps: GuestCreateStep[] | null;
+  /** While `creating`: about how long it takes in all (about 15 s from a spare, about 120 s from nothing). */
+  estimateSeconds: number | null;
+  /** When the visitor made it (ISO). */
+  createdAt: string | null;
   /** When the agent goes if it stays quiet (ISO). */
   quietUntil: string | null;
   /** When its 3 hours end (ISO). */
@@ -169,9 +173,12 @@ export interface GuestStatus {
   limits: { messageMaxChars: number; quietMinutes: number; lifetimeHours: number; messagesMax: number };
 }
 
+/** The Turnstile widget's action; a token made for another action is refused. */
+export const GUEST_TURNSTILE_ACTION = 'make-guest-agent';
+
 /** POST /workspace/api/public/guest — Make my agent. */
 export interface GuestCreateRequest {
-  /** The Turnstile token from the invisible widget (required while the check is on). */
+  /** The Turnstile token from the invisible widget (required while the check is on), rendered with action GUEST_TURNSTILE_ACTION. */
   turnstileToken?: string;
 }
 
