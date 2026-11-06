@@ -296,8 +296,8 @@ becomes their own email address on its domain.
   from us.
 - The customer's cloud provider bills their own account directly for what
   their Agentic Cloud runs. Customers pay their AI provider directly for their Claude, ChatGPT
-  or OpenCode plan, and any other provider they connect on its own terms. More
-  agents working at the same time means another subscription.
+  or OpenCode plan, and any other provider they connect on its own terms.
+  Several agents can share one seat, and more seats run more agents at once.
 
 ## Data and control
 

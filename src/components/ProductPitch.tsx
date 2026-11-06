@@ -284,8 +284,8 @@ export default function ProductPitch({ on }: { on: 'product' | 'home' }) {
             <h2 className={H2}>More subscriptions, more agents at once.</h2>
             <p className={`mt-5 max-w-[470px] ${LEAD}`}>
               Your agents run the real Claude Code, Codex and OpenCode, on the subscription you
-              already pay for. Sign in once and every agent uses it. Need more agents working at
-              the same time? Add another subscription. The computers, hosting and storage run in
+              already pay for. Sign in once and every agent can share it; add a subscription to run
+              more of them at once. The computers, hosting and storage run in
               your own cloud account, and the subscriptions stay yours.
             </p>
           </div>

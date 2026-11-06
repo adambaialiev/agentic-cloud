@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type {
   WorkspaceChatMessage,
-  WorkspaceKnowledgeProposalRow,
+  WorkspaceKnowledgePageRow,
   WorkspaceNoteRow,
   WorkspaceOrgMember,
   WorkspaceProposalRow,
@@ -9,7 +9,8 @@ import type {
 } from '../../backend/src/shared/workspace-api';
 import { ChatMessageRow } from '../../backend/workspace-ui/src/screens/chat/ChatMessageRow';
 import { AgentRow } from '../../backend/workspace-ui/src/screens/home/Agents';
-import { KnowledgeProposalRow, ProposalRow } from '../../backend/workspace-ui/src/screens/home/Decisions';
+import { ProposalRow } from '../../backend/workspace-ui/src/screens/home/Decisions';
+import { KnowledgeRow } from '../../backend/workspace-ui/src/screens/knowledge/KnowledgeRow';
 import { SiteRow } from '../../backend/workspace-ui/src/screens/home/Sites';
 import { agentRuntimeLine } from '../../backend/workspace-ui/src/screens/home/agent-words';
 import { NoteRow } from '../../backend/workspace-ui/src/screens/notes/NoteRow';
@@ -25,7 +26,7 @@ import { DAY, FACES, HERO_FLEET_BEYOND, HOUR, JAMES, MINUTE, ago, useHydrated, u
 /**
  * The hero's picture since note #185 (the owner, 2026-10-08): one row of
  * cards that never stops moving — the people, their agents, and what passes
- * between them in a working day. A proposal, a knowledge proposal, a site
+ * between them in a working day. A proposal, a knowledge page, a site
  * going live, a note handed to an agent, one agent writing to another.
  *
  * Every card is the Workspace's own row component, as on the rest of the page
@@ -77,17 +78,19 @@ const PROPOSAL: WorkspaceProposalRow = {
   checks: { total: 2, failing: 0, pending: 0, worst: 'success' },
 };
 
-const KNOWLEDGE: WorkspaceKnowledgeProposalRow = {
-  id: 'kp_4',
-  number: 4,
+/* Otis's on-call page, live in knowledge: since note #746 a knowledge
+   change lands at once and nobody decides it, so since note #1016 the row is
+   the page itself (Home's KnowledgeRow), not a proposal waiting. */
+const KNOWLEDGE_PAGE: WorkspaceKnowledgePageRow = {
+  name: 'pipeline-on-call',
   title: 'On-call for the pings pipeline',
-  status: 'open',
-  pages: ['pipeline-on-call'],
-  createdAt: ago(3 * HOUR),
+  description: 'What each alert means and what to do',
+  sizeBytes: 4_200,
+  sha: 'fixture-pipeline-on-call',
+  updatedAt: ago(3 * HOUR),
   agentName: 'Otis',
   agentAvatarUrl: FACES.otis,
   agentId: 'agent_otis',
-  canDecide: true,
 };
 
 const SITE: WorkspaceSiteRow = {
@@ -203,7 +206,7 @@ function Drawn({ card, agents, now }: { card: Card; agents: HomeAgent[]; now: nu
     case 'proposal':
       return <div className="card"><ProposalRow pr={PROPOSAL} /></div>;
     case 'knowledge':
-      return <div className="card"><KnowledgeProposalRow proposal={KNOWLEDGE} /></div>;
+      return <div className="card"><KnowledgeRow page={KNOWLEDGE_PAGE} now={now} /></div>;
     case 'site':
       return <div className="card"><SiteRow site={SITE} /></div>;
     case 'handoff':
@@ -235,7 +238,7 @@ export default function LiveMarquee({ className = '' }: { className?: string }) 
     <LivePanel
       size="wide"
       className={`landing-marquee ${className}`}
-      says="A moving row of the Workspace’s cards. James, who drives eighteen agents, then Ruby and Milo, both on Claude Code and mid-job, and Ruby asking Milo, in his chat, whether billing counts a van’s return leg, and his answer. Otis, on Codex and ready, and Theo, with Ruby’s proposal #41, the batch route optimiser, and Otis’s knowledge proposal, on-call for the pings pipeline, both waiting for a decision. Ada, on Codex, the dispatch app she published, and James handing Mia a note: page on-call when a van stops pinging. Then Mia, Nora and Finn."
+      says="A moving row of the Workspace’s cards. James, who drives eighteen agents, then Ruby and Milo, both on Claude Code and mid-job, and Ruby asking Milo, in his chat, whether billing counts a van’s return leg, and his answer. Otis, on Codex and ready, and Theo, with Ruby’s proposal #41, the batch route optimiser, waiting for a decision, and Otis’s knowledge page, on-call for the pings pipeline, already live. Ada, on Codex, the dispatch app she published, and James handing Mia a note: page on-call when a van stops pinging. Then Mia, Nora and Finn."
     >
       <LiveWorkspace agents={agents} sites={[SITE]}>
         <div className="landing-marquee-track">
