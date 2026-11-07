@@ -262,7 +262,16 @@ const app = express();
 // Production terminates HTTPS in the same-host reverse proxy. Trust only that
 // loopback hop so auth rate limits see the visitor address from
 // X-Forwarded-For without accepting a spoofed header on a direct connection.
-app.set('trust proxy', 'loopback');
+//
+// On Fly (note #1032, stage 4) the hop is Fly's proxy, which connects from
+// 172.16.0.0/12, and during the move also ia-backend's Caddy over WireGuard.
+// TRUST_PROXY names those hops (Express's comma list). Left at loopback, every
+// visitor would arrive as the proxy's one address and share a single sign-in
+// rate limit. Never a whole fdaa range: any machine on the private network
+// could then claim to be anyone.
+const TRUST_PROXY = process.env.TRUST_PROXY?.trim() || 'loopback';
+app.set('trust proxy', TRUST_PROXY);
+if (TRUST_PROXY !== 'loopback') console.log(`[config] TRUST_PROXY=${TRUST_PROXY}`);
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGINS = resolveAllowedCorsOrigins(process.env.CORS_ORIGIN);
 const CORS_ORIGIN = CORS_ORIGINS[0];

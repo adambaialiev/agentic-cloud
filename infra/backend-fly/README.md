@@ -22,6 +22,11 @@ and `set-machine-image` drive both the same way. Private copies run
 | `/data/log/backend.log` | the backend's output, 100 MB × 5 (it also goes to `fly logs`) |
 | `/data/state/backend.enabled` | present = serve; absent = hold nothing, run nothing |
 
+**`TRUST_PROXY`** in `backend.env` must name Fly's proxy
+(`loopback,172.16.0.0/12`). Otherwise every visitor arrives as the proxy's
+address and they all share one sign-in rate limit. While ia-backend's Caddy
+still forwards to this machine, its WireGuard address is on the list too.
+
 **Two backends must never run at once.** A new or restored machine boots with
 `enabled` absent, reachable over SSH and serving nothing, until someone runs
 `systemctl enable infinite-agents-backend.service infinite-agents-backend.socket && systemctl start infinite-agents-backend`
