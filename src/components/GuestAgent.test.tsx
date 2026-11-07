@@ -91,6 +91,11 @@ describe('GuestAgentSection (note #1039)', () => {
     draw();
     await flush();
     expect(h2()).toBe(GUEST_HEADING);
+    // Note #1046 (Adam, 7 Nov 2026): his words, exactly.
+    expect(GUEST_HEADING).toBe('Meet your first agent. It knows us inside out.');
+    expect(words()).toContain('A real Claude Code agent with our whole code and documentation to read. Ask it anything about the product, get advice on your setup, watch it work. Then delete it.');
+    expect(words()).not.toMatch(/Make an agent of your own|computer of its own, reading our open-source code/);
+    expect(document.querySelector('#your-agent')!.getAttribute('aria-label')).toBe('Meet your first agent');
     // Decision 11 (Adam, 17:24 UTC): exactly these two chips.
     expect([...document.querySelectorAll('[data-guest-chips] li')].map((li) => li.textContent)).toEqual(['2 cores its own', 'Sonnet high effort']);
     expect(GUEST_CHIPS).toHaveLength(2);

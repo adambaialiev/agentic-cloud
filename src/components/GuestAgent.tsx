@@ -42,8 +42,15 @@ import {
    claims-we-never-make: nothing says the conversation is deleted (Adam
    keeps transcripts 90 days), nothing says free or hosted. */
 
-export const GUEST_HEADING = 'Make an agent of your own.';
-export const GUEST_LEAD = 'A real Claude Code agent on a computer of its own, reading our open-source code. Ask it anything. Delete it when you’re done.';
+/* The heading and the line since note #1046 (Adam, 7 Nov 2026, 13:35 UTC:
+   "customer should understand that the agent is able to answer questions
+   about the product. that it has access to the code and documentation.
+   agent is able to help and consult"; he picked option B). Until then
+   "Make an agent of your own." and "A real Claude Code agent on a computer
+   of its own, reading our open-source code. Ask it anything. Delete it when
+   you're done." (note #1039). The chips, the button and the sleep line stay. */
+export const GUEST_HEADING = 'Meet your first agent. It knows us inside out.';
+export const GUEST_LEAD = 'A real Claude Code agent with our whole code and documentation to read. Ask it anything about the product, get advice on your setup, watch it work. Then delete it.';
 export const GUEST_CHIPS: ReadonlyArray<[string, string]> = [['2 cores', 'its own'], ['Sonnet', 'high effort']];
 export const GUEST_MAKE = 'Make my agent';
 export const GUEST_LIFE_LINE = 'It sleeps when you’re quiet, and goes after 30 quiet minutes.';
@@ -439,7 +446,7 @@ export function GuestAgentSection() {
   };
 
   return (
-    <Screen id="your-agent" label="Make an agent of your own">
+    <Screen id="your-agent" label="Meet your first agent">
       <div data-guest-view={view.kind} aria-live="polite">
         {view.kind === 'loading' || view.kind === 'invite' ? (
           <Invite making={making} problem={view.kind === 'invite' ? view.problem : undefined} onMake={make} />
