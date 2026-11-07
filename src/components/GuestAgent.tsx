@@ -84,6 +84,26 @@ export function removedWords(name: string, reason: GuestRemovedReason | null | u
   return `${name} was removed.`;
 }
 
+/* When guests answer again, in the visitor's own clock, with the day when it
+   is not today (note #1049: on 7 Nov the route rested until 9 Nov 10:00 UTC
+   and the screen said only "until 10:00"). `until` follows "resting until",
+   `at` follows "make another". */
+export function whenWords(iso: string | null | undefined, now = new Date()): { until: string; at: string } | null {
+  const time = localTime(iso ?? undefined);
+  if (!time || !iso) return null;
+  const then = new Date(iso);
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(then) - day(now)) / 86_400_000);
+  if (days <= 0) return { until: time, at: `at ${time}` };
+  if (days === 1) return { until: `tomorrow at ${time}`, at: `tomorrow at ${time}` };
+  if (days < 7) {
+    const weekday = then.toLocaleDateString('en-GB', { weekday: 'long' });
+    return { until: `${weekday} at ${time}`, at: `on ${weekday} at ${time}` };
+  }
+  const date = then.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  return { until: `${date} at ${time}`, at: `on ${date} at ${time}` };
+}
+
 /** Minutes left before it goes, from an ISO time; null when unknown. */
 export function minutesLeft(iso: string | null | undefined, now = Date.now()): number | null {
   if (!iso) return null;
@@ -495,7 +515,7 @@ export function GuestAgentSection() {
         ) : null}
         {view.kind === 'resting' ? (
           <Ending
-            title={localTime(view.until ?? undefined) ? `Guest agents are resting until ${localTime(view.until ?? undefined)}.` : 'Guest agents are resting for now.'}
+            title={whenWords(view.until) ? `Guest agents are resting until ${whenWords(view.until)!.until}.` : 'Guest agents are resting for now.'}
             line="Come back then and make one. Or build your own Agentic Cloud now, with your own Claude plan."
           >
             <BuildYours ink />
@@ -504,7 +524,7 @@ export function GuestAgentSection() {
         {view.kind === 'limited' ? (
           <Ending
             title="That’s three agents from here today."
-            line={localTime(view.until ?? undefined) ? `You can make another at ${localTime(view.until ?? undefined)}. Or build your own Agentic Cloud now.` : 'You can make another tomorrow. Or build your own Agentic Cloud now.'}
+            line={whenWords(view.until) ? `You can make another ${whenWords(view.until)!.at}. Or build your own Agentic Cloud now.` : 'You can make another tomorrow. Or build your own Agentic Cloud now.'}
           >
             <BuildYours ink />
           </Ending>
@@ -517,7 +537,7 @@ export function GuestAgentSection() {
 }
 
 function restingNotice(until: string | null): string {
-  const at = localTime(until ?? undefined);
+  const at = whenWords(until)?.until;
   return at ? `Guest agents are resting until ${at}. Your agent waits for you.` : 'Guest agents are resting for now. Your agent waits for you.';
 }
 

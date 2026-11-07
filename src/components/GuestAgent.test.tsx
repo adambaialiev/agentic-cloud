@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GuestAgentSection, lineWords, minutesLeft, removedWords, workingWords } from './GuestAgent';
+import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GuestAgentSection, lineWords, minutesLeft, removedWords, whenWords, workingWords } from './GuestAgent';
 import {
   GUEST_CREATING_POLL_MS,
   GUEST_IDLE_POLL_MS,
@@ -387,6 +387,24 @@ describe('GuestAgentSection (note #1039)', () => {
     await flush();
     expect(h2()).toBe('Juno couldn’t be made.');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+
+  // Note #1049: on 7 Nov the route rested until 9 Nov 10:00 UTC and the
+  // screen said only "until 10:00", which reads as today.
+  it('names the day when the resting time is not today', async () => {
+    const now = new Date(2026, 10, 7, 14, 0); // Saturday 7 Nov, local
+    const at = (d: number, h: number) => new Date(2026, 10, d, h, 0).toISOString();
+    expect(whenWords(at(7, 18), now)).toEqual({ until: '18:00', at: 'at 18:00' });
+    expect(whenWords(at(8, 10), now)).toEqual({ until: 'tomorrow at 10:00', at: 'tomorrow at 10:00' });
+    expect(whenWords(at(9, 10), now)).toEqual({ until: 'Monday at 10:00', at: 'on Monday at 10:00' });
+    expect(whenWords(at(20, 10), now)).toEqual({ until: '20 November at 10:00', at: 'on 20 November at 10:00' });
+    expect(whenWords(null, now)).toBeNull();
+
+    vi.setSystemTime(now);
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'resting', until: at(9, 10) }) });
+    draw();
+    await flush();
+    expect(h2()).toBe('Guest agents are resting until Monday at 10:00.');
   });
 
   it('counts the minutes left, the place in line and the work in words', () => {
