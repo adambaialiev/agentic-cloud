@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MachineImageUpdater } from '../../services/machine-image-updater.js';
+import { machineImageTag } from '../../services/machine-image-tag.js';
 
 const APP = 'ia-app1';
 const MACHINE = 'aa11bb22';
@@ -577,5 +578,54 @@ describe('per-app client resolution (byo-fly)', () => {
     expect(result.outcome).toBe('failed');
     expect(getMachine).not.toHaveBeenCalled();
     expect(updateMachine).not.toHaveBeenCalled();
+  });
+});
+
+describe('the roll after a pin bump at an unchanged commit (note #1052)', () => {
+  // The case trap 2 was: same commit, new pins. The tag carries both now, so
+  // the roller's plain string comparison is the right one and needs no digest.
+  const BEFORE = `ghcr.io/acme/ia-machine-images:${machineImageTag('0477944f1b34', {
+    claude: '2.1.316', codex: '0.166.0', opencode: '1.19.5',
+  })}`;
+  const AFTER = `ghcr.io/acme/ia-machine-images:${machineImageTag('0477944f1b34', {
+    claude: '2.1.316', codex: '0.167.0', opencode: '1.19.5',
+  })}`;
+
+  it('offers the rebuilt image to a machine on the old contents', async () => {
+    const { updater, updateMachine } = makeUpdater({
+      targetImage: AFTER,
+      reads: [machine({ config: { image: BEFORE } }), machine({ config: { image: AFTER } })],
+    });
+    const result = await updater.rollWhileStopped({
+      sandboxId: SANDBOX_ID, listedImage: BEFORE, listedRootfsPersist: 'restart',
+    });
+    expect(result).toEqual({ outcome: 'rolled', fromImage: BEFORE, toImage: AFTER });
+    expect(updateMachine.mock.calls[0][2].image).toBe(AFTER);
+  });
+
+  it('moves a machine still on a tag that named only the commit', async () => {
+    const legacy = 'ghcr.io/acme/ia-machine-images:sha-0477944f1b34';
+    const { updater } = makeUpdater({
+      targetImage: AFTER,
+      reads: [machine({ config: { image: legacy } }), machine({ config: { image: AFTER } })],
+    });
+    expect((await updater.rollWhileStopped({ sandboxId: SANDBOX_ID })).outcome).toBe('rolled');
+  });
+
+  it('calls a machine on the same commit and the same pins current, with no write', async () => {
+    const { updater, updateMachine, getMachine } = makeUpdater({ targetImage: AFTER });
+    const result = await updater.rollWhileStopped({
+      sandboxId: SANDBOX_ID, listedImage: AFTER, listedRootfsPersist: 'restart',
+    });
+    expect(result.outcome).toBe('current');
+    expect(getMachine).not.toHaveBeenCalled();
+    expect(updateMachine).not.toHaveBeenCalled();
+  });
+
+  it('reads status as not current until the machine is on the new tag', async () => {
+    const { updater } = makeUpdater({ targetImage: AFTER, reads: [machine({ config: { image: BEFORE } })] });
+    expect(await updater.readStatus({ sandboxId: SANDBOX_ID })).toEqual({
+      target: AFTER, observed: BEFORE, current: false,
+    });
   });
 });

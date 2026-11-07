@@ -60,7 +60,7 @@ validated Fly token before any Fly resource can be created or touched.
 
 ### 3. Public image (this slice)
 Both image tags move to one public GHCR package,
-`ghcr.io/<owner>/ia-machine-images` (`sha-<12>` = machine image,
+`ghcr.io/<owner>/ia-machine-images` (`sha-<12>`, since note #1052 `sha-<12>-c<claude>-x<codex>-o<opencode>`, = machine image,
 `app-v2` = deployment runtime). The `machine-image` CI job pushes both
 registries and repoints the fleet at the ghcr ref; the Fly-org copy stays as
 the rollback path. `set-machine-image` now takes a two-entry registry

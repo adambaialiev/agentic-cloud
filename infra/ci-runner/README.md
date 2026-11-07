@@ -214,8 +214,8 @@ that does not run.
 The job builds the image, runs `smoke-test.sh` (boots it, SSHes in, checks the
 CLIs, installs a `~/.boot.d` hook, then recreates the container on the same
 volume and verifies the home data and hook survived), pushes to
-`ghcr.io/<owner>/ia-machine-images:sha-<12>` (public — what the fleet
-boots from, client orgs included) and `registry.fly.io/ia-machine-images:sha-<12>`
+`ghcr.io/<owner>/ia-machine-images:sha-<12>-c<claude>-x<codex>-o<opencode>` (public — what the fleet
+boots from, client orgs included) and `registry.fly.io/ia-machine-images:` the same tag
 (the rollback copy), and finally calls `set-machine-image` on the backend host
 with the ghcr ref so new machines actually boot it. Needs `GHCR_PUSH_TOKEN`
 (a classic PAT with `write:packages`) and `GHCR_OWNER` (the ghcr.io account
@@ -233,9 +233,19 @@ the repoint against — neither name lives in this repository.
   to force the rest immediately.
 - **No flyctl needed:** the Fly registry accepts the API token as a docker
   password, so `docker login registry.fly.io -u x` is the whole auth step.
-- **The label matches the workflow's** (`sha-` + 12 chars), so if Actions is
-  ever unfrozen and both run, they build the same tag and `set-machine-image`
-  is a no-op the second time. Nothing needs disabling.
+- **The tag names everything the image is built from** (note #1052): the
+  commit AND the three pinned CLIs, for example
+  `sha-0477944f1b34-c2.1.316-x0.166.0-o1.19.5` (`+` in a version is written
+  `_`). Until then it was `sha-<12>` alone, so a pin bump rebuilt at an
+  unchanged commit pushed new bytes under the old tag, and the image roller —
+  which compares tags — read every machine on the old bytes as current. Now a
+  bump is a new tag. And **a published tag is never pushed over**: before
+  building, the job asks ghcr whether the tag exists; if it does (same commit,
+  same pins), it only repoints. One tag is one set of bytes. If ghcr gives no
+  clear answer the job fails rather than guess. The bash `machine_image_label`
+  mirrors `machineImageTag()` in `backend/src/services/machine-image-tag.ts`;
+  `machine-image-tag.test.ts` runs both. The GitHub workflow's `sha-<12>` label
+  no longer matches — it has been frozen since 2026-07-30; leave it frozen.
 - **CLI versions come from the fleet pin, never npm latest** (since 2026-08-08).
   The job reads `GET /api/harness-cli-versions` off the backend host and passes
   the exact versions as build args; a missing or invalid pin fails the build
