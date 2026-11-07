@@ -321,6 +321,12 @@ export interface RouteDeps {
    */
   copyAlerts?: import('../services/copy-alerts.js').CopyAlertSweep;
   /**
+   * The daily pulse, the COPY's side (note #1057): the admin's screen reads
+   * what was last sent and changes the contact and the off switch. Only set
+   * in a private copy.
+   */
+  copyPulse?: import('../services/copy-pulse-sender.js').CopyPulseSender;
+  /**
    * A private copy's licence (note #814): admins paste a renewal at
    * `POST api/copy/licence`, and a new person or agent is refused in words
    * at the people limit or once it has lapsed. Unset here, and in a copy

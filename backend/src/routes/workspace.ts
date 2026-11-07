@@ -243,7 +243,7 @@ import { deleteRepoNow, isRestorableRepo } from '../services/git-repo-admin.js';
 import type { GitPullRequestDocument, PullRequestAttachment } from '../types/git-pr.js';
 import { CopyMailSetupError } from '../services/copy-mail-setup.js';
 import { CopyUpgradeRefused } from '../services/copy-upgrade.js';
-import type { WorkspaceCopyMailProviderInput } from '../shared/workspace-api.js';
+import type { WorkspaceCopyPulse, WorkspaceCopyMailProviderInput } from '../shared/workspace-api.js';
 import { LICENSE_FILE, detectLicense, readmeDescription } from '../shared/licenses.js';
 import { orgKnowledgeShelfNamespace, type GitNamespace } from '../services/org-git.js';
 import { pickNumbered, workplaceNumberSeries, type NumberSeries } from '../services/workplace-numbers.js';
@@ -12954,6 +12954,46 @@ self.addEventListener('activate', (event) => {
     const mail = await copyMailAdmin(req, res);
     if (!mail) return;
     return copyMailAnswer(res, () => mail.check());
+  });
+
+  /**
+   * "What we tell Agentic Cloud" (note #1057): the daily pulse as this copy's
+   * admin sees and steers it — the contact person, the off switch, and the
+   * last pulse exactly as sent. Admins of the workplace only; not a copy, no
+   * screen.
+   */
+  const copyPulseAdmin = async (req: Request, res: Response) => {
+    if (!deps.copyPulse) {
+      res.status(404).json({ error: 'Only your own Agentic Cloud sends a daily report.' });
+      return null;
+    }
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    const ctx = await requireMembership(auth, res);
+    if (!ctx) return null;
+    if (ctx.membership.role !== 'admin') {
+      res.status(403).json({ error: 'Only an admin sees and changes what this copy tells Agentic Cloud.' });
+      return null;
+    }
+    return deps.copyPulse;
+  };
+  router.get('/api/copy/pulse', async (req, res) => {
+    const pulse = await copyPulseAdmin(req, res);
+    if (!pulse) return;
+    return res.json(await pulse.view() satisfies WorkspaceCopyPulse);
+  });
+  router.post('/api/copy/pulse/contact', async (req, res) => {
+    const pulse = await copyPulseAdmin(req, res);
+    if (!pulse) return;
+    const changed = await pulse.setContact(req.body?.name, req.body?.email);
+    if (!changed.ok) return res.status(400).json({ error: changed.error });
+    return res.json(changed.view satisfies WorkspaceCopyPulse);
+  });
+  router.post('/api/copy/pulse/enabled', async (req, res) => {
+    const pulse = await copyPulseAdmin(req, res);
+    if (!pulse) return;
+    if (typeof req.body?.on !== 'boolean') return res.status(400).json({ error: 'Say on: true or on: false.' });
+    return res.json(await pulse.setEnabled(req.body.on) satisfies WorkspaceCopyPulse);
   });
 
   router.get('/api/copy/diagnostics', async (req, res) => {

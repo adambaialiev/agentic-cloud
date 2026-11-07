@@ -192,7 +192,7 @@ function harness({ billing = 'CURRENT', failOnce, stuckCert, dnsNever = false } 
     authoritativeResolver: async () => ({ zone: 'theirco.test', resolver: fakeResolver(zone) }),
     smokeTest: async () => [{ what: 'everything', ok: true, detail: 'fine' }],
   };
-  const options = { org: 'theirco-org', domain: DOMAIN, 'key-file': keyFile, 'licence-file': licenceFile, state: path.join(dir, 'theirco-copy.json') };
+  const options = { org: 'theirco-org', domain: DOMAIN, 'key-file': keyFile, 'licence-file': licenceFile, state: path.join(dir, 'theirco-copy.json'), 'contact-email': 'it@theirco.test', 'contact-name': 'Theirco IT' };
   return {
     dir, options, deps, fly: flyFake, lines, copied, stateText: () => readFileSync(options.state, 'utf8'), addDns: () => { dnsAdded = true; },
   };
@@ -781,7 +781,7 @@ describe('the command line', () => {
     writeFileSync(flyctl, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     try {
       const { code, out } = await run([
-        'install', '--org', 'theirco-org', '--domain', DOMAIN, '--key-file', h.options['key-file'], '--licence-file', h.options['licence-file'],
+        'install', '--org', 'theirco-org', '--domain', DOMAIN, '--contact-email', 'it@theirco.test', '--key-file', h.options['key-file'], '--licence-file', h.options['licence-file'],
         '--state', h.options.state, '--updates', `http://127.0.0.1:${server.address().port}`, '--plan', '--json',
       ], { FLYCTL: flyctl, FLY_API_TOKEN: '' });
       const lines = out.trim().split('\n').map((line) => JSON.parse(line));
@@ -1104,5 +1104,57 @@ describe('the upgrader machine (note #1008): the same upgrade, outside every app
       accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', region: 'us-east-1', now: new Date('2013-05-24T00:00:00Z'),
     });
     expect(signed.authorization).toBe('AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41');
+  });
+});
+
+describe('the contact person (note #1057)', () => {
+  it('will not install without a contact email, and asks before it creates anything', async () => {
+    const h = harness();
+    const { 'contact-email': _email, 'contact-name': _name, ...without } = h.options;
+    let thrown;
+    try { await installer.install(without, h.deps); } catch (error) { thrown = error; }
+    expect(thrown?.name).toBe('PersonNeeded');
+    expect(thrown?.reason).toBe('contact');
+    expect(thrown?.message).toContain('--contact-email');
+    expect(writes(h.fly.calls)).toEqual([]);
+    expect(existsSync(h.options.state)).toBe(false);
+  });
+
+  it('refuses an address that is not one', async () => {
+    const h = harness();
+    for (const bad of ['nobody', 'a b@c.d', true]) {
+      let thrown;
+      try { await installer.install({ ...h.options, 'contact-email': bad }, h.deps); } catch (error) { thrown = error; }
+      expect(thrown?.reason, String(bad)).toBe('contact');
+    }
+  });
+
+  it('the plan names it as something a person gives, and shows it once given', async () => {
+    const h = harness();
+    const { 'contact-email': _email, 'contact-name': _name, ...without } = h.options;
+    const missing = await installer.plan(without, h.deps);
+    expect(missing.exitCode).toBe(3);
+    expect(missing.checks.find((check) => check.key === 'contact')).toMatchObject({ ok: false, who: 'person', reason: 'contact' });
+    const given = await installer.plan(h.options, h.deps);
+    expect(given.checks.find((check) => check.key === 'contact')).toMatchObject({ ok: true });
+    expect(given.checks.find((check) => check.key === 'contact').detail).toContain('Theirco IT <it@theirco.test>');
+  });
+
+  it('hands the contact to the backend, and a run that carries on keeps it', async () => {
+    const h = harness();
+    await installer.install(h.options, h.deps);
+    const state = JSON.parse(readFileSync(h.options.state, 'utf8'));
+    expect(state.extraEnv.backend).toMatchObject({ COPY_CONTACT_EMAIL: 'it@theirco.test', COPY_CONTACT_NAME: 'Theirco IT' });
+    const { 'contact-email': _email, 'contact-name': _name, ...again } = h.options;
+    await installer.install(again, h.deps);
+    const after = JSON.parse(readFileSync(h.options.state, 'utf8'));
+    expect(after.extraEnv.backend).toMatchObject({ COPY_CONTACT_EMAIL: 'it@theirco.test', COPY_CONTACT_NAME: 'Theirco IT' });
+  });
+
+  it('takes the address as the name when no name is given, and a new address on a later run', () => {
+    expect(installer.contactFor({ 'contact-email': 'ops@theirco.test' }, null)).toEqual({ email: 'ops@theirco.test', name: 'ops@theirco.test' });
+    const state = { extraEnv: { backend: { COPY_CONTACT_EMAIL: 'it@theirco.test', COPY_CONTACT_NAME: 'Theirco IT' } } };
+    expect(installer.contactFor({}, state)).toEqual({ email: 'it@theirco.test', name: 'Theirco IT' });
+    expect(installer.contactFor({ 'contact-email': 'new@theirco.test' }, state)).toEqual({ email: 'new@theirco.test', name: 'new@theirco.test' });
   });
 });

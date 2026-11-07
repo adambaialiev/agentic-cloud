@@ -1762,6 +1762,33 @@ export interface WorkspaceCopyRelease {
 /** GET api/copy/releases — a private copy only, for its admins (note
  *  #1006): every release newer than the running one, newest first, then the
  *  running one itself. */
+/**
+ * "What we tell Agentic Cloud" (note #1057): a private copy's daily pulse as
+ * its admin sees it — the contact person, the off switch, and the last pulse
+ * exactly as it was sent.
+ */
+export interface WorkspaceCopyPulse {
+  copyId: string;
+  contactName: string | null;
+  contactEmail: string | null;
+  /** Where the contact came from: the installer, the first admin, or an admin here. */
+  contactFrom: 'install' | 'first-admin' | 'admin' | null;
+  pulseEnabled: boolean;
+  /** COPY_LICENCE=on: the licence includes the pulse, so the switch is ignored. */
+  licenceKeepsOn: boolean;
+  sendsTo: string | null;
+  lastPulse: {
+    /** The JSON body exactly as sent; null when it could not be built. */
+    body: string | null;
+    sentAt: string;
+    reason: 'daily' | 'boot' | 'contact-changed';
+    delivered: boolean;
+    error?: string;
+  } | null;
+  lastDeliveredAt: string | null;
+  nextDailyAt: string | null;
+}
+
 export interface WorkspaceCopyReleases {
   updates: WorkspaceCopyUpdates;
   releases: WorkspaceCopyRelease[];

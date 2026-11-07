@@ -5,7 +5,12 @@
  * packages. The Fly token is FLY_API_TOKEN (or flyctl's own sign-in).
  *
  *   node install.mjs install --org <fly organization> --domain <copy's domain> \
+ *        --contact-email <address> [--contact-name <name>] \
  *        [--name <prefix>] [--region <code>] [--release <version|latest>]
+ *
+ * The contact (note #1057) is who we write to about this copy. It rides the
+ * copy's daily report, signed, with counts and nothing else, and an admin
+ * changes it, or turns the report off, in the Workspace.
  *
  * Email is not part of the install (note #946): nothing here asks for a mail
  * provider, makes a mail receiver or prints a mail record. People's addresses
@@ -292,6 +297,26 @@ const DOMAIN_NEEDED = '--domain is the name your own Agentic Cloud lives on, lik
 const PREFIX_NEEDED = '--name is a short lowercase prefix for its app names, like theirco.';
 const NO_TOKEN = 'No Fly token: set FLY_API_TOKEN, or sign in with `fly auth login`.';
 const keyForAnotherDomain = (updateKey, domain) => `This update key was issued for ${updateKey.domain}, not ${domain}. Ask us for a key for ${domain}, or use that domain.`;
+
+/** The contact person (note #1057): who Agentic Cloud writes to about this copy. */
+const CONTACT_NEEDED = '--contact-email is who Agentic Cloud writes to about this copy (with --contact-name for their name; the address alone is fine). It rides the copy\'s daily report, the one piece of personal data in it, and an admin can change it any time in the Workspace. Give the first admin\'s address if unsure.';
+const EMAIL_SHAPE = /^[^\s@<>]{1,64}@[^\s@<>]{1,253}$/;
+
+/**
+ * The contact person, from the flags or, on a run that carries on, from the
+ * state file. The install cannot finish without an email: a person is asked
+ * (exit 3, reason "contact") before anything is created. It reaches the
+ * backend as COPY_CONTACT_EMAIL / COPY_CONTACT_NAME, which the copy keeps as
+ * its first contact; after that the Workspace is where it changes.
+ */
+export function contactFor(options, state) {
+  const kept = state?.extraEnv?.backend ?? {};
+  const email = String(options['contact-email'] ?? kept.COPY_CONTACT_EMAIL ?? '').trim();
+  if (!email || options['contact-email'] === true || !EMAIL_SHAPE.test(email)) throw new PersonNeeded('contact', CONTACT_NEEDED);
+  const given = typeof options['contact-name'] === 'string' ? options['contact-name'].trim() : '';
+  const name = (given || (options['contact-email'] ? '' : kept.COPY_CONTACT_NAME) || email).slice(0, 120);
+  return { email, name };
+}
 
 /** What the install says about email, wherever it says it. */
 export const MAIL_LATER = 'Email is not part of the install: once your own Agentic Cloud is up, an admin sets it up in the Workspace, under Mail, with the mail provider\'s details. The Workspace then creates the mail receiver in this same Fly organization and shows the records to add.';
@@ -835,6 +860,9 @@ export async function install(options, deps = {}) {
   Object.assign(state, { prefix, org, domain, customer: updateKey.customer });
   if (options['no-licence'] || !licensingOn()) state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv?.backend, COPY_LICENCE: 'off' } };
   else state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv?.backend, COPY_LICENCE: 'on' } };
+  // The contact person (note #1057), asked before anything is created.
+  const contact = contactFor(options, state);
+  state.extraEnv = { ...state.extraEnv, backend: { ...state.extraEnv.backend, COPY_CONTACT_EMAIL: contact.email, COPY_CONTACT_NAME: contact.name } };
 
   const bin = deps.flyctl ?? findFlyctl();
   if (!bin) throw new Error('flyctl is not installed. Install it (fly.io/docs/flyctl/install) and run this again.');
@@ -1937,6 +1965,10 @@ export async function plan(options, deps = {}) {
   }
   if (domainOk) await check('licence', async () => readLicence(options, domain, { resuming: Boolean(state) }).detail);
   await check('mail', async () => { refuseMailFlags(options); return 'not part of the install: an admin sets it up later in the Workspace, under Mail'; });
+  await check('contact', async () => {
+    const contact = contactFor(options, state);
+    return `${contact.name === contact.email ? contact.email : `${contact.name} <${contact.email}>`}, in the daily report; an admin can change it in the Workspace`;
+  });
 
   const bin = deps.flyctl ?? findFlyctl();
   let token = deps.token ?? process.env.FLY_API_TOKEN ?? '';
@@ -2184,7 +2216,7 @@ async function main() {
     return;
   }
   if (command !== 'copy') {
-    say('usage: node install.mjs install --org <fly organization> --domain <domain>');
+    say('usage: node install.mjs install --org <fly organization> --domain <domain> --contact-email <address> [--contact-name <name>]');
     say('         [--name <prefix>] [--region <code>] [--release <version>] [--wait <minutes>]');
     say('         [--key-file <update key file> --licence-file <licence file> | --no-licence]  (only with COPY_LICENCE=on)');
     say('         [--plan] [--json]');

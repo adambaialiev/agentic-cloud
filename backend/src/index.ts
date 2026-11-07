@@ -74,6 +74,10 @@ import { MediaBucketMirror } from './services/media-bucket-mirror.js';
 import { createCopyHealth } from './services/copy-health.js';
 import { createReleaseCheck, updatesUrlFrom } from './services/copy-release-check.js';
 import { InMemoryCopyPulseStore } from './services/copy-pulse-storage.js';
+import { InMemoryCopyPulseKeyStore, SqliteCopyPulseKeyStore } from './services/copy-pulse-keys.js';
+import { createCopyPulse, InMemoryCopyPulseSettingsStore, pulseUrlFrom, SqliteCopyPulseSettingsStore } from './services/copy-pulse-sender.js';
+import { collectCopyPulseFacts } from './services/copy-pulse-facts.js';
+import { copyPulseHandler } from './routes/copy-pulse.js';
 import { SqliteCopyPulseStore } from './services/sqlite/sqlite-copy-pulse-storage.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
@@ -1255,6 +1259,46 @@ const copyHealth = PRIVATE_COPY
       ...(copyReleaseCheck ? { updates: copyReleaseCheck } : {}),
     })
   : null;
+// The daily pulse, the copy's side (note #1057): counts and the contact
+// person, signed, to our backend once a day, at boot and when the contact
+// changes. The admin's off switch is in the Workspace; COPY_LICENCE=on keeps
+// it on. COPY_PULSE_URL points it at another receiver (a scratch one in tests).
+const copyPulse = PRIVATE_COPY
+  ? createCopyPulse({
+      store: sqliteDb ? new SqliteCopyPulseSettingsStore(sqliteDb) : new InMemoryCopyPulseSettingsStore(),
+      url: pulseUrlFrom(process.env.COPY_PULSE_URL),
+      domain: (() => { try { return new URL(process.env.WORKSPACE_URL ?? '').hostname; } catch { return ''; } })(),
+      release: process.env.COPY_RELEASE?.trim() || null,
+      installContact: { name: process.env.COPY_CONTACT_NAME, email: process.env.COPY_CONTACT_EMAIL },
+      // A copy installed before the installer asked: its first admin.
+      firstAdmin: async () => {
+        const admins = [];
+        for (const org of await orgStorage.listOrgs()) {
+          for (const member of await orgStorage.listMembers(org.orgId)) if (member.role === 'admin') admins.push(member);
+        }
+        admins.sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
+        const profile = admins[0] ? await userStorage.getProfile(admins[0].userId) : null;
+        return profile?.email ? { name: profile.displayName || profile.email, email: profile.email } : null;
+      },
+      licenceOn: COPY_LICENCE_ON,
+      collect: () => (sqliteDb
+        ? collectCopyPulseFacts({
+            db: sqliteDb,
+            countPeople: countCopyPeople,
+            lastBackupAt: () => (lastDbBackup?.ok ? lastDbBackup.at : null),
+            ...(sqliteDbPath ? { dataDir: dirnameNode(sqliteDbPath) } : {}),
+            ...(copyHealth ? { healthReport: () => copyHealth.report() } : {}),
+          })
+        : Promise.reject(new Error('no database to count from'))),
+      log: (line) => console.log(line),
+    })
+  : null;
+if (copyPulse) {
+  console.log(`[config] COPY_PULSE_URL=${copyPulse.url}`);
+  void copyPulse.start().catch((error) => console.warn('[copy-pulse] could not start:', error));
+}
+// Our side: the public half of each copy's pulse key (note #1057).
+const copyPulseKeys = PRIVATE_COPY ? null : sqliteDb ? new SqliteCopyPulseKeyStore(sqliteDb) : new InMemoryCopyPulseKeyStore();
 // The Upgrade button (note #1008): the Workspace starts the one-shot upgrader
 // in <prefix>-upgrader and reads the run record back from the backup bucket.
 let copyUpgraderReady = false;
@@ -2127,6 +2171,7 @@ const deps: RouteDeps = {
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
   ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
+  ...(copyPulse ? { copyPulse } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
   // Owner, 2026-10-11 (note #733): the Chief of Staff covers recaps now, so
@@ -2374,6 +2419,8 @@ app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 // anything over 25 MiB before we see it; the ceiling here is that plus the
 // envelope headers' worth of slack.
 app.use('/api/webhooks/mail/inbound', express.raw({ type: () => true, limit: '26mb' }));
+// A copy's pulse is signed over its exact bytes (note #1057): read it raw.
+app.use('/api/copy-pulse', express.raw({ type: () => true, limit: '64kb' }));
 app.use('/api/agent-cli/git/ci-webhook', express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-result', express.raw({ type: () => true, limit: '256kb' }));
 // The guests' model door (note #1038): the body passes byte for byte, so it is parsed raw, before JSON.
@@ -2421,6 +2468,12 @@ if (previewDomainService) {
  * them as exact versions after the same validation the script applies. A
  * partial pin is published as is; a copy adopts only a pin for every CLI.
  */
+// Where private copies' daily pulses arrive (note #1057): signed, checked,
+// kept as the copy's latest and its day's row for the Copies screen.
+if (copyPulses && copyPulseKeys) {
+  app.post('/api/copy-pulse', copyPulseHandler({ store: copyPulses, keys: copyPulseKeys, onPulse: () => deps.copyAlerts?.nudge() }));
+}
+
 app.get('/api/cli-pins', async (_req, res) => {
   try {
     const { claude, codex, opencode } = await harnessCliVersionService.getPinnedVersions();

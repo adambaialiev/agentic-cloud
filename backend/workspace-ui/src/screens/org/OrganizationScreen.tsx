@@ -38,6 +38,7 @@ import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { WorkplaceNameForm } from './WorkplaceNameForm.js';
 import { WorkplaceDeleteScreen } from './WorkplaceDeleteScreen.js';
 import { CopyHealthSection } from './CopyHealthSection.js';
+import { CopyPulseSection } from './CopyPulseSection.js';
 import { VoiceSection } from './VoiceSection.js';
 import { PRIVATE_COPY } from '../../../../src/shared/private-copy.js';
 
@@ -437,6 +438,8 @@ export function OrganizationScreen() {
       {org ? <BackupsSection org={org} /> : null}
       {/* A private copy's health and diagnostics, for its admins (note #813). */}
       {org && PRIVATE_COPY && org.role === 'admin' ? <CopyHealthSection /> : null}
+      {/* The daily report and its contact person (note #1057). */}
+      {org && PRIVATE_COPY && org.role === 'admin' ? <CopyPulseSection /> : null}
       {org && !soleAdmin
         ? (
           <>

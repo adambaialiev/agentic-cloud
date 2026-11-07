@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS copy_mail_setup (
   key TEXT PRIMARY KEY,
   doc TEXT NOT NULL
 );
+-- A copy's own settings for the daily pulse (note #1057): its copyId and
+-- signing key (the private half never leaves the copy), the contact person,
+-- the off switch, and the last pulse exactly as sent. Only a copy writes here.
+CREATE TABLE IF NOT EXISTS copy_settings (
+  key TEXT PRIMARY KEY,
+  doc TEXT NOT NULL
+);
+-- The public half of each copy's pulse key, kept the first time its copyId
+-- reached us (note #1057). Only our own platform writes here.
+CREATE TABLE IF NOT EXISTS copy_pulse_keys (
+  copy_id TEXT PRIMARY KEY,
+  public_key TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL
+);
 
 -- The private copies' daily pulses, on our side (notes #1057, #1058): each
 -- copy's newest pulse, the last pulse of each UTC day for its history, and
