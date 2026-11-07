@@ -85,6 +85,14 @@ describe('the guest runner (behaviour, run in bash)', () => {
   });
 });
 
+describe('the guest\'s instructions', () => {
+  it('name the install that works under the network lock (note #1050)', async () => {
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('npm ci --ignore-scripts');
+    expect(GUEST_AGENT_INSTRUCTIONS).not.toMatch(/"npm ci --no-audit/);
+  });
+});
+
 describe('the guest machine\'s setup', () => {
   const script = buildGuestSetupScript(SOURCE);
   it('fails closed: no nftables, no turn; the lock must load', () => {

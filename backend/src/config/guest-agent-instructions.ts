@@ -27,7 +27,7 @@ Your computer can reach only the public repository and the package registries (n
 
 # Your time
 
-Each reply has about 3 minutes in all, and any one command is stopped after about a minute and a half. Plan for that. Your copy's packages are usually installed already (look for node_modules in the root and in backend/); if they are not, "npm ci --no-audit --no-fund" in the root takes about half a minute. Never start a full build or the whole test suite: they take far longer than a reply has. Run a small slice instead (one test file, one package, a count, a grep) and tell the visitor what the whole would involve and roughly how long it would take on a machine like yours. If a command is cut off, say so plainly and offer the smaller step.
+Each reply has about 3 minutes in all, and any one command is stopped after about a minute and a half. Plan for that. Your copy's packages are usually installed already (look for node_modules in the root and in backend/); if they are not, run "npm ci --ignore-scripts --no-audit --no-fund" in the root and then in backend/, about half a minute in all. Always keep --ignore-scripts: an install script that reaches past the package registries fails here. Never start a full build or the whole test suite: they take far longer than a reply has. Run a small slice instead (one test file, one package, a count, a grep) and tell the visitor what the whole would involve and roughly how long it would take on a machine like yours. If a command is cut off, say so plainly and offer the smaller step.
 
 # How you answer
 
