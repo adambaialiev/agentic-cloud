@@ -13,6 +13,9 @@
 #      release and its database come back without it;
 #   2. --drill: the new release comes up, fails on purpose, and is put back;
 #   3. the upgrade itself, and the copy's own health check after it;
+#   Before 2 and 3, the upgrader is free again (note #1061): the machine the
+#      step before ran on deletes itself a little after it stops, and until
+#      then the installer refuses a new upgrade (infra/copy-release/upgrader-idle.mjs);
 #   4. one real transcription (note #1030): a short recording goes through the
 #      copy's own transcribe route on its workplace's OpenRouter key, and the
 #      gate fails if the words do not come back (infra/copy-release/voice-check.mjs).
@@ -37,6 +40,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INSTALLER="${COPY_TEST_INSTALLER:-$REPO_ROOT/infra/copy-installer/install.mjs}"
 OFFER="${COPY_TEST_OFFER:-$REPO_ROOT/infra/copy-release/offer.mjs}"
 VOICE_CHECK="${COPY_TEST_VOICE_CHECK:-$REPO_ROOT/infra/copy-release/voice-check.mjs}"
+IDLE="${COPY_TEST_IDLE:-$REPO_ROOT/infra/copy-release/upgrader-idle.mjs}"
 STATE="$COPY_TEST_STATE_DIR/$NAME-copy.json"
 [ -f "$STATE" ] || { echo "no test copy state at $STATE — see the knowledge page private-copy, 'The standing test copy'" >&2; exit 1; }
 
@@ -88,7 +92,9 @@ cleanup_peers() {
 
 echo "Offer gate for release $VERSION on the standing test copy $NAME"
 step "drill backend: the new Workspace never starts, the old one comes back without it" upgrade --name "$NAME" --release "$VERSION" --drill backend --json "${UPDATES[@]}"
+run_step "the upgrader is free again" node "$IDLE" "$NAME"
 step "drill: the new release comes up, fails on purpose, and is put back" upgrade --name "$NAME" --release "$VERSION" --drill --json "${UPDATES[@]}"
+run_step "the upgrader is free again" node "$IDLE" "$NAME"
 step "upgrade to $VERSION" upgrade --name "$NAME" --release "$VERSION" --json "${UPDATES[@]}"
 step "the test copy's own health" status --state "$STATE" --json
 run_step "voice-to-text: one real transcription on the workplace's own key" node "$VOICE_CHECK" --state "$STATE"

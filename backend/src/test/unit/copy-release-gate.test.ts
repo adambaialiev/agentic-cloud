@@ -34,6 +34,11 @@ function run({ failOn, voiceFails }: { failOn?: string; voiceFails?: boolean } =
       + ' admin=' + process.env.COPY_TEST_ADMIN_EMAIL + ' key=' + (process.env.COPY_TEST_VOICE_OPENROUTER_KEY ? 'set' : 'unset') + '\\n');
     if (${JSON.stringify(Boolean(voiceFails))}) process.exit(1);
   `);
+  // The wait for the upgrader to empty (note #1061): records which copy and token.
+  writeFileSync(path.join(dir, 'idle.mjs'), `
+    import { appendFileSync } from 'node:fs';
+    appendFileSync(${JSON.stringify(calls)}, 'idle ' + process.argv.slice(2).join(' ') + ' token=' + process.env.FLY_API_TOKEN + '\\n');
+  `);
   const flyDir = path.join(dir, 'fly');
   spawnSync('mkdir', ['-p', flyDir]);
   writeFileSync(path.join(flyDir, 'flyctl'), '#!/bin/sh\n[ "$1" = wireguard ] && [ "$2" = list ] && echo "[]"\nexit 0\n');
@@ -44,7 +49,7 @@ function run({ failOn, voiceFails }: { failOn?: string; voiceFails?: boolean } =
       PATH: process.env.PATH, HOME: dir, VERSION: '2026.11.10.0', COPY_TEST_FLY_TOKEN: 'scratch-token', FLY_API_TOKEN: 'our-token',
       COPY_TEST_STATE_DIR: dir, COPY_TEST_FLYCTL_DIR: flyDir, COPY_TEST_INSTALLER: path.join(dir, 'installer.mjs'),
       COPY_TEST_OFFER: path.join(dir, 'offer.mjs'), RELEASE_REPO: 'acc-copy-releases', GATE_RUN: 'abc123',
-      COPY_TEST_VOICE_CHECK: path.join(dir, 'voice.mjs'), COPY_TEST_ADMIN_EMAIL: 'ada@testcopy.example',
+      COPY_TEST_VOICE_CHECK: path.join(dir, 'voice.mjs'), COPY_TEST_IDLE: path.join(dir, 'idle.mjs'), COPY_TEST_ADMIN_EMAIL: 'ada@testcopy.example',
       COPY_TEST_ADMIN_PASSWORD: 'pw', COPY_TEST_VOICE_OPENROUTER_KEY: 'sk-or-v1-test',
     },
   });
@@ -57,9 +62,11 @@ describe('the offer gate script (note #1008)', () => {
     expect(r.status).toBe(0);
     expect(r.calls).toEqual([
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --drill backend --json token=scratch-token',
+      'idle acc-testcopy token=scratch-token',
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --drill --json token=scratch-token',
+      'idle acc-testcopy token=scratch-token',
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --json token=scratch-token',
-      `install status --state ${r.calls[3]!.split('--state ')[1]!.split(' ')[0]} --json token=scratch-token`,
+      `install status --state ${r.calls[5]!.split('--state ')[1]!.split(' ')[0]} --json token=scratch-token`,
       'voice --state STATE admin=ada@testcopy.example key=set',
       'offer 2026.11.10.0 --gate passed --run abc123 token=our-token repo=acc-copy-releases',
     ]);
@@ -89,9 +96,46 @@ describe('the offer gate script (note #1008)', () => {
     expect(r.status).toBe(1);
     expect(r.calls.map((call) => call.split(' token=')[0])).toEqual([
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --drill backend --json',
+      'idle acc-testcopy',
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --drill --json',
+      'idle acc-testcopy',
       'install upgrade --name acc-testcopy --release 2026.11.10.0 --json',
     ]);
+  });
+});
+
+describe('the upgrader is free again before the next step (note #1061)', () => {
+  type Machine = { id: string; state: string };
+  async function idle(lists: Machine[][], waitMs = 9_000) {
+    const { upgraderIdle } = await import('../../../../infra/copy-release/upgrader-idle.mjs');
+    const deleted: string[] = [];
+    let t = 0;
+    const fetchImpl = async (url: string, init: { method: string }) => {
+      if (init.method === 'DELETE') { deleted.push(url.split('/machines/')[1]!.split('?')[0]!); return new Response('{}'); }
+      return new Response(JSON.stringify(lists.length > 1 ? lists.shift() : lists[0]));
+    };
+    const lines: string[] = [];
+    const result = await upgraderIdle({ app: 'acc-testcopy-upgrader', token: 't', waitMs, pollMs: 3_000, fetchImpl: fetchImpl as never, log: (line: string) => lines.push(line), now: () => t, sleep: async (ms: number) => { t += ms; } });
+    return { result, deleted, lines };
+  }
+
+  it('waits while the finished machine is still listed as stopped, and goes on once Fly has removed it', async () => {
+    const r = await idle([[{ id: 'm1', state: 'stopped' }], [{ id: 'm1', state: 'destroying' }], [{ id: 'm1', state: 'destroyed' }]]);
+    expect(r.result).toEqual({ idle: true, destroyed: [] });
+    expect(r.deleted).toEqual([]);
+  });
+
+  it('removes a finished machine Fly has not removed in time', async () => {
+    const r = await idle([[{ id: 'm1', state: 'stopped' }]]);
+    expect(r.result).toEqual({ idle: true, destroyed: ['m1'] });
+    expect(r.deleted).toEqual(['m1']);
+  });
+
+  it('never touches a machine that is running: that is an upgrade under way', async () => {
+    const r = await idle([[{ id: 'm2', state: 'started' }]]);
+    expect(r.result).toEqual({ idle: false, destroyed: [] });
+    expect(r.deleted).toEqual([]);
+    expect(r.lines[0]).toContain('an upgrade is under way');
   });
 });
 
