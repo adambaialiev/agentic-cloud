@@ -131,4 +131,27 @@ describe('a private copy re-pins its machines to the backend’s new address (no
     expect(await repin.runPass()).toEqual({ current: 0, repinnedAsleep: 0, repinnedAwake: 0, left: 0 });
     expect(writes).toEqual([]);
   });
+
+  it('our own platform (note #1032 stage 4) never restarts an awake machine: it moves it once it sleeps', async () => {
+    const apps = {
+      'ia-agent-1': [machine('m-asleep', 'stopped', OLD)],
+      'ia-agent-2': [machine('m-awake', 'started', OLD)],
+    };
+    const { client, writes } = fakeFly(apps);
+    const repin = new CopyPeerRepin({
+      peerIp: NEW,
+      flyClient: client,
+      leaveAwake: true,
+      listApps: async () => ['ia-agent-1', 'ia-agent-2'],
+      log: () => undefined,
+    });
+
+    expect(await repin.runPass()).toEqual({ current: 0, repinnedAsleep: 1, repinnedAwake: 0, left: 1 });
+    expect(writes.map((write) => [write.machineId, write.skipLaunch])).toEqual([['m-asleep', true]]);
+
+    // The turn ends and the reaper puts it to sleep: the next pass moves it, still asleep.
+    apps['ia-agent-2'][0] = { ...apps['ia-agent-2'][0]!, state: 'stopped' };
+    expect(await repin.runPass()).toEqual({ current: 1, repinnedAsleep: 1, repinnedAwake: 0, left: 0 });
+    expect(writes.map((write) => [write.machineId, write.skipLaunch])).toEqual([['m-asleep', true], ['m-awake', true]]);
+  });
 });

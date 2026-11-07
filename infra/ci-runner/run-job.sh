@@ -26,6 +26,15 @@ SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new"
 
 PROD_HOST="${IA_PROD_HOST:?IA_PROD_HOST is unset: add the backend host to /etc/ia-ci/env}"
 DEPLOY_ROOT=/opt/infinite-agents
+# Since note #1032 stage 4 the backend is the Fly app ia-control, reached over
+# the private network as ia-control.internal on port 2222 (Fly's own `fly
+# ssh` holds 22). That machine answers every path and systemctl verb this
+# script uses on the backend (infra/backend-fly), so the steps below are the
+# same for both hosts; only the port differs. IA_PROD_SSH_PORT is unset for a
+# box on 22. The git host's old path shares SSH_OPTS, but it skips on Fly.
+if [ -n "${IA_PROD_SSH_PORT:-}" ]; then
+  SSH_OPTS="$SSH_OPTS -p $IA_PROD_SSH_PORT"
+fi
 # The git host lives on ia-media, beside MinIO — a different box from the
 # backend, reached with the same root key.
 # Since note #1032 the central code host is the Fly app IA_GIT_HOST_APP and
@@ -1077,6 +1086,14 @@ REMOTE
       echo "no db-backup changes since the last attempt — skipped"
       record_attempt
       exit 78   # daemon maps 78 to "skipped", not success
+    fi
+    # The backend on Fly (note #1032 stage 4) backs its database up itself,
+    # to R2 every 6 hours (database-bucket-backup.ts). This timer and the
+    # Storage Box belong to ia-backend, which no longer holds the database.
+    if [ -n "${IA_PROD_SSH_PORT:-}" ]; then
+      echo "the backend is on Fly and backs itself up to R2: no Storage Box timer to install — skipped"
+      record_attempt
+      exit 78
     fi
     record_attempt   # tried, whatever happens next: a failure is red, not retried by unrelated merges
     SRC="$REPO_DIR/infra/db-backup"

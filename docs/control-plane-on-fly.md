@@ -254,7 +254,7 @@ Lane B and the dispatcher leave `ia-ci-runner`. Lane A (`ia-ci-jobs`) is unchang
 | Size | shared-cpu-2x, 2 GB, always on | performance-4x, 8 GB, **started by an image job and stopped when it ends** |
 | Volume | 20 GB: `/data/runner` (work clone, logs, artifacts, copy-test state) and `/data/opt-ia-ci` (the daemon's code, kept current by `self-update`) | 50 GB: docker's data and its own SSH host keys |
 | Keys | everything `/etc/ia-ci/env` held, plus `DEPLOY_SSH_KEY` and `BUILDER_SSH_KEY`, all as Fly secrets | `BUILDER_SSH_PUBKEY` only |
-| Reached at | `http://ia-ci.internal:8787`, private network only: the code host's webhooks and lane A's results | `ia-ci-builder.internal:22`, from the dispatcher only |
+| Reached at | `http://ia-ci.internal:8787`, private network only: the code host's webhooks and lane A's results | `ia-ci-builder.internal:2222` (port 22 is Fly's own `fly ssh`), from the dispatcher only |
 
 Both run one image (`infra/ci-fly/Dockerfile`), with `CI_ROLE` choosing what it
 does. The dispatcher's docker CLI drives the builder with
@@ -279,3 +279,71 @@ purged, `git gc` on every repo) is now in the code-host image, behind
 `POST /internal/maintenance/run`. The backend runs it once per ISO week
 (`CENTRAL_GIT_MAINTENANCE=on`, stamped beside the database), as it does the
 backups.
+
+## Stage 3 — the cutover (6 Nov 2026, 19:40 UTC)
+
+With the queue empty: `ia-ci-daemon` and the GitHub Actions runner on
+ia-ci-runner were stopped and disabled (nothing deleted), and the code host's
+webhook was pointed at `ia-ci.internal:8787`. Lane B was refused for **46
+seconds** (19:40:49–19:41:35). The first real runs on Fly came from PR #85:
+deploy-prod 1.5 min, deploy-site 3.0 min, git-host-image 1.4 min (builder
+started, built, smoke-tested, pushed, repointed, rolled ia-git, stopped), and
+lane A's checks. Weekly repo upkeep on Fly: 24 repos, none failed, 44 MB freed.
+
+**The slip, and the lesson for stage 4.** The code host keeps each CI repo's
+webhook address in that repo's own git config (`agentgit.webhookUrl`), not in
+its settings. All four CI repos still named the stopped Hetzner daemon, so two
+pushes in the next three minutes got no CI run. Each repo was repointed to
+`ia-ci.internal` and both pushes were redelivered, signed as the host signs.
+**Grep stored addresses, not just env.**
+
+Two more gotchas: a multi-line Fly secret imported between `"""` quotes gains
+a blank line at each end, which OpenSSH refuses (`infra/ci-fly/entrypoint.sh`
+now strips them); and Fly's internal DNS lags a restart by a few seconds.
+
+## Stage 4 — the backend (prepared 7 Nov 2026)
+
+`ia-control`, in our Fly organization in `ams`: one always-on machine,
+shared-cpu-2x with 4 GB, and a 20 GB volume at `/data`
+(`infra/backend-fly/`, read its README).
+
+**The shape: ia-backend in a machine.** The owner's point 3 stands as he
+accepted it. The image carries a socket holder, and the releases live on the
+volume. deploy-prod ships the lane A artifact into
+`/opt/infinite-agents/releases/<sha>` exactly as before and restarts Node
+behind the held socket. The volume is bind-mounted onto ia-backend's own paths
+(`/opt/infinite-agents`, `/etc/infinite-agents`, `/var/lib/infinite-agents`,
+`/usr/local/bin`), and a `systemctl` shim answers for the backend's two units,
+so `run-job.sh`, `ia-rollback` and `set-machine-image` run unchanged. CI
+needs only `IA_PROD_HOST=ia-control.internal` and `IA_PROD_SSH_PORT=2222`.
+Point 9 is met without the signed endpoint: `set-machine-image` edits
+`backend.env` on the volume and restarts Node behind the socket, not the
+machine.
+
+**Rehearsed in the scratch org** (app `n1062-rh`, deleted afterwards), with
+production's own release `94a6bb5` on the new image:
+
+- The release booted on Ubuntu 24.04 with NodeSource Node 22 (ia-backend's
+  pair), took the socket as fd 3, and opened its database.
+- Restart, then `ia-rollback` to another release, polled through Fly's proxy
+  every 0.1 s: 254 requests, **0 failed**, the slowest 0.9 s.
+- deploy-prod's unit step (`install_prod_backend_units`, verbatim):
+  "backend service restarted; socket stayed active".
+- `set-machine-image`: env edited, `.previous` kept, healthy at the first
+  attempt.
+- A full `fly machine restart` (only an image change does that): the backend
+  came back by itself, `enabled` and the release survived. 1 of 187 requests
+  got a 502, and the slowest waited 8.5 s.
+- A WireGuard link came up in the machine.
+- The holder's reading of `backend.env` was compared on ia-backend with the
+  environment systemd actually gave the running backend: all 106 keys were
+  equal. Only hashes were compared; no value was printed.
+
+**What the backend itself changes.** `BACKEND_PEER_FROM_FLY=on` makes
+production take its 6PN address from `FLY_PRIVATE_IP`, as a copy does, and
+run the re-pin pass (`copy-peer-repin.ts`) over every app in our own account.
+That covers the workplaces' messaging machines, which no agent or site
+record names. Unlike a copy's pass, production's **never restarts an awake
+machine**: it moves each one when it next sleeps, retrying every 10 minutes
+for a day. For a machine awake at the move, the new address is added to its
+live firewall by hand, so it is reachable without a restart.

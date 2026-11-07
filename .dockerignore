@@ -1,6 +1,7 @@
-# Only infra/backend-image/Dockerfile builds from the repository root; every
-# other image builds from its own directory. Allowlist, so nothing local
-# (node_modules, dist, env files) is ever sent to a builder.
+# Only infra/backend-image/Dockerfile and infra/backend-fly/Dockerfile build
+# from the repository root; every other image builds from its own directory.
+# Allowlist, so nothing local (node_modules, dist, env files) is ever sent to
+# a builder.
 *
 !backend/package.json
 !backend/package-lock.json
@@ -12,6 +13,9 @@
 !cli/agentbuilt/agentbuilt.mjs
 !infra/ci-runner/runner-agent.sh
 !infra/copy-installer/install.mjs
+!infra/backend-fly
+!infra/ci-runner/ia-rollback.sh
+!infra/backend-host/set-machine-image
 !public/logo-bw.png
 !public/fonts
 !public/favicon*

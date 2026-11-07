@@ -367,8 +367,14 @@ if (SIGNUP_CLOSED) console.log('[config] SIGNUP_CLOSED=on (no new accounts here 
 // restored onto a new machine, which the setting written at install does not,
 // so a copy goes by it and re-pins every machine still naming the old one
 // (services/copy-peer-repin.ts, note #815).
+//
+// Our own platform's backend goes the same way since it left ia-backend for a
+// Fly machine (note #1032, stage 4): BACKEND_PEER_FROM_FLY=on. Its machines
+// are re-pinned too, but only while asleep (CopyPeerRepin.leaveAwake), since
+// they run real turns.
+const BACKEND_PEER_FROM_FLY = PRIVATE_COPY || parseBoolEnv('BACKEND_PEER_FROM_FLY', false);
 const CONFIGURED_BACKEND_PEER_IP = process.env.FLY_BACKEND_PEER_IP?.trim() || '';
-const FLY_BACKEND_PEER_IP = (PRIVATE_COPY && process.env.FLY_PRIVATE_IP?.trim()) || CONFIGURED_BACKEND_PEER_IP;
+const FLY_BACKEND_PEER_IP = (BACKEND_PEER_FROM_FLY && process.env.FLY_PRIVATE_IP?.trim()) || CONFIGURED_BACKEND_PEER_IP;
 // A copy takes no open sign-up (note #808): every account arrives through an
 // invite link, except the first, which the installer makes with this code at
 // /signup#first-account=<code>. It works only while the copy has no account.
@@ -1976,19 +1982,27 @@ if (flySandboxClient) {
   // A copy's machines follow its backend to a new address (note #815). Each
   // pins SSH to the address it was made with; a backend Fly moved, or one
   // restored onto a new machine, is refused by all of them until re-pinned.
-  if (PRIVATE_COPY && FLY_BACKEND_PEER_IP) {
+  if (BACKEND_PEER_FROM_FLY && FLY_BACKEND_PEER_IP) {
     if (CONFIGURED_BACKEND_PEER_IP && CONFIGURED_BACKEND_PEER_IP !== FLY_BACKEND_PEER_IP) {
       console.warn(
         `[config] FLY_BACKEND_PEER_IP names ${CONFIGURED_BACKEND_PEER_IP}, but this backend is now at `
         + `${FLY_BACKEND_PEER_IP}: new machines pin the new address and older ones are re-pinned`,
       );
     }
+    const repinFly = new FlyClient(FLY_API_TOKEN);
     const copyPeerRepin = new CopyPeerRepin({
       peerIp: FLY_BACKEND_PEER_IP,
-      flyClient: new FlyClient(FLY_API_TOKEN),
+      flyClient: repinFly,
+      // Our platform: never restart an awake machine, and keep trying every
+      // 10 minutes for a day so each is moved at its next sleep.
+      ...(PRIVATE_COPY ? {} : { leaveAwake: true, maxPasses: 144 }),
       // Every app a record claims, in the copy's own account only: a cloud a
-      // workplace connected itself pins a different address.
+      // workplace connected itself pins a different address. Our platform
+      // also has machines no agent or site record names (the workplaces'
+      // messaging machines), so there it is every app of our own account;
+      // a machine with no pin is skipped either way.
       listApps: async () => {
+        if (!PRIVATE_COPY) return (await repinFly.listApps(FLY_ORG)).map((app) => app.name);
         const apps = new Set<string>();
         for (const user of await userStorage.getAllUsers()) {
           for (const agent of listAgents(user.telegram, true)) {

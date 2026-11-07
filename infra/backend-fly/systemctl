@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""`systemctl` on the backend's Fly machine (note #1032, stage 4).
+
+There is no systemd here. deploy-prod, ia-rollback and set-machine-image were
+written for ia-backend, where the backend was two units, and they drive it
+with the systemctl verbs below. This shim answers those verbs for those two
+units by asking the socket holder (holder.py), so the same scripts run on both
+hosts unchanged. Any other unit or verb is refused loudly, never faked.
+"""
+
+import json
+import socket
+import sys
+
+CONTROL = '/run/ia-backend/control.sock'
+SERVICE = 'infinite-agents-backend.service'
+SOCKET = 'infinite-agents-backend.socket'
+
+
+def unit_of(name):
+    if name in ('infinite-agents-backend', SERVICE):
+        return 'service'
+    if name == SOCKET:
+        return 'socket'
+    return None
+
+
+def ask(cmd):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(90)
+    s.connect(CONTROL)
+    s.sendall((cmd + '\n').encode())
+    data = b''
+    while not data.endswith(b'\n'):
+        chunk = s.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+    s.close()
+    answer = json.loads(data or b'{}')
+    if 'error' in answer:
+        sys.exit(f'systemctl (holder): {answer["error"]}')
+    return answer
+
+
+def main(argv):
+    args = [a for a in argv if not a.startswith('-')]
+    quiet = '--quiet' in argv or '-q' in argv
+    if not args:
+        sys.exit('systemctl (holder): no verb given')
+    verb, names = args[0], args[1:]
+    if verb == 'daemon-reload':
+        return 0
+    units = [unit_of(n) for n in names]
+    if not names or None in units:
+        sys.exit(f'systemctl (holder): this machine has no systemd; only {SERVICE} and {SOCKET} are known '
+                 f'(asked: {verb} {" ".join(names)})')
+    if verb in ('is-enabled', 'is-active'):
+        state = ask('status')
+        ok = all(state['enabled'] if verb == 'is-enabled' else state[u] for u in units)
+        if not quiet:
+            for u in units:
+                if verb == 'is-enabled':
+                    print('enabled' if state['enabled'] else 'disabled')
+                else:
+                    print('active' if state[u] else 'inactive')
+        return 0 if ok else (1 if verb == 'is-enabled' else 3)
+    if verb in ('enable', 'disable'):
+        ask(verb)
+        return 0
+    if verb == 'status':
+        print(json.dumps(ask('status'), indent=2))
+        return 0
+    if verb in ('start', 'stop', 'restart'):
+        # Order the way systemd would: the socket before the service on start,
+        # the service before the socket on stop.
+        order = sorted(set(units), key=lambda u: (u != 'socket') if verb != 'stop' else (u == 'socket'))
+        for u in order:
+            if u == 'socket':
+                if verb == 'stop':
+                    ask('stop-socket')
+                elif verb == 'start':
+                    ask('start-socket')
+                # restarting the socket means nothing here: it is the thing kept
+            else:
+                ask(verb)
+        return 0
+    if verb in ('reset-failed', 'mask', 'unmask'):
+        return 0 if verb == 'reset-failed' else sys.exit(f'systemctl (holder): {verb} is not supported here')
+    sys.exit(f'systemctl (holder): unsupported verb {verb}')
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

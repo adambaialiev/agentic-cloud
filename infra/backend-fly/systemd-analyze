@@ -1,0 +1,12 @@
+#!/bin/sh
+# `systemd-analyze` on the backend's Fly machine (note #1032, stage 4).
+# deploy-prod parses the staged unit files with `systemd-analyze verify`
+# before installing them. There is no systemd here and the units are never
+# used (holder.py does their job), so `verify` says so and passes; any other
+# verb is refused.
+if [ "${1:-}" = verify ]; then
+  echo "systemd-analyze (holder): no systemd on this machine, unit files are kept but not used" >&2
+  exit 0
+fi
+echo "systemd-analyze (holder): only 'verify' is answered here" >&2
+exit 1

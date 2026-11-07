@@ -42,6 +42,14 @@ export interface CopyPeerRepinDeps {
   retryMs?: number;
   /** Passes per boot, the first included. */
   maxPasses?: number;
+  /**
+   * Leave an awake machine alone and move it once it sleeps, instead of
+   * restarting it. Our own platform's backend on Fly (note #1032, stage 4):
+   * its fleet runs real turns, so a machine awake at the move gets the new
+   * address added to its live firewall by hand and is never restarted under
+   * a turn. A copy keeps the restart: its machines cannot be reached anyway.
+   */
+  leaveAwake?: boolean;
   log?: (line: string) => void;
 }
 
@@ -162,6 +170,7 @@ export class CopyPeerRepin {
       if (from === peer) return 'current';
       const asleep = machine.state === 'stopped';
       if (!asleep && machine.state !== 'started') return 'left';
+      if (!asleep && this.deps.leaveAwake) return 'left';
       await this.deps.flyClient.updateMachine(
         appName,
         machineId,

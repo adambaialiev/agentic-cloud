@@ -4,7 +4,10 @@ set -euo pipefail
 ROLE="${CI_ROLE:?CI_ROLE must be dispatcher or builder}"
 
 write_secret_file() { # <path> <owner> <value>
-  umask 077; printf '%s\n' "$3" > "$1"; chown "$2" "$1"; chmod 600 "$1"
+  # Blank lines dropped: a multi-line Fly secret imported with """ quotes
+  # arrives with one at each end, and OpenSSH refuses such a key ("error in
+  # libcrypto"). No key or authorized_keys line ever contains one.
+  umask 077; printf '%s\n' "$3" | sed '/^[[:space:]]*$/d' > "$1"; chown "$2" "$1"; chmod 600 "$1"
 }
 
 if [ "$ROLE" = builder ]; then
@@ -18,8 +21,9 @@ if [ "$ROLE" = builder ]; then
   for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
   docker info --format 'dockerd {{.ServerVersion}}, {{.Driver}}' || { tail -20 /var/log/dockerd.log; exit 1; }
   # Private network only: this app has no services, so nothing outside the
-  # organisation can reach port 22, and only the dispatcher holds the key.
-  exec /usr/sbin/sshd -D -e \
+  # organisation can reach it, and only the dispatcher holds the key. Port
+  # 2222, because Fly's own `fly ssh` service holds port 22 on 6PN.
+  exec /usr/sbin/sshd -D -e -p 2222 \
     -o HostKey=/data/ssh/ssh_host_ed25519_key -o HostKey=/data/ssh/ssh_host_rsa_key \
     -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
     -o PermitRootLogin=prohibit-password -o AcceptEnv='*'
@@ -36,6 +40,7 @@ write_secret_file "$R/.ssh/builder_key" runner "${BUILDER_SSH_KEY:?BUILDER_SSH_K
 cat > "$R/.ssh/config" <<CFG
 Host ia-ci-builder
   HostName ${CI_BUILDER_APP:-ia-ci-builder}.internal
+  Port 2222
   User root
   IdentityFile $R/.ssh/builder_key
   StrictHostKeyChecking accept-new
