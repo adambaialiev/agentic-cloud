@@ -107,6 +107,41 @@ roll_app_image() {
   return 1
 }
 
+# machine_image_label <sha> <claude> <codex> <opencode>: the agent image's tag,
+# naming BOTH things it is built from — the commit and the three pinned CLIs
+# (note #1052). With the commit alone, a pin bump rebuilt at an unchanged
+# commit pushed new bytes under an old tag, and the fleet's image roller, which
+# compares tags, read every machine on the old bytes as current, forever (trap
+# 2 on the updating-the-fleet-cli page). `+` is not legal in a tag; `_` stands
+# in for it. Mirrors machineImageTag() in backend/src/services/machine-image-tag.ts
+# (this box runs no repo code); machine-image-tag.test.ts holds the two together.
+machine_image_label() {
+  local label="sha-${1:0:12}-c$2-x$3-o$4"
+  label="${label//+/_}"
+  if [[ ! "${1:0:12}" =~ ^[0-9a-f]{12}$ || ! "$label" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then
+    echo "cannot make an image tag from commit '$1' and pins '$2' '$3' '$4'" >&2
+    return 1
+  fi
+  printf '%s' "$label"
+}
+# ghcr_tag_state <owner/repo> <tag>: prints "present" or "absent"; returns 1 when
+# the registry gives no clear answer. Anonymous: the package is public, and an
+# anonymous pull token is all the fleet itself ever has.
+ghcr_tag_state() {
+  local token code
+  token=$(curl -fsS -m 20 "https://ghcr.io/token?scope=repository:$1:pull" | json_get token) || return 1
+  [ -n "$token" ] || return 1
+  code=$(curl -sS -m 20 -o /dev/null -w '%{http_code}' -I \
+    -H "Authorization: Bearer $token" \
+    -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+    "https://ghcr.io/v2/$1/manifests/$2") || return 1
+  case "$code" in
+    200) echo present ;;
+    404) echo absent ;;
+    *) return 1 ;;
+  esac
+}
+
 request_remote_build() {
   local kind="$1" resp id state
   resp=$(curl -fsS -m 20 -X POST http://127.0.0.1:8787/build \
@@ -750,7 +785,6 @@ REMOTE
     fi
     record_attempt   # tried, whatever happens next: a failure is red, not retried by unrelated merges
     command -v docker >/dev/null || { echo "docker is not installed on this runner — see infra/ci-runner/README.md" >&2; exit 1; }
-    builder_up
     : "${FLY_API_TOKEN:?FLY_API_TOKEN unset in /etc/ia-ci/env — cannot push to registry.fly.io}"
     : "${GHCR_PUSH_TOKEN:?GHCR_PUSH_TOKEN unset in /etc/ia-ci/env — cannot push the public image to ghcr.io}"
     # The ghcr account that owns the public package, and the docker-login user
@@ -758,15 +792,6 @@ REMOTE
     # name baked in here was how a placeholder ("owner") once read like a value
     # and pushed every image build into permission_denied.
     : "${GHCR_OWNER:?GHCR_OWNER unset in /etc/ia-ci/env — the ghcr.io account that owns the public image}"
-
-    LABEL="sha-${SHA:0:12}"
-    # Two registries, one image (byo-fly-design: "an image the client's org can
-    # pull"). GHCR is the PUBLIC home — machines in client Fly orgs can only
-    # pull public refs, so this is the ref the fleet boots from. The Fly-org
-    # copy stays as the rollback path a GHCR outage cannot take away, and it
-    # is what our fleet ran on before 2026-08-23.
-    IMAGE_REF="registry.fly.io/ia-machine-images:$LABEL"
-    PUBLIC_IMAGE_REF="ghcr.io/$GHCR_OWNER/ia-machine-images:$LABEL"
 
     # CLI versions come from the fleet PIN, never npm latest. The image bakes
     # the CLIs, so building `latest` made every image build a version decision
@@ -808,6 +833,39 @@ REMOTE
     }
     echo "baking pinned CLIs: claude $CLAUDE_VERSION, codex $CODEX_VERSION, opencode $OPENCODE_VERSION"
 
+    # The tag names the commit AND the pins (note #1052), so a pin bump at an
+    # unchanged commit is a new tag and every sleeping machine is offered it.
+    LABEL="$(machine_image_label "$SHA" "$CLAUDE_VERSION" "$CODEX_VERSION" "$OPENCODE_VERSION")" || exit 1
+    # Two registries, one image (byo-fly-design: "an image the client's org can
+    # pull"). GHCR is the PUBLIC home — machines in client Fly orgs can only
+    # pull public refs, so this is the ref the fleet boots from. The Fly-org
+    # copy stays as the rollback path a GHCR outage cannot take away, and it
+    # is what our fleet ran on before 2026-08-23.
+    IMAGE_REF="registry.fly.io/ia-machine-images:$LABEL"
+    PUBLIC_IMAGE_REF="ghcr.io/$GHCR_OWNER/ia-machine-images:$LABEL"
+    echo "image tag: $LABEL"
+
+    # One tag, one set of bytes. A tag already on ghcr was smoke-tested and
+    # pushed by an earlier build of this very commit with these very pins, and
+    # machines may already be on it: pushing new bytes over it would bring
+    # trap 2 straight back (the roller would call those machines current). So
+    # a rebuild of the same inputs only makes sure the fleet points at it.
+    # ghcr is pushed LAST, after the smoke test and the Fly copy, so "present"
+    # there means the whole build finished. No clear answer is a failure, not
+    # a guess: ghcr is where this job pushes anyway.
+    TAG_STATE="$(ghcr_tag_state "$GHCR_OWNER/ia-machine-images" "$LABEL")" || {
+      echo "ghcr did not say whether $LABEL exists — refusing to build over a tag that may be live" >&2
+      exit 1
+    }
+    if [ "$TAG_STATE" = present ]; then
+      echo "$PUBLIC_IMAGE_REF is already published — same commit, same pins, so nothing to build; repointing only"
+      ssh $SSH_OPTS "root@$PROD_HOST" "/usr/local/bin/set-machine-image '$PUBLIC_IMAGE_REF'"
+      printf '%s\n' "$IMAGE_REF" > /opt/ia-ci/lane-a-image.new && mv -f /opt/ia-ci/lane-a-image.new /opt/ia-ci/lane-a-image
+      exit 0
+    fi
+
+    # Started only now: a rebuild of a published tag above needs no builder.
+    builder_up
     docker build \
       --build-arg "CLAUDE_VERSION=$CLAUDE_VERSION" \
       --build-arg "CODEX_VERSION=$CODEX_VERSION" \

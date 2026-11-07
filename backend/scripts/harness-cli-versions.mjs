@@ -169,13 +169,38 @@ function validPins(doc) {
 }
 
 /**
- * Whether the image we last asked CI to build was built from these pins.
+ * What the fleet's image actually bakes, read off its tag (note #1052).
  *
- * This used to be answered by the TAG (`cli-<claude>-<codex>`, built to
- * be self-describing). CI names images `sha-<commit>` now, which says nothing
- * about their CLIs, so the doc records the pins themselves and the comparison
- * reads them directly. More honest anyway: the tag was a claim about contents;
- * this is the contents.
+ * CI tags every agent image `sha-<commit>-c<claude>-x<codex>-o<opencode>` and
+ * never pushes over a published tag, so the tag of FLY_MACHINE_IMAGE — the
+ * image new machines boot and the roller moves sleeping ones onto — IS the
+ * answer to "is the image behind the pins". Nothing is written by hand, and a
+ * build that was asked for but failed cannot read as done.
+ *
+ * Undefined for an image whose tag names no pins (built before note #1052, or
+ * a hand retag); the status then falls back on the record of what was asked.
+ * The parser is the backend's own (dist/), so this script and the backend can
+ * never disagree about what a tag says.
+ */
+async function readFleetImage() {
+  const ref = process.env.FLY_MACHINE_IMAGE?.trim() || undefined;
+  const { parseMachineImageTag, machineImageMatchesPins } = await import(
+    new URL('../dist/services/machine-image-tag.js', import.meta.url)
+  );
+  const tag = ref ? ref.slice(ref.lastIndexOf(':') + 1) : undefined;
+  return {
+    ref,
+    tag,
+    parts: parseMachineImageTag(ref),
+    matches: (pins) => machineImageMatchesPins(ref, pins),
+  };
+}
+
+/**
+ * Whether the image we last ASKED CI to build was asked for with these pins —
+ * the fallback for a fleet image whose tag does not name its pins. A record of
+ * a request, not of a result: a failed build still reads as matching here,
+ * which is exactly why the tag is asked first.
  */
 function imagePinsMatch(image, pins) {
   return Object.keys(CLI_PACKAGES).every((cli) => (image?.[cli] ?? null) === (pins[cli] ?? null));
@@ -214,8 +239,12 @@ async function requestImageBuild(db, options) {
     console.log('--skip-image: pins are live, no rebuild asked for. New machines keep the current image.');
     return;
   }
-  if (!options.forceImage && imagePinsMatch(doc.image, pins)) {
-    console.log('image: already built from these pins — nothing to rebuild. (--force-image to rebuild anyway.)');
+  const fleet = await readFleetImage();
+  const alreadyBuilt = fleet.parts ? fleet.matches(pins) : imagePinsMatch(doc.image, pins);
+  if (!options.forceImage && alreadyBuilt) {
+    console.log(fleet.parts
+      ? `image: the fleet already boots ${fleet.tag}, which bakes these pins — nothing to rebuild.`
+      : 'image: already asked for with these pins — nothing to rebuild. (--force-image to rebuild anyway.)');
     return;
   }
   const secret = process.env.IA_CI_WEBHOOK_SECRET?.trim();
@@ -263,12 +292,33 @@ async function showStatus(db) {
     console.log(`${cli.padEnd(6)} pinned: ${pin ?? '—'} ${marker}`);
   }
   const image = doc.image;
-  if (!image?.requestedAt) {
-    console.log('image : no rebuild recorded — next bump asks CI for one');
-  } else if (imagePinsMatch(image, pins)) {
-    console.log(`image : rebuild asked for at ${image.requestedAt} with these pins`);
+  const fleet = await readFleetImage();
+  if (fleet.parts) {
+    // The tag says what the image bakes, so this is the answer, not a record.
+    if (fleet.matches(pins)) {
+      console.log(`image : ${fleet.tag} — bakes these pins; new machines boot it and sleeping ones roll onto it`);
+    } else {
+      const baked = fleet.parts.pins;
+      console.log(`image : BEHIND pins — the fleet image ${fleet.tag} bakes claude ${baked.claude}, codex ${baked.codex}, opencode ${baked.opencode}`);
+      if (image?.requestedAt && imagePinsMatch(image, pins)) {
+        console.log(`        a rebuild with these pins was asked for at ${image.requestedAt} and is not live: still building, or it failed (bump --force-image to ask again)`);
+      } else {
+        console.log('        run bump (or bump --force-image)');
+      }
+    }
   } else {
-    console.log('image : BEHIND pins — run bump (or bump --force-image to retry)');
+    if (fleet.ref) {
+      console.log(`image : ${fleet.tag} does not name its pins (built before note #1052) — going by the record of the last rebuild asked for`);
+    } else {
+      console.log('image : FLY_MACHINE_IMAGE is not set here (load backend.env) — going by the record of the last rebuild asked for');
+    }
+    if (!image?.requestedAt) {
+      console.log('image : no rebuild recorded — next bump asks CI for one');
+    } else if (imagePinsMatch(image, pins)) {
+      console.log(`image : rebuild asked for at ${image.requestedAt} with these pins`);
+    } else {
+      console.log('image : BEHIND pins — run bump (or bump --force-image to retry)');
+    }
   }
   if (doc.updatedAt) {
     console.log(`last updated: ${doc.updatedAt}`);

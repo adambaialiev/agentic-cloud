@@ -103,11 +103,18 @@ others drifted quietly. Two owners of one number is the bug to watch for here.
 
 Built by the `machine-image` job on the CI runner (**not** GitHub Actions, which
 has been frozen since 2026-07-30): build → `smoke-test.sh` → push to
-`ghcr.io/<owner>/ia-machine-images:sha-<12>` (the PUBLIC ref the fleet
+`ghcr.io/<owner>/ia-machine-images:sha-<12>-c<claude>-x<codex>-o<opencode>` (the PUBLIC ref the fleet
 boots from — client Fly orgs can only pull public images; byo-fly-design) and
-`registry.fly.io/ia-machine-images:sha-<12>` (the rollback copy) →
+`registry.fly.io/ia-machine-images:` the same tag (the rollback copy) →
 `set-machine-image` repoints `FLY_MACHINE_IMAGE` on the backend host at the
 ghcr ref.
+
+The tag names the commit and the three pinned CLIs (note #1052), because the
+pin lives outside the repo: a pin bump at an unchanged commit is a new tag, so
+the roller below — which compares tags — offers it to every machine. A tag
+already on ghcr is never rebuilt over (same inputs → the job only repoints), so
+one tag is one set of bytes. `node scripts/harness-cli-versions.mjs` reads the
+pins back off `FLY_MACHINE_IMAGE`'s tag to say whether the image is behind.
 
 Repointing only decides what NEW machines are created from. Existing machines
 converge separately: `MachineImageUpdater` writes the new ref onto a machine
@@ -168,7 +175,7 @@ stat -c '%y %n' ~/CLAUDE.md ~/.claude/settings.json ~/.codex/config.toml
 # get sshd). Needs docker + the Fly token, so: on the CI runner.
 sed -n 's/^FLY_API_TOKEN=//p' /etc/ia-ci/env | head -1 | tr -d '"' \
   | docker login registry.fly.io --username x --password-stdin
-docker run --rm --entrypoint sh registry.fly.io/ia-machine-images:sha-<12> \
+docker run --rm --entrypoint sh registry.fly.io/ia-machine-images:<tag> \
   -c 'claude --version; codex --version'
 
 # What every machine in the fleet is actually running (authoritative; the
