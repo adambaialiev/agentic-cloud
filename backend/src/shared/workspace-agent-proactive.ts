@@ -30,12 +30,21 @@ export type WorkspaceAgentEventKind =
   | 'mail'
   | 'schedule-cap'
   | 'schedule-failed'
-  | 'schedule-subscription';
+  | 'schedule-subscription'
+  // A private copy's pulse, for whoever runs our platform (note #1058):
+  // a new copy, one silent three days, two releases behind, backup or disk
+  // trouble, a copy whose admin turned the pulse off.
+  | 'copy-new'
+  | 'copy-silent'
+  | 'copy-behind'
+  | 'copy-trouble'
+  | 'copy-opted-out';
 
 /** Every kind, in the order the Workplace window lists them. */
 export const WORKSPACE_AGENT_EVENT_KINDS: readonly WorkspaceAgentEventKind[] = [
   'checks-red', 'proposal-waiting', 'report-unanswered', 'note-unclaimed', 'turn-failed', 'no-reply', 'mail',
   'schedule-cap', 'schedule-failed', 'schedule-subscription',
+  'copy-new', 'copy-silent', 'copy-behind', 'copy-trouble', 'copy-opted-out',
 ];
 
 /** The kinds that still start a turn inside the person's quiet hours. */

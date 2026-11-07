@@ -73,6 +73,8 @@ import { DatabaseBucketBackup } from './services/database-bucket-backup.js';
 import { MediaBucketMirror } from './services/media-bucket-mirror.js';
 import { createCopyHealth } from './services/copy-health.js';
 import { createReleaseCheck, updatesUrlFrom } from './services/copy-release-check.js';
+import { InMemoryCopyPulseStore } from './services/copy-pulse-storage.js';
+import { SqliteCopyPulseStore } from './services/sqlite/sqlite-copy-pulse-storage.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
@@ -1226,6 +1228,17 @@ if (copyReleaseCheck) {
   console.log(`[config] COPY_UPDATES_URL=${where ?? 'off'}`);
   copyReleaseCheck.start();
 }
+// Our side of the private copies (note #1058): the pulses they send us (the
+// receiving route is note #1057's), and the releases we offer, which "two
+// releases behind" is counted against. Never in a copy, which keeps none.
+const copyPulses = PRIVATE_COPY ? null : sqliteDb ? new SqliteCopyPulseStore(sqliteDb) : new InMemoryCopyPulseStore();
+const offeredReleases = PRIVATE_COPY ? null : createReleaseCheck({ url: updatesUrlFrom(process.env.COPY_UPDATES_URL), log: (line) => console.warn(line) });
+offeredReleases?.start();
+const copyReleaseList = async (): Promise<string[] | null> => {
+  if (!offeredReleases) return null;
+  const read = await offeredReleases.current();
+  return read.reachedAt ? read.releases.map((release) => release.version) : null;
+};
 const copyHealth = PRIVATE_COPY
   ? createCopyHealth({
       ...(process.env.COPY_RELEASE?.trim() ? { release: process.env.COPY_RELEASE.trim() } : {}),
@@ -2113,6 +2126,7 @@ const deps: RouteDeps = {
   ...(SIGNUP_CLOSED ? { signupClosed: true } : {}),
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
+  ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
   // Owner, 2026-10-11 (note #733): the Chief of Staff covers recaps now, so
@@ -2499,6 +2513,10 @@ void agentRecoveryReady.then(() => deps.workspaceAgent?.resumeInterrupted?.()).c
 // sweep's first pass waits a few minutes more on its own.
 void agentRecoveryReady.then(() => deps.workspaceAgentEvents?.start()).catch((error) => {
   console.error('[workspace-agent-events] could not start the sweep:', error);
+});
+// The private copies' alerts (note #1058), once the conversations are back.
+void agentRecoveryReady.then(() => deps.copyAlerts?.start()).catch((error) => {
+  console.error('[copy-alerts] could not start the sweep:', error);
 });
 // Schedules (note #779): the sweep that ticks approved schedules. Every
 // tick is a quiet platform turn of a room agent; the owner hears only when

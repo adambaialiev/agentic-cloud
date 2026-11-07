@@ -102,6 +102,11 @@ export const WORKSPACE_ROUTE_DEFS = {
   // take off the station. The platform operator's alone — the server refuses
   // anyone else — and the account's, since the station is the platform's.
   radioLibrary: { screen: 'radiolibrary', pattern: ['radio'], scope: 'account' },
+  // The private copies that send us their daily pulse (note #1058): one row
+  // each, and one copy's history. The platform operator's alone, like the
+  // radio library, and the account's: copies belong to no workplace.
+  copies: { screen: 'copies', pattern: ['copies'], scope: 'account' },
+  copy: { screen: 'copy', pattern: ['copies', ':id'], scope: 'account' },
   organizations: { screen: 'orgpicker', pattern: ['workplaces'], scope: 'account' },
   organization: { screen: 'org', pattern: ['workplace'], scope: 'org' },
   organizationCloud: { screen: 'orgcloud', pattern: ['workplace', 'cloud'], scope: 'org' },

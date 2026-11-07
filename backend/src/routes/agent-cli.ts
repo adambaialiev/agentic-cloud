@@ -6,6 +6,7 @@ import { memberHasLiveSeat } from '../services/org-seat-signin.js';
 import { agentBroughtInReceipt } from '../shared/first-run.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
+import { registerCopiesRoutes } from './copies.js';
 import { WORKSPACE_AGENT_NAME, workspaceAssistantId } from '../types/user.js';
 import { checkCreationRuntime, resolveEffectiveEffort, resolveEffectiveModel } from '../agent/harness-models.js';
 import { Router, raw } from 'express';
@@ -452,6 +453,10 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   // What the work radio is playing (note #712), so an agent can say — and,
   // for the platform admin's agents alone, its library (note #758).
   registerRadioRoutes(router, '/radio', deps, authenticate,
+    async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
+  // The private copies (note #1058), for the platform admin's agents alone:
+  // the Chief of Staff reads the copy an alert names.
+  registerCopiesRoutes(router, '/platform/copies', deps, authenticate,
     async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
 
   const requireDeployments = (res: Response) => {

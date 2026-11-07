@@ -7673,6 +7673,32 @@ h2.mailfileshead { margin-top: 16px; }
 #screenCopyReleases .copyreleasenotes h3 { font-size: var(--ui-base); font-weight: 500; margin: 14px 0 4px; }
 #screenCopyReleases .copyreleasecard .empty { padding: 4px 0 14px; }
 
+/* Copies (note #1058): the operator's list of private copies and one copy's history. */
+#screenCopies .copyrow .name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.copybadge {
+  font-size: var(--ui-sm); line-height: var(--ui-sm-leading); font-weight: 500;
+  padding: 1px 6px; border-radius: var(--r-sm);
+  color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.copybadge.opted-out { color: var(--hint); background: color-mix(in srgb, var(--hint) 14%, transparent); }
+.copyrow .copywarn, #screenCopy .copywarn { color: var(--warn); }
+#screenCopy #copyContact .addrow { border-top: 1px solid var(--border); }
+.copychart { margin: 0; padding: 14px 16px 6px; }
+.copychart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.copychartbar { fill: var(--accent); }
+.copycharthit { fill: transparent; }
+.copychart g:hover .copychartbar { fill: color-mix(in srgb, var(--accent) 75%, var(--text)); }
+.copychartbase { stroke: var(--border); stroke-width: 1; }
+.copychartaxis { display: flex; justify-content: space-between; color: var(--hint); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); padding-top: 4px; }
+.copychartcap { color: var(--hint); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); padding-top: 2px; }
+.copytablewrap { overflow-x: auto; border-top: 1px solid var(--border); }
+.copytable { width: 100%; border-collapse: collapse; font-size: var(--ui-base); line-height: var(--ui-base-leading); font-variant-numeric: tabular-nums; }
+.copytable th, .copytable td { text-align: right; padding: 7px 16px 7px 0; white-space: nowrap; }
+.copytable th:first-child, .copytable td:first-child { text-align: left; padding-left: 16px; }
+.copytable thead th { color: var(--hint); font-weight: 500; font-size: var(--ui-sm); }
+.copytable tbody th { font-weight: 400; }
+.copytable tbody tr + tr > * { border-top: 1px solid var(--border); }
+
 
 /* One person is one card across the window (note #1009), its week in four
    cells on a desk. */

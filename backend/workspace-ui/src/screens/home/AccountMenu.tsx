@@ -128,6 +128,21 @@ function AccountMenu({ anchor, onClose }: {
             </button>
           )
           : null}
+        {/* The private copies (note #1058): the operator's alone, like the radio library. */}
+        {state?.copies
+          ? (
+            <button
+              className="orgmenurow" id="accountMenuCopies" type="button" role="menuitem"
+              onClick={() => go(toFor({ kind: 'copies' })!)}
+            >
+              <span className="orgmenumain">
+                <span className="orgmenuname">Copies</span>
+                <span className="orgmenufacts">Every company's own Agentic Cloud</span>
+              </span>
+              <span className="orgmenutick"><Svg name="globe" size={16} /></span>
+            </button>
+          )
+          : null}
       </div>
     </HeaderMenu>
   );

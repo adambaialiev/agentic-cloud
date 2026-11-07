@@ -41,6 +41,30 @@ CREATE TABLE IF NOT EXISTS copy_mail_setup (
   doc TEXT NOT NULL
 );
 
+-- The private copies' daily pulses, on our side (notes #1057, #1058): each
+-- copy's newest pulse, the last pulse of each UTC day for its history, and
+-- the alert sweep's ledger of what it has already said about which copy.
+-- Counts and a contact person only; the copy's signing key is kept elsewhere.
+CREATE TABLE IF NOT EXISTS copy_pulses (
+  copy_id TEXT PRIMARY KEY,
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS copy_pulse_days (
+  copy_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  PRIMARY KEY (copy_id, day)
+);
+CREATE TABLE IF NOT EXISTS copy_pulse_alerts (
+  copy_id TEXT NOT NULL,
+  condition TEXT NOT NULL,
+  raised_at TEXT NOT NULL,
+  PRIMARY KEY (copy_id, condition)
+);
+
 CREATE TABLE IF NOT EXISTS drive_items (
   org_id TEXT NOT NULL,
   item_id TEXT NOT NULL,

@@ -77,6 +77,8 @@ import { UnknownScreen } from './screens/Placeholder.js';
 import { MailScreen } from './screens/mail/MailScreen.js';
 import { MailSetupScreen } from './screens/mail/MailSetupScreen.js';
 import { CopyReleasesScreen } from './screens/org/CopyReleasesScreen.js';
+import { CopiesScreen } from './screens/copies/CopiesScreen.js';
+import { CopyScreen } from './screens/copies/CopyScreen.js';
 import { CopyUpgradeScreen } from './screens/org/CopyUpgradeScreen.js';
 import { MailConversationScreen } from './screens/mail/MailConversationScreen.js';
 import { ProfileScreen } from './screens/profile/ProfileScreen.js';
@@ -244,6 +246,15 @@ function RadioLibraryRoute() {
   return state.radio ? <RadioLibraryScreen /> : <UnknownScreen />;
 }
 
+/** The Copies screens (note #1058), for the account the state read names them to. */
+function CopiesRoute({ one = false }: { one?: boolean }) {
+  const { state } = useWorkspace();
+  const { id } = useParams();
+  if (!state) return null;
+  if (!state.copies) return <UnknownScreen />;
+  return one ? <CopyScreen key={id} /> : <CopiesScreen />;
+}
+
 /** An address from before a segment was renamed: the same place, at its
  *  current address, without a history entry for the old one. */
 function LegacyPlace() {
@@ -308,6 +319,9 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   mailMessage: <Keyed screen={MailConversationScreen} />,
   profile: <ProfileScreen />,
   radioLibrary: <RadioLibraryRoute />,
+  // The private copies (note #1058): the operator's alone.
+  copies: <CopiesRoute />,
+  copy: <CopiesRoute one />,
   organizations: <OrganizationsScreen />,
   organization: <OrganizationScreen />,
   organizationCloud: <OrgCloudScreen />,

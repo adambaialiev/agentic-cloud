@@ -1248,6 +1248,26 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
     this.changed?.(org);
     return landed;
   }
+  /**
+   * What the platform noticed, as rows ONLY (note #1058): the same lines an
+   * event turn starts from, landed where the person reads, with no turn
+   * behind them. The private copies' alerts arrive this way for a person who
+   * has event turns off; the rows go into the agent's next turn like any
+   * other, so it knows when they next write. Resolves whether they landed.
+   */
+  async noticeEvents(args: { userId: string; orgId: string; events: WorkspaceAgentEvent[] }): Promise<boolean> {
+    const { userId: user, orgId: org } = args;
+    if (!args.events.length) return false;
+    const profile = await this.deps.userStorage?.getProfile(user);
+    if (!Object.values(profile?.telegram?.agents ?? {}).some(a => a.orgId === org && isWorkspaceAgent(a))) return false;
+    await this.exclusive(this.key(user, org), async () => {
+      const state = await this.load(user, org);
+      for (const event of args.events) this.add(state, 'action', event.text, { kind: 'event', ...(event.href ? { href: event.href } : {}) });
+      await this.save(user, org, state);
+    });
+    this.changed?.(org);
+    return true;
+  }
   /** Whether the turn in flight is an event turn — the CLI routes that check a permission's own condition ask. */
   async isEventTurn(user: string, org: string): Promise<boolean> {
     const state = await this.load(user, org).catch(() => null);

@@ -26,18 +26,20 @@ import { mailCcAddresses, mailPost, type MailPick } from './mail-outgoing.js';
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export function MailComposeScreen({ address, to: startTo = '', onClose, onSent }: {
+export function MailComposeScreen({ address, to: startTo = '', subject: startSubject = '', onClose, onSent }: {
   /** The address this will come from — the reader's own. */
   address: string;
   /** Who it is to, when the door it was opened from already knows — a
    *  person's own screen (note #626). Still an ordinary field. */
   to?: string;
+  /** What it is about, when the door knows that too (note #1058). Still an ordinary field. */
+  subject?: string;
   onClose: () => void;
   onSent: (message: WorkspaceMailMessageSummary) => void;
 }) {
   const { api } = useSession();
   const [to, setTo] = useState(startTo);
-  const [subject, setSubject] = useState('');
+  const [subject, setSubject] = useState(startSubject);
   const [text, setText] = useState('');
   const [cc, setCc] = useState<string[]>([]);
   const [picked, setPicked] = useState<MailPick[]>([]);

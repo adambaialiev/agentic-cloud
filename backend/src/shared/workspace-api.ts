@@ -717,6 +717,9 @@ export interface WorkspaceStateAnswer {
   /** Present only for the platform operator on a backend with the radio:
    *  the account menu then offers the radio's library page (note #758). */
   radioLibrary?: true;
+  /** Present only for the platform operator, where private copies' pulses
+   *  are kept: the account menu then offers the Copies screen (note #1058). */
+  copies?: true;
   messagesAvailable?: boolean;
   /** Present when inviting people is switched off for the workplace this
    *  read stands in — on this backend (RouteDeps.invitesClosed) and that

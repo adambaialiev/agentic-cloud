@@ -307,6 +307,20 @@ export interface RouteDeps {
   /** The Upgrade button of a company's own Agentic Cloud (note #1008). */
   copyUpgrade?: CopyUpgrade;
   /**
+   * The private copies' pulses, on OUR side (notes #1057, #1058): the
+   * receiving route writes them, the Copies screen and the alert sweep read.
+   * Never set in a private copy, which sends pulses and keeps none.
+   */
+  copyPulses?: import('../services/copy-pulse-storage.js').CopyPulseStore;
+  /** The releases we offer to copies, oldest first, from our update service; null when it did not answer. */
+  copyReleaseList?: () => Promise<string[] | null>;
+  /**
+   * The copies' alert sweep (note #1058), built in the workspace router beside
+   * the conversation it lands rows in. index.ts starts it; the receiving
+   * route nudges it when a pulse arrives.
+   */
+  copyAlerts?: import('../services/copy-alerts.js').CopyAlertSweep;
+  /**
    * A private copy's licence (note #814): admins paste a renewal at
    * `POST api/copy/licence`, and a new person or agent is refused in words
    * at the people limit or once it has lapsed. Unset here, and in a copy

@@ -1529,6 +1529,20 @@ describe('Event turns and standing permissions (note #716): the Chief of Staff o
   };
   const events = (x: Awaited<ReturnType<typeof setup>>, list: WorkspaceAgentEvent[]) => x.chat.receiveEvents({ userId: 'u1', orgId: x.org, events: list });
 
+  it('lands what it noticed as rows only, with no turn, for a person with event turns off (note #1058)', async () => {
+    const x = await setup([]);
+    const copy: WorkspaceAgentEvent = { kind: 'copy-silent', key: 'copy:fixture-acme-0001:silent:t', text: 'The private copy at agents.acme.example has been silent for 3 days: its last pulse came on 4 Nov. Contact: Dana Field <dana@acme.example>.', at: '2026-11-04T06:00:00.000Z', href: '/copies/fixture-acme-0001' };
+    expect(await x.chat.noticeEvents({ userId: 'u1', orgId: x.org, events: [copy] })).toBe(true);
+    const read = await x.chat.read('u1', x.org);
+    expect(x.model).not.toHaveBeenCalled();
+    expect(read.working).toBe(false);
+    expect(read.messages.map(m => [m.role, m.kind, m.text, m.href])).toEqual([['action', 'event', copy.text, '/copies/fixture-acme-0001']]);
+    expect(recapRowViews(read.messages)).toEqual([{ form: 'noticed', text: copy.text }]);
+    // Never for a Chief of Staff nobody started.
+    await x.neverStarted();
+    expect(await x.chat.noticeEvents({ userId: 'u1', orgId: x.org, events: [copy] })).toBe(false);
+  });
+
   it('reads the quiet word however the model dressed it, and only that', () => {
     expect(quietLine(`${EVENT_QUIET}: #4 is already being fixed by Theo.`)).toBe('#4 is already being fixed by Theo.');
     expect(quietLine(`**${EVENT_QUIET}** — nothing needs them`)).toBe('nothing needs them');

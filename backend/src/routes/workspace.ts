@@ -2,7 +2,7 @@ import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope 
 import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
 import { isHarnessCli, seatNoReadingNotice, subscriptionName } from '../shared/harness-clis.js';
-import { applyWorkspaceAgentProactiveChange, resolveWorkspaceAgentProactive, type WorkspaceAgentProactiveAnswer } from '../shared/workspace-agent-proactive.js';
+import { applyWorkspaceAgentProactiveChange, inQuietHours, resolveWorkspaceAgentProactive, type WorkspaceAgentProactiveAnswer } from '../shared/workspace-agent-proactive.js';
 import { WORKSPACE_AGENT_CHAT_ID, type RecapChatStopAnswer } from '../shared/workspace-recap-chat.js';
 import { cleanFirstVisit } from '../shared/first-visit.js';
 import { registerDirectMessageRoutes } from './direct-messages.js';
@@ -14,6 +14,8 @@ import type { WorkspaceAgentDetailsAnswer, WorkspaceRecapAnswer } from '../share
 import type { RecapChatAnswer, RecapForwardedProposalRef, WorkspaceForwardedProposal } from '../shared/workspace-recap-chat.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
+import { registerCopiesRoutes } from './copies.js';
+import { CopyAlertSweep, type CopyAlertRecipient } from '../services/copy-alerts.js';
 import { Router, raw, type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -2954,6 +2956,8 @@ self.addEventListener('activate', (event) => {
     return { orgId: membership.orgId, userId: auth.userId, canDeleteForever: membership.role === 'admin' };
   }, { allowPermanentDelete: true });
   registerRadioRoutes(router, '/api/radio', deps, authenticate, async (auth) => isAdminAccount(auth.profile));
+  // The private copies (note #1058): the operator's Copies screen.
+  registerCopiesRoutes(router, '/api/copies', deps, authenticate, async (auth) => isAdminAccount(auth.profile));
   // A workplace's voice-to-text key and model (note #1026): read by every
   // member of the workplace being viewed, written by its admins only.
   registerVoiceRoutes(router, deps, async (req, res) => {
@@ -5092,6 +5096,8 @@ self.addEventListener('activate', (event) => {
       // The radio's library page (note #758) is the platform operator's, so
       // only their account is told there is one; anyone else has no door.
       ...(deps.radio && isAdminAccount(auth.profile) ? { radioLibrary: true as const } : {}),
+      // The Copies screen (note #1058) is the operator's too, and only where pulses are kept.
+      ...(deps.copyPulses && !deps.privateCopy && isAdminAccount(auth.profile) ? { copies: true as const } : {}),
       notesArchived,
       // Whether a note can carry files at all. An OPEN note answers this for
       // itself — it arrives with an `attachments` list, or without one on a
@@ -5515,6 +5521,47 @@ self.addEventListener('activate', (event) => {
     receiveEvents: (args) => recapChat.receiveEvents(args),
   }) : undefined;
   if (eventSweep) deps.workspaceAgentEvents = eventSweep;
+  // The private copies' alerts (note #1058): rows in the operator's Chief of
+  // Staff chat, in the workplace COPY_ALERTS_ORG_ID names or else the oldest
+  // one they made and started a Chief of Staff in. A person with event turns
+  // on (and outside quiet hours) gets a turn as well; otherwise the rows wait
+  // for their next word. index.ts starts it.
+  if (deps.copyPulses && !deps.privateCopy && deps.orgStorage && deps.userStorage) {
+    const orgStorage = deps.orgStorage;
+    const userStorage = deps.userStorage;
+    deps.copyAlerts = new CopyAlertSweep({
+      store: deps.copyPulses,
+      offered: async () => (deps.copyReleaseList ? deps.copyReleaseList() : null),
+      recipients: async () => {
+        const pinned = (process.env.COPY_ALERTS_ORG_ID ?? '').trim();
+        const chosen = new Map<string, { orgId: string; createdAt: number }>();
+        for (const org of await orgStorage.listOrgs()) {
+          if (org.deletion || (pinned && org.orgId !== pinned)) continue;
+          const userIds = pinned
+            ? (await orgStorage.listMembers(org.orgId)).filter((member) => member.role === 'admin').map((member) => member.userId)
+            : [org.createdByUserId];
+          for (const userId of userIds) {
+            const profile = await userStorage.getProfile(userId).catch(() => null);
+            if (!isAdminAccount(profile)) continue;
+            if (!Object.values(profile?.telegram?.agents ?? {}).some((agent) => agent.orgId === org.orgId && isWorkspaceAgent(agent))) continue;
+            const createdAt = Date.parse(String(org.createdAt ?? '')) || 0;
+            const before = chosen.get(userId);
+            if (!before || createdAt < before.createdAt) chosen.set(userId, { orgId: org.orgId, createdAt });
+          }
+        }
+        return [...chosen].map(([userId, { orgId }]): CopyAlertRecipient => ({ userId, orgId }));
+      },
+      deliver: async ({ userId, orgId }, events) => {
+        const member = await orgStorage.getMembership(orgId, userId).catch(() => null);
+        const settings = resolveWorkspaceAgentProactive(member?.workspaceAgentProactive);
+        if (settings.events && !inQuietHours(settings, new Date())) {
+          if (await recapChat.receiveEvents({ userId, orgId, events })) return true;
+        }
+        return recapChat.noticeEvents({ userId, orgId, events });
+      },
+      log: (line) => console.info(line),
+    });
+  }
   /**
    * The Chief of Staff's event turns and standing permissions (note #716):
    * the person's own settings, read and changed from the Workplace window, and

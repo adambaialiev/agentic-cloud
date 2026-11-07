@@ -344,6 +344,9 @@ export function MailScreen({ place = 'inbox' }: { place?: MailPlaceName }) {
   const navigate = useNavigate();
   const arrivedToWrite = (location.state as { writeTo?: unknown } | null)?.writeTo;
   const writeTo = place === 'inbox' && typeof arrivedToWrite === 'string' ? arrivedToWrite : '';
+  // And what it is about, when that door knows too (the Copies screen, note #1058).
+  const arrivedSubject = (location.state as { writeSubject?: unknown } | null)?.writeSubject;
+  const writeSubject = writeTo && typeof arrivedSubject === 'string' ? arrivedSubject : '';
   const [writing, setWriting] = useState(Boolean(writeTo));
   const sent = useRef(false);
   const now = useNow(true);
@@ -577,6 +580,7 @@ export function MailScreen({ place = 'inbox' }: { place?: MailPlaceName }) {
     return <MailComposeScreen
       address={address}
       to={writeTo}
+      subject={writeSubject}
       onClose={close}
       onSent={(message) => { sent.current = true; keepSent(message); }}
     />;
