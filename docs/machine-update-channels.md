@@ -96,6 +96,30 @@ Until 2026-08-08 the image baked `latest` instead, so every image build was a
 version decision made by the npm registry — which the updater then undid at the
 next sleep, but only for the one CLI that machine's agent actually uses. The
 others drifted quietly. Two owners of one number is the bug to watch for here.
+### Private copies follow our pin (note #1052)
+
+A private copy's backend has its own `config/harnessCliVersions`, and nothing
+of ours can write it. So it reads ours: `GET /api/cli-pins` on our backend
+(`https://api.agenticcloudcomputer.com/api/cli-pins`; unsigned, cacheable for
+five minutes, served from the 60 s cache — the image build keeps its own
+uncached endpoint) two minutes after start and then daily, and writes the
+three versions into its own document when they differ
+(`services/harness-cli-pin-follower.ts`, on with `PRIVATE_COPY`). The copy's
+own `HarnessCliUpdater` then moves each machine at its next sleep. A half
+answer (any CLI without an exact version) is never adopted.
+
+- **Held**: on a copy, `cli:versions set`/`bump` is the copy's admin choosing a
+  pin, so it also writes `hold`; while `hold` is set the follower writes
+  nothing. `cli:versions follow` clears it.
+- **Off**: `COPY_PINS_URL=off`. `COPY_PINS_URL=<url>` reads a mirror instead.
+- **No image rebuild in a copy.** A copy builds no images: it runs the agent
+  image its release carried (ours, by digest, which bakes our pin at the time
+  of the release). After an adopted bump, new machines in the copy boot the
+  release's CLIs and are moved at their first sleep; the image itself catches
+  up when the copy upgrades to a release cut after our bump.
+
+So a bump on our side reaches a copy's existing machines within a day plus one
+sleep, and its image with its next upgrade.
 
 ---
 
