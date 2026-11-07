@@ -35,7 +35,7 @@ import {
   type WorkspacePublicGuideVisitsAnswer,
 } from '../shared/public-guide.js';
 import { isSealedAgent } from '../types/user.js';
-import { GUEST_AGENT_LIMITS, type GuestCreateAnswer, type GuestDeleteAnswer, type GuestMessageAnswer, type GuestStatus, type GuestStopAnswer, type GuestTurnStatus, type WorkspaceGuestsAnswer } from '../shared/guest-agent.js';
+import { GUEST_AGENT_KIND, GUEST_AGENT_LIMITS, type GuestCreateAnswer, type GuestDeleteAnswer, type GuestMessageAnswer, type GuestStatus, type GuestStopAnswer, type GuestTurnStatus, type WorkspaceGuestsAnswer } from '../shared/guest-agent.js';
 import type {
   WorkspaceMailAddressClaimAnswer,
   WorkspaceMailApproval,
@@ -1211,7 +1211,8 @@ function teammateAgentsIn(
   for (const [ownerUserId, profile] of profiles) {
     if (ownerUserId === viewerUserId) continue;
     for (const record of listAgents(profile.telegram)) {
-      if (record.orgId === orgId) found.push({ ownerUserId, record });
+      // A guest's agent (note #1038) is a visitor's, not a teammate's (note #1063).
+      if (record.orgId === orgId && record.sealed !== GUEST_AGENT_KIND) found.push({ ownerUserId, record });
     }
   }
   return found;
@@ -3496,7 +3497,7 @@ self.addEventListener('activate', (event) => {
     status.agent ? { ...status, agent: { ...status.agent, avatarUrl: status.agent.avatarUrl ?? agentFaceUrl(status.agent.name) ?? null } } : status
   );
   const restingGuestStatus = (): GuestStatus => ({
-    state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, step: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
+    state: 'resting', agent: null, machine: null, messages: [], turn: null, jobs: [], steps: null, step: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
     messagesLeft: null, until: null, removedReason: null, turnstileSiteKey: null,
     limits: { messageMaxChars: GUEST_AGENT_LIMITS.messageMaxChars, quietMinutes: 30, lifetimeHours: 3, messagesMax: GUEST_AGENT_LIMITS.messagesMax },
   });
@@ -4007,7 +4008,7 @@ self.addEventListener('activate', (event) => {
       });
     }
     const agents = Object.fromEntries(Object.entries(auth.profile.telegram?.agents ?? {}).filter(([, agent]) => (
-      agent.orgId ? agent.orgId === auth.orgId : auth.orgId === auth.legacyOrgId
+      agent.sealed !== GUEST_AGENT_KIND && (agent.orgId ? agent.orgId === auth.orgId : auth.orgId === auth.legacyOrgId)
     )));
     // The workplace's shelves (notes, knowledge, repositories, sites and
     // secrets) and its whole agent fleet: one place since note #843.
@@ -4863,6 +4864,7 @@ self.addEventListener('activate', (event) => {
       // everywhere an agent's workplace is resolved.
       const fleetByOrg = new Map<string, number>();
       for (const agent of listAgents(auth.profile.telegram)) {
+        if (agent.sealed === GUEST_AGENT_KIND) continue;
         const agentOrgId = agent.orgId ?? auth.legacyOrgId;
         if (agentOrgId) fleetByOrg.set(agentOrgId, (fleetByOrg.get(agentOrgId) ?? 0) + 1);
       }
@@ -5140,7 +5142,7 @@ self.addEventListener('activate', (event) => {
     auth: MiniAppAuth,
     stored?: import('../shared/workspace-recap.js').WorkspaceRecapSettings,
   ): Promise<WorkspaceRecapSettingsAnswer> => {
-    const agents = Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id));
+    const agents = Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id) && a.sealed !== GUEST_AGENT_KIND);
     const providers = await recapProviders(auth.userId, auth.orgId!);
     const settings = resolveRecapSettings(agents, stored, providers);
     return { orgId: auth.orgId!, settings, models: availableRecapModels(agents, settings, providers) };
@@ -5175,7 +5177,7 @@ self.addEventListener('activate', (event) => {
     member: OrgMembershipDocument,
     pinDefault = false,
   ): Promise<WorkspaceRecapSettingsAnswer | null> => {
-    const agents = Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id));
+    const agents = Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id) && a.sealed !== GUEST_AGENT_KIND);
     const providers = await recapProviders(auth.userId, auth.orgId!);
     const initialized = await initializeAgentSettings(auth.userId, auth.orgId!, agents, providers, member, pinDefault);
     if (!initialized) return null;
@@ -5200,7 +5202,7 @@ self.addEventListener('activate', (event) => {
     if (!validRecapSettings(req.body)) return res.status(400).json({ error: 'Choose a supported model and effort.' });
     const { cli, model, effort } = req.body;
     const settings = { cli, model, effort };
-    const candidates = recapCandidates(Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id)));
+    const candidates = recapCandidates(Object.values(auth.profile.telegram?.agents ?? {}).filter((a) => activeAgent(auth, a.id) && a.sealed !== GUEST_AGENT_KIND));
     if (!candidates.some((a) => a.cli === cli) && !(await recapProviders(auth.userId, auth.orgId)).includes(cli)) return res.status(409).json({ error: `Connect your own ${cli === 'codex' ? 'ChatGPT' : 'Claude'} subscription in this workplace to use that model.` });
     // Preserve the Agent's CURRENT effective value before changing the old
     // shared recap field. The atomic initializer refuses to replace a pick
@@ -5295,7 +5297,7 @@ self.addEventListener('activate', (event) => {
     if (!entry) {
       const promise = (async () => {
         const namespaces = await viewerNamespaces(reader);
-        const agents = Object.values(reader.profile.telegram?.agents ?? {}).filter((a) => activeAgent(reader, a.id));
+        const agents = Object.values(reader.profile.telegram?.agents ?? {}).filter((a) => activeAgent(reader, a.id) && a.sealed !== GUEST_AGENT_KIND);
         return collectWorkspaceRecapSources({
           deps, userId: reader.userId, orgId: reader.orgId, namespaces, agents,
           pages: async (namespace) => deps.knowledgeProposalStorage && (deps.gitHostClient || deps.orgGitHost)
@@ -5332,7 +5334,7 @@ self.addEventListener('activate', (event) => {
     const incomplete = collected.incomplete || seatDocs === null;
     // Settings may have changed while the source read was in flight.
     const member = await deps.orgStorage!.getMembership(orgId, reader.userId);
-    const ownAgents = Object.values(reader.profile.telegram?.agents ?? {}).filter((a) => activeAgent(reader, a.id));
+    const ownAgents = Object.values(reader.profile.telegram?.agents ?? {}).filter((a) => activeAgent(reader, a.id) && a.sealed !== GUEST_AGENT_KIND);
     const settings = member ? resolveRecapSettings(ownAgents, member.workspaceRecapSettings, (seatDocs ?? []).map(s => s.provider)) : null;
     return { key, entry, collected, subscriptions, incomplete, member, settings };
   };
@@ -5426,7 +5428,8 @@ self.addEventListener('activate', (event) => {
     for (const person of members) {
       const profile = person.userId === userId ? reader.profile : await deps.userStorage!.getProfile(person.userId);
       for (const record of Object.values(profile?.telegram?.agents ?? {})) {
-        if (record.orgId !== orgId || record.purpose) continue;
+        // Guests' agents (note #1038) are visitors': never on the Chief of Staff's roster (note #1063, Oscar).
+        if (record.orgId !== orgId || record.purpose || record.sealed === GUEST_AGENT_KIND) continue;
         agents.push({ record, own: person.userId === userId, owner: profile ? personDisplayName(profile) : undefined, working: Boolean(deps.agentLifecycle?.isAgentWorking?.(person.userId, record.id)) });
       }
     }
@@ -5476,7 +5479,7 @@ self.addEventListener('activate', (event) => {
         if (person.userId === userId) continue;
         const owner = await deps.userStorage!.getProfile(person.userId).catch(() => null);
         for (const record of Object.values(owner?.telegram?.agents ?? {})) {
-          if (record.orgId !== orgId || record.purpose) continue;
+          if (record.orgId !== orgId || record.purpose || record.sealed === GUEST_AGENT_KIND) continue;
           const working = Boolean(deps.agentLifecycle?.isAgentWorking?.(person.userId, record.id));
           agents.push({
             name: record.name, owner: owner?.person?.firstName?.trim() || personDisplayName(owner), working,
@@ -9854,7 +9857,7 @@ self.addEventListener('activate', (event) => {
   const mailWakeAnswer = async (
     auth: { userId: string; profile: UserProfileDocument },
   ): Promise<WorkspaceMailWakeAnswer> => {
-    const fleet = listAgents(auth.profile.telegram);
+    const fleet = listAgents(auth.profile.telegram).filter((agent) => agent.sealed !== GUEST_AGENT_KIND);
     const candidate = (agent: AgentRecord): WorkspaceMailWakeCandidate => ({
       id: agent.id,
       name: agent.name,
@@ -11181,7 +11184,7 @@ self.addEventListener('activate', (event) => {
     profile: UserProfileDocument | null | undefined,
     inThisOrg: (agentOrgId: string | null | undefined) => boolean,
   ): AgentRecord[] => Object.values(profile?.telegram?.agents ?? {})
-    .filter((agent) => inThisOrg(agent.orgId) && !agent.purpose)
+    .filter((agent) => inThisOrg(agent.orgId) && !agent.purpose && agent.sealed !== GUEST_AGENT_KIND)
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') || a.id.localeCompare(b.id));
 
   /**

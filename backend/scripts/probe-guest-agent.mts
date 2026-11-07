@@ -24,13 +24,20 @@
  *      the proxy, this machine's private network, DNS, loopback ssh, and a
  *      process left running after the turn — and, as controls, list, write
  *      and run inside its own copy and reach the npm registry;
+ *   3b. (note #1063) starts two background jobs with the guest's own
+ *      `agentbuilt job start`, registered at the stub door's /jobs/start with
+ *      the per-turn key: one runs --job-seconds (default 300) and ends with a
+ *      marker, one sleeps and is stopped with `agentbuilt job stop` after the
+ *      turn; checks the reaper spared exactly the jobs, the long job finished
+ *      after the turn with exit 0 and its output on the volume, the backend's
+ *      read command sees it, and the receipt turn's prompt is built from it;
  *   4. reads the guide process's environment from /proc as root while the
  *      turn runs, checks the door saw the per-turn key (never the seat
  *      token) and a request that came through the proxy, and checks nothing
  *      of the guide's is still running after the turn.
  *
  * Usage (from backend/):
- *   npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--fresh] [--packages] [--keep]
+ *   npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--fresh] [--packages] [--job-seconds N] [--keep]
  *
  * Exit 0 when every escape was blocked, every control worked, the
  * environment held nothing but the expected names and no secret reached it.
@@ -39,6 +46,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { GUEST_JOBS_ALLOWED, GUEST_JOBS_ROOT, buildGuestJobsReadCommand, guestJobLabel, guestJobReceiptPrompt, parseGuestJobsReading } from '../src/services/guest-agent-jobs.js';
+import { writeFileSync } from 'node:fs';
 import {
   GUEST_CHECKOUT,
   GUEST_EGRESS_PATH,
@@ -59,6 +68,8 @@ const source = arg('--source');
 const keep = process.argv.includes('--keep');
 const fresh = process.argv.includes('--fresh');
 const packages = process.argv.includes('--packages');
+const JOB_SECONDS = Number(arg('--job-seconds') ?? 300);
+const jobIds: string[] = [];
 if (!source || source.startsWith('--')) {
   console.error('usage: npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--keep]');
   process.exit(2);
@@ -94,6 +105,11 @@ const plan: Step[] = [
   { label: 'loopback ssh', command: ok('timeout 5 bash -c "exec 3<>/dev/tcp/127.0.0.1/22"'), expect: 'blocked' },
   { label: 'the git host with a write (push)', command: ok(`cd ${GUEST_CHECKOUT} && git push --dry-run ${source} HEAD:probe-1038`), expect: 'blocked' },
   { label: 'leave a process running after the turn', command: 'nohup sleep 600 >/dev/null 2>&1 & echo started', expect: 'ok' },
+  // Note #1063: managed background jobs, through the jobs door with the per-turn key.
+  { label: `start a ${JOB_SECONDS} s background job (outlives the turn)`, command: ok(`agentbuilt job start --cwd ${GUEST_CHECKOUT} -- bash -c 'sleep ${JOB_SECONDS}; echo PROBE_JOB_DONE'`), expect: 'ok' },
+  { label: 'start a second job, to be stopped after the turn', command: ok('agentbuilt job start -- sleep 900'), expect: 'ok' },
+  { label: 'list its jobs', command: ok('agentbuilt job list | grep -c running | grep -q 2'), expect: 'ok' },
+  { label: 'any other agentbuilt verb (no platform token, nothing else open)', command: ok('agentbuilt agent list'), expect: 'blocked' },
   // Note #1054: no reply limit and no cap of our own; a command well past the old 3 minutes completes.
   { label: 'a command running 200 s (well past the old 3-minute limit) completes', command: 'node -e "setTimeout(() => console.log(\\"PROBE_\\" + \\"OK\\"), 200000)"', expect: 'ok', timeout: 300_000 },
 ];
@@ -111,6 +127,16 @@ const server = http.createServer((req, res) => {
     if (auth === `Bearer ${TURN_KEY}`) doorSaw.turnKey += 1;
     else if (auth.includes(FAKE_SEAT)) doorSaw.seatToken += 1;
     else doorSaw.other += 1;
+    // The jobs door (note #1063): the per-turn key, then the reaper's list, as the backend does.
+    if (req.url === '/jobs/start') {
+      const job = JSON.parse(body || '{}') as { id?: string; argv?: string[] };
+      if (auth !== `Bearer ${TURN_KEY}` || !job.id) { res.writeHead(401, { 'content-type': 'application/json' }); res.end('{"error":"This key is not open."}'); return; }
+      jobIds.push(job.id);
+      sh(`umask 077 && printf '%s\\n' ${jobIds.join(' ')} > ${GUEST_JOBS_ALLOWED}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ label: guestJobLabel(job.argv ?? []), timeoutSeconds: JOB_SECONDS + 120 }));
+      return;
+    }
     if (!req.url?.startsWith('/v1/messages')) { res.writeHead(404); res.end('{}'); return; }
     if (req.url.includes('count_tokens')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"input_tokens":10}'); return; }
     const parsed = JSON.parse(body || '{}') as { messages?: Array<{ content?: unknown }>; tools?: unknown[]; model?: string };
@@ -212,9 +238,14 @@ async function main(): Promise<void> {
   const seen = sh(`sudo -u ${GUEST_USER} bash -c 'ls /proc | grep -c "^[0-9]"'`).stdout.trim();
   const all = sh("ls /proc | grep -c '^[0-9]'").stdout.trim();
   await new Promise((resolve) => turn.on('close', resolve));
-  const leftover = sh(`pgrep -u ${GUEST_USER} -l`).stdout.trim();
+  // What is left of the guide: only the two jobs' sessions may be (note #1063).
+  const jobSids = new Set(jobIds.map((id) => sh(`sudo cat ${GUEST_JOBS_ROOT}/${id}/sid 2>/dev/null`).stdout.trim()).filter(Boolean));
+  const procs = sh(`sudo ps -u ${GUEST_USER} -o pid=,sid=,comm=`).stdout.trim().split('\n').filter(Boolean).map((line) => line.trim().split(/\s+/));
+  const leftover = procs.filter(([, sid]) => !jobSids.has(sid!)).map((p) => p.join(' ')).join('\n');
+  const jobsAlive = jobSids.size === 2 && [...jobSids].every((sid) => procs.some(([, s2]) => s2 === sid));
   const keyLeft = sh(`sudo ls ${keyFile} 2>/dev/null`).stdout.trim();
   server.close();
+  void writeFileSync;
 
   console.log('3. what each attempt got back');
   plan.forEach((step, index) => {
@@ -226,7 +257,7 @@ async function main(): Promise<void> {
     console.log(`   ${pass ? 'PASS' : 'FAIL'}  ${step.label}: ${outcome} — ${text.replace(/PROBE_(OK|BLOCKED)/, '').replace(/\s+/g, ' ').trim().slice(0, 100)}`);
   });
   const names = environ.map((line) => line.split('=')[0]).filter(Boolean).sort();
-  const allowed = new Set(['ANTHROPIC_BASE_URL', 'BASH_DEFAULT_TIMEOUT_MS', 'BASH_MAX_TIMEOUT_MS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CODE_OAUTH_TOKEN', 'DISABLE_AUTOUPDATER', 'DISABLE_ERROR_REPORTING', 'DISABLE_TELEMETRY', 'GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'LANG', 'NO_PROXY', 'OLDPWD', 'PATH', 'PWD', 'SHLVL', 'TERM', '_', 'http_proxy', 'https_proxy', 'no_proxy']);
+  const allowed = new Set(['ACC_GUEST_JOBS_URL', 'ANTHROPIC_BASE_URL', 'BASH_DEFAULT_TIMEOUT_MS', 'BASH_MAX_TIMEOUT_MS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CODE_OAUTH_TOKEN', 'DISABLE_AUTOUPDATER', 'DISABLE_ERROR_REPORTING', 'DISABLE_TELEMETRY', 'GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'LANG', 'NO_PROXY', 'OLDPWD', 'PATH', 'PWD', 'SHLVL', 'TERM', '_', 'http_proxy', 'https_proxy', 'no_proxy']);
   const extra = names.filter((name) => !allowed.has(name));
   const token = environ.find((line) => line.startsWith('CLAUDE_CODE_OAUTH_TOKEN='))?.split('=').slice(1).join('=');
   const envOk = Boolean(pid) && !extra.length && token === TURN_KEY;
@@ -240,7 +271,35 @@ async function main(): Promise<void> {
   console.log(`   ${doorOk ? 'PASS' : 'FAIL'}  the door saw ${doorSaw.requests} requests: ${doorSaw.turnKey} with the per-turn key, ${doorSaw.seatToken} with the seat token, ${doorSaw.other} other; ${doorSaw.viaProxy} came through the egress proxy`);
   const reaped = !leftover;
   if (!reaped) failed = true;
-  console.log(`   ${reaped ? 'PASS' : 'FAIL'}  nothing of the guide's is running after the turn${leftover ? ` — still: ${leftover.replace(/\n/g, ', ')}` : ''}`);
+  console.log(`   ${reaped ? 'PASS' : 'FAIL'}  nothing of the guide's is running after the turn but its jobs${leftover ? ` — still: ${leftover.replace(/\n/g, ', ')}` : ''}`);
+  if (!jobsAlive) failed = true;
+  console.log(`   ${jobsAlive ? 'PASS' : 'FAIL'}  both background jobs survived the end of the turn (${jobIds.length} registered with the per-turn key)`);
+  // The stopped one: stopped by the guest's own verb, after the turn.
+  if (jobIds[1]) {
+    const stop = sh(`sudo -n -u ${GUEST_USER} env -i HOME=/data/guest/home PATH=/usr/local/bin:/usr/bin:/bin /usr/local/lib/acc-guest/bin/agentbuilt job stop ${jobIds[1]}`);
+    const stopped = sh(`sudo cat ${GUEST_JOBS_ROOT}/${jobIds[1]}/result.json`).stdout;
+    const pass = /"state":"stopped"/.test(stopped);
+    if (!pass) failed = true;
+    console.log(`   ${pass ? 'PASS' : 'FAIL'}  agentbuilt job stop ended the second job: ${stop.stdout.trim() || stop.stderr.trim()}`);
+  }
+  // The long one: it finishes on its own, after the turn, and the backend's read sees it.
+  if (jobIds[0]) {
+    const began = Date.now();
+    let reading = parseGuestJobsReading(sh(buildGuestJobsReadCommand([jobIds[0]])).stdout)?.[0];
+    while (reading && !reading.result && Date.now() - began < (JOB_SECONDS + 60) * 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      reading = parseGuestJobsReading(sh(buildGuestJobsReadCommand([jobIds[0]])).stdout)?.[0];
+    }
+    const pass = reading?.result?.state === 'succeeded' && reading.result.exitCode === 0 && reading.tail.includes('PROBE_JOB_DONE');
+    if (!pass) failed = true;
+    console.log(`   ${pass ? 'PASS' : 'FAIL'}  the ${JOB_SECONDS} s job finished after the turn: ${reading?.result?.state ?? 'no result'}, exit ${reading?.result?.exitCode ?? '-'}, output on the volume ${reading?.tail.includes('PROBE_JOB_DONE') ? 'has its marker' : 'lacks its marker'} (waited ${Math.round((Date.now() - began) / 1000)} s after the turn)`);
+    if (reading?.result) {
+      const receipt = guestJobReceiptPrompt([{ id: jobIds[0], label: guestJobLabel(['bash', '-c', 'sleep']), state: reading.result.state, exitCode: reading.result.exitCode, startedAt: new Date(began).toISOString(), finishedAt: reading.result.finishedAt, tail: reading.tail }]);
+      const ok2 = receipt.includes(`job ${jobIds[0]} — succeeded, exit 0`) && receipt.includes('| PROBE_JOB_DONE');
+      if (!ok2) failed = true;
+      console.log(`   ${ok2 ? 'PASS' : 'FAIL'}  the receipt turn's prompt is built from it: ${receipt.split('\n')[2]}`);
+    }
+  }
   if (keyLeft) failed = true;
   console.log(`   ${keyLeft ? 'FAIL' : 'PASS'}  the per-turn key file was removed`);
   console.log(`   info  processes the guide can see: ${seen} (the agent sees ${all})`);

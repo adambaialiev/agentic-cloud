@@ -30,7 +30,8 @@ import {
   readGuestStream,
 } from '../../services/guest-agent-machine.js';
 import { GuestModelDoor, GUEST_DOOR_MAX_REQUESTS_PER_TURN } from '../../services/guest-model-door.js';
-import { GuestAgentService, hashGuestKey } from '../../services/guest-agent-service.js';
+import { GUEST_NO_ANSWER_TEXT, GuestAgentService, hashGuestKey } from '../../services/guest-agent-service.js';
+import { GUEST_JOBS_ALLOWED, buildGuestReapScript, guestJobLabel } from '../../services/guest-agent-jobs.js';
 import { InMemoryGuestAgentStorage, SqliteGuestAgentStorage } from '../../services/guest-agent-storage.js';
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
 import { GUEST_AGENT_LIMITS, GUEST_BUILD_ESTIMATE_SECONDS, GUEST_DECLINED_TEXT, type GuestStatus } from '../../shared/guest-agent.js';
@@ -144,7 +145,9 @@ describe('a guest turn\'s command', () => {
     expect(command).toContain(`${GUEST_TURN_KEY_ENV}="$(cat '/home/agent/.guest-turns/t.key')"`);
     expect(command).toContain("rm -f '/home/agent/.guest-turns/t.key'");
     expect(command).toContain('--model sonnet --effort high');
-    expect(command).toContain('pkill -KILL -u guide');
+    expect(command).toContain('ps -u guide -o pid=,sid=');
+    expect(command).toContain('kill -$1');
+    expect(command).toContain('__reap KILL');
     expect(command).not.toContain('CLAUDE_CODE_OAUTH_TOKEN=');
   });
 });
@@ -333,6 +336,7 @@ function world(options: {
     fetch: fetchTurnstile as never,
     now: () => clock,
     sweepEveryMs: null,
+    jobsEveryMs: null,
     limits: options.limits ?? {},
   });
   if (options.enabled !== false) void service.setEnabled('owner-1', 'org-1', true);
@@ -687,7 +691,7 @@ describe('GuestAgentService — talking', () => {
     expect(x.door.openKeys()).toBe(1);
     expect(await x.service.stopTurn(key, turnId)).toBe('stopped');
     expect(x.door.openKeys()).toBe(0);
-    expect(x.commands.some((c) => c.includes('pkill -TERM -u guide'))).toBe(true);
+    expect(x.commands.some((c) => c.includes('__reap TERM'))).toBe(true);
     release();
     await x.service.idle();
     expect((await x.service.turnStatus(key, turnId))?.state).toBe('stopped');
@@ -711,6 +715,174 @@ describe('GuestAgentService — talking', () => {
     expect((await x.service.message(key, '   ')).httpStatus).toBe(400);
     expect((await x.service.message(key, 'x'.repeat(1001))).httpStatus).toBe(400);
     expect((await x.service.message('A'.repeat(43), 'hi')).httpStatus).toBe(401);
+  });
+});
+
+describe('GuestAgentService — background jobs (note #1063)', () => {
+  /** A world whose first visitor turn holds until released, so a job can be started "inside the reply". */
+  function jobWorld(readings: () => Array<{ id: string; result: { state: string; exitCode: number | null; finishedAt: string } | null; alive: boolean; stopped: boolean; tail: string }>) {
+    let release!: () => void;
+    let held = 0;
+    const prompts: string[] = [];
+    const x = world({
+      answer: async (command) => {
+        prompts.push(command);
+        if (held++ === 0) await new Promise<void>((resolve) => { release = resolve; });
+        return ok(stream(command.includes('A background job') ? 'Coverage is 71% of lines.' : 'I started this as a background job; I will tell you when it finishes.'));
+      },
+    });
+    x.client.execSync.mockImplementation(async (_sandbox: string, command: string) => {
+      x.commands.push(command);
+      if (command.includes('sudo -n node -e')) return ok(JSON.stringify(readings()));
+      if (command.includes('--output-format stream-json')) {
+        prompts.push(command);
+        if (held++ === 0) await new Promise<void>((resolve) => { release = resolve; });
+        return ok(stream(command.includes('A background job') ? 'Coverage is 71% of lines.' : 'I started this as a background job; I will tell you when it finishes.'));
+      }
+      return ok();
+    });
+    return { x, prompts, release: () => release() };
+  }
+  function call(service: GuestAgentService, key: string, body: unknown) {
+    const res = { code: 0, body: null as unknown, status(code: number) { this.code = code; return this; }, json(b: unknown) { this.body = b; return this; } };
+    return service.handleJobsDoor({ method: 'POST', path: '/start', headers: { authorization: `Bearer ${key}` }, body } as never, res as never).then(() => res);
+  }
+  const JOB = 'j_0123456789abcdef01234567';
+  async function startJob(readings: Parameters<typeof jobWorld>[0]) {
+    const w = jobWorld(readings);
+    const { key } = await makeAgent(w.x);
+    const sent = await w.x.service.message(key, 'measure test coverage');
+    for (let i = 0; i < 50 && !w.x.uploads.some((u) => u.path.endsWith('.key')); i++) await new Promise((r) => setTimeout(r, 0));
+    const turnKey = w.x.uploads.find((u) => u.path.endsWith('.key'))!.content;
+    return { ...w, key, turnKey, turnId: (sent.answer as { turnId: string }).turnId };
+  }
+
+  it('the door registers a job only with an open per-turn key, labels it redacted, and lists it for the reaper', async () => {
+    let finished = false;
+    const s = await startJob(() => [{ id: JOB, result: finished ? { state: 'succeeded', exitCode: 0, finishedAt: '2026-11-06T18:20:00.000Z' } : null, alive: !finished, stopped: false, tail: 'All files | 71.2' }]);
+    expect((await call(s.x.service, 'acc-guest-not-a-key', { id: JOB, argv: ['ls'] })).code).toBe(401);
+    const res = await call(s.x.service, s.turnKey, { id: JOB, argv: ['npx', 'vitest', 'run', '--coverage', 'API_TOKEN=abc123'], timeoutSeconds: 600 });
+    expect(res.code).toBe(200);
+    expect(res.body).toEqual({ label: 'npx vitest run --coverage API_TOKEN=[REDACTED]', timeoutSeconds: 600 });
+    const allowed = s.x.uploads.filter((u) => u.path === GUEST_JOBS_ALLOWED);
+    expect(allowed.at(-1)).toMatchObject({ content: `${JOB}\n`, mode: 0o600 });
+    // The status carries it for the pill: id, label, start; never argv, cwd or output.
+    const status = await s.x.service.status(s.key);
+    expect(status.jobs).toEqual([{ id: JOB, label: 'npx vitest run --coverage API_TOKEN=[REDACTED]', startedAt: '2026-11-06T18:00:00.000Z' }]);
+    expect(JSON.stringify(status)).not.toContain('abc123');
+    s.release();
+    await s.x.service.idle();
+    // The reply ended; the job runs on: awake, never asleep, no quiet clock, not removed after 40 quiet minutes.
+    s.x.advance(40 * 60_000);
+    await s.x.service.tick();
+    const later = await s.x.service.status(s.key);
+    expect(later).toMatchObject({ state: 'ready', machine: { awake: true }, quietUntil: null });
+    expect(s.x.deleted).toEqual([]);
+    // A job's key died with its turn.
+    expect((await call(s.x.service, s.turnKey, { id: 'j_aaaaaaaaaaaaaaaaaaaaaaaa', argv: ['ls'] })).code).toBe(401);
+    // It finishes: the guest answers in a quiet turn, the visitor gets a new message, not counted.
+    finished = true;
+    const used = (await s.x.storage.byKeyHash(hashGuestKey(s.key)))!.messagesUsed;
+    await s.x.service.pollJobs();
+    await s.x.service.idle();
+    const jobTurn = s.prompts.find((p) => p.includes('A background job you started has finished'))!;
+    expect(jobTurn).toContain(`job ${JOB} — succeeded, exit 0`);
+    expect(jobTurn).toContain('| All files | 71.2');
+    const done = await s.x.service.status(s.key);
+    expect(done.jobs).toEqual([]);
+    expect(done.messages.at(-1)).toMatchObject({ role: 'agent', text: 'Coverage is 71% of lines.', fromJob: true });
+    expect(done.messages.filter((m) => m.role === 'visitor')).toHaveLength(1);
+    expect((await s.x.storage.byKeyHash(hashGuestKey(s.key)))!.messagesUsed).toBe(used);
+    expect(s.x.uploads.filter((u) => u.path === GUEST_JOBS_ALLOWED).at(-1)!.content).toBe('');
+    // Once: a second read finds nothing owed.
+    await s.x.service.pollJobs();
+    await s.x.service.idle();
+    expect(s.prompts.filter((p) => p.includes('A background job'))).toHaveLength(1);
+  });
+
+  it('at most four at once, and only while the reply runs', async () => {
+    const s = await startJob(() => []);
+    for (let i = 0; i < 4; i++) expect((await call(s.x.service, s.turnKey, { id: `j_${String(i).repeat(24)}`, argv: ['sleep', '600'] })).code).toBe(200);
+    const fifth = await call(s.x.service, s.turnKey, { id: 'j_ffffffffffffffffffffffff', argv: ['sleep', '600'] });
+    expect(fifth).toMatchObject({ code: 429 });
+    expect((await s.x.service.status(s.key)).jobs).toHaveLength(4);
+    s.release();
+    await s.x.service.idle();
+  });
+
+  it('a job the guest stopped, or a quiet one, starts no turn; a lost one is interrupted and does', async () => {
+    const s = await startJob(() => [
+      { id: 'j_111111111111111111111111', result: { state: 'stopped', exitCode: null, finishedAt: '2026-11-06T18:01:00.000Z' }, alive: false, stopped: true, tail: '' },
+      { id: 'j_222222222222222222222222', result: { state: 'succeeded', exitCode: 0, finishedAt: '2026-11-06T18:01:00.000Z' }, alive: false, stopped: false, tail: '' },
+    ]);
+    await call(s.x.service, s.turnKey, { id: 'j_111111111111111111111111', argv: ['sleep', '600'] });
+    await call(s.x.service, s.turnKey, { id: 'j_222222222222222222222222', argv: ['true'], quiet: true });
+    await call(s.x.service, s.turnKey, { id: 'j_333333333333333333333333', argv: ['make'] });
+    s.release();
+    await s.x.service.idle();
+    s.x.advance(60_000);
+    await s.x.service.pollJobs();
+    await s.x.service.idle();
+    const receipts = s.prompts.filter((p) => p.includes('[Platform]'));
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toContain('job j_333333333333333333333333 — interrupted');
+    expect(receipts[0]).not.toContain('j_111111111111111111111111');
+    expect(receipts[0]).not.toContain('j_222222222222222222222222');
+  });
+
+  it('a job that finishes while a reply runs is told when that reply ends, as one turn', async () => {
+    let finished = false;
+    const s = await startJob(() => [{ id: JOB, result: finished ? { state: 'failed', exitCode: 1, finishedAt: '2026-11-06T18:00:30.000Z' } : null, alive: !finished, stopped: false, tail: 'FAIL' }]);
+    await call(s.x.service, s.turnKey, { id: JOB, argv: ['npm', 'test'] });
+    finished = true;
+    await s.x.service.pollJobs(); // the reply is still running: owed, not started
+    expect(s.prompts.filter((p) => p.includes('[Platform]'))).toHaveLength(0);
+    s.release();
+    await s.x.service.idle();
+    expect(s.prompts.filter((p) => p.includes('[Platform]'))).toHaveLength(1);
+    expect(s.prompts.find((p) => p.includes('[Platform]'))).toContain('failed, exit 1');
+  });
+
+  it('the reaper spares only the registered jobs\' sessions; the turn launch reaps with it', () => {
+    const script = buildGuestReapScript('guide', 'KILL');
+    expect(script).toContain(GUEST_JOBS_ALLOWED);
+    expect(script).toContain('result.json');
+    expect(script).toContain('ps -u guide -o pid=,sid=');
+    expect(buildGuestClaudeCommand({ prompt: 'p', sessionId: 's', keyFile: '/k', streamFile: '/s', timeoutSeconds: 60 })).toContain(GUEST_JOBS_ALLOWED);
+  });
+
+  it('the runner puts the guest\'s own agentbuilt first and hands it the jobs door', () => {
+    const runner = buildGuestRunnerScript(SOURCE.doorUrl);
+    expect(runner).toContain("PATH='/usr/local/lib/acc-guest/bin:/usr/local/bin:/usr/bin:/bin'");
+    expect(runner).toContain("ACC_GUEST_JOBS_URL='https://api.example.com/api/guest-model/jobs'");
+    expect(buildGuestSetupScript(SOURCE)).toContain('/usr/local/lib/acc-guest/bin/agentbuilt');
+  });
+
+  it('labels: credentials, the per-turn key and long commands never reach the page', () => {
+    expect(guestJobLabel(['curl', '-H', 'Authorization: Bearer sekrit', 'https://u:p@x.y/z'])).toBe('curl -H Authorization: Bearer [REDACTED] https://[REDACTED]@x.y/z');
+    expect(guestJobLabel(['echo', 'acc-guest-abcdefghijklmnop'])).toBe('echo [REDACTED]');
+    expect(guestJobLabel(['x'.repeat(300)])).toHaveLength(120);
+  });
+});
+
+describe('GuestAgentService — an empty answer (note #1063)', () => {
+  it('is not a refusal: the visitor reads that it stopped without an answer, and it is not counted', async () => {
+    const x = world({ answer: () => ok(stream('')) });
+    const { key } = await makeAgent(x);
+    const sent = await x.service.message(key, 'measure test coverage');
+    await x.service.idle();
+    const turn = await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId);
+    expect(turn).toMatchObject({ state: 'answered', answer: GUEST_NO_ANSWER_TEXT });
+    expect(turn!.answer).not.toBe(GUEST_DECLINED_TEXT);
+    expect((await x.service.status(key)).messagesLeft).toBe(40);
+  });
+
+  it('the instructions keep short code-work asks in scope and name the job runner', () => {
+    const text = guestInstructionsFor('Oscar');
+    expect(text).toContain('measure its coverage');
+    expect(text).toContain('Declining is only for asks that are clearly about something else');
+    expect(text).toContain('agentbuilt job start');
+    expect(text).toContain('I started this as a background job; I will tell you when it finishes');
   });
 });
 

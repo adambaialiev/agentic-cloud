@@ -36,6 +36,18 @@ import { quoteShellArg } from '../utils/shell-quote.js';
 import { seatOutOfService } from './public-guide-service.js';
 import { guideAnswerLeak } from './public-guide-machine.js';
 import { GuestModelDoor } from './guest-model-door.js';
+import type { Request, Response } from 'express';
+import {
+  GUEST_JOB_DEFAULT_TIMEOUT_MS,
+  GUEST_JOB_ID_PATTERN,
+  GUEST_JOB_STARTS_PER_TURN,
+  GUEST_JOBS_ALLOWED,
+  buildGuestJobsReadCommand,
+  guestJobLabel,
+  guestJobReceiptPrompt,
+  guestJobTail,
+  parseGuestJobsReading,
+} from './guest-agent-jobs.js';
 import {
   GUEST_TURN_DIR,
   buildGuestClaudeCommand,
@@ -46,7 +58,7 @@ import {
   readGuestStream,
   type GuestStreamReading,
 } from './guest-agent-machine.js';
-import { guestTranscriptCutoffMs, type GuestAgentRow, type GuestAgentSettings, type GuestAgentStorage } from './guest-agent-storage.js';
+import { guestTranscriptCutoffMs, type GuestJobRecord, type GuestAgentRow, type GuestAgentSettings, type GuestAgentStorage } from './guest-agent-storage.js';
 import {
   GUEST_AGENT_LIMITS,
   GUEST_AGENT_MACHINE,
@@ -62,6 +74,7 @@ import {
   type GuestCreateAnswer,
   type GuestCreateStep,
   type GuestCreateStepId,
+  type GuestJob,
   type GuestMessage,
   type GuestMessageAnswer,
   type GuestRemovedReason,
@@ -122,6 +135,8 @@ export interface GuestAgentServiceDeps {
   limits?: Partial<typeof GUEST_AGENT_LIMITS>;
   /** Off in tests: no timer. */
   sweepEveryMs?: number | null;
+  /** How often running background jobs are read (note #1063); off in tests. */
+  jobsEveryMs?: number | null;
 }
 
 interface LiveTurn {
@@ -136,8 +151,14 @@ interface LiveTurn {
   startedAtMs: number;
   until?: string | null;
   stopped: boolean;
+  /** The finished jobs a job turn answers. */
+  jobIds?: string[];
   doorKey?: string;
   sandboxId?: string;
+  /** The guest answering finished background jobs, not a visitor's message (note #1063). */
+  fromJob?: boolean;
+  /** Background jobs this turn started (bounded per turn). */
+  jobStarts?: number;
 }
 
 /**
@@ -179,6 +200,20 @@ export function guestBuildSteps(row: Pick<GuestAgentRow, 'steps' | 'claimedAt' |
   return GUEST_CREATE_STEP_IDS.map((id) => ({ id, done: false, startedAt: id === 'machine' ? began : null, doneAt: null }));
 }
 
+/** What a visitor reads when a turn ended with no answer at all: never the refusal line (note #1063). */
+export const GUEST_NO_ANSWER_TEXT = 'I stopped without writing an answer. Ask me again, or ask what I did so far, and I will pick up from there. This one did not count against your messages.';
+
+/** A guest's background jobs that are running now, oldest first (note #1063). */
+export function runningJobs(row: Pick<GuestAgentRow, 'jobs'>): GuestJobRecord[] {
+  return (row.jobs ?? []).filter((job) => job.state === 'running').sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+}
+
+function guestJobFailedTurnText(row: GuestAgentRow, ids: readonly string[]): string {
+  const jobs = (row.jobs ?? []).filter((job) => ids.includes(job.id));
+  const lines = jobs.map((job) => `- \`${job.label.replace(/`/g, "'")}\`: ${job.state.replace('_', ' ')}${job.exitCode !== null ? `, exit ${job.exitCode}` : ''}`);
+  return [jobs.length === 1 ? 'A background job finished:' : 'Background jobs finished:', ...lines, '', 'I could not write about it just now. Ask me, and I will read its output.'].join('\n');
+}
+
 export function hashGuestKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
 }
@@ -206,6 +241,10 @@ export class GuestAgentService {
   private lock: Promise<unknown> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastHourly = 0;
+  private jobsTimer: ReturnType<typeof setInterval> | null = null;
+  /** Consecutive failed reads of an agent's jobs; past a few, its running jobs are interrupted. */
+  private readonly jobReadFailures = new Map<string, number>();
+  private pollingJobs = false;
   private readonly inflight = new Set<Promise<unknown>>();
 
   constructor(private readonly deps: GuestAgentServiceDeps) {
@@ -218,11 +257,18 @@ export class GuestAgentService {
     if (!every || this.timer) return;
     this.timer = setInterval(() => { void this.tick().catch((error) => console.warn('[guest] sweep failed:', error)); }, every);
     this.timer.unref?.();
+    const jobsEvery = this.deps.jobsEveryMs === undefined ? 15_000 : this.deps.jobsEveryMs;
+    if (jobsEvery) {
+      this.jobsTimer = setInterval(() => { void this.pollJobs().catch((error) => console.warn('[guest] jobs read failed:', error)); }, jobsEvery);
+      this.jobsTimer.unref?.();
+    }
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.jobsTimer) clearInterval(this.jobsTimer);
     this.timer = null;
+    this.jobsTimer = null;
   }
 
   /** Background work (a build, a turn) — tracked so tests and shutdown can wait for it. */
@@ -303,6 +349,7 @@ export class GuestAgentService {
       machine: null,
       messages: [],
       turn: null,
+      jobs: [],
       steps: null,
       step: null,
       estimateSeconds: null,
@@ -326,7 +373,7 @@ export class GuestAgentService {
   /** The conversation as the visitor may see it: no costs, no flags; a held answer is the declined sentence. */
   private visitorMessages(row: GuestAgentRow): GuestMessage[] {
     return row.transcript.messages.map((m) => {
-      const visible: GuestMessage = { id: m.id, role: m.role, text: m.flag ? GUEST_DECLINED_TEXT : m.text, at: m.at };
+      const visible: GuestMessage = { id: m.id, role: m.role, text: m.flag ? GUEST_DECLINED_TEXT : m.text, at: m.at, ...(m.fromJob ? { fromJob: true } : {}) };
       if (m.state) visible.state = m.flag ? 'declined' : m.state;
       if (m.activity) visible.activity = m.activity;
       return visible;
@@ -353,15 +400,19 @@ export class GuestAgentService {
     const turnId = this.runningByAgent.get(row.agentId) ?? null;
     const last = Date.parse(row.lastActiveAt ?? row.claimedAt ?? row.preparedAt);
     const idle = this.deps.idleStopMs ?? 3 * MINUTE_MS;
-    const awake = Boolean(turnId) || now - last < idle;
+    // A running background job keeps the machine awake (note #1063).
+    const jobs = runningJobs(row);
+    const awake = Boolean(turnId) || jobs.length > 0 || now - last < idle;
     const state: GuestState = turnId ? 'working' : awake ? 'ready' : 'asleep';
+    const fromJob = turnId ? Boolean(this.turns.get(turnId)?.fromJob) : false;
     const endsAtMs = Date.parse(row.claimedAt ?? row.preparedAt) + this.limits.lifetimeMs;
     return this.blankStatus(state, {
       agent,
       machine: { ...GUEST_AGENT_MACHINE, awake },
       messages: this.visitorMessages(row),
-      turn: turnId ? { turnId } : null,
-      quietUntil: turnId ? null : new Date(Math.min(last + this.limits.quietMs, endsAtMs)).toISOString(),
+      turn: turnId ? { turnId, ...(fromJob ? { fromJob: true } : {}) } : null,
+      jobs: jobs.slice(0, this.limits.jobsMax).map((job): GuestJob => ({ id: job.id, label: job.label, startedAt: job.startedAt })),
+      quietUntil: turnId || jobs.length ? null : new Date(Math.min(last + this.limits.quietMs, endsAtMs)).toISOString(),
       endsAt: new Date(endsAtMs).toISOString(),
       messagesLeft: Math.max(0, this.limits.messagesMax - row.messagesUsed),
       createdAt: row.claimedAt,
@@ -717,7 +768,7 @@ export class GuestAgentService {
       // No ceiling unless one is set (note #1054): the wall is the agent's own life.
       const timeoutSeconds = this.turnWallSeconds(row);
       let run = await this.launch(client, sandboxId, turn, lease.token, timeoutSeconds, {
-        prompt: buildGuestVisitorPrompt(text),
+        prompt: turn.fromJob ? text : buildGuestVisitorPrompt(text),
         ...(row.claudeSessionId ? { resumeSessionId: row.claudeSessionId } : { sessionId: randomUUID() }),
       });
       // A conversation the machine lost: start a fresh one carrying the exchange so far, once.
@@ -725,7 +776,7 @@ export class GuestAgentService {
         const earlier = row.transcript.messages.filter((m) => m.id !== turn.messageId)
           .map((m) => `${m.role === 'visitor' ? 'The visitor wrote' : 'You answered'}: ${m.text}`).join('\n\n');
         run = await this.launch(client, sandboxId, turn, lease.token, timeoutSeconds, {
-          prompt: `${earlier ? `${earlier}\n\n` : ''}${buildGuestVisitorPrompt(text)}`,
+          prompt: `${earlier ? `${earlier}\n\n` : ''}${turn.fromJob ? text : buildGuestVisitorPrompt(text)}`,
           sessionId: randomUUID(),
         });
       }
@@ -752,7 +803,11 @@ export class GuestAgentService {
         return await this.endTurn(turn, { state: 'failed', reading });
       }
       const answer = (reading.answer ?? '').trim();
-      if (!answer || answer.startsWith(GUEST_DECLINED_MARKER)) {
+      // No answer at all is not a refusal (note #1063: Oscar's coverage run read as declined): say so, not counted.
+      if (!answer) {
+        return await this.endTurn(turn, { state: 'answered', reading, answer: GUEST_NO_ANSWER_TEXT, refund: true });
+      }
+      if (answer.startsWith(GUEST_DECLINED_MARKER)) {
         const offered = answer.slice(GUEST_DECLINED_MARKER.length).trim();
         return await this.endTurn(turn, { state: 'declined', reading, answer: offered || GUEST_DECLINED_TEXT });
       }
@@ -838,12 +893,18 @@ export class GuestAgentService {
       row.lastActiveAt = nowIso;
       // Our failures and rests are not the visitor's: the message is given back.
       // A Stop is the visitor's own call on a reply they did not get whole: not counted either (note #1054).
-      if (end.state === 'failed' || end.state === 'resting' || end.state === 'stopped' || end.refund) row.messagesUsed = Math.max(0, row.messagesUsed - 1);
+      // A finished job's turn took none of the visitor's messages (note #1063), so gives none back.
+      if (!turn.fromJob && (end.state === 'failed' || end.state === 'resting' || end.state === 'stopped' || end.refund)) row.messagesUsed = Math.max(0, row.messagesUsed - 1);
+      // A job turn that could not run leaves its receipts owed, for the next read.
+      if (turn.fromJob && end.state === 'resting' && !end.reading) for (const job of row.jobs ?? []) if (turn.jobIds?.includes(job.id)) job.announced = false;
       if (end.state !== 'resting' || end.reading) {
         row.transcript.messages.push({
           id: randomUUID(),
           role: 'agent',
-          text: end.answer ?? (end.state === 'failed' ? 'Something went wrong on our side. Try that again.' : end.state === 'stopped' ? (end.reading?.partial ?? 'Stopped.') : ''),
+          text: end.answer ?? (end.state === 'failed'
+            ? (turn.fromJob ? guestJobFailedTurnText(row, turn.jobIds ?? []) : 'Something went wrong on our side. Try that again.')
+            : end.state === 'stopped' ? (end.reading?.partial ?? 'Stopped.') : ''),
+          ...(turn.fromJob ? { fromJob: true } : {}),
           at: nowIso,
           state: end.state === 'resting' ? 'failed' : end.state as 'answered' | 'declined' | 'failed' | 'stopped',
           ...(turn.activity.length ? { activity: turn.activity } : {}),
@@ -857,6 +918,157 @@ export class GuestAgentService {
     }
     // Finished turns are kept a while for the page's last poll, then forgotten.
     setTimeout(() => this.turns.delete(turn.turnId), 10 * MINUTE_MS).unref?.();
+    // Receipts that finished while this turn ran are delivered now, as one turn (note #1063).
+    this.track(this.deliverOwedJobs(turn.agentId));
+  }
+
+  // ── Background jobs (note #1063) ───────────────────────────────────────
+
+  /**
+   * The jobs door: `POST <model door>/jobs/start`, from the guest's own
+   * `agentbuilt job start`, carrying the running turn's per-turn key. Mounted
+   * with a JSON parser in index.ts, before the model door.
+   */
+  readonly handleJobsDoor = async (req: Request, res: Response): Promise<void> => {
+    if (req.method !== 'POST' || req.path.replace(/\/+$/, '') !== '/start') { res.status(404).json({ error: 'Not a jobs route.' }); return; }
+    const agentId = this.deps.door.agentOf(GuestModelDoor.keyOf(req));
+    if (!agentId) { res.status(401).json({ error: 'A background job can be started only from inside a reply.' }); return; }
+    const body = (req.body ?? {}) as { id?: unknown; argv?: unknown; quiet?: unknown; timeoutSeconds?: unknown };
+    const answer = await this.registerJob(agentId, body);
+    res.status(answer.httpStatus).json(answer.body);
+  };
+
+  /** Records a job the guest is starting, bounded, and tells the machine's reaper to spare it. */
+  async registerJob(agentId: string, body: { id?: unknown; argv?: unknown; quiet?: unknown; timeoutSeconds?: unknown }): Promise<{ httpStatus: number; body: { label?: string; timeoutSeconds?: number; error?: string } }> {
+    const id = typeof body.id === 'string' ? body.id : '';
+    const argv = Array.isArray(body.argv) ? body.argv.filter((part): part is string => typeof part === 'string').slice(0, 64) : [];
+    if (!GUEST_JOB_ID_PATTERN.test(id) || !argv.length) return { httpStatus: 400, body: { error: 'A job needs an id and a command.' } };
+    return this.withLock(async () => {
+      const turnId = this.runningByAgent.get(agentId);
+      const turn = turnId ? this.turns.get(turnId) : undefined;
+      const row = await this.deps.storage.get(agentId);
+      if (!row || row.phase !== 'live' || !turn?.sandboxId || turn.stopped) return { httpStatus: 409, body: { error: 'A background job can be started only from inside a reply.' } };
+      if ((turn.jobStarts ?? 0) >= GUEST_JOB_STARTS_PER_TURN) return { httpStatus: 429, body: { error: `One reply may start at most ${GUEST_JOB_STARTS_PER_TURN} background jobs.` } };
+      const running = runningJobs(row);
+      if (running.length >= this.limits.jobsMax) return { httpStatus: 429, body: { error: `${this.limits.jobsMax} background jobs are running already. Wait for one, or stop one.` } };
+      if ((row.jobs ?? []).some((job) => job.id === id)) return { httpStatus: 409, body: { error: 'That job id is taken.' } };
+      const now = this.now();
+      const lifeLeftMs = Date.parse(row.claimedAt ?? row.preparedAt) + this.limits.lifetimeMs - now;
+      const askedMs = typeof body.timeoutSeconds === 'number' && body.timeoutSeconds > 0 ? body.timeoutSeconds * 1000 : GUEST_JOB_DEFAULT_TIMEOUT_MS;
+      const timeoutMs = Math.max(10_000, Math.min(askedMs, lifeLeftMs));
+      const job: GuestJobRecord = {
+        id, label: guestJobLabel(argv), startedAt: new Date(now).toISOString(), timeoutMs, quiet: body.quiet === true,
+        state: 'running', exitCode: null, finishedAt: null,
+      };
+      row.jobs = [...(row.jobs ?? []), job].slice(-50);
+      row.lastActiveAt = job.startedAt;
+      if (!await this.writeAllowedJobs(turn.sandboxId, row)) return { httpStatus: 503, body: { error: 'The job could not be registered on this computer. Run it inside the reply instead.' } };
+      await this.deps.storage.put(row);
+      turn.jobStarts = (turn.jobStarts ?? 0) + 1;
+      console.log(`[guest] ${row.transcript.name} (${agentId}) started job ${id}: ${job.label}`);
+      return { httpStatus: 200, body: { label: job.label, timeoutSeconds: Math.round(timeoutMs / 1000) } };
+    });
+  }
+
+  /** The ids the machine's reaper spares: only the agent user can write the file, never the guide. */
+  private async writeAllowedJobs(sandboxId: string, row: GuestAgentRow): Promise<boolean> {
+    const client = this.deps.sandboxClient();
+    if (!client.uploadToSandbox) return false;
+    const ids = runningJobs(row).map((job) => job.id);
+    return client.uploadToSandbox(sandboxId, [{ path: GUEST_JOBS_ALLOWED, content: Buffer.from(ids.length ? `${ids.join('\n')}\n` : ''), mode: 0o600 }], { sshUser: DEFAULT_DEVELOPMENT_SSH_USER })
+      .then(() => true, (error) => { console.warn(`[guest] could not write the job list on ${sandboxId}:`, error instanceof Error ? error.message : error); return false; });
+  }
+
+  /**
+   * Every few seconds: each guest with a running job has its jobs read on its
+   * machine. Reading goes through `host.sandbox`, which stamps the machine
+   * active, so a running job keeps it awake. A finished job is recorded and
+   * its receipt delivered as a quiet turn.
+   */
+  async pollJobs(): Promise<void> {
+    if (this.pollingJobs) return;
+    this.pollingJobs = true;
+    try {
+      for (const row of await this.deps.storage.listByPhase(['live'])) {
+        const running = runningJobs(row);
+        if (running.length) await this.readJobs(row, running).catch((error) => console.warn(`[guest] reading ${row.agentId}'s jobs failed:`, error));
+        else if ((row.jobs ?? []).some((job) => job.state !== 'running' && !job.announced)) this.track(this.deliverOwedJobs(row.agentId));
+      }
+    } finally {
+      this.pollingJobs = false;
+    }
+  }
+
+  private async readJobs(row: GuestAgentRow, running: GuestJobRecord[]): Promise<void> {
+    const now = this.now();
+    const sandboxId = await this.deps.host.sandbox(row.userId, row.agentId).catch(() => null);
+    const result = sandboxId
+      ? await this.deps.sandboxClient().execSync(sandboxId, buildGuestJobsReadCommand(running.map((job) => job.id)), undefined, { timeoutMs: 30_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER }).catch(() => null)
+      : null;
+    const readings = result && result.exitCode === 0 ? parseGuestJobsReading(result.stdout ?? '') : null;
+    const fresh = await this.deps.storage.get(row.agentId);
+    if (!fresh || fresh.phase !== 'live') return;
+    let changed = false;
+    if (!readings) {
+      const failures = (this.jobReadFailures.get(row.agentId) ?? 0) + 1;
+      this.jobReadFailures.set(row.agentId, failures);
+      if (failures < 5) return;
+      // Its machine has not answered for about a minute: what ran there is gone.
+      for (const job of fresh.jobs ?? []) if (job.state === 'running') { job.state = 'interrupted'; job.finishedAt = new Date(now).toISOString(); changed = true; }
+    } else {
+      this.jobReadFailures.delete(row.agentId);
+      const finalStates = new Set(['succeeded', 'failed', 'timed_out', 'stopped']);
+      for (const job of fresh.jobs ?? []) {
+        if (job.state !== 'running') continue;
+        const reading = readings.find((r) => r.id === job.id);
+        const resultState = reading?.result && finalStates.has(reading.result.state) ? reading.result.state as GuestJobRecord['state'] : null;
+        const young = now - Date.parse(job.startedAt) < 15_000;
+        const state = resultState ?? (reading?.stopped && !reading.alive ? 'stopped' : reading?.alive || young ? null : 'interrupted');
+        if (!state) continue;
+        job.state = state;
+        job.exitCode = typeof reading?.result?.exitCode === 'number' ? reading.result.exitCode : null;
+        job.finishedAt = reading?.result?.finishedAt && Number.isFinite(Date.parse(reading.result.finishedAt)) ? new Date(reading.result.finishedAt).toISOString() : new Date(now).toISOString();
+        job.tail = guestJobTail(reading?.tail ?? '');
+        // A job the guest stopped itself, or a quiet one, never starts a turn (as for a regular agent).
+        if (state === 'stopped' || job.quiet) job.announced = true;
+        changed = true;
+        console.log(`[guest] ${fresh.transcript.name} (${fresh.agentId}) job ${job.id} ${state}${job.exitCode !== null ? ` (exit ${job.exitCode})` : ''}`);
+      }
+    }
+    if (!changed) return;
+    fresh.lastActiveAt = new Date(now).toISOString();
+    await this.deps.storage.put(fresh);
+    if (sandboxId) await this.writeAllowedJobs(sandboxId, fresh);
+    this.track(this.deliverOwedJobs(fresh.agentId));
+  }
+
+  /** Finished jobs whose receipt is owed become one quiet turn, once no other turn runs. */
+  private async deliverOwedJobs(agentId: string): Promise<void> {
+    await this.withLock(async () => {
+      if (this.runningByAgent.has(agentId)) return; // delivered when that turn ends
+      const row = await this.deps.storage.get(agentId);
+      if (!row || row.phase !== 'live') return;
+      const owed = (row.jobs ?? []).filter((job) => job.state !== 'running' && !job.announced);
+      if (!owed.length) return;
+      for (const job of owed) job.announced = true;
+      row.lastActiveAt = new Date(this.now()).toISOString();
+      await this.deps.storage.put(row);
+      const prompt = guestJobReceiptPrompt(owed.map((job) => ({
+        id: job.id, label: job.label, state: job.state, exitCode: job.exitCode, startedAt: job.startedAt,
+        finishedAt: job.finishedAt ?? new Date(this.now()).toISOString(), tail: job.tail ?? '',
+      })));
+      const turn: LiveTurn = {
+        turnId: randomUUID(), agentId, messageId: '', state: 'waking', partial: null, answer: null,
+        activity: [], files: [], startedAtMs: this.now(), stopped: false, fromJob: true, jobIds: owed.map((job) => job.id),
+      };
+      this.turns.set(turn.turnId, turn);
+      this.runningByAgent.set(agentId, turn.turnId);
+      console.log(`[guest] ${row.transcript.name} (${agentId}) answers ${owed.length} finished job${owed.length === 1 ? '' : 's'}`);
+      this.track(this.runTurn(turn, prompt).catch((error) => {
+        console.warn(`[guest] job turn ${turn.turnId} failed:`, error);
+        return this.endTurn(turn, { state: 'failed' });
+      }));
+    });
   }
 
   // ── Deleting ────────────────────────────────────────────────────────────
@@ -899,6 +1111,7 @@ export class GuestAgentService {
     const turn = running ? this.turns.get(running) : undefined;
     if (turn) await this.interrupt(turn);
     this.deps.door.closeAgent(agentId);
+    this.jobReadFailures.delete(agentId);
     const address = this.agentAddress.get(agentId);
     if (address) {
       this.addressLive.get(address)?.delete(agentId);
@@ -916,6 +1129,8 @@ export class GuestAgentService {
     after.removedAt = after.removedAt ?? nowIso;
     after.transcript.removedAt = after.removedAt;
     after.transcript.removedReason = after.removedReason;
+    // Its jobs went with its machine; nothing is owed to a visitor who is gone.
+    for (const job of after.jobs ?? []) if (job.state === 'running') { job.state = 'interrupted'; job.finishedAt = after.removedAt; job.announced = true; }
     // A spare (before note #1055) that never met a visitor has no key to answer to.
     if (!wasClaimed) after.keyHash = null;
     await this.deps.storage.put(after);
@@ -929,8 +1144,9 @@ export class GuestAgentService {
     const now = this.now();
     const settings = await this.settings();
     for (const row of await this.deps.storage.listByPhase(['live'])) {
-      if (this.runningByAgent.has(row.agentId)) {
+      if (this.runningByAgent.has(row.agentId) || runningJobs(row).length) {
         // A running turn is activity: never removed as quiet mid-turn (note #1054), only at the end of its life.
+        // So is a running background job (note #1063).
         if (row.claimedAt && now - Date.parse(row.claimedAt) >= this.limits.lifetimeMs) await this.remove(row.agentId, 'lifetime');
         continue;
       }

@@ -5850,7 +5850,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
       ok: true,
       enabled: body.enabled,
       message: body.enabled
-        ? 'Guests are ON: a visitor of the home page can now make a sealed agent in this workplace, on its own 2-core machine, thinking with your person\'s Claude seat, however much of its window or week is used (it rests only when the seat is out or hits the plan\'s limit). A spare is being prepared; their agents appear on the Guests screen.'
+        ? 'Guests are ON: a visitor of the home page can now make a sealed agent in this workplace, on its own 2-core machine, thinking with your person\'s Claude seat, however much of its window or week is used (it rests only when the seat is out or hits the plan\'s limit). Each visitor\'s agent is built from nothing when they ask; their agents appear on the Guests screen.'
         : 'Guests are OFF: the home page cannot make an agent. Live ones finish their 30 quiet minutes; the spare is deleted.',
     });
   });

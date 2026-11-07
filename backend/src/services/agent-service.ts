@@ -3609,8 +3609,9 @@ export class AgentService {
     const agents = listAgents(profile.telegram)
       // Cross any room inside the sender's immutable workplace, never the
       // workplace boundary. Names can collide, so the room-grouped roster
-      // prints stable agent ids for the ambiguous case below.
-      .filter((agent) => (agent.orgId ?? legacyOrgId) === senderOrgId);
+      // prints stable agent ids for the ambiguous case below. A guest's agent
+      // is not on the roster, so it is not a recipient either (note #1063).
+      .filter((agent) => (agent.orgId ?? legacyOrgId) === senderOrgId && agent.sealed !== GUEST_AGENT_KIND);
     const byId = agents.find((agent) => agent.id === requested);
     const byName = agents.filter((agent) => agent.name.trim().toLowerCase() === requested.toLowerCase());
     if (!byId && byName.length > 1) {
@@ -5956,7 +5957,8 @@ export class AgentService {
       return gate(run.text);
     }
     if (settings && !validRecapSettings(settings)) return failed('model', `${recapSettingsKey(settings)} is not an offered model`);
-    const agent = recapCandidates(listAgents(profile?.telegram)).filter((a) => a.orgId === orgId
+    // Never a sealed agent's machine (notes #1010, #1038): a visitor has a shell on a guest's.
+    const agent = recapCandidates(listAgents(profile?.telegram).filter((a) => !isSealedAgent(a))).filter((a) => a.orgId === orgId
       && (!settings || a.cli === settings.cli) && buildHarnessSandboxId(a.serverId))[0];
     if (!agent) return failed('unavailable', `no connected ${settings?.cli ?? 'agent'} machine in this workplace`);
     const sandboxId = buildHarnessSandboxId(agent.serverId)!;

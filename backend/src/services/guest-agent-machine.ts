@@ -39,6 +39,7 @@ import { quoteShellArg } from '../utils/shell-quote.js';
 import { GUEST_AGENT_EFFORT, GUEST_AGENT_LIMITS, GUEST_AGENT_MODEL, type GuestActivity } from '../shared/guest-agent.js';
 import { GUEST_AGENT_INSTRUCTIONS } from '../config/guest-agent-instructions.js';
 import { GUIDE_USER } from './public-guide-machine.js';
+import { GUEST_BIN_DIR, GUEST_JOB_TOOL_PATH, GUEST_TURN_KEY_FILE, GUEST_JOBS_ROOT, GUEST_JOBS_URL_ENV, buildGuestJobToolScript, buildGuestReapScript, guestJobsUrl } from './guest-agent-jobs.js';
 
 export const GUEST_USER = GUIDE_USER;
 /** The user the egress proxy runs as: the one that may reach the network for the guide, by the allow-list only. */
@@ -169,11 +170,12 @@ set -u
 if [ "$(id -un)" != "${GUEST_USER}" ]; then echo "guest runner: must run as ${GUEST_USER}" >&2; exit 77; fi
 __key="\${${GUEST_TURN_KEY_ENV}:-}"
 for __name in $(compgen -e); do unset "$__name" 2>/dev/null || true; done
-export HOME='${GUEST_HOME}' PATH='/usr/local/bin:/usr/bin:/bin' LANG='C.UTF-8' TERM='dumb'
+export HOME='${GUEST_HOME}' PATH='${GUEST_BIN_DIR}:/usr/local/bin:/usr/bin:/bin' LANG='C.UTF-8' TERM='dumb'
 export DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-export CLAUDE_CODE_OAUTH_TOKEN="$__key" ANTHROPIC_BASE_URL=${quoteShellArg(doorUrl)}
+export CLAUDE_CODE_OAUTH_TOKEN="$__key" ANTHROPIC_BASE_URL=${quoteShellArg(doorUrl)} ${GUEST_JOBS_URL_ENV}=${quoteShellArg(guestJobsUrl(doorUrl))}
 export HTTPS_PROXY='${proxy}' HTTP_PROXY='${proxy}' https_proxy='${proxy}' http_proxy='${proxy}' NO_PROXY='localhost,127.0.0.1,::1' no_proxy='localhost,127.0.0.1,::1'
 export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1
+( umask 077; printf %s "$__key" > '${GUEST_TURN_KEY_FILE}' ) 2>/dev/null || true
 unset __key __name
 ulimit -u ${GUEST_MAX_PROCESSES} 2>/dev/null || true
 __args=()
@@ -209,6 +211,7 @@ export function guestSetupVersion(source: GuestMachineSource, allow: readonly st
   return createHash('sha256')
     .update(buildGuestRunnerScript(source.doorUrl))
     .update(buildGuestEgressScript())
+    .update(buildGuestJobToolScript())
     .update(allow.join('\n'))
     .update(guestInstructionsFor(source.agentName))
     .digest('hex').slice(0, 16);
@@ -256,16 +259,21 @@ export function buildGuestSetupScript(source: GuestMachineSource, options: { ext
     `install -d -m 0700 -o ${GUEST_USER} -g ${GUEST_USER} ${GUEST_HOME}`,
     `[ "$(stat -c %U ${GUEST_HOME})" = "${GUEST_USER}" ] || chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_HOME}`,
     `install -d -m 0750 -o ${GUEST_EGRESS_USER} -g ${GUEST_EGRESS_USER} ${GUEST_EGRESS_LOG_DIR}`,
+    // Background jobs' records and output, on the volume (note #1063).
+    `install -d -m 0700 -o ${GUEST_USER} -g ${GUEST_USER} ${GUEST_JOBS_ROOT}`,
     // Runner, proxy, allow-list and instructions, reinstalled whenever their fingerprint moves.
     // The marker lives BESIDE what it vouches for (the root filesystem), and any missing
     // file reinstalls all of them: a fresh root filesystem under an old marker on the
     // volume once skipped the install and left no runner (note #1045).
-    `if [ "$(cat ${GUEST_LIB}/.setup-version 2>/dev/null || true)" != "${version}" ] || [ ! -x ${GUEST_RUNNER_PATH} ] || [ ! -f ${GUEST_EGRESS_PATH} ] || [ ! -f ${GUEST_EGRESS_ALLOW_PATH} ] || [ ! -f ${GUEST_INSTRUCTIONS_PATH} ]; then`,
+    `if [ "$(cat ${GUEST_LIB}/.setup-version 2>/dev/null || true)" != "${version}" ] || [ ! -x ${GUEST_RUNNER_PATH} ] || [ ! -f ${GUEST_EGRESS_PATH} ] || [ ! -f ${GUEST_EGRESS_ALLOW_PATH} ] || [ ! -f ${GUEST_INSTRUCTIONS_PATH} ] || [ ! -x ${GUEST_JOB_TOOL_PATH} ]; then`,
     `  install -d -m 0755 -o root -g root ${GUEST_LIB}`,
     install(GUEST_RUNNER_PATH, buildGuestRunnerScript(source.doorUrl), '0755'),
     install(GUEST_EGRESS_PATH, buildGuestEgressScript(), '0644'),
     install(GUEST_EGRESS_ALLOW_PATH, `${allow.join('\n')}\n`, '0644'),
     install(GUEST_INSTRUCTIONS_PATH, guestInstructionsFor(source.agentName), '0644'),
+    // The guest's own \`agentbuilt\`, with only \`job\` (note #1063).
+    `  install -d -m 0755 -o root -g root ${GUEST_BIN_DIR}`,
+    install(GUEST_JOB_TOOL_PATH, `#!/usr/bin/env node\n${buildGuestJobToolScript()}`, '0755'),
     `  pkill -u ${GUEST_EGRESS_USER} -f ${GUEST_EGRESS_PATH} 2>/dev/null || true`,
     `  echo '${version}' > ${GUEST_LIB}/.setup-version`,
     'fi',
@@ -314,10 +322,13 @@ export function buildGuestWakeCommand(): string {
   return `cd / && sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin DISABLE_AUTOUPDATER=1 timeout 45 claude --version`;
 }
 
-/** Every process the guide left behind, ended (after each turn, and on Stop). */
+/**
+ * Every process the guide left behind, ended (after each turn, and on Stop),
+ * except the sessions of the background jobs the backend registered and that
+ * are still running (note #1063; see guest-agent-jobs.ts).
+ */
 export function buildGuestReapCommand(signal: 'TERM' | 'KILL' = 'KILL'): string {
-  // pkill only sends the signal; wait (up to 3 s) until the processes are actually gone.
-  return `sudo -n pkill -${signal} -u ${GUEST_USER} >/dev/null 2>&1; for __i in $(seq 1 30); do pgrep -u ${GUEST_USER} >/dev/null 2>&1 || break; sleep 0.1; done; true`;
+  return `sudo -n bash -c ${quoteShellArg(buildGuestReapScript(GUEST_USER, signal))}`;
 }
 
 export interface GuestTurnArgs {
@@ -354,6 +365,7 @@ export function buildGuestClaudeCommand(args: GuestTurnArgs & { keyFile: string;
     '__status=$?',
     `unset ${GUEST_TURN_KEY_ENV}`,
     buildGuestReapCommand('KILL'),
+    `sudo -n rm -f ${GUEST_TURN_KEY_FILE}`,
     `rm -f ${quoteShellArg(args.streamFile)}`,
     'exit $__status',
   ].join('\n');

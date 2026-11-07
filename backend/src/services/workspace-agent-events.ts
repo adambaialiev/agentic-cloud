@@ -346,7 +346,7 @@ export class WorkspaceAgentEventSweep {
     const settings = resolveWorkspaceAgentProactive(member.workspaceAgentProactive);
     if (!settings.events) return 0;
     const profile = await this.deps.userStorage.getProfile(userId).catch(() => null);
-    const agents = Object.values(profile?.telegram?.agents ?? {}).filter((agent) => agent.orgId === orgId);
+    const agents = Object.values(profile?.telegram?.agents ?? {}).filter((agent) => agent.orgId === orgId && agent.sealed !== 'guest');
     // Never started: an event must not build a machine nobody asked for.
     if (!agents.some(isWorkspaceAgent)) return 0;
     const now = this.now();

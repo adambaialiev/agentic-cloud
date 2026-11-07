@@ -2447,6 +2447,9 @@ app.use('/api/copy-pulse', express.raw({ type: () => true, limit: '64kb' }));
 app.use('/api/agent-cli/git/ci-webhook', express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-result', express.raw({ type: () => true, limit: '256kb' }));
 // The guests' model door (note #1038): the body passes byte for byte, so it is parsed raw, before JSON.
+// Its jobs door (note #1063): a guest's \`agentbuilt job start\` registers a background job with the
+// running turn's per-turn key. Mounted first, so the model door never sees these paths.
+app.use(`${GUEST_MODEL_DOOR_PATH}/jobs`, express.json({ limit: '128kb' }), (req, res) => { void guestAgentService.handleJobsDoor(req, res); });
 app.use(GUEST_MODEL_DOOR_PATH, express.raw({ type: () => true, limit: '32mb' }), (req, res) => { void guestModelDoor.handle(req, res); });
 app.use(express.json());
 

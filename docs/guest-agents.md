@@ -94,7 +94,66 @@ checks passed:
 - Sonnet at high, fixed.
 - Guests' agents are left out of the person's fleet, out of the live tick,
   and out of every agent's `agent list`. The person sees them in the
-  **Guests** group at the foot of their agents list.
+  **Guests** group at the foot of their agents list. Since note #1063 they
+  are also out of the Chief of Staff's own roster (`workspace.ts`, the recap
+  scope: guest Oscar showed there as "Adam's own, sonnet, 0 turns"), the
+  welcome's list, teammates' strips, people's agent counts and faces, the
+  workplace picker's count, mail-wake choices, the secrets "reaches" names,
+  the recap's model choices, the Chief of Staff's event sweep, and
+  `agent message` recipients. The Home briefing never borrows a sealed
+  agent's machine (a visitor has a shell on a guest's).
+
+## Background jobs (note #1063)
+
+A guest's agent runs long work (the whole suite, coverage, a build) as a
+managed background job, the way a regular agent does (knowledge page
+a-finished-job-wakes-its-agent), without a platform token:
+
+- **Its own `agentbuilt`.** The setup installs `/usr/local/lib/acc-guest/bin/agentbuilt`
+  (root-owned, plain Node), first on the runner's PATH. It has the one verb
+  `job` with the regular sub-verbs: `start [--cwd DIR] [--timeout DURATION] [--quiet] -- PROGRAM [ARG...]`,
+  `list`, `status`, `logs [-n N]`, `wait [--timeout]`, `stop`. Anything else
+  answers that nothing else of the platform is open (exit 64). Records and
+  output stay on the volume, `/data/guest/jobs/<id>/` (meta, sid, output.log,
+  result.json).
+- **The jobs door.** `start` registers the job at `POST <model door>/jobs/start`
+  (so the egress allow-list needs nothing new) with the running turn's
+  per-turn key, which the door already checks for the model. No open key, no
+  job: a job can be started only from inside a reply. The backend records it
+  (id, redacted label, start, time limit up to the agent's remaining life,
+  default 30 minutes), allows at most 4 running and 8 starts a reply, and
+  writes the running ids to `/home/agent/.guest-turns/jobs-allowed`, a file
+  the guide can neither read nor write.
+- **The reaper spares jobs.** After every turn (and on Stop) every process of
+  the guide is killed except the sessions of the jobs in that list that have
+  not finished. The job's supervisor is the leader of its own session.
+- **Awake, and activity.** Every 15 s the backend reads each running job's
+  result on the machine (`buildGuestJobsReadCommand`). Reading goes through
+  `host.sandbox`, which stamps the machine active, so the idle reaper leaves
+  it running; the 30-quiet-minutes rule skips a guest with a running job,
+  the status never says `asleep`, and `quietUntil` is null. A machine that
+  does not answer for about a minute has its jobs settled as `interrupted`.
+- **A finished job wakes the guest.** Succeeded, failed, timed out and
+  interrupted start one quiet turn (several together are one turn) opening
+  on a `[Platform]` receipt: id, state, exit code, duration, label and a
+  bounded, redacted output tail. Its answer reaches the visitor as a new
+  agent message (`fromJob: true`) with no visitor line before it, not
+  counted against the 40. A job that finishes during a reply is told when
+  that reply ends. A job the guest stopped itself, or a `--quiet` one,
+  starts nothing.
+- **The status** carries `jobs: [{ id, label, startedAt }]`, the running
+  ones, oldest first, at most 4 (`[]` when none). Never argv, cwd or output,
+  and reading it never wakes a machine. While the receipt turn runs, `turn`
+  is `{ turnId, fromJob: true }`. The page's pill is Alex's (note #1064).
+- **Instructions** (`guest-agent-instructions.ts`): anything likely to run
+  past about two minutes is a job, announced as "I started this as a
+  background job; I will tell you when it finishes", never Claude Code's own
+  background. A short request naming code work (tests, coverage, lines, a
+  build) is in scope; declining is for clearly unrelated asks.
+- **An empty answer is not a refusal** (Oscar, 7 Nov: "measure test
+  coverage" ran 3.5 minutes, then ended with no answer text, which read as
+  the decline line). It now reads "I stopped without writing an answer…",
+  not counted.
 
 ## The build, from nothing (note #1055)
 

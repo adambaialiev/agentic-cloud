@@ -72,6 +72,20 @@ export class GuestModelDoor {
     for (const [key, turn] of this.turns) if (turn.agentId === agentId) this.turns.delete(key);
   }
 
+  /** The agent a key belongs to while it is open, or null (the jobs door, note #1063). */
+  agentOf(key: string): string | null {
+    const turn = key ? this.turns.get(key) : undefined;
+    if (!turn || turn.expiresAt <= this.now()) return null;
+    return turn.agentId;
+  }
+
+  /** The key carried by a request (Bearer, or x-api-key). */
+  static keyOf(req: Request): string {
+    const auth = String(req.headers.authorization ?? '');
+    if (/^bearer\s+/i.test(auth)) return auth.replace(/^bearer\s+/i, '').trim();
+    return String(req.headers['x-api-key'] ?? '').trim();
+  }
+
   openKeys(): number {
     this.sweep();
     return this.turns.size;

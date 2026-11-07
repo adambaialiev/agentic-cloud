@@ -76,6 +76,8 @@ export const GUEST_AGENT_LIMITS = {
   turnCeilingMs: null as number | null,
   /** Tool rounds in one turn. */
   maxTurns: 30,
+  /** Background jobs running at once for one guest (note #1063), as a regular agent's list shows at most 4. */
+  jobsMax: 4,
   // No share of the seat's 5-hour window or week rests guests (note #1048,
   // Adam: "remove guest limit"): only a seat out of service, a turn that hits
   // the plan's limit, today's guests used up, or guests switched off.
@@ -136,6 +138,17 @@ export interface GuestCreateStep {
  */
 export const GUEST_BUILD_ESTIMATE_SECONDS = 35;
 
+/**
+ * A background job of the guest's that is running now (note #1063): what the
+ * page's pill and its list draw. `label` is the redacted display command,
+ * never argv, cwd or output; `startedAt` drives a local stopwatch.
+ */
+export interface GuestJob {
+  id: string;
+  label: string;
+  startedAt: string;
+}
+
 /** One line of the conversation. The first is always the agent's fixed greeting. */
 export interface GuestMessage {
   id: string;
@@ -147,6 +160,8 @@ export interface GuestMessage {
   state?: 'answered' | 'declined' | 'failed' | 'stopped';
   /** Agent lines only: what it did, in order (see GuestActivity). */
   activity?: GuestActivity[];
+  /** Agent lines only: written when a background job finished, with no visitor line before it (note #1063). */
+  fromJob?: boolean;
 }
 
 /**
@@ -174,8 +189,14 @@ export interface GuestStatus {
   machine: { cores: number; memoryGb: number; dedicated: boolean; awake: boolean } | null;
   /** The whole conversation, oldest first (empty unless a live agent). */
   messages: GuestMessage[];
-  /** The running turn, while `working`. */
-  turn: { turnId: string } | null;
+  /** The running turn, while `working`. `fromJob` when it is the guest answering a finished background job (note #1063). */
+  turn: { turnId: string; fromJob?: boolean } | null;
+  /**
+   * The guest's running background jobs, oldest first, at most 4; `[]` when
+   * none (note #1063). While any runs the machine stays awake, the state is
+   * never `asleep` and `quietUntil` is null. Reading this never wakes a machine.
+   */
+  jobs: GuestJob[];
   /** While `creating`: all five steps, in order, each with when it started and finished (note #1055). */
   steps: GuestCreateStep[] | null;
   /** While `creating`: the step running now. */

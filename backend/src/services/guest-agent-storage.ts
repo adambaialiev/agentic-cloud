@@ -34,8 +34,26 @@ export interface GuestAgentRow {
   steps: Array<GuestCreateStep | { id: string; done: boolean; startedAt?: string | null; doneAt?: string | null }> | null;
   removedAt: string | null;
   removedReason: GuestRemovedReason | null;
+  /** Background jobs this agent started (note #1063), newest last. */
+  jobs?: GuestJobRecord[];
   /** The visitor-facing conversation and the owner's transcript, one record. */
   transcript: GuestTranscriptRecord;
+}
+
+/** One background job of a guest's (note #1063), as the backend knows it. */
+export interface GuestJobRecord {
+  id: string;
+  label: string;
+  startedAt: string;
+  timeoutMs: number;
+  quiet: boolean;
+  state: 'running' | 'succeeded' | 'failed' | 'timed_out' | 'stopped' | 'interrupted';
+  exitCode: number | null;
+  finishedAt: string | null;
+  /** A bounded, redacted tail of its output, kept for the receipt. */
+  tail?: string;
+  /** Its receipt has gone into a turn (or it never needs one). */
+  announced?: boolean;
 }
 
 /** The switch: guests are made in this owner's workplace, or not at all. */
