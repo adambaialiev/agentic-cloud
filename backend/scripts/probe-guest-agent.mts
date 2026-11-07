@@ -81,8 +81,8 @@ const plan: Step[] = [
   { label: 'loopback ssh', command: ok('timeout 5 bash -c "exec 3<>/dev/tcp/127.0.0.1/22"'), expect: 'blocked' },
   { label: 'the git host with a write (push)', command: ok(`cd ${GUEST_CHECKOUT} && git push --dry-run ${source} HEAD:probe-1038`), expect: 'blocked' },
   { label: 'leave a process running after the turn', command: 'nohup sleep 600 >/dev/null 2>&1 & echo started', expect: 'ok' },
-  // Note #1047: a command that asks for ten minutes is cut at the cap (100 s), with the reply's time left.
-  { label: 'a command asking for 10 minutes is cut at the 100 s cap', command: 'node -e "setTimeout(() => console.log(\\"PROBE_\\" + \\"OK\\"), 150000)"', expect: 'cut', timeout: 600_000 },
+  // Note #1054: no reply limit and no cap of our own; a command well past the old 3 minutes completes.
+  { label: 'a command running 200 s (well past the old 3-minute limit) completes', command: 'node -e "setTimeout(() => console.log(\\"PROBE_\\" + \\"OK\\"), 200000)"', expect: 'ok', timeout: 300_000 },
 ];
 
 const results: Array<{ round: number; text: string }> = [];

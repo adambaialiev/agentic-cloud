@@ -142,13 +142,20 @@ interface LineEntry {
  * "something went wrong", since nothing did. What it had said so far, the
  * command it was in, and a smaller thing to ask for.
  */
-export function guestOutOfTimeAnswer(reading: Pick<GuestStreamReading, 'partial' | 'activity'>): string {
-  const minutes = Math.round(GUEST_AGENT_LIMITS.turnTimeoutMs / 60_000);
+export function guestOutOfTimeAnswer(
+  reading: Pick<GuestStreamReading, 'partial' | 'activity'>,
+  /** The optional per-reply ceiling (note #1054) when that is what ended it; absent, the agent's own life did. */
+  ceilingMs?: number | null,
+): string {
   const last = [...reading.activity].reverse().find((item) => item.kind === 'run');
+  const where = last ? ` while running \`${last.label.replace(/`/g, "'")}\`` : '';
+  const why = ceilingMs
+    ? `That took longer than the ${Math.round(ceilingMs / 60_000)} minutes one reply may take, so it was stopped${where}. Ask me for a smaller piece and I will do it within the time.`
+    : `I reached the end of my time (${Math.round(GUEST_AGENT_LIMITS.lifetimeMs / 3_600_000)} hours from when I was made), so this was stopped${where}.`;
   return [
     ...(reading.partial?.trim() ? [reading.partial.trim(), ''] : []),
-    `That took longer than the ${minutes} minutes I have for one reply, so it was stopped${last ? ` while running \`${last.label.replace(/`/g, "'")}\`` : ''}.`,
-    'Ask me for a smaller piece (one test file instead of the whole suite, say) and I will do it within the time. This one did not count against your messages.',
+    why,
+    'This one did not count against your messages.',
   ].join('\n');
 }
 
@@ -663,6 +670,17 @@ export class GuestAgentService {
     }
   }
 
+  /**
+   * How long a turn may run on the machine (note #1054): the optional ceiling
+   * when one is set, else what is left of the agent's 3-hour life, plus a
+   * minute so the sweeper, not the wall, is what ends a life.
+   */
+  private turnWallSeconds(row: GuestAgentRow): number {
+    if (this.limits.turnCeilingMs) return Math.round(this.limits.turnCeilingMs / 1000);
+    const left = Date.parse(row.claimedAt ?? row.preparedAt) + this.limits.lifetimeMs - this.now();
+    return Math.max(60, Math.round(left / 1000) + 60);
+  }
+
   private async runTurn(turn: LiveTurn, text: string): Promise<void> {
     const row = await this.deps.storage.get(turn.agentId);
     if (!row) return this.endTurn(turn, { state: 'failed' });
@@ -696,7 +714,8 @@ export class GuestAgentService {
       turn.sandboxId = sandboxId;
       turn.state = 'working';
       if (!client.uploadToSandbox) return await this.endTurn(turn, { state: 'failed' });
-      const timeoutSeconds = Math.round(this.limits.turnTimeoutMs / 1000);
+      // No ceiling unless one is set (note #1054): the wall is the agent's own life.
+      const timeoutSeconds = this.turnWallSeconds(row);
       let run = await this.launch(client, sandboxId, turn, lease.token, timeoutSeconds, {
         prompt: buildGuestVisitorPrompt(text),
         ...(row.claudeSessionId ? { resumeSessionId: row.claudeSessionId } : { sessionId: randomUUID() }),
@@ -729,7 +748,7 @@ export class GuestAgentService {
         console.warn(`[guest] turn failed on ${sandboxId}: ${String(failure).slice(0, 300)}`);
         // Out of time is not our failure, and the visitor should hear what happened (note #1047):
         // the agent's own words so far, what it was running, and what to ask instead. Not counted.
-        if (run.timedOut) return await this.endTurn(turn, { state: 'answered', reading, answer: guestOutOfTimeAnswer(reading), refund: true });
+        if (run.timedOut) return await this.endTurn(turn, { state: 'answered', reading, answer: guestOutOfTimeAnswer(reading, this.limits.turnCeilingMs), refund: true });
         return await this.endTurn(turn, { state: 'failed', reading });
       }
       const answer = (reading.answer ?? '').trim();
@@ -818,7 +837,8 @@ export class GuestAgentService {
       const nowIso = new Date(this.now()).toISOString();
       row.lastActiveAt = nowIso;
       // Our failures and rests are not the visitor's: the message is given back.
-      if (end.state === 'failed' || end.state === 'resting' || end.refund) row.messagesUsed = Math.max(0, row.messagesUsed - 1);
+      // A Stop is the visitor's own call on a reply they did not get whole: not counted either (note #1054).
+      if (end.state === 'failed' || end.state === 'resting' || end.state === 'stopped' || end.refund) row.messagesUsed = Math.max(0, row.messagesUsed - 1);
       if (end.state !== 'resting' || end.reading) {
         row.transcript.messages.push({
           id: randomUUID(),
@@ -913,7 +933,8 @@ export class GuestAgentService {
     const settings = await this.settings();
     for (const row of await this.deps.storage.listByPhase(['live'])) {
       if (this.runningByAgent.has(row.agentId)) {
-        if (row.claimedAt && now - Date.parse(row.claimedAt) >= this.limits.lifetimeMs + this.limits.turnTimeoutMs) await this.remove(row.agentId, 'lifetime');
+        // A running turn is activity: never removed as quiet mid-turn (note #1054), only at the end of its life.
+        if (row.claimedAt && now - Date.parse(row.claimedAt) >= this.limits.lifetimeMs) await this.remove(row.agentId, 'lifetime');
         continue;
       }
       const last = Date.parse(row.lastActiveAt ?? row.claimedAt ?? row.preparedAt);

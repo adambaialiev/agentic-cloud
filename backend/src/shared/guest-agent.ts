@@ -70,8 +70,12 @@ export const GUEST_AGENT_LIMITS = {
   lifetimeMs: 3 * 60 * 60_000,
   /** Quiet for this long — no message, no turn running — and the agent is deleted with its machine. */
   quietMs: 30 * 60_000,
-  /** One turn's hard wall, end to end on the machine. */
-  turnTimeoutMs: 180_000,
+  /**
+   * An optional ceiling on one reply, end to end (note #1054; Adam, 7 Nov 2026:
+   * none). Unset, a reply runs until the agent answers, the visitor stops it,
+   * or the agent's own life ends. Set a number of ms to bring a ceiling back.
+   */
+  turnCeilingMs: null as number | null,
   /** Tool rounds in one turn. */
   maxTurns: 30,
   // No share of the seat's 5-hour window or week rests guests (note #1048,

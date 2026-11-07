@@ -70,11 +70,14 @@ checks passed:
 
 `src/test/unit/guest-agent.test.ts` holds the code to it on every push.
 
-## Time, and packages (note #1047)
+## Time, and packages (notes #1047, #1054)
 
-- A reply has 180 s. Every shell command is capped by Claude Code's own `BASH_DEFAULT_TIMEOUT_MS` (60 s) and `BASH_MAX_TIMEOUT_MS` (100 s), set in the runner. A command that asks for longer is moved off at the cap, so the agent gets control back with time left to answer. The probe proves it: a command asking for 10 minutes was cut at 100 s.
-- The instructions state the budget and say to run a small slice (one test file, a count) and never a whole install, build or suite.
-- A reply that still runs out of time ends as an answer that says so. It names the command it was in and suggests a smaller ask. It does not count against the visitor's 40 messages. It never reads "something went wrong", because nothing did.
+- **A reply has no time limit** (note #1054; Adam, 7 Nov 2026). A turn ends when the agent answers, when the visitor taps Stop, or when the agent's own life ends (3 hours, or its 40 messages). The machine-side wall is what is left of that life, plus a minute, so the sweeper ends a life rather than the wall. `GUEST_AGENT_LIMITS.turnCeilingMs` is the one place an optional ceiling would go; it is `null`.
+- **A running turn is activity.** The 30-quiet-minute rule never removes an agent mid-turn, and its quiet clock starts when the turn ends.
+- **No command cap of our own.** Claude Code's defaults apply: 2 minutes unless the agent asks for more, 10 at most, and past that a command moves to the background where the agent can wait for it. The 100 s caps of note #1047 are gone, so a full install or a whole test suite may run. The probe proves it: a 200 s command completed, and the reply arrived.
+- The instructions say there is no limit, and ask the agent to say what it is about to run, and roughly how long, before anything long.
+- A reply that is ended without an answer (the agent's life ending mid-reply, or a ceiling if one is ever set) becomes an answer that says why and names the command it was in. A Stop gets the reply so far. Neither counts against the visitor's 40 messages, and neither reads "something went wrong", because nothing did.
+- Known gap: a guest turn runs as one SSH exec from the backend, so a backend restart (a deploy) ends a turn in flight. The page then gives up after 4 minutes of silence. Long turns make this likelier than 3-minute ones did.
 - **Spares get their packages** while they are prepared: `npm ci --ignore-scripts` in the root and in `backend/`, run as the guide through the egress proxy, marked by `/data/guest/.deps-ready`. No install script runs. better-sqlite3's own script would fetch Node headers from nodejs.org, which is outside the allow-list, and its bundled linux-x64 prebuild loads without them. With packages in place, one test file runs in about 3 s. This is best effort: a spare whose install failed is still a spare. An agent built from nothing (no spare ready) has no packages, and its instructions tell it to run `npm ci --ignore-scripts` in the root and in `backend/` itself, about half a minute (note #1050: plain `npm ci` runs the backend's install script, which reaches nodejs.org and fails under the lock).
 
 ## The kind
@@ -104,7 +107,7 @@ checks passed:
 - `GUEST_AGENT_LIMITS` (one place): pilot 2 live, 1 spare, 40 a UTC day,
   per address 1 live and 3 a day, a line of 20 places (kept only while the
   page polls), 1,000 characters a message, 40 messages, 3 hours, 30 quiet
-  minutes, 180 s and 30 tool rounds a turn.
+  minutes, no time limit on a reply (note #1054), and 30 tool rounds a turn.
 - **Rests:** the seat out of service (missing, dead, disabled or benched), a
   turn that hits the plan's limit, today's 40 made, guests switched off, or a
   backend with no public https URL for the door. The seat's share of its

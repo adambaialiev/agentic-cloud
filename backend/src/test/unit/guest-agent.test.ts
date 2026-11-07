@@ -68,11 +68,11 @@ describe('the guest runner (behaviour, run in bash)', () => {
     expect(envBlock).not.toContain(GUEST_TURN_KEY_ENV);
   });
 
-  it('caps every shell command well inside a reply\'s minutes (note #1047)', () => {
+  it('sets no command cap of its own: Claude Code\'s defaults (2 min, 10 at most) apply (note #1054)', () => {
     const run = runRunner(['-p', 'hi']);
     const [envBlock] = run.stdout.split('---\n');
-    expect(envBlock).toContain('BASH_DEFAULT_TIMEOUT_MS=60000');
-    expect(envBlock).toContain('BASH_MAX_TIMEOUT_MS=100000');
+    expect(envBlock).not.toContain('BASH_DEFAULT_TIMEOUT_MS');
+    expect(envBlock).not.toContain('BASH_MAX_TIMEOUT_MS');
   });
 
   it('adds every tool but the web ones, no settings, no MCP, and the guest\'s instructions', () => {
@@ -507,7 +507,41 @@ describe('GuestAgentService — talking', () => {
     expect(owner?.messages.at(-1)).toMatchObject({ flag: expect.stringContaining('credential'), text: expect.stringContaining(SEAT_TOKEN) });
   });
 
-  it('a reply that runs out of time says so in plain words, names the command, and is not counted (note #1047)', async () => {
+  it('a reply has no time limit: the wall is the rest of the agent\'s life, and no 3-minute words remain (note #1054)', async () => {
+    expect(GUEST_AGENT_LIMITS.turnCeilingMs).toBeNull();
+    const x = world();
+    const { key } = await makeAgent(x);
+    x.advance(60 * 60_000 - 1); // keep it alive past an hour with a message just before
+    await x.service.message(key, 'run the whole suite'); await x.service.idle();
+    const launched = x.turns().at(-1)!;
+    const wall = Number(/timeout -k 5 (\d+)/.exec(launched)![1]);
+    expect(wall).toBeGreaterThan(2 * 60 * 60 - 120);
+    expect(wall).toBeLessThanOrEqual(2 * 60 * 60 + 60);
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).not.toMatch(/3 minutes|three minutes|small slice/i);
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('no time limit');
+  });
+
+  it('a running turn is activity: 40 minutes into a reply the agent is not removed as quiet (note #1054)', async () => {
+    let release: () => void = () => {};
+    const x = world({ answer: () => new Promise((resolve) => { release = () => resolve(ok(stream('done after a long run'))); }) });
+    const { key } = await makeAgent(x);
+    const sent = await x.service.message(key, 'run the whole suite');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    x.advance(40 * 60_000);
+    await x.service.tick();
+    expect(x.deleted).toEqual([]);
+    expect((await x.service.status(key)).state).toBe('working');
+    expect((await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId))?.elapsedSeconds).toBeGreaterThanOrEqual(2400);
+    release();
+    await x.service.idle();
+    expect((await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId))?.state).toBe('answered');
+    x.advance(29 * 60_000);
+    await x.service.tick();
+    expect(x.deleted).toEqual([]); // the quiet clock starts at the end of the turn
+  });
+
+  it('when the agent\'s life ends mid-reply the visitor reads why, and it is not counted; a set ceiling says its minutes (notes #1047, #1054)', async () => {
     const timedOut = [
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 's' }),
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'cd backend && npx vitest run --coverage' } }] } }),
@@ -517,10 +551,15 @@ describe('GuestAgentService — talking', () => {
     const sent = await x.service.message(key, 'can you measure it?'); await x.service.idle();
     const turn = await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId);
     expect(turn?.state).toBe('answered');
-    expect(turn?.answer).toContain('longer than the 3 minutes I have for one reply');
+    expect(turn?.answer).toContain('end of my time (3 hours');
     expect(turn?.answer).toContain('`cd backend && npx vitest run --coverage`');
     expect(turn?.answer).not.toMatch(/went wrong/i);
     expect((await x.service.status(key)).messagesLeft).toBe(40);
+    const y = world({ limits: { turnCeilingMs: 20 * 60_000 }, answer: () => ({ stdout: timedOut, stderr: '', exitCode: 124, timedOut: true }) });
+    const other = await makeAgent(y);
+    const again = await y.service.message(other.key, 'go'); await y.service.idle();
+    expect(y.turns()[0]).toContain('timeout -k 5 1200 ');
+    expect((await y.service.turnStatus(other.key, (again.answer as { turnId: string }).turnId))?.answer).toContain('longer than the 20 minutes one reply may take');
   });
 
   it('a spare gets its packages installed as the guide, through the proxy; a failed install still leaves a spare (note #1047)', async () => {
@@ -563,6 +602,7 @@ describe('GuestAgentService — talking', () => {
     release();
     await x.service.idle();
     expect((await x.service.turnStatus(key, turnId))?.state).toBe('stopped');
+    expect((await x.service.status(key)).messagesLeft).toBe(40); // a Stop is not counted (note #1054)
   });
 
   it('another key cannot read or stop someone else\'s turn', async () => {
