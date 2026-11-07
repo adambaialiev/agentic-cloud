@@ -1,4 +1,6 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GuestAgentSection, lineWords, minutesLeft, removedWords, whenWords, workingWords } from './GuestAgent';
@@ -235,6 +237,10 @@ describe('GuestAgentSection (note #1039)', () => {
     await flush(GUEST_TURN_POLL_MS);
     expect(words()).toContain('Yes. Each agent');
     expect(document.querySelector('[data-guest-working]')!.textContent).toMatch(/^Reading the code · 0:0\d$/);
+    // Note #1051: the Workspace chat's three staggered dots, all of them moving.
+    const dots = document.querySelector('[data-guest-working] [data-guest-dots]')!;
+    expect(dots.classList.contains('guest-dots')).toBe(true);
+    expect(dots.querySelectorAll('i')).toHaveLength(3);
     expect(document.querySelector('aside')!.textContent).toContain('agent-machine-sizes.ts');
     await flush(GUEST_TURN_POLL_MS);
     expect(document.querySelector('[data-guest-working]')!.textContent).toMatch(/^Running a command · 0:0\d$/);
@@ -416,5 +422,15 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(removedWords('Juno', 'messages')).toBe('Juno had its 40 messages, and was removed.');
     expect(workingWords([{ kind: 'edit', label: 'README.md' }], 12)).toBe('Changing its copy · 0:12');
     expect(workingWords([], 3)).toBe('Reading the code · 0:03');
+  });
+});
+
+describe('the working dots move (note #1051)', () => {
+  it('stagger the Workspace chat\'s keyframe, fading only when motion is reduced', () => {
+    const css = readFileSync(path.resolve(__dirname, '../index.css'), 'utf8');
+    expect(css).toMatch(/\.guest-dots i \{ animation: guest-dot 1\.2s infinite/);
+    expect(css).toMatch(/\.guest-dots i:nth-child\(2\) \{ animation-delay: \.15s; \}/);
+    expect(css).toMatch(/\.guest-dots i:nth-child\(3\) \{ animation-delay: \.3s; \}/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ \.guest-dots i \{ animation-name: guest-dot-still; \} \}/);
   });
 });

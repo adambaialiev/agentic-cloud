@@ -186,12 +186,15 @@ function StateChip({ chip }: { chip: Chip }) {
   );
 }
 
+/* The Workspace chat's own three dots (.tdots, workspace.css): each fades up
+   and lifts in turn (note #1051 — until then only the first one pulsed, so
+   nothing visibly moved). index.css .guest-dots. */
 function Dots() {
   return (
-    <span aria-hidden="true" className="inline-flex gap-1.5">
-      <span className="h-2 w-2 rounded-full bg-white motion-safe:animate-pulse" />
-      <span className="h-2 w-2 rounded-full bg-white/40" />
-      <span className="h-2 w-2 rounded-full bg-white/15" />
+    <span aria-hidden="true" data-guest-dots className="guest-dots inline-flex gap-1.5">
+      <i className="h-2 w-2 rounded-full bg-white" />
+      <i className="h-2 w-2 rounded-full bg-white" />
+      <i className="h-2 w-2 rounded-full bg-white" />
     </span>
   );
 }
@@ -707,7 +710,7 @@ function Chat({ agent, status, messages, turn, lastActivity, now, draft, notice,
           </div>
         ) : null}
 
-        <ol data-guest-messages className="mt-5 grid gap-5">
+        <ol data-guest-messages className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-5">
           {messages.map((message) => (
             <li key={message.id} className={message.role === 'visitor' ? 'flex justify-end' : 'flex items-start gap-3'}>
               {message.role === 'visitor' ? (
