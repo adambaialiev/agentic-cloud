@@ -145,6 +145,14 @@ describe('run-job.sh machine_image_label (the CI side of the same tag)', () => {
     expect(built).toBeGreaterThan(builder);
   });
 
+  it('smoke-tests off the builder\'s own SSH port (2222 on Fly)', () => {
+    const job = runJob.slice(runJob.indexOf('\n  machine-image)'), runJob.indexOf('\n  git-host-image)'));
+    const call = job.slice(job.indexOf('smoke_test infra/fly-machine-image'), job.indexOf('OPENCODE_VERSION="$OPENCODE_VERSION"', job.indexOf('smoke_test infra/fly-machine-image')));
+    const port = /HOST_PORT=(\d+)/.exec(call)?.[1];
+    expect(port).toBeDefined();
+    expect(port).not.toBe('2222');
+  });
+
   it('a published tag is repointed, never rebuilt or pushed over', () => {
     const job = runJob.slice(runJob.indexOf('\n  machine-image)'), runJob.indexOf('\n  git-host-image)'));
     const present = job.slice(job.indexOf('if [ "$TAG_STATE" = present ]; then'), job.indexOf('builder_up'));
