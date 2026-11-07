@@ -59,7 +59,7 @@ const FAKE_SEAT = 'sk-ant-oat01-PROBE-SEAT-NOT-A-REAL-TOKEN-1038';
 const FAKE_SECRET = 'leak-me-1038';
 const MY_6PN = spawnSync('bash', ['-c', "ip -6 addr show scope global 2>/dev/null | awk '/fdaa/{print $2}' | cut -d/ -f1 | head -1"], { encoding: 'utf8' }).stdout.trim();
 
-type Step = { label: string; command: string; expect: 'ok' | 'blocked' };
+type Step = { label: string; command: string; expect: 'ok' | 'blocked' | 'cut'; timeout?: number };
 const ok = (cmd: string) => `( ${cmd} ) >/tmp/probe.out 2>&1 && echo PROBE_OK || echo PROBE_BLOCKED; head -c 300 /tmp/probe.out`;
 const plan: Step[] = [
   { label: 'control: list its own copy', command: ok(`ls ${GUEST_CHECKOUT}/README.md`), expect: 'ok' },
@@ -81,6 +81,8 @@ const plan: Step[] = [
   { label: 'loopback ssh', command: ok('timeout 5 bash -c "exec 3<>/dev/tcp/127.0.0.1/22"'), expect: 'blocked' },
   { label: 'the git host with a write (push)', command: ok(`cd ${GUEST_CHECKOUT} && git push --dry-run ${source} HEAD:probe-1038`), expect: 'blocked' },
   { label: 'leave a process running after the turn', command: 'nohup sleep 600 >/dev/null 2>&1 & echo started', expect: 'ok' },
+  // Note #1047: a command that asks for ten minutes is cut at the cap (100 s), with the reply's time left.
+  { label: 'a command asking for 10 minutes is cut at the 100 s cap', command: 'node -e "setTimeout(() => console.log(\\"PROBE_\\" + \\"OK\\"), 150000)"', expect: 'cut', timeout: 600_000 },
 ];
 
 const results: Array<{ round: number; text: string }> = [];
@@ -117,7 +119,7 @@ const server = http.createServer((req, res) => {
     const events: Array<[string, unknown]> = [['message_start', { type: 'message_start', message: { id: `msg_${round}`, type: 'message', role: 'assistant', model: parsed.model, content: [], stop_reason: null, usage: { input_tokens: 5, output_tokens: 1 } } }]];
     if (step) {
       events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `toolu_probe_${round}`, name: 'Bash', input: {} } }]);
-      events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify({ command: step.command, description: 'probe' }) } }]);
+      events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify({ command: step.command, description: 'probe', ...(step.timeout ? { timeout: step.timeout } : {}) }) } }]);
       events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
       events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } }]);
     } else {
@@ -179,13 +181,13 @@ async function main(): Promise<void> {
   plan.forEach((step, index) => {
     const result = results.find((r) => r.round === index + 1);
     const text = result?.text ?? '(no result)';
-    const outcome = text.includes('PROBE_OK') ? 'ok' : text.includes('PROBE_BLOCKED') ? 'blocked' : step.expect === 'ok' && result ? 'ok' : 'none';
+    const outcome = text.includes('PROBE_OK') ? 'ok' : text.includes('PROBE_BLOCKED') ? 'blocked' : step.expect === 'cut' && result && /timed out|timeout|terminated|killed/i.test(text) ? 'cut' : step.expect === 'ok' && result ? 'ok' : 'none';
     const pass = outcome === step.expect;
     if (!pass) failed = true;
     console.log(`   ${pass ? 'PASS' : 'FAIL'}  ${step.label}: ${outcome} — ${text.replace(/PROBE_(OK|BLOCKED)/, '').replace(/\s+/g, ' ').trim().slice(0, 100)}`);
   });
   const names = environ.map((line) => line.split('=')[0]).filter(Boolean).sort();
-  const allowed = new Set(['ANTHROPIC_BASE_URL', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CODE_OAUTH_TOKEN', 'DISABLE_AUTOUPDATER', 'DISABLE_ERROR_REPORTING', 'DISABLE_TELEMETRY', 'GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'LANG', 'NO_PROXY', 'OLDPWD', 'PATH', 'PWD', 'SHLVL', 'TERM', '_', 'http_proxy', 'https_proxy', 'no_proxy']);
+  const allowed = new Set(['ANTHROPIC_BASE_URL', 'BASH_DEFAULT_TIMEOUT_MS', 'BASH_MAX_TIMEOUT_MS', 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC', 'CLAUDE_CODE_OAUTH_TOKEN', 'DISABLE_AUTOUPDATER', 'DISABLE_ERROR_REPORTING', 'DISABLE_TELEMETRY', 'GIT_CONFIG_NOSYSTEM', 'GIT_TERMINAL_PROMPT', 'HOME', 'HTTPS_PROXY', 'HTTP_PROXY', 'LANG', 'NO_PROXY', 'OLDPWD', 'PATH', 'PWD', 'SHLVL', 'TERM', '_', 'http_proxy', 'https_proxy', 'no_proxy']);
   const extra = names.filter((name) => !allowed.has(name));
   const token = environ.find((line) => line.startsWith('CLAUDE_CODE_OAUTH_TOKEN='))?.split('=').slice(1).join('=');
   const envOk = Boolean(pid) && !extra.length && token === TURN_KEY;

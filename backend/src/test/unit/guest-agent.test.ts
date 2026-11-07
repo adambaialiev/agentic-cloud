@@ -68,6 +68,13 @@ describe('the guest runner (behaviour, run in bash)', () => {
     expect(envBlock).not.toContain(GUEST_TURN_KEY_ENV);
   });
 
+  it('caps every shell command well inside a reply\'s minutes (note #1047)', () => {
+    const run = runRunner(['-p', 'hi']);
+    const [envBlock] = run.stdout.split('---\n');
+    expect(envBlock).toContain('BASH_DEFAULT_TIMEOUT_MS=60000');
+    expect(envBlock).toContain('BASH_MAX_TIMEOUT_MS=100000');
+  });
+
   it('adds every tool but the web ones, no settings, no MCP, and the guest\'s instructions', () => {
     const run = runRunner(['-p', 'hi']);
     const args = run.stdout.split('---\n')[1]!;
@@ -490,6 +497,41 @@ describe('GuestAgentService — talking', () => {
     const row = (await x.storage.byKeyHash(hashGuestKey(key)))!;
     const owner = await x.service.transcriptForOwner(row.agentId);
     expect(owner?.messages.at(-1)).toMatchObject({ flag: expect.stringContaining('credential'), text: expect.stringContaining(SEAT_TOKEN) });
+  });
+
+  it('a reply that runs out of time says so in plain words, names the command, and is not counted (note #1047)', async () => {
+    const timedOut = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 's' }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'cd backend && npx vitest run --coverage' } }] } }),
+    ].join('\n');
+    const x = world({ answer: () => ({ stdout: timedOut, stderr: '', exitCode: 124, timedOut: true }) });
+    const { key } = await makeAgent(x);
+    const sent = await x.service.message(key, 'can you measure it?'); await x.service.idle();
+    const turn = await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId);
+    expect(turn?.state).toBe('answered');
+    expect(turn?.answer).toContain('longer than the 3 minutes I have for one reply');
+    expect(turn?.answer).toContain('`cd backend && npx vitest run --coverage`');
+    expect(turn?.answer).not.toMatch(/went wrong/i);
+    expect((await x.service.status(key)).messagesLeft).toBe(40);
+  });
+
+  it('a spare gets its packages installed as the guide, through the proxy; a failed install still leaves a spare (note #1047)', async () => {
+    const x = world({ limits: { sparesTarget: 1 } });
+    await x.service.tick(); await x.service.idle();
+    const deps = x.commands.find((c) => c.includes('npm ci'));
+    expect(deps).toContain('sudo -n -u guide env -i');
+    expect(deps).toContain('HTTPS_PROXY=http://127.0.0.1:3128');
+    expect(deps).toContain('/data/guest/.deps-ready');
+    expect(deps).toContain('npm ci --ignore-scripts');
+    expect(deps).toContain('/data/guest/agentic-cloud/backend');
+    expect((await x.storage.listByPhase(['spare'])).length).toBe(1);
+    const y = world({ limits: { sparesTarget: 1 }, answer: () => ok() });
+    y.client.execSync.mockImplementation(async (_s: string, command: string) => {
+      y.commands.push(command);
+      return command.includes('npm ci') ? { stdout: '', stderr: 'E404', exitCode: 1, timedOut: false } : ok();
+    });
+    await y.service.tick(); await y.service.idle();
+    expect((await y.storage.listByPhase(['spare'])).length).toBe(1);
   });
 
   it('a failure on our side gives the message back', async () => {
