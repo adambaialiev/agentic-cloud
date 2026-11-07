@@ -32,6 +32,7 @@ import { GuestModelDoor } from './guest-model-door.js';
 import {
   GUEST_TURN_DIR,
   buildGuestClaudeCommand,
+  buildGuestDepsCommand,
   buildGuestReapCommand,
   buildGuestSetupCommand,
   buildGuestVisitorPrompt,
@@ -134,6 +135,21 @@ interface LineEntry {
   address: string;
   joinedMs: number;
   lastPollMs: number;
+}
+
+/**
+ * What a visitor reads when a reply ran out of its minutes (note #1047): never
+ * "something went wrong", since nothing did. What it had said so far, the
+ * command it was in, and a smaller thing to ask for.
+ */
+export function guestOutOfTimeAnswer(reading: Pick<GuestStreamReading, 'partial' | 'activity'>): string {
+  const minutes = Math.round(GUEST_AGENT_LIMITS.turnTimeoutMs / 60_000);
+  const last = [...reading.activity].reverse().find((item) => item.kind === 'run');
+  return [
+    ...(reading.partial?.trim() ? [reading.partial.trim(), ''] : []),
+    `That took longer than the ${minutes} minutes I have for one reply, so it was stopped${last ? ` while running \`${last.label.replace(/`/g, "'")}\`` : ''}.`,
+    'Ask me for a smaller piece (one test file instead of the whole suite, say) and I will do it within the time. This one did not count against your messages.',
+  ].join('\n');
 }
 
 export function hashGuestKey(key: string): string {
@@ -560,8 +576,15 @@ export class GuestAgentService {
         await this.remove(made.id, 'quiet', { failed: true });
         return;
       }
-      after.phase = 'spare';
-      await this.deps.storage.put(after);
+      // Packages, once, so a visitor's "run that test" takes seconds (note #1047). Best effort.
+      const deps = await this.deps.sandboxClient().execSync(sandboxId, buildGuestDepsCommand(), undefined, {
+        timeoutMs: 660_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
+      }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
+      if (deps.exitCode !== 0) console.warn(`[guest] spare ${made.name}: packages not installed (${String(deps.stderr ?? '').slice(-200) || `exit ${deps.exitCode}`}); it stays a spare`);
+      const ready = await this.deps.storage.get(made.id);
+      if (!ready || ready.phase !== 'preparing') return;
+      ready.phase = 'spare';
+      await this.deps.storage.put(ready);
       console.log(`[guest] spare ${made.name} (${made.id}) is ready`);
     } finally {
       this.preparing = false;
@@ -705,7 +728,10 @@ export class GuestAgentService {
           return await this.endTurn(turn, { state: 'resting', until, reading });
         }
         console.warn(`[guest] turn failed on ${sandboxId}: ${String(failure).slice(0, 300)}`);
-        return await this.endTurn(turn, { state: run.timedOut && reading.partial ? 'answered' : 'failed', reading, ...(run.timedOut && reading.partial ? { answer: `${reading.partial}\n\n_(I ran out of time on that one.)_` } : {}) });
+        // Out of time is not our failure, and the visitor should hear what happened (note #1047):
+        // the agent's own words so far, what it was running, and what to ask instead. Not counted.
+        if (run.timedOut) return await this.endTurn(turn, { state: 'answered', reading, answer: guestOutOfTimeAnswer(reading), refund: true });
+        return await this.endTurn(turn, { state: 'failed', reading });
       }
       const answer = (reading.answer ?? '').trim();
       if (!answer || answer.startsWith(GUEST_DECLINED_MARKER)) {
@@ -780,7 +806,7 @@ export class GuestAgentService {
 
   private async endTurn(
     turn: LiveTurn,
-    end: { state: GuestTurnState; until?: string | null; reading?: GuestStreamReading; answer?: string; flag?: string },
+    end: { state: GuestTurnState; until?: string | null; reading?: GuestStreamReading; answer?: string; flag?: string; refund?: boolean },
   ): Promise<void> {
     turn.state = end.state;
     if (end.until !== undefined) turn.until = end.until;
@@ -793,7 +819,7 @@ export class GuestAgentService {
       const nowIso = new Date(this.now()).toISOString();
       row.lastActiveAt = nowIso;
       // Our failures and rests are not the visitor's: the message is given back.
-      if (end.state === 'failed' || end.state === 'resting') row.messagesUsed = Math.max(0, row.messagesUsed - 1);
+      if (end.state === 'failed' || end.state === 'resting' || end.refund) row.messagesUsed = Math.max(0, row.messagesUsed - 1);
       if (end.state !== 'resting' || end.reading) {
         row.transcript.messages.push({
           id: randomUUID(),

@@ -61,6 +61,14 @@ export const GUEST_TURN_KEY_ENV = 'ACC_GUEST_TURN_KEY';
 export const GUEST_PACKAGE_HOSTS = ['registry.npmjs.org', 'registry.yarnpkg.com', 'pypi.org', 'files.pythonhosted.org'] as const;
 /** Claude Code tools turned off: the network is closed to them anyway, and WebSearch would run on Anthropic's side. */
 export const GUEST_DISALLOWED_TOOLS = 'WebFetch,WebSearch';
+/**
+ * One shell command's time (note #1047): a reply has 180 s, so no single
+ * command may take most of it. Claude Code's own caps; a command asking for
+ * longer is cut at the max and the agent sees it timed out, with time left
+ * to say so. Adam's Otis once spent a whole reply on a full install and test run.
+ */
+export const GUEST_BASH_DEFAULT_TIMEOUT_MS = 60_000;
+export const GUEST_BASH_MAX_TIMEOUT_MS = 100_000;
 /** Processes one guide may have at once (a fork bomb ends here, not in the machine). */
 export const GUEST_MAX_PROCESSES = 512;
 
@@ -166,6 +174,7 @@ export DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUD
 export CLAUDE_CODE_OAUTH_TOKEN="$__key" ANTHROPIC_BASE_URL=${quoteShellArg(doorUrl)}
 export HTTPS_PROXY='${proxy}' HTTP_PROXY='${proxy}' https_proxy='${proxy}' http_proxy='${proxy}' NO_PROXY='localhost,127.0.0.1,::1' no_proxy='localhost,127.0.0.1,::1'
 export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1
+export BASH_DEFAULT_TIMEOUT_MS=${GUEST_BASH_DEFAULT_TIMEOUT_MS} BASH_MAX_TIMEOUT_MS=${GUEST_BASH_MAX_TIMEOUT_MS}
 unset __key __name
 ulimit -u ${GUEST_MAX_PROCESSES} 2>/dev/null || true
 __args=()
@@ -284,6 +293,33 @@ export function buildGuestSetupScript(source: GuestMachineSource, options: { ext
 export function buildGuestSetupCommand(source: GuestMachineSource, options: { extraAllow?: readonly string[] } = {}): string {
   const delimiter = 'GUEST_SETUP_EOF';
   return `sudo -n bash -s >&2 <<'${delimiter}'\n${buildGuestSetupScript(source, options)}\n${delimiter}`;
+}
+
+/** Where a spare's package install is marked done. */
+export const GUEST_DEPS_MARKER = `${GUEST_ROOT}/.deps-ready`;
+
+/**
+ * The copy's packages, installed once while a SPARE is prepared (note #1047),
+ * so "run that test" takes seconds in a reply instead of an install that
+ * eats it. Run AS THE GUIDE through the egress proxy: the registry is on the
+ * allow-list, nothing runs as root, and the lock holds while it installs.
+ * Best effort: a spare without packages is still a spare.
+ */
+export function buildGuestDepsCommand(timeoutSeconds = 600): string {
+  const proxy = `http://127.0.0.1:${GUEST_EGRESS_PORT}`;
+  const asGuide = `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin CI=1 HTTPS_PROXY=${proxy} HTTP_PROXY=${proxy} https_proxy=${proxy} http_proxy=${proxy} GIT_CONFIG_NOSYSTEM=1`;
+  return [
+    'set -e',
+    `[ -f ${GUEST_DEPS_MARKER} ] && exit 0`,
+    `[ -f ${GUEST_CHECKOUT}/package-lock.json ] || exit 0`,
+    // --ignore-scripts: no package's install script runs, so nothing compiles or reaches
+    // past the allow-list (better-sqlite3's would fetch Node headers from nodejs.org; it
+    // ships a linux-x64 prebuild that loads without them). The root's postinstall (the
+    // backend's install) is therefore run here by hand.
+    `cd ${GUEST_CHECKOUT} && ${asGuide} timeout ${timeoutSeconds} npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2`,
+    `if [ -f ${GUEST_CHECKOUT}/backend/package-lock.json ]; then cd ${GUEST_CHECKOUT}/backend && ${asGuide} timeout ${timeoutSeconds} npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2; fi`,
+    `sudo -n touch ${GUEST_DEPS_MARKER}`,
+  ].join('\n');
 }
 
 /** Every process the guide left behind, ended (after each turn, and on Stop). */
