@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.72.0';
+const VERSION = '1.73.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -458,8 +458,8 @@ Orchestrating the workplace (Workspace Agent only — another agent is refused):
       this workplace — a dedicated 2-core machine, Sonnet at high, every tool
       with a shell, a network closed to all but the public repository and the
       package registries, deleted after 30 quiet minutes. It thinks with your
-      user's Claude seat and rests at 50% of the 5-hour window or 70% of the
-      week. Their agents are on the Guests group of your user's agents list,
+      user's Claude seat, however much of its window or week is used; it
+      rests only when the seat is out or hits the plan's limit. Their agents are on the Guests group of your user's agents list,
       read-only; nobody, you included, can message one. Admins only.
   agentbuilt agent model "<name-or-id>" [--model <model>] [--effort <effort>]
       Change one of your user's agents' model, effort or both — the same

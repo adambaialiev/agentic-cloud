@@ -26,7 +26,7 @@ import { SEAT_LEASE_PREFIX } from './org-seat-credentials.js';
 import { DEFAULT_DEVELOPMENT_SSH_USER } from './development-root.js';
 import { claudeUsageLimitResetAtSeconds, isClaudeUsageLimitText } from '../agent/harness-auth-failure.js';
 import { quoteShellArg } from '../utils/shell-quote.js';
-import { seatTooFullForPublic } from './public-guide-service.js';
+import { seatOutOfService } from './public-guide-service.js';
 import { guideAnswerLeak } from './public-guide-machine.js';
 import { GuestModelDoor } from './guest-model-door.js';
 import {
@@ -236,11 +236,10 @@ export class GuestAgentService {
     const now = this.now();
     if (!settings?.enabled || !this.deps.doorUrl) return { until: null };
     if (this.restUntilMs > now) return { until: this.restUntilIso ?? new Date(this.restUntilMs).toISOString() };
+    // The seat out of service rests guests; its share of the window or week does not (note #1048).
     if (this.deps.seats) {
-      const full = seatTooFullForPublic(await this.ownerSeat(settings), now, {
-        fiveHourPercent: this.limits.restFiveHourPercent, weekPercent: this.limits.restWeekPercent,
-      });
-      if (full) return full;
+      const out = seatOutOfService(await this.ownerSeat(settings), now);
+      if (out) return out;
     }
     if (forNewAgent && await this.deps.storage.countClaimedSince(utcDayStart(now)) >= this.limits.globalPerDay) {
       return { until: new Date(utcDayStart(now) + DAY_MS).toISOString() };
@@ -660,11 +659,11 @@ export class GuestAgentService {
     try {
       if (lease.credentialId.startsWith(SEAT_LEASE_PREFIX) && this.deps.seats) {
         const seat = await this.deps.seats.getSeat(lease.credentialId.slice(SEAT_LEASE_PREFIX.length)).catch(() => null);
-        const full = seat ? seatTooFullForPublic(seat, this.now(), { fiveHourPercent: this.limits.restFiveHourPercent, weekPercent: this.limits.restWeekPercent }) : null;
-        if (full) {
+        const out = seat ? seatOutOfService(seat, this.now()) : null;
+        if (out) {
           outcome = { kind: 'ok' };
-          this.rest(full.until);
-          return await this.endTurn(turn, { state: 'resting', until: full.until });
+          this.rest(out.until);
+          return await this.endTurn(turn, { state: 'resting', until: out.until });
         }
       }
       const client = this.deps.sandboxClient();

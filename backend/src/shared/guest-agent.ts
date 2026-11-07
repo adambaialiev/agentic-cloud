@@ -74,10 +74,9 @@ export const GUEST_AGENT_LIMITS = {
   turnTimeoutMs: 180_000,
   /** Tool rounds in one turn. */
   maxTurns: 30,
-  /** The seat's 5-hour window share at which guests rest. */
-  restFiveHourPercent: 50,
-  /** The seat's week share at which guests rest. */
-  restWeekPercent: 70,
+  // No share of the seat's 5-hour window or week rests guests (note #1048,
+  // Adam: "remove guest limit"): only a seat out of service, a turn that hits
+  // the plan's limit, today's guests used up, or guests switched off.
   /** Transcripts are kept this long, then deleted. */
   transcriptDays: 90,
 } as const;
@@ -93,7 +92,9 @@ export const GUEST_AGENT_LIMITS = {
  *  - `removed`   gone; `removedReason` says why (screens 4 and 6).
  *  - `waiting`   in the line; `linePosition` (1 = next). Poll GET every 5 s
  *                with the key: a place is kept only while the page polls.
- *  - `resting`   the seat is too full, or today's guests are used up; `until`.
+ *  - `resting`   guests are off, the seat is out of service or hit the plan's
+ *                limit, or today's guests are used up; `until`. Never the
+ *                seat's share alone (note #1048).
  *  - `limited`   this address has made its agents for today; `until`.
  *  - `failed`    making it failed on our side; the page offers to try again.
  */

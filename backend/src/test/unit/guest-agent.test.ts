@@ -394,14 +394,30 @@ describe('GuestAgentService — making one', () => {
     expect((await x.service.status(goneKey)).state).toBe('none');
   });
 
-  it('rests when guests are off, when the seat is half spent, and after 40 a day', async () => {
+  it('rests when guests are off, when the seat is benched, and after 40 a day', async () => {
     expect((await world({ enabled: false }).service.status(undefined)).state).toBe('resting');
-    const full = world({ seat: { usage: { capturedAt: 'x', windows: { five_hour: { id: 'five_hour', usedPercent: 50, resetsAt: Date.parse('2026-11-06T20:00:00Z') / 1000 } } } } as never });
-    expect(await full.service.status(undefined)).toMatchObject({ state: 'resting', until: '2026-11-06T20:00:00.000Z' });
+    const benched = world({ seat: { status: 'cooldown', cooldownUntil: '2026-11-06T20:00:00.000Z' } as never });
+    expect(await benched.service.status(undefined)).toMatchObject({ state: 'resting', until: '2026-11-06T20:00:00.000Z' });
     const busy = world({ limits: { globalPerDay: 1, liveMax: 5 } });
     await makeAgent(busy, 'a');
     const second = await busy.service.create({ address: 'b' });
     expect((second.answer as { status: { state: string } }).status.state).toBe('resting');
+  });
+
+  it('never rests on the seat\'s share: 99% of the 5-hour window and the week still makes and answers (note #1048)', async () => {
+    const resetsAt = Date.parse('2026-11-09T08:00:00Z') / 1000;
+    const x = world({ seat: { usage: { capturedAt: 'x', windows: {
+      five_hour: { id: 'five_hour', usedPercent: 99, resetsAt },
+      seven_day: { id: 'seven_day', usedPercent: 99, resetsAt },
+    } } } as never });
+    expect(await x.service.status(undefined)).toMatchObject({ state: 'none', until: null });
+    const { key } = await makeAgent(x, 'a');
+    expect((await x.service.status(key)).state).toBe('ready');
+    const sent = await x.service.message(key, 'What is this?');
+    expect(sent).toMatchObject({ httpStatus: 202, answer: { state: 'accepted' } });
+    await x.service.idle();
+    const turnId = (sent.answer as { turnId: string }).turnId;
+    expect(await x.service.turnStatus(key, turnId)).toMatchObject({ state: 'answered' });
   });
 
   it('checks Turnstile when it is configured', async () => {

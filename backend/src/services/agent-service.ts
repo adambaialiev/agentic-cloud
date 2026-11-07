@@ -1096,7 +1096,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // help call it that there instead of the public catalogue. Ours unchanged.
 // v188 (note #1038): CLI 1.72.0 — `agentbuilt agent guests [on|off|status]`,
 // the Workspace Agent's switch for guests' own agents on the home page.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 188;
+// v189 (note #1048): CLI 1.73.0 — guests no longer rest on the seat's share
+// of its 5-hour window or week; `agent guests` help says so.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 189;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

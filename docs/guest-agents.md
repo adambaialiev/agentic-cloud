@@ -85,11 +85,11 @@ checks passed:
 
 ## The switch, spares and ceilings
 
-- `agentbuilt agent guests on|off|status` (CLI 1.72.0) is the Workspace
-  Agent's switch, run by an admin's agent. Guests are made in that person's
-  workplace and spend that person's Claude seat. Only one workplace on a
-  platform can have guests on. Off, the public route rests and the spare is
-  deleted.
+- `agentbuilt agent guests on|off|status` (CLI 1.72.0; its help corrected
+  in 1.73.0) is the Workspace Agent's switch, run by an admin's agent. Guests
+  are made in that person's workplace and spend that person's Claude seat.
+  Only one workplace on a platform can have guests on. Off, the public route
+  rests and the spare is deleted.
 - **Stopped spares:** a sealed guest record with its machine built and set
   up, waiting. A visitor claims one in seconds, and the next is built behind
   it. Without a spare, an agent is built from nothing, which takes a minute
@@ -98,9 +98,12 @@ checks passed:
   per address 1 live and 3 a day, a line of 20 places (kept only while the
   page polls), 1,000 characters a message, 40 messages, 3 hours, 30 quiet
   minutes, 180 s and 30 tool rounds a turn.
-- **Rests:** the seat at 50% of its 5-hour window or 70% of its week, a turn
-  that hits the plan's limit, today's 40 made, guests switched off, or a
-  backend with no public https URL for the door.
+- **Rests:** the seat out of service (missing, dead, disabled or benched), a
+  turn that hits the plan's limit, today's 40 made, guests switched off, or a
+  backend with no public https URL for the door. The seat's share of its
+  5-hour window or week never rests guests (note #1048, 7 Nov 2026, Adam:
+  "remove guest limit"); until then they rested at 50% and 70%. The home
+  page's guide still rests at 80% and 90% (`docs/sealed-public-agent.md`).
 - **Turnstile:** checked on Make my agent when `TURNSTILE_SECRET_KEY` and
   `TURNSTILE_SITE_KEY` are set on the backend. The site key reaches the page
   in `turnstileSiteKey`. While they are unset, the check is off and the key

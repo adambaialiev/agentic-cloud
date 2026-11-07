@@ -56,17 +56,15 @@ export function isPublicGuide(agent: Pick<AgentRecord, 'sealed' | 'cli'> | null 
 }
 
 /**
- * Whether a seat is too full to spend on strangers (note #1010, section 6):
- * benched, or its 5-hour window at {@link PUBLIC_GUIDE_LIMITS.restFiveHourPercent}%,
- * or its week at {@link PUBLIC_GUIDE_LIMITS.restWeekPercent}% — which leaves
- * the last of the plan for the owner's own agents. Answers when it may
+ * Whether a seat cannot serve anyone right now: missing, dead, disabled, or
+ * benched by its provider (a cooldown not yet over). Answers when it may
  * answer again (null when nobody knows), or null when the seat may serve.
+ * Guests' own agents rest on this alone: since note #1048 the seat's share
+ * of its 5-hour window or week never rests them.
  */
-export function seatTooFullForPublic(
-  seat: Pick<OrgSeatDocument, 'status' | 'cooldownUntil' | 'usage'> | null | undefined,
+export function seatOutOfService(
+  seat: Pick<OrgSeatDocument, 'status' | 'cooldownUntil'> | null | undefined,
   now = Date.now(),
-  /** The shares at which to rest; the guide's by default (guests rest earlier, note #1038). */
-  limits: { fiveHourPercent: number; weekPercent: number } = { fiveHourPercent: PUBLIC_GUIDE_LIMITS.restFiveHourPercent, weekPercent: PUBLIC_GUIDE_LIMITS.restWeekPercent },
 ): { until: string | null } | null {
   if (!seat) return { until: null };
   if (seat.status === 'dead' || seat.status === 'disabled') return { until: null };
@@ -74,6 +72,25 @@ export function seatTooFullForPublic(
   if (seat.status === 'cooldown' && (!Number.isFinite(cooldown) || cooldown > now)) {
     return { until: Number.isFinite(cooldown) ? new Date(cooldown).toISOString() : null };
   }
+  return null;
+}
+
+/**
+ * Whether a seat is too full to spend on strangers (note #1010, section 6):
+ * out of service ({@link seatOutOfService}), or its 5-hour window at
+ * {@link PUBLIC_GUIDE_LIMITS.restFiveHourPercent}%, or its week at
+ * {@link PUBLIC_GUIDE_LIMITS.restWeekPercent}% — which leaves the last of the
+ * plan for the owner's own agents. Answers when it may answer again (null
+ * when nobody knows), or null when the seat may serve. The home page's guide
+ * rests on this; guests' own agents do not (note #1048).
+ */
+export function seatTooFullForPublic(
+  seat: Pick<OrgSeatDocument, 'status' | 'cooldownUntil' | 'usage'> | null | undefined,
+  now = Date.now(),
+): { until: string | null } | null {
+  const out = seatOutOfService(seat, now);
+  if (out || !seat) return out;
+  const limits = { fiveHourPercent: PUBLIC_GUIDE_LIMITS.restFiveHourPercent, weekPercent: PUBLIC_GUIDE_LIMITS.restWeekPercent };
   const windows = seat.usage?.windows ?? {};
   const full = (id: string, percent: number) => {
     const window = Object.values(windows).find((w) => w?.id === id) ?? windows[id];
