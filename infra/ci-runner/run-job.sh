@@ -879,7 +879,10 @@ REMOTE
     # The pinned versions go in too: the smoke test asserts the image actually
     # carries what this build asked for. Without them it only proves the CLIs
     # run, which is what let an image with a stale Codex through on 2026-09-11.
-    smoke_test infra/fly-machine-image IMAGE_TAG="fly-machine-image:$LABEL" \
+    # HOST_PORT off 2222: on Fly the builder's own sshd holds 2222 (Fly's
+    # hallpass owns 22), so the smoke container could not publish there and
+    # the first image build on the Fly builder (7 Nov 2026) failed to boot it.
+    smoke_test infra/fly-machine-image IMAGE_TAG="fly-machine-image:$LABEL" HOST_PORT=22220 \
       CLAUDE_VERSION="$CLAUDE_VERSION" CODEX_VERSION="$CODEX_VERSION" OPENCODE_VERSION="$OPENCODE_VERSION"
 
     # Registry auth without flyctl: the Fly registry takes the API token as a
