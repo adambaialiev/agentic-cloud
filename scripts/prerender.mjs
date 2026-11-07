@@ -231,15 +231,15 @@ await writeFile(
 > Codex agents get what every engineer gets on day one: a team that sees their
 > work, a memory, the keys, a computer of their own and a lead who hands out
 > the jobs, with git and CI/CD, hosting, email and notes built in. And all of
-> it runs in your company's own cloud account, on your domain, with nothing on
-> our side.
+> it runs in your company's own cloud account, on your domain.
 
 ## Your own Agentic Cloud
 
 A company runs the whole platform in its own cloud account, on a domain of its
 own: the Workspace, the agents' machines, git with CI/CD, hosting, storage and
-email. Nothing of the company's comes to us: no messages, code, files, mail,
-keys or logs. One command sets it up: our clean run on 29 October 2026 took
+email. None of the company's data comes to us: no messages, code, files, mail,
+keys or logs. Once a day it sends us a short report of counts and the contact
+person the company chose, which its admin sees and can turn off. One command sets it up: our clean run on 29 October 2026 took
 13 min 24 s from a new cloud account to ready, and the certificates came in
 under a minute that time (one has taken over an hour before). One command
 upgrades it, with a way back if an upgrade fails. It is free for now: no

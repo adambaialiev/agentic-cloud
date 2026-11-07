@@ -125,7 +125,11 @@ The install makes no mail receiver and asks for no mail provider. When you want 
 - **Your domain's name servers**: to check the records you added.
 - **Your own Agentic Cloud itself**: the smoke test reads the health pages of the Workspace, the code host and the router, and the sign-up page.
 
-There is no telemetry. Once installed, your own Agentic Cloud makes one kind of call to us: about once an hour it reads the public list of releases (`GET https://acc-updates.fly.dev/releases`, no sign-in, nothing about your copy in the question) so the health page can say whether a newer release is out. To point it at another address, or to stop it, add `COPY_UPDATES_URL` (an address, or `off`) to `extraEnv.backend` in `<prefix>-copy.json` and run `node install.mjs upgrade`.
+None of your data comes to us: no messages, code, files, mail, keys or logs. Once installed, your own Agentic Cloud calls us in three ways:
+
+- **The release list.** About once an hour it reads the public list of releases (`GET https://acc-updates.fly.dev/releases`, no sign-in, nothing about your copy in the question) so the health page can say whether a newer release is out. To point it at another address, or to stop it, add `COPY_UPDATES_URL` (an address, or `off`) to `extraEnv.backend` in `<prefix>-copy.json` and run `node install.mjs upgrade`.
+- **The agent tools' versions.** It reads our public list of the Claude Code, Codex and OpenCode versions we run, the same way (no sign-in, nothing about your copy in the question), and follows it unless an admin holds a version of their own. `COPY_PINS_URL` (an address, or `off`) changes or stops it, as above.
+- **A daily report.** Once a day, two minutes after every start, and when an admin changes the contact, it sends a short signed report (`POST https://api.agenticcloudcomputer.com/api/copy-pulse`): counts only (people, agents, their replies in the last 24 hours, machine hours, live sites, last activity, the release, backup age, free disk, health) and the contact name and email you gave with `--contact-email`, the one piece of personal data in it, there so we know who to write to. An admin sees every report exactly as sent, changes the contact, or turns the report off, in the Workspace under Workplace › What we tell Agentic Cloud.
 
 ## Tests
 

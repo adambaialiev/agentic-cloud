@@ -321,8 +321,9 @@ function Machines({ x, y, width = 300 }: { x: number; y: number; width?: number 
 
 /* ── 1. Everything runs on your side ─────────────────────────────────────
    Your Fly organization holds everything the installer makes; three things
-   stay with us; exactly two arrows cross between them, and only one of
-   them is a download. */
+   stay with us; two arrows cross between them: the release download in,
+   and out the daily report of counts and, only on purpose, diagnostics
+   (note #1059). No data of theirs crosses. */
 
 function SidesWide() {
   /* Your side: three columns of cards; ours: one. The middle column is the
@@ -343,7 +344,7 @@ function SidesWide() {
   const R3 = 304;
   const MID = (SIDE + OURS - 16) / 2; /* the middle of the gap between the two sides */
   return (
-    <svg viewBox="0 0 1150 540" className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, files and backups buckets, your own registry, email, and every agent, site and CI machine. With us stay support, the update service and the source code with the releases. Releases come in from the update service, free to download; a diagnostics bundle goes out only if your admin sends it.">
+    <svg viewBox="0 0 1150 540" className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, files and backups buckets, your own registry, email, and every agent, site and CI machine. With us stay support, the update service and the source code with the releases. Releases come in from the update service, free to download. A daily report of counts goes out, which your admin sees and can turn off, and a diagnostics bundle only if your admin sends it.">
       {/* Your side */}
       <rect x={0} y={60} width={SIDE} height={388} rx={24} className="fill-panel-soft" />
       <Label x={24} y={94} tone="ink" size={15} weight={600}>
@@ -397,9 +398,14 @@ function SidesWide() {
         Releases, free to download
       </Label>
 
-      {/* The one thing that ever goes the other way, and only on purpose */}
+      {/* What goes the other way: the daily report of counts (note #1059,
+          the pulse of note #1057, which the admin sees and can turn off),
+          and a diagnostics bundle only on purpose. No data of theirs. */}
       <Line d={`M ${A + 114} ${R1} V 116 H ${OURS + OW / 2} V ${R1 - 4}`} dashed />
       <Head x={OURS + OW / 2} y={R1 - 4} angle={90} tone="hint" />
+      <Label x={OURS - 28} y={92} anchor="end" size={12}>
+        A daily report of counts, which your admin sees
+      </Label>
       <Label x={OURS - 28} y={108} anchor="end" size={12}>
         A diagnostics bundle, only if your admin sends it
       </Label>
@@ -437,7 +443,7 @@ function SidesTall() {
   const o1 = ours + 50;
   const o2 = o1 + H + 40;
   return (
-    <svg viewBox={`0 0 350 ${o2 + H + 18}`} className="block h-auto w-full" role="img" aria-label="Your Fly organization holds every agent, site and CI machine, the code host, previews and sites, email, files and backups buckets, the Workspace and your own registry. With us stay support, the update service and the source code. Releases come in from the update service, free to download; a diagnostics bundle goes out only if your admin sends it.">
+    <svg viewBox={`0 0 350 ${o2 + H + 18}`} className="block h-auto w-full" role="img" aria-label="Your Fly organization holds every agent, site and CI machine, the code host, previews and sites, email, files and backups buckets, the Workspace and your own registry. With us stay support, the update service and the source code. Releases come in from the update service, free to download. A daily report of counts goes out, which your admin sees and can turn off, and diagnostics only if your admin sends them.">
       <rect x={0} y={top} width={350} height={end} rx={22} className="fill-panel-soft" />
       <Label x={L} y={30} tone="ink" size={15} weight={600}>
         Your Fly organization
@@ -475,8 +481,10 @@ function SidesTall() {
       ))}
       <Line d={`M ${L + W / 2} ${r4 + H + 2} V ${o1 - 6}`} dashed />
       <Head x={L + W / 2} y={o1 - 6} angle={90} tone="hint" />
-      {['Diagnostics,', 'only if your', 'admin sends it'].map((line, i) => (
-        <Label key={line} x={L + W / 2 + 10} y={end + 26 + i * 15} size={12.5}>
+      {/* Four lines where diagnostics had three, so they start higher and
+          the last clears the "With us" box (note #1059). */}
+      {['Daily counts,', 'and diagnostics', 'if your admin', 'sends them'].map((line, i) => (
+        <Label key={line} x={L + W / 2 + 10} y={end + 16 + i * 15} size={12.5}>
           {line}
         </Label>
       ))}

@@ -54,9 +54,10 @@ export default function Landing() {
         <div className="max-w-[640px]">
           <h2 className={H2}>Your own Agentic Cloud.</h2>
           <p className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
-            Everything on this page runs in your company’s own cloud account, on a domain of yours,
-            and nothing of yours comes to us. One command installs it, one upgrades it. Send this
-            to your engineer.
+            Everything on this page runs in your company’s own cloud account, on a domain of yours.
+            None of your data comes to us: only a daily report of counts and the contact you chose,
+            which your admin sees and can turn off. One command installs it, one upgrades it. Send
+            this to your engineer.
           </p>
           <div className="mt-6">
             <PrimaryLink href={PRIVATE_COPY_URL}>{PRIVATE_COPY_DOOR}</PrimaryLink>

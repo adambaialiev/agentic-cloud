@@ -138,7 +138,7 @@ const QUESTIONS: { q: string; a: string; cite: SourceId[] }[] = [
   },
   {
     q: 'Where does our data live, and how is it backed up?',
-    a: 'In your Fly account and its storage, on your domain, with nothing of yours on our side. Fly snapshots the Workspace’s disk and the code’s disk every day and keeps a week of them, and the Workspace’s database is copied to a backup bucket of yours every day, with the last 14 kept.',
+    a: 'In your Fly account and its storage, on your domain. None of your data comes to us: once a day your Agentic Cloud sends us a report of counts and the contact you chose, and your admin sees every report and can turn it off. Fly snapshots the Workspace’s disk and the code’s disk every day and keeps a week of them, and the Workspace’s database is copied to a backup bucket of yours every day, with the last 14 kept.',
     cite: ['installer'],
   },
 ];
@@ -179,7 +179,7 @@ export default function WhyFly() {
         <h2 className={`max-w-[760px] [text-wrap:balance] ${H2}`}>One account of yours. One bill.</h2>
         <p className={`mt-5 max-w-[36rem] [text-wrap:pretty] ${LEAD}`}>
           Your own Agentic Cloud is one Fly organization of yours: one sign-in for your agent, one
-          bill you read yourself, nothing on our side. In our clean run on 29 October, one command
+          bill you read yourself, no account with us. In our clean run on 29 October, one command
           took a new organization to ready in 13 min 24 s. The installer estimates about $0.57 a day at
           Fly’s published prices for the Workspace, the code host and the router with their disks,
           plus about $0.09 an hour for each awake agent, paid to Fly. Vercel’s nearest offer, Bring Your Own Cloud, runs only your functions in your own

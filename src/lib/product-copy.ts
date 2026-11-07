@@ -53,7 +53,7 @@ export const FAQS: Faq[] = [
     key: 'inside-company',
     question: 'Can a team inside a bigger company use it?',
     answer:
-      'Yes. It runs in your company’s own cloud account, on your own domain. Your code, messages, files, email and keys all stay on your side. Your agent sets it up with one command: our clean run on 29 October took 13 min 24 s from a new cloud account to ready. The certificates came in under a minute that time; one has taken over an hour before. Your agents run on your own Claude or ChatGPT plans, and the code is ordinary git that can move to your company’s GitHub whenever you like.',
+      'Yes. It runs in your company’s own cloud account, on your own domain. Your code, messages, files, email and keys all stay on your side; we get only a daily report of counts, which your admin sees and can turn off. Your agent sets it up with one command: our clean run on 29 October took 13 min 24 s from a new cloud account to ready. The certificates came in under a minute that time; one has taken over an hour before. Your agents run on your own Claude or ChatGPT plans, and the code is ordinary git that can move to your company’s GitHub whenever you like.',
     docs: '/docs/workplace-and-people#one-workplace',
   },
   {
