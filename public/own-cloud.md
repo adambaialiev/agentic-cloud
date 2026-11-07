@@ -2,7 +2,7 @@
 
 A guide for an AI agent (Claude Code, Codex or any agent with a terminal) asked by its person to set up their company's own Agentic Cloud.
 
-Your own Agentic Cloud is the whole Agentic Cloud Computer platform (the Workspace, the agents' machines, git hosting, sites, files and email) installed in the company's own Fly.io organization, on a domain of theirs. One installer builds it. Email is not part of the install: once it is up, an admin turns it on from the Workspace whenever they want it. Nothing of theirs is kept by us: the only time the installer reaches us is to download a release, with no sign-in. It needs nothing from us: no key, no licence, no email. The product is free for now.
+Your own Agentic Cloud is the whole Agentic Cloud Computer platform (the Workspace, the agents' machines, git hosting, sites, files and email) installed in the company's own Fly.io organization, on a domain of theirs. One installer builds it. Email is not part of the install: once it is up, an admin turns it on from the Workspace whenever they want it. Apart from a short daily report (counts and a contact person, from the first release that carries it; see step 3, which also says how to turn it off), nothing of theirs is kept by us, and the only time the installer reaches us is to download a release, with no sign-in. It needs nothing from us: no key, no licence, no email. The product is free for now.
 
 It takes one command. In our clean run on 29 October 2026 it went from a new Fly organization to ready in 13 min 24 s; Fly issued the domain's certificates in under a minute that time, but one has taken over an hour before, and then you wait and run the same command again. Follow the steps in order. The page for people is https://agenticcloudcomputer.com.
 
@@ -49,7 +49,8 @@ Run `fly orgs list` and show your person the organizations it lists. Then ask al
 1. **The Fly organization.** Which of those, by its slug. It needs a card on file and its bill paid up: Fly bills it directly for everything the install runs. Nothing of ours is on that bill. If the one they want is not listed, the Fly user signed in is not a member of it: go back to step 2, and they sign in as one who is.
 2. **The domain name.** A name of its own, such as `agents.yourcompany.com`, never the company's main domain: the company's mail lives there, and the sites its agents publish will share this name.
 3. **Who adds the DNS records:** your person, or you, if you can edit the domain's DNS and they want you to.
-4. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) becomes public app names on Fly. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
+4. **Who Agentic Cloud writes to about this cloud:** a name and an email address (`--contact-email`, and `--contact-name` for the name). Offer the first admin's address. Tell your person what it is for: from the first release that carries it, once a day their Agentic Cloud sends Agentic Cloud a short signed report, counts only (people, agents, how much they worked, sites, the release, whether it is healthy) and this contact, the one piece of personal data in it, so we know who to write to. An admin can change the contact, or turn the report off, any time in the Workspace, under Workplace › What we tell Agentic Cloud.
+5. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) becomes public app names on Fly. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
 
 Do not ask about email. It is not part of the install: once their Agentic Cloud is up, an admin sets it up in the Workspace, under Mail, with their mail provider's details, and the Workspace makes the mail receiver and shows the records to add. Tell your person that, so nobody expects it at the end.
 
@@ -58,17 +59,17 @@ Do not ask about email. It is not part of the install: once their Agentic Cloud 
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/cead55ef9e090533ee63527091ab0501cade4292?path=infra/copy-installer/install.mjs'
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/1345d2b2b95a21a0d896988794e19dda5b5d3ae6?path=infra/copy-installer/install.mjs'
 ```
 
-Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `aeff2093a0692da007e9117e3021ae6c3a432f5c411faee4b9aafc68345e4d4f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
+Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `a469727d5694a55366d1da523570b5ec704d77a6a1644ef957da6d626465332f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
 
 It is one file of plain JavaScript with no packages. Its code and tests are public in the platform's own open-source repository, at https://agenticcloudcomputer.com/acc/agentic-cloud?path=infra/copy-installer, so you and your person can read every line first.
 
 Then run the plan. It changes nothing, costs nothing and writes no file:
 
 ```
-node install.mjs install --org <org> --domain <domain> --plan --json
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --plan --json
 ```
 
 Add `--name` and `--region` here too, if your person gave them.
@@ -81,7 +82,7 @@ Add `--name` and `--region` here too, if your person gave them.
 With your person's yes, run the same command with `--json --wait 0` in place of `--plan --json`:
 
 ```
-node install.mjs install --org <org> --domain <domain> --json --wait 0
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --json --wait 0
 ```
 
 Every line on stdout is one JSON object, and the last one is always `{"event": "result", ...}`; the readable lines go to stderr. It builds everything: the apps, the release copied into their own registry (about 1.4 GB, most of the time), the buckets, the keys, the deploys and the certificate requests. Then it stops with **exit code 3 and `"reason": "dns"`**, listing every record in `records[]` (name, type, value, priority).
@@ -104,7 +105,7 @@ If your session might end before it finishes, run it where it outlives you (tmux
 Run the install command again, this time with `--json --wait 20`:
 
 ```
-node install.mjs install --org <org> --domain <domain> --json --wait 20
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --json --wait 20
 ```
 
 - **Exit 0:** done. The last step is a smoke test of the Workspace, the sign-up page, the code host, and a preview name; the result names `handoverFile`.
@@ -160,6 +161,7 @@ An admin can also upgrade from the Workspace, with no engineer: when a newer rel
 The reasons behind exit code 3:
 
 - `domain`: the domain is missing or not a name it can use.
+- `contact`: no contact email yet (`--contact-email`). Ask your person who Agentic Cloud should write to (step 3).
 - `fly-organization`: which organization to use. Without `--org`, the plan lists the ones the sign-in reaches.
 - `fly-sign-in`: flyctl is not signed in. Your person signs in (step 2).
 - `billing`: the organization has no card or an unpaid bill. The result's `billingUrl` is where they fix it.
