@@ -158,6 +158,7 @@ import { OrgMediaService, OrgRoutedMediaStorage } from './services/org-media.js'
 import { AgentService } from './services/agent-service.js';
 import { AgentConfigService } from './services/agent-config-service.js';
 import { HarnessCliVersionService } from './services/harness-cli-versions.js';
+import { createPinFollower, pinFollowerDocs, pinsUrlFrom } from './services/harness-cli-pin-follower.js';
 import { HarnessCliUpdater } from './services/harness-cli-updater.js';
 import { InMemoryPendingTurnStorage } from './services/pending-turn-storage.js';
 import { InMemoryStoppedUserMessageStorage } from './services/stopped-user-message-storage.js';
@@ -1441,6 +1442,21 @@ const agentConfigService = new AgentConfigService(configDocSource);
 // scripts/harness-cli-versions.mjs; read by the pre-sleep updater and the
 // agent menu's Version view.
 const harnessCliVersionService = new HarnessCliVersionService(configDocSource);
+// A private copy follows the pin we publish, daily, unless its admin holds a
+// pin of their own (note #1052). Writes the copy's own config/harnessCliVersions;
+// the updater below does the rest. COPY_PINS_URL points it elsewhere; =off stops it.
+const cliPinFollower = PRIVATE_COPY && configDocSource
+  ? createPinFollower({
+      url: pinsUrlFrom(process.env.COPY_PINS_URL),
+      docs: pinFollowerDocs(configDocSource),
+      log: (line) => console.log(line),
+      onAdopted: () => harnessCliVersionService.clearCache(),
+    })
+  : null;
+if (cliPinFollower) {
+  console.log(`[config] COPY_PINS_URL=${cliPinFollower.url ?? 'off'}`);
+  cliPinFollower.start();
+}
 // One updater behind both convergence paths: the reaper's pre-sleep pass and
 // the agent menu's Update button. Exec routes per sandbox id, so it works for
 // Fly and legacy Hetzner machines alike.
@@ -2380,6 +2396,28 @@ if (previewDomainService) {
  * backend host. Unauthenticated on purpose and safe to be: three published npm
  * version numbers, no user data, no way to write.
  */
+/**
+ * The fleet's CLI pin, published for private copies to follow (note #1052).
+ *
+ * The same three numbers as above, but a public contract with its own name:
+ * cacheable for five minutes and served from the updater's 60 s cache, so a
+ * crowd of copies asking costs nothing — and the image build keeps its own
+ * uncached endpoint, which is what closed the cache trap. Unsigned: three
+ * published npm version numbers, nothing secret, and a copy only ever writes
+ * them as exact versions after the same validation the script applies. A
+ * partial pin is published as is; a copy adopts only a pin for every CLI.
+ */
+app.get('/api/cli-pins', async (_req, res) => {
+  try {
+    const { claude, codex, opencode } = await harnessCliVersionService.getPinnedVersions();
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ claude: claude ?? null, codex: codex ?? null, opencode: opencode ?? null });
+  } catch (error) {
+    console.warn('[cli-pins] read failed:', error);
+    res.status(503).json({ error: 'pinned versions unavailable' });
+  }
+});
+
 app.get('/api/harness-cli-versions', async (_req, res) => {
   try {
     // `{}` covers BOTH "no pin configured" and "the read failed" — the service

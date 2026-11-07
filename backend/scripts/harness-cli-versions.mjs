@@ -9,6 +9,14 @@
 //   npm --prefix backend run cli:versions -- set --claude 2.1.219
 //   npm --prefix backend run cli:versions -- set --codex 0.48.0
 //   npm --prefix backend run cli:versions -- set --opencode 1.19.3
+//   npm --prefix backend run cli:versions -- follow                # a copy: back to our pin
+//
+// On a private copy (PRIVATE_COPY=1) the copy's backend follows the pin we
+// publish, once a day (services/harness-cli-pin-follower.ts, note #1052). A
+// `set` or `bump` there is the copy's admin choosing their own pin, so it also
+// writes `hold`, and the follower stands down until `follow` clears it. A copy
+// builds no images, so no rebuild is asked for there: its image moves with
+// its next upgrade, and the pre-sleep updater moves each machine meanwhile.
 //
 // Two mechanisms hang off the same config doc (config/harnessCliVersions),
 // covering both ends of a machine's life:
@@ -61,9 +69,18 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 // The CI runner (infra/ci-runner) owns the image build end to end — build,
 // smoke test, push, and the set-machine-image repoint on prod. This script's
 // job is to ASK for one, not to orchestrate it.
-const CI_RUNNER_HOST = process.env.IA_CI_RUNNER_HOST || (() => { throw new Error('Set IA_CI_RUNNER_HOST to the CI runner host'); })();
-const CI_RUNNER_PORT = process.env.IA_CI_RUNNER_PORT || '8787';
-const CI_DISPATCH_URL = `http://${CI_RUNNER_HOST}:${CI_RUNNER_PORT}/dispatch`;
+// Read when a rebuild is asked for, not at load: a status read needs no CI,
+// and a private copy has none.
+function ciDispatchUrl() {
+  const host = process.env.IA_CI_RUNNER_HOST?.trim();
+  if (!host) throw new Error('Set IA_CI_RUNNER_HOST to the CI runner host');
+  return `http://${host}:${process.env.IA_CI_RUNNER_PORT || '8787'}/dispatch`;
+}
+
+/** A customer's own copy of the platform (the backend's PRIVATE_COPY). */
+function isPrivateCopy() {
+  return ['1', 'true', 'yes', 'on'].includes((process.env.PRIVATE_COPY ?? '').trim().toLowerCase());
+}
 
 function loadEnvFiles() {
   for (const envPath of [
@@ -87,6 +104,11 @@ Usage:
   npm --prefix backend run cli:versions -- bump --skip-deploy   Build the image but do NOT
                                                            repoint prod (no SSH, no restart).
   npm --prefix backend run cli:versions -- set --claude <version> [--codex <version>] [--opencode <version>]
+  npm --prefix backend run cli:versions -- follow          A private copy: drop the copy's own pin
+                                                           and follow ours again (next daily check).
+
+On a private copy, set and bump also HOLD the pin: the copy stops following ours
+until \`follow\`.
 
 Existing machines pick a new pin up on their next idle cycle (pre-sleep update).
 New machines boot the rebuilt image. Rollback: \`set\` an older version.
@@ -207,10 +229,24 @@ function imagePinsMatch(image, pins) {
 }
 
 async function writePins(db, pins) {
+  const at = new Date().toISOString();
   await db.collection(VERSIONS_COLLECTION).doc(VERSIONS_DOCUMENT).set({
     ...pins,
-    updatedAt: new Date().toISOString(),
+    updatedAt: at,
+    // A copy's admin choosing a pin: the follower stands down until `follow`.
+    ...(isPrivateCopy() ? { hold: { at, by: 'harness-cli-versions.mjs' } } : {}),
   }, { merge: true });
+  if (isPrivateCopy()) {
+    console.log('held: this copy keeps these pins and stops following ours until `follow`.');
+  }
+}
+
+async function follow(db) {
+  if (!isPrivateCopy()) {
+    throw new Error('follow is for a private copy (PRIVATE_COPY=1); this backend is the one that publishes the pin.');
+  }
+  await db.collection(VERSIONS_COLLECTION).doc(VERSIONS_DOCUMENT).update({ hold: null });
+  console.log('released: this copy follows our published pin again, from its next daily check (or the next restart, two minutes in).');
 }
 
 // ── Image rebuild ───────────────────────────────────────────────────────────
@@ -235,6 +271,10 @@ async function requestImageBuild(db, options) {
     console.log('image: no pins set — nothing to build against.');
     return;
   }
+  if (isPrivateCopy()) {
+    console.log('image: a private copy builds no images — its image moves with its next upgrade; the pre-sleep updater moves each machine meanwhile.');
+    return;
+  }
   if (options.skipImage) {
     console.log('--skip-image: pins are live, no rebuild asked for. New machines keep the current image.');
     return;
@@ -253,11 +293,11 @@ async function requestImageBuild(db, options) {
     // machine will converge on them regardless. Failing here would report the
     // bump as failed when the half that reaches the fleet already worked.
     console.warn('IA_CI_WEBHOOK_SECRET is not set — pins are LIVE, but no image rebuild was requested.');
-    console.warn(`New machines keep the current image until one is. See infra/ci-runner/README.md → ${CI_DISPATCH_URL}`);
+    console.warn('New machines keep the current image until one is. See infra/ci-runner/README.md → /dispatch on the CI runner');
     return;
   }
   const body = JSON.stringify({ kind: 'machine-image', ref: 'main' });
-  const response = await fetch(CI_DISPATCH_URL, {
+  const response = await fetch(ciDispatchUrl(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -290,6 +330,18 @@ async function showStatus(db) {
       : pin === latest ? '(current)'
       : `(npm latest: ${latest})`;
     console.log(`${cli.padEnd(6)} pinned: ${pin ?? '—'} ${marker}`);
+  }
+  if (isPrivateCopy()) {
+    const hold = doc.hold && typeof doc.hold === 'object' && typeof doc.hold.at === 'string' ? doc.hold : null;
+    if (hold) {
+      console.log(`follow: HELD by this copy's admin since ${hold.at} — not following the published pin (\`follow\` to release)`);
+    } else if (doc.followed?.at) {
+      console.log(`follow: following the published pin; last adopted ${doc.followed.at} from ${doc.followed.from}`);
+    } else {
+      console.log('follow: following the published pin; nothing adopted yet (checked daily, first two minutes after start)');
+    }
+    console.log('image : a private copy builds no images — its image is the one its release carried');
+    return;
   }
   const image = doc.image;
   const fleet = await readFleetImage();
@@ -392,6 +444,8 @@ async function main() {
     await bump(db, options);
   } else if (options.command === 'set') {
     await setExplicit(db, options);
+  } else if (options.command === 'follow') {
+    await follow(db);
   } else {
     printUsage();
     throw new Error(`Unknown command: ${options.command}`);
