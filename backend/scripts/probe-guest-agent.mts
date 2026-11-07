@@ -6,10 +6,16 @@
  *
  * What it does, on THIS machine (it needs passwordless sudo, nftables, a
  * volume at /data and `claude` on PATH — every agent machine has them):
- *   1. runs the guest's real setup script (the `guide` and `guidenet` users,
- *      the nftables lock, the egress proxy, an anonymous clone of --source,
- *      the runner and the instructions), with the stub door's address as
- *      the door, so Claude Code must reach it THROUGH the egress proxy;
+ *   0. with --fresh, removes everything a guest build leaves (the two users,
+ *      /data/guest, the runner, the lock), so step 1 starts from nothing;
+ *   1. runs the build's machine-side steps exactly as the backend does and
+ *      times each (note #1055): the seal (the `guide` and `guidenet` users,
+ *      the nftables lock, the egress proxy, the runner and the instructions),
+ *      the copy (an anonymous clone of --source), and the wake (Claude Code
+ *      started once as the guide, which must answer its version) — with the
+ *      stub door's address as the door, so Claude Code must reach it
+ *      THROUGH the egress proxy. With --packages it also times the package
+ *      install the agent runs itself when a task needs it (information only);
  *   2. launches one guest turn exactly as the backend does — a per-turn key
  *      from a 0600 file — with a fake seat token and a fake workplace secret
  *      in the launching shell, the two things a shell must never see;
@@ -24,7 +30,7 @@
  *      of the guide's is still running after the turn.
  *
  * Usage (from backend/):
- *   npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--keep]
+ *   npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--fresh] [--packages] [--keep]
  *
  * Exit 0 when every escape was blocked, every control worked, the
  * environment held nothing but the expected names and no secret reached it.
@@ -39,13 +45,20 @@ import {
   GUEST_EGRESS_USER,
   GUEST_TURN_DIR,
   GUEST_USER,
+  GUEST_EGRESS_PORT,
+  GUEST_HOME,
+  GUEST_LIB,
+  GUEST_ROOT,
   buildGuestClaudeCommand,
   buildGuestSetupCommand,
+  buildGuestWakeCommand,
 } from '../src/services/guest-agent-machine.js';
 
 const arg = (name: string) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 const source = arg('--source');
 const keep = process.argv.includes('--keep');
+const fresh = process.argv.includes('--fresh');
+const packages = process.argv.includes('--packages');
 if (!source || source.startsWith('--')) {
   console.error('usage: npx tsx scripts/probe-guest-agent.mts --source <anonymous clone url> [--keep]');
   process.exit(2);
@@ -144,9 +157,36 @@ function sh(command: string, env?: NodeJS.ProcessEnv): { status: number | null; 
 }
 
 async function main(): Promise<void> {
-  console.log('1. setup (users, network lock, egress proxy, public copy, runner)');
-  const setup = sh(buildGuestSetupCommand({ cloneUrl: source!, branch: 'main', doorUrl: DOOR, agentName: 'Probe' }, { extraAllow: [`${DOOR_HOST}:${PORT}`] }));
-  if (setup.status !== 0) { console.error(setup.stderr); process.exit(1); }
+  let failed = false;
+  if (fresh) {
+    console.log('0. from nothing: the guest users, the volume folder, the runner and the lock removed first');
+    sh(`sudo pkill -KILL -u ${GUEST_USER}; sudo pkill -KILL -u ${GUEST_EGRESS_USER}; sudo nft delete table inet acc_guest; sudo userdel ${GUEST_USER}; sudo userdel ${GUEST_EGRESS_USER}; sudo rm -rf ${GUEST_ROOT} ${GUEST_LIB}; true`);
+  }
+  console.log('1. the build\'s machine-side steps, as the backend runs them, timed (note #1055)');
+  const machine = { cloneUrl: source!, branch: 'main', doorUrl: DOOR, agentName: 'Probe' };
+  const extraAllow = [`${DOOR_HOST}:${PORT}`];
+  const timed = (step: string, command: string) => {
+    const began = Date.now();
+    const run = sh(command);
+    const seconds = (Date.now() - began) / 1000;
+    const pass = run.status === 0;
+    if (!pass) failed = true;
+    console.log(`   ${pass ? 'PASS' : 'FAIL'}  ${step}: ${seconds.toFixed(1)} s${pass ? '' : ` — ${run.stderr.trim().slice(-300)}`}`);
+    return { ...run, seconds };
+  };
+  const seal = timed('agent (users, network lock, egress proxy, runner, instructions)', buildGuestSetupCommand(machine, { extraAllow, copy: false }));
+  const copy = timed('code (anonymous clone of the public copy)', buildGuestSetupCommand(machine, { extraAllow }));
+  const wake = timed('waking (Claude Code started once as the guide)', buildGuestWakeCommand());
+  if (!/\d+\.\d+\.\d+/.test(wake.stdout)) { failed = true; console.log(`   FAIL  waking answered no version: ${wake.stdout.trim().slice(0, 100)}`); }
+  else console.log(`   info  Claude Code ${wake.stdout.trim()}; machine side ${(seal.seconds + copy.seconds + wake.seconds).toFixed(1)} s in all${fresh ? ' from nothing' : ''}`);
+  if (seal.status !== 0 || copy.status !== 0) process.exit(1);
+  if (packages) {
+    const proxy = `http://127.0.0.1:${GUEST_EGRESS_PORT}`;
+    const asGuide = `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin CI=1 HTTPS_PROXY=${proxy} HTTP_PROXY=${proxy} https_proxy=${proxy} http_proxy=${proxy}`;
+    const flags = 'npm ci --ignore-scripts --no-audit --no-fund --loglevel=error';
+    const install = timed('info: packages, as the agent installs them when a task needs them (root, then backend/)', `cd ${GUEST_CHECKOUT} && ${asGuide} ${flags} && cd backend && ${asGuide} ${flags}`);
+    if (install.status !== 0) failed = true;
+  }
   await new Promise<void>((resolve) => server.listen(PORT, DOOR_HOST, resolve));
 
   console.log('2. one guest turn: a per-turn key from a 0600 file; a fake seat token and secret in the launching shell');
@@ -177,7 +217,6 @@ async function main(): Promise<void> {
   server.close();
 
   console.log('3. what each attempt got back');
-  let failed = false;
   plan.forEach((step, index) => {
     const result = results.find((r) => r.round === index + 1);
     const text = result?.text ?? '(no result)';

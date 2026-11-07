@@ -1,6 +1,6 @@
 /**
  * What the platform keeps about guests' agents (note #1038): one row per
- * agent — a spare, a live one, or a removed one kept as the owner's
+ * agent — one being built, a live one, or a removed one kept as the owner's
  * transcript for 90 days — and the switch that says whose workplace they
  * are made in. Nothing about the visitor is kept beyond what they typed: no
  * address, no user agent; their key only as a SHA-256, dropped a day after
@@ -9,6 +9,7 @@
 import type { SqliteDb } from './sqlite/sqlite-db.js';
 import { GUEST_AGENT_LIMITS, type GuestCreateStep, type GuestRemovedReason, type GuestTranscriptRecord } from '../shared/guest-agent.js';
 
+/** `preparing` and `spare` are from before note #1055 (no spares now): the sweeper retires any it finds. */
 export type GuestAgentPhase = 'preparing' | 'spare' | 'creating' | 'live' | 'removing' | 'removed';
 
 /** One guest agent, from the moment its record is reserved. */
@@ -20,16 +21,17 @@ export interface GuestAgentRow {
   phase: GuestAgentPhase;
   /** SHA-256 of the visitor's key while claimed (and a day after removal). */
   keyHash: string | null;
-  /** When it was made (reserved, for a spare) and when a visitor claimed it. */
+  /** When its record was reserved, and when a visitor claimed it (the same moment since note #1055). */
   preparedAt: string;
   claimedAt: string | null;
-  /** Claimed from a ready spare (seconds), not built from nothing (minutes). */
+  /** Claimed from a ready spare: only rows from before note #1055, when spares existed. */
   fromSpare?: boolean;
   /** The last message or end of a turn: the quiet clock starts here. */
   lastActiveAt: string | null;
   messagesUsed: number;
   claudeSessionId: string | null;
-  steps: GuestCreateStep[] | null;
+  /** The build's five steps with their times (note #1055); older rows may hold the four old ones. */
+  steps: Array<GuestCreateStep | { id: string; done: boolean; startedAt?: string | null; doneAt?: string | null }> | null;
   removedAt: string | null;
   removedReason: GuestRemovedReason | null;
   /** The visitor-facing conversation and the owner's transcript, one record. */

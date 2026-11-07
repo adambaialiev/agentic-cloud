@@ -215,11 +215,15 @@ export function guestSetupVersion(source: GuestMachineSource, allow: readonly st
 }
 
 /**
- * The machine's setup, run as root before every guest turn and once when a
- * spare is prepared. Cheap when everything is in place. The public copy is
+ * The machine's setup, run as root before every guest turn and while the
+ * agent is built. Cheap when everything is in place. The public copy is
  * cloned ONCE and never refreshed: it is the visitor's working copy.
+ *
+ * `copy: false` leaves the copy out: the build runs the seal first (the
+ * page's "agent" step) and then the whole setup again, which clones (its
+ * "code" step), so the visitor sees each as it happens (note #1055).
  */
-export function buildGuestSetupScript(source: GuestMachineSource, options: { extraAllow?: readonly string[] } = {}): string {
+export function buildGuestSetupScript(source: GuestMachineSource, options: { extraAllow?: readonly string[]; copy?: boolean } = {}): string {
   const allow = guestEgressAllowList(source, options.extraAllow);
   const version = guestSetupVersion(source, allow);
   const b64 = (text: string) => Buffer.from(text).toString('base64');
@@ -273,52 +277,41 @@ export function buildGuestSetupScript(source: GuestMachineSource, options: { ext
     '    sleep 0.3',
     '  done',
     'fi',
-    // The public copy: cloned once, anonymously, then the visitor's to change.
-    `if [ ! -d ${GUEST_CHECKOUT}/.git ]; then`,
-    `  rm -rf ${GUEST_CHECKOUT}.new`,
-    `  ${anonymousGit} timeout 300 git clone --quiet --depth 1 --single-branch --branch ${branch} ${url} ${GUEST_CHECKOUT}.new`,
-    `  ${anonymousGit} git -C ${GUEST_CHECKOUT}.new remote remove origin`,
-    `  chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_CHECKOUT}.new`,
-    `  mv ${GUEST_CHECKOUT}.new ${GUEST_CHECKOUT}`,
-    'fi',
-    `[ "$(stat -c %U ${GUEST_CHECKOUT})" = "${GUEST_USER}" ] || chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_CHECKOUT}`,
     `[ -x ${GUEST_RUNNER_PATH} ] || { echo "guest setup: the runner is missing after install" >&2; exit 74; }`,
-    `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.name ${quoteShellArg(source.agentName)}`,
-    `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.email guest-agent@agenticcloudcomputer.com`,
+    ...(options.copy === false ? [] : [
+      // The public copy: cloned once, anonymously, then the visitor's to change.
+      `if [ ! -d ${GUEST_CHECKOUT}/.git ]; then`,
+      `  rm -rf ${GUEST_CHECKOUT}.new`,
+      `  ${anonymousGit} timeout 300 git clone --quiet --depth 1 --single-branch --branch ${branch} ${url} ${GUEST_CHECKOUT}.new`,
+      `  ${anonymousGit} git -C ${GUEST_CHECKOUT}.new remote remove origin`,
+      `  chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_CHECKOUT}.new`,
+      `  mv ${GUEST_CHECKOUT}.new ${GUEST_CHECKOUT}`,
+      'fi',
+      `[ "$(stat -c %U ${GUEST_CHECKOUT})" = "${GUEST_USER}" ] || chown -R ${GUEST_USER}:${GUEST_USER} ${GUEST_CHECKOUT}`,
+      `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.name ${quoteShellArg(source.agentName)}`,
+      `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin GIT_CONFIG_NOSYSTEM=1 git -C ${GUEST_CHECKOUT} config user.email guest-agent@agenticcloudcomputer.com`,
+    ]),
   ].join('\n');
 }
 
 /** Run the setup as root, its output on stderr so a stream on stdout stays clean. */
-export function buildGuestSetupCommand(source: GuestMachineSource, options: { extraAllow?: readonly string[] } = {}): string {
+export function buildGuestSetupCommand(source: GuestMachineSource, options: { extraAllow?: readonly string[]; copy?: boolean } = {}): string {
   const delimiter = 'GUEST_SETUP_EOF';
   return `sudo -n bash -s >&2 <<'${delimiter}'\n${buildGuestSetupScript(source, options)}\n${delimiter}`;
 }
 
-/** Where a spare's package install is marked done. */
-export const GUEST_DEPS_MARKER = `${GUEST_ROOT}/.deps-ready`;
-
 /**
- * The copy's packages, installed once while a SPARE is prepared (note #1047),
- * so "run that test" takes seconds in a reply instead of an install that
- * eats it. Run AS THE GUIDE through the egress proxy: the registry is on the
- * allow-list, nothing runs as root, and the lock holds while it installs.
- * Best effort: a spare without packages is still a spare.
+ * The build's "waking" step (note #1055): Claude Code started once as the
+ * guide, with nothing of the agent's environment, and it must answer with its
+ * version. No model call (that needs a turn's key). Proves the binary runs
+ * as the sealed user on this machine before the visitor is told it is ready.
+ *
+ * The copy's packages are NOT installed while building (there are no spares
+ * any more to do it ahead of time, note #1055): the agent installs them
+ * itself when a task needs them, as its instructions say (note #1050).
  */
-export function buildGuestDepsCommand(timeoutSeconds = 600): string {
-  const proxy = `http://127.0.0.1:${GUEST_EGRESS_PORT}`;
-  const asGuide = `sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin CI=1 HTTPS_PROXY=${proxy} HTTP_PROXY=${proxy} https_proxy=${proxy} http_proxy=${proxy} GIT_CONFIG_NOSYSTEM=1`;
-  return [
-    'set -e',
-    `[ -f ${GUEST_DEPS_MARKER} ] && exit 0`,
-    `[ -f ${GUEST_CHECKOUT}/package-lock.json ] || exit 0`,
-    // --ignore-scripts: no package's install script runs, so nothing compiles or reaches
-    // past the allow-list (better-sqlite3's would fetch Node headers from nodejs.org; it
-    // ships a linux-x64 prebuild that loads without them). The root's postinstall (the
-    // backend's install) is therefore run here by hand.
-    `cd ${GUEST_CHECKOUT} && ${asGuide} timeout ${timeoutSeconds} npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2`,
-    `if [ -f ${GUEST_CHECKOUT}/backend/package-lock.json ]; then cd ${GUEST_CHECKOUT}/backend && ${asGuide} timeout ${timeoutSeconds} npm ci --ignore-scripts --no-audit --no-fund --loglevel=error >&2; fi`,
-    `sudo -n touch ${GUEST_DEPS_MARKER}`,
-  ].join('\n');
+export function buildGuestWakeCommand(): string {
+  return `cd / && sudo -n -u ${GUEST_USER} env -i HOME=${GUEST_HOME} PATH=/usr/local/bin:/usr/bin:/bin DISABLE_AUTOUPDATER=1 timeout 45 claude --version`;
 }
 
 /** Every process the guide left behind, ended (after each turn, and on Stop). */

@@ -48,7 +48,7 @@ export const GUEST_MAX_CHARS = GUEST_AGENT_LIMITS.messageMaxChars;
 export const GUEST_TURN_POLL_MS = 1000;
 /** …the agent being made every 1.5 s… */
 export const GUEST_CREATING_POLL_MS = 1500;
-/** …a place in line every 5 s (kept only while the page polls; the grace is GUEST_AGENT_LIMITS.linePollGraceMs)… */
+/** …a place in line every 5 s (no line since note #1055: the route never answers `waiting`; goes with the page’s continuation)… */
 export const GUEST_WAITING_POLL_MS = 5000;
 /** …and, while nothing happens, every 20 s, for the chip, the minutes left and removal. */
 export const GUEST_IDLE_POLL_MS = 20_000;

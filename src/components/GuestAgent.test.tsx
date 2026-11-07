@@ -11,6 +11,7 @@ import {
   GUEST_KEY_STORAGE,
   GUEST_TURN_POLL_MS,
   GUEST_WAITING_POLL_MS,
+  type GuestCreateStep,
   type GuestStatus,
 } from '../lib/guest-api';
 
@@ -50,6 +51,12 @@ function stubTurnstile(pass = true) {
 }
 
 const JUNO = { name: 'Juno', avatarUrl: '/agent-avatars/juno.jpg' };
+/** The build's five steps (note #1055), the first `done` of them finished. */
+function buildSteps(done: number): GuestCreateStep[] {
+  return (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id, i) => ({
+    id, done: i < done, startedAt: i <= done ? '2026-11-07T16:00:00.000Z' : null, doneAt: i < done ? '2026-11-07T16:00:10.000Z' : null,
+  }));
+}
 const GREETING = "Hi, I'm Juno. I run on a computer of my own, with a copy of the Agentic Cloud's open-source code. Ask me how it works, or ask me to change something and I'll show you what I did.";
 const KEY = 'k_abcdefghijklmnopqrstuvwxyz012345';
 const GUEST = '/workspace/api/public/guest';
@@ -58,7 +65,7 @@ const MACHINE = { cores: 2, memoryGb: 4, dedicated: true, awake: true };
 function status(patch: Partial<GuestStatus>): GuestStatus {
   return {
     state: 'none', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
-    messagesLeft: null, linePosition: null, until: null, removedReason: null, turnstileSiteKey: null,
+    messagesLeft: null, linePosition: null, step: null, until: null, removedReason: null, turnstileSiteKey: null,
     limits: { messageMaxChars: 1000, quietMinutes: 30, lifetimeHours: 3, messagesMax: 40 },
     ...patch,
   };
@@ -119,9 +126,7 @@ describe('GuestAgentSection (note #1039)', () => {
   });
 
   it('makes the agent through Turnstile with the status’s site key, keeps the key, and ticks the real steps', async () => {
-    routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO, steps: [
-      { id: 'computer', done: false }, { id: 'code', done: false }, { id: 'claude', done: false }, { id: 'hello', done: false },
-    ] }) } });
+    routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO, step: 'machine', estimateSeconds: 35, steps: buildSteps(0) }) } });
     draw();
     await flush();
     fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
@@ -136,21 +141,20 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(h2()).toBe('Juno is getting ready.');
     expect(document.querySelector('[data-guest-steps] li')!.getAttribute('data-step')).toBe('doing');
 
-    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, steps: [
-      { id: 'computer', done: true }, { id: 'code', done: true }, { id: 'claude', done: false }, { id: 'hello', done: false },
-    ] }) });
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, step: 'code', estimateSeconds: 35, steps: buildSteps(2) }) });
     await flush(GUEST_CREATING_POLL_MS);
     expect([...document.querySelectorAll('[data-guest-steps] li')].map((li) => [li.textContent, li.getAttribute('data-step')])).toEqual([
-      ['A computer of its own · 2 cores, 4 GB', 'done'],
-      ['A copy of the open-source code', 'done'],
-      ['Starting Claude Code on Sonnet', 'doing'],
-      ['Saying hello', 'waiting'],
+      ['Making its computer · 2 cores, 4 GB', 'done'],
+      ['Making the agent · Claude Code on Sonnet', 'done'],
+      ['Copying the open-source code', 'doing'],
+      ['Waking it up', 'waiting'],
+      ['Ready', 'waiting'],
     ]);
-    expect(words()).toContain('It takes about fifteen seconds.');
+    expect(words()).toContain('It takes about half a minute.');
     expect(keyOf(calls[calls.length - 1])).toBe(KEY);
-    // Past a spare's wait, the line says the longer one.
-    await flush(45_000);
-    expect(words()).toContain('This one takes about two minutes.');
+    // Past the usual build, the line says the longer one.
+    await flush(55_000);
+    expect(words()).toContain('This one takes about a minute.');
 
     // Ready: the chat opens on the fixed greeting.
     routes[`GET ${GUEST}`] = () => ({ body: readyStatus() });
@@ -162,12 +166,12 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(document.querySelector('[data-guest-left]')!.textContent).toBe('Juno goes after 30 quiet minutes · 30 left');
   });
 
-  it('says two minutes at once when the status expects a build from nothing', async () => {
+  it('says the longer line at once when the status expects a long build', async () => {
     window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
-    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 120, createdAt: new Date(Date.now() - 12_000).toISOString(), steps: [{ id: 'computer', done: false }] }) });
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 120, createdAt: new Date(Date.now() - 12_000).toISOString(), step: 'machine', steps: buildSteps(0) }) });
     draw();
     await flush();
-    expect(words()).toContain('This one takes about two minutes.');
+    expect(words()).toContain('This one takes about a minute.');
     expect(words()).toMatch(/Your agent · 0:1\d/);
   });
 

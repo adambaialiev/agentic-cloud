@@ -1,7 +1,8 @@
 /**
  * Guests' own agents (note #1038): the machine's runner and lock, the model
  * door, and the service between the public routes and the agent layer —
- * spares, the line, the ceilings, turns, Stop, deletion, the sweeper and the
+ * the build from nothing and its steps (note #1055: no spares, no line, no
+ * ceiling at once), the limits, turns, Stop, deletion, the sweeper and the
  * transcripts — against a scripted machine, pool and seat.
  *
  * The lock itself is proven on a real machine with the real Claude Code
@@ -18,19 +19,21 @@ import type { AgentRecord } from '../../types/user.js';
 import type { ExecSyncResult } from '../../services/sandbox-types.js';
 import {
   GUEST_CHECKOUT,
+  GUEST_USER,
   GUEST_TURN_KEY_ENV,
   buildGuestClaudeCommand,
   buildGuestFirewall,
   buildGuestRunnerScript,
   buildGuestSetupScript,
   guestEgressAllowList,
+  guestInstructionsFor,
   readGuestStream,
 } from '../../services/guest-agent-machine.js';
 import { GuestModelDoor, GUEST_DOOR_MAX_REQUESTS_PER_TURN } from '../../services/guest-model-door.js';
 import { GuestAgentService, hashGuestKey } from '../../services/guest-agent-service.js';
 import { InMemoryGuestAgentStorage, SqliteGuestAgentStorage } from '../../services/guest-agent-storage.js';
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
-import { GUEST_AGENT_LIMITS, GUEST_DECLINED_TEXT } from '../../shared/guest-agent.js';
+import { GUEST_AGENT_LIMITS, GUEST_BUILD_ESTIMATE_SECONDS, GUEST_DECLINED_TEXT, type GuestStatus } from '../../shared/guest-agent.js';
 
 const SEAT_TOKEN = 'sk-ant-oat01-SEAT-TOKEN-guest-agent';
 const SOURCE = { cloneUrl: 'https://git.example.com/acme/agentic-cloud.git', branch: 'main', doorUrl: 'https://api.example.com/api/guest-model', agentName: 'Juno' };
@@ -259,6 +262,12 @@ function world(options: {
   turnstile?: boolean;
   turnstileSays?: boolean;
   createFails?: boolean;
+  /** Each build command (setup, wake) takes this long on the fake clock. */
+  stepMs?: number;
+  /** Holds a build command until the test lets it go. */
+  hold?: (command: string) => Promise<void> | undefined;
+  /** A build command that fails. */
+  fails?: (command: string) => boolean;
 } = {}) {
   let clock = Date.parse('2026-11-06T18:00:00Z');
   const storage = new InMemoryGuestAgentStorage();
@@ -271,7 +280,11 @@ function world(options: {
   const client = {
     execSync: vi.fn(async (_sandbox: string, command: string) => {
       commands.push(command);
-      if (command.includes('GUEST_SETUP_EOF')) return ok();
+      if (command.includes('GUEST_SETUP_EOF') || command.includes('claude --version')) {
+        await options.hold?.(command);
+        clock += options.stepMs ?? 0;
+        return options.fails?.(command) ? { stdout: '', stderr: 'no', exitCode: 1, timedOut: false } : ok(command.includes('claude --version') ? '2.1.316 (Claude Code)' : '');
+      }
       if (command.startsWith('cat ')) return ok('');
       if (command.includes('--output-format stream-json')) return options.answer ? options.answer(command) : ok(stream('Every agent gets its own computer.'));
       return ok();
@@ -320,7 +333,7 @@ function world(options: {
     fetch: fetchTurnstile as never,
     now: () => clock,
     sweepEveryMs: null,
-    limits: { sparesTarget: 0, ...(options.limits ?? {}) },
+    limits: options.limits ?? {},
   });
   if (options.enabled !== false) void service.setEnabled('owner-1', 'org-1', true);
   return {
@@ -338,39 +351,144 @@ async function makeAgent(x: ReturnType<typeof world>, address = '203.0.113.9') {
 }
 
 describe('GuestAgentService — making one', () => {
-  it('makes an agent for a visitor: a key, the four steps, then ready with the fixed greeting', async () => {
-    const x = world();
+  it('makes an agent for a visitor from nothing: a key, five real steps in order with their times, then ready with the fixed greeting (note #1055)', async () => {
+    const x = world({ stepMs: 4_000 });
     const made = await x.service.create({ address: 'a' });
     expect(made.httpStatus).toBe(201);
     const key = (made.answer as { key: string }).key;
     expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect((made.answer as { status: { state: string; estimateSeconds: number } }).status).toMatchObject({ state: 'creating', estimateSeconds: 120 });
+    const first = (made.answer as { status: GuestStatus }).status;
+    expect(first).toMatchObject({ state: 'creating', step: 'machine', estimateSeconds: GUEST_BUILD_ESTIMATE_SECONDS, createdAt: '2026-11-06T18:00:00.000Z', linePosition: null });
+    expect(first.steps).toEqual([
+      { id: 'machine', done: false, startedAt: '2026-11-06T18:00:00.000Z', doneAt: null },
+      { id: 'agent', done: false, startedAt: null, doneAt: null },
+      { id: 'code', done: false, startedAt: null, doneAt: null },
+      { id: 'waking', done: false, startedAt: null, doneAt: null },
+      { id: 'ready', done: false, startedAt: null, doneAt: null },
+    ]);
     await x.service.idle();
     const status = await x.service.status(key);
-    expect(status).toMatchObject({ state: 'ready', agent: { name: 'Juno' }, machine: { cores: 2, memoryGb: 4, dedicated: true }, messagesLeft: 40 });
+    expect(status).toMatchObject({ state: 'ready', agent: { name: 'Juno' }, machine: { cores: 2, memoryGb: 4, dedicated: true }, messagesLeft: 40, steps: null, step: null });
     expect(status.messages).toEqual([expect.objectContaining({ role: 'agent', text: expect.stringContaining("Hi, I'm Juno.") })]);
-    expect(x.commands.some((c) => c.includes('GUEST_SETUP_EOF'))).toBe(true);
-    const row = await x.storage.byKeyHash(hashGuestKey(key));
+    // Each step a real command, in order: the seal (no copy), the copy, Claude Code started once.
+    const build = x.commands.filter((c) => c.includes('GUEST_SETUP_EOF') || c.includes('claude --version'));
+    expect(build).toHaveLength(3);
+    expect(build[0]).toContain('GUEST_SETUP_EOF');
+    expect(build[0]).not.toContain('git clone');
+    expect(build[1]).toContain('git clone');
+    expect(build[2]).toContain(`sudo -n -u ${GUEST_USER} env -i`);
+    const row = (await x.storage.byKeyHash(hashGuestKey(key)))!;
+    expect(row.steps).toEqual([
+      { id: 'machine', done: true, startedAt: '2026-11-06T18:00:00.000Z', doneAt: '2026-11-06T18:00:00.000Z' },
+      { id: 'agent', done: true, startedAt: '2026-11-06T18:00:00.000Z', doneAt: '2026-11-06T18:00:04.000Z' },
+      { id: 'code', done: true, startedAt: '2026-11-06T18:00:04.000Z', doneAt: '2026-11-06T18:00:08.000Z' },
+      { id: 'waking', done: true, startedAt: '2026-11-06T18:00:08.000Z', doneAt: '2026-11-06T18:00:12.000Z' },
+      { id: 'ready', done: true, startedAt: '2026-11-06T18:00:12.000Z', doneAt: '2026-11-06T18:00:12.000Z' },
+    ]);
     expect(JSON.stringify(row)).not.toContain(key);
     expect(JSON.stringify(row)).not.toContain('203.0.113.9');
   });
 
-  it('claims a ready spare first and keeps one spare ready behind it', async () => {
-    const x = world({ limits: { sparesTarget: 1 } });
+  it('the status names the step running now, and when it began, while the build is under way', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const x = world({ stepMs: 3_000, hold: (command) => (command.includes('git clone') ? gate : undefined) });
+    const made = await x.service.create({ address: 'a' });
+    const key = (made.answer as { key: string }).key;
+    for (let i = 0; i < 50 && (await x.service.status(key)).step !== 'code'; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    const during = await x.service.status(key);
+    expect(during).toMatchObject({ state: 'creating', step: 'code' });
+    expect(during.steps!.map((s) => [s.id, s.done, s.startedAt])).toEqual([
+      ['machine', true, '2026-11-06T18:00:00.000Z'],
+      ['agent', true, '2026-11-06T18:00:00.000Z'],
+      ['code', false, '2026-11-06T18:00:03.000Z'],
+      ['waking', false, null],
+      ['ready', false, null],
+    ]);
+    release();
+    await x.service.idle();
+    expect((await x.service.status(key)).state).toBe('ready');
+  });
+
+  it('a build that fails at a step says failed and deletes what it made', async () => {
+    const x = world({ fails: (command) => command.includes('claude --version') });
+    const { key } = await makeAgent(x, 'a');
+    expect((await x.service.status(key)).state).toBe('failed');
+    expect(x.deleted).toEqual(['guest-1']);
+  });
+
+  it('no slots and no line: a third, fourth and fifth visitor at the same moment each get an agent built, never a place in line (note #1055)', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const x = world({ hold: () => gate });
+    const answers = await Promise.all(['a', 'b', 'c', 'd', 'e'].map((address) => x.service.create({ address })));
+    expect(answers.map((a) => a.httpStatus)).toEqual([201, 201, 201, 201, 201]);
+    const statuses = answers.map((a) => (a.answer as { status: GuestStatus }).status);
+    expect(statuses.map((st) => st.state)).toEqual(['creating', 'creating', 'creating', 'creating', 'creating']);
+    expect(statuses.every((st) => st.linePosition === null)).toBe(true);
+    // Five records, five machines, all being built side by side.
+    expect([...x.agents.keys()]).toEqual(['guest-1', 'guest-2', 'guest-3', 'guest-4', 'guest-5']);
+    expect((await x.storage.listByPhase(['creating'])).length).toBe(5);
+    release();
+    await x.service.idle();
+    const keys = answers.map((a) => (a.answer as { key: string }).key);
+    expect(await Promise.all(keys.map(async (key) => (await x.service.status(key)).state))).toEqual(['ready', 'ready', 'ready', 'ready', 'ready']);
+    expect((await x.service.listForOwner()).live).toHaveLength(5);
+  });
+
+  it('no spare is ever prepared or claimed: the sweeper makes none, and each visitor\'s agent is a new record made at the tap (note #1055)', async () => {
+    const x = world();
     await x.service.tick();
     await x.service.idle();
-    expect((await x.storage.listByPhase(['spare'])).map((r) => r.agentId)).toEqual(['guest-1']);
-    const made = await x.service.create({ address: 'a' });
-    const status = (made.answer as { status: { state: string; steps: Array<{ id: string; done: boolean }> } }).status;
-    expect(status.steps?.filter((s) => s.done).map((s) => s.id)).toEqual(['computer', 'code']);
-    expect((made.answer as { status: { estimateSeconds: number } }).status.estimateSeconds).toBe(15);
+    x.advance(60 * 60_000);
+    await x.service.tick();
     await x.service.idle();
-    expect(await x.service.status((made.answer as { key: string }).key)).toMatchObject({ state: 'ready', agent: { name: 'Juno' } });
-    expect((await x.storage.listByPhase(['spare'])).map((r) => r.agentId)).toEqual(['guest-2']);
+    expect(x.agents.size).toBe(0);
+    expect(await x.storage.listByPhase(['spare', 'preparing'])).toEqual([]);
+    const { key } = await makeAgent(x, 'a');
+    await x.service.tick();
+    await x.service.idle();
+    expect([...x.agents.keys()]).toEqual(['guest-1']);
+    const row = (await x.storage.byKeyHash(hashGuestKey(key)))!;
+    expect(row.fromSpare).toBeUndefined();
+    expect(row.preparedAt).toBe(row.claimedAt);
+    expect(await x.storage.listByPhase(['spare', 'preparing'])).toEqual([]);
+  });
+
+  it('a spare left from before (Zoe, Nina) is deleted with its machine on the first sweep, and never handed to a visitor', async () => {
+    const x = world();
+    x.agents.set('old-spare', { id: 'old-spare', name: 'Nina', cli: 'claude', sealed: 'guest', serverId: 'fly_ia-old.m1' } as AgentRecord);
+    await x.storage.put({
+      agentId: 'old-spare', userId: 'owner-1', orgId: 'org-1', phase: 'spare', keyHash: null, preparedAt: '2026-11-06T17:00:00.000Z',
+      claimedAt: null, lastActiveAt: null, messagesUsed: 0, claudeSessionId: null, steps: null, removedAt: null, removedReason: null,
+      transcript: { agentId: 'old-spare', name: 'Nina', avatarUrl: null, createdAt: '2026-11-06T17:00:00.000Z', removedAt: null, removedReason: null, messages: [] },
+    });
+    const { key } = await makeAgent(x, 'a');
+    expect((await x.service.status(key)).agent!.name).toBe('Juno');
+    await x.service.tick();
+    expect(x.deleted).toEqual(['old-spare']);
+    expect((await x.storage.get('old-spare'))!.phase).toBe('removed');
+    expect((await x.service.listForOwner()).past).toEqual([]);
+  });
+
+  it('a build a restart cut off resumes from the top; a row with the four old steps reads as the five', async () => {
+    const x = world();
+    x.agents.set('mid', { id: 'mid', name: 'Iris', cli: 'claude', sealed: 'guest', serverId: 'fly_ia-mid.m1' } as AgentRecord);
+    await x.storage.put({
+      agentId: 'mid', userId: 'owner-1', orgId: 'org-1', phase: 'creating', keyHash: hashGuestKey('k'.repeat(43)), preparedAt: '2026-11-06T17:59:00.000Z',
+      claimedAt: '2026-11-06T17:59:00.000Z', lastActiveAt: null, messagesUsed: 0, claudeSessionId: null,
+      steps: [{ id: 'computer', done: true }, { id: 'code', done: false }, { id: 'claude', done: false }, { id: 'hello', done: false }],
+      removedAt: null, removedReason: null,
+      transcript: { agentId: 'mid', name: 'Iris', avatarUrl: null, createdAt: '2026-11-06T17:59:00.000Z', removedAt: null, removedReason: null, messages: [] },
+    });
+    expect((await x.service.status('k'.repeat(43))).steps!.map((s) => s.id)).toEqual(['machine', 'agent', 'code', 'waking', 'ready']);
+    await x.service.tick();
+    await x.service.idle();
+    expect((await x.service.status('k'.repeat(43))).state).toBe('ready');
   });
 
   it('one live agent per address, and three a day', async () => {
-    const x = world({ limits: { liveMax: 5 } });
+    const x = world();
     const first = await makeAgent(x, 'a');
     const again = await x.service.create({ address: 'a' });
     expect((again.answer as { status: { state: string } }).status.state).toBe('limited');
@@ -391,29 +509,11 @@ describe('GuestAgentService — making one', () => {
     expect((again.answer as { status: { state: string } }).status.state).toBe('ready');
   });
 
-  it('above the ceiling: a place in line, kept only while polled, started when a slot frees', async () => {
-    const x = world({ limits: { liveMax: 1 } });
-    const first = await makeAgent(x, 'a');
-    const waiting = await x.service.create({ address: 'b' });
-    const key = (waiting.answer as { key: string }).key;
-    expect((waiting.answer as { status: { state: string; linePosition: number } }).status).toMatchObject({ state: 'waiting', linePosition: 1 });
-    const gone = await x.service.create({ address: 'c' });
-    const goneKey = (gone.answer as { key: string }).key;
-    x.advance(50_000);
-    expect((await x.service.status(key)).linePosition).toBe(1);
-    x.advance(50_000); // c stopped polling 100 s ago; b polled 50 s ago (grace 90 s)
-    await x.service.deleteByVisitor(first.key);
-    await x.service.tick();
-    await x.service.idle();
-    expect((await x.service.status(key)).state).toBe('ready');
-    expect((await x.service.status(goneKey)).state).toBe('none');
-  });
-
   it('rests when guests are off, when the seat is benched, and after 40 a day', async () => {
     expect((await world({ enabled: false }).service.status(undefined)).state).toBe('resting');
     const benched = world({ seat: { status: 'cooldown', cooldownUntil: '2026-11-06T20:00:00.000Z' } as never });
     expect(await benched.service.status(undefined)).toMatchObject({ state: 'resting', until: '2026-11-06T20:00:00.000Z' });
-    const busy = world({ limits: { globalPerDay: 1, liveMax: 5 } });
+    const busy = world({ limits: { globalPerDay: 1 } });
     await makeAgent(busy, 'a');
     const second = await busy.service.create({ address: 'b' });
     expect((second.answer as { status: { state: string } }).status.state).toBe('resting');
@@ -444,7 +544,7 @@ describe('GuestAgentService — making one', () => {
     expect((await y.service.status(undefined)).turnstileSiteKey).toBe('site');
   });
 
-  it('a failed build says failed and leaves nothing behind', async () => {
+  it('a failed reservation says failed', async () => {
     const x = world({ createFails: true });
     const made = await x.service.create({ address: 'a' });
     expect((made.answer as { status: { state: string } }).status.state).toBe('failed');
@@ -562,23 +662,11 @@ describe('GuestAgentService — talking', () => {
     expect((await y.service.turnStatus(other.key, (again.answer as { turnId: string }).turnId))?.answer).toContain('longer than the 20 minutes one reply may take');
   });
 
-  it('a spare gets its packages installed as the guide, through the proxy; a failed install still leaves a spare (note #1047)', async () => {
-    const x = world({ limits: { sparesTarget: 1 } });
-    await x.service.tick(); await x.service.idle();
-    const deps = x.commands.find((c) => c.includes('npm ci'));
-    expect(deps).toContain('sudo -n -u guide env -i');
-    expect(deps).toContain('HTTPS_PROXY=http://127.0.0.1:3128');
-    expect(deps).toContain('/data/guest/.deps-ready');
-    expect(deps).toContain('npm ci --ignore-scripts');
-    expect(deps).toContain('/data/guest/agentic-cloud/backend');
-    expect((await x.storage.listByPhase(['spare'])).length).toBe(1);
-    const y = world({ limits: { sparesTarget: 1 }, answer: () => ok() });
-    y.client.execSync.mockImplementation(async (_s: string, command: string) => {
-      y.commands.push(command);
-      return command.includes('npm ci') ? { stdout: '', stderr: 'E404', exitCode: 1, timedOut: false } : ok();
-    });
-    await y.service.tick(); await y.service.idle();
-    expect((await y.storage.listByPhase(['spare'])).length).toBe(1);
+  it('a build installs no packages; the instructions tell the agent to, with --ignore-scripts (note #1055)', async () => {
+    const x = world();
+    await makeAgent(x);
+    expect(x.commands.some((c) => c.includes('npm ci'))).toBe(false);
+    expect(guestInstructionsFor('Juno')).toContain('packages are not installed when you start');
   });
 
   it('a failure on our side gives the message back', async () => {
@@ -606,7 +694,7 @@ describe('GuestAgentService — talking', () => {
   });
 
   it('another key cannot read or stop someone else\'s turn', async () => {
-    const x = world({ limits: { liveMax: 5 } });
+    const x = world();
     const mine = await makeAgent(x, 'a');
     const theirs = await makeAgent(x, 'b');
     const sent = await x.service.message(mine.key, 'hi');
@@ -692,13 +780,6 @@ describe('GuestAgentService — going', () => {
     expect(x.deleted).toContain('stray');
   });
 
-  it('switching guests off deletes the spare', async () => {
-    const x = world({ limits: { sparesTarget: 1 } });
-    await x.service.tick(); await x.service.idle();
-    await x.service.setEnabled('owner-1', 'org-1', false);
-    await x.service.tick(); await x.service.idle();
-    expect(x.deleted).toEqual(['guest-1']);
-  });
 });
 
 describe('guest agent storage (SQLite)', () => {

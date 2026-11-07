@@ -5821,7 +5821,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
       limits: list.limits,
       message: settings?.enabled
         ? mine
-          ? `Guests are ON in this workplace: ${list.live.length} of ${list.limits.liveMax} live, ${list.madeToday} of ${list.limits.globalPerDay} made today, ${list.limits.sparesTarget} spare kept ready.`
+          ? `Guests are ON in this workplace: ${list.live.length} live, ${list.madeToday} of ${list.limits.globalPerDay} made today. Each is built from nothing when its visitor asks: no ceiling at once, no line, no spare kept ready.`
           : 'Guests are ON in another workplace on this platform, not this one.'
         : 'Guests are OFF: the home page cannot make an agent.',
     });

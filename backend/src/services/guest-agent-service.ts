@@ -5,9 +5,16 @@
  * quiet minutes, 3 hours, or 40 messages.
  *
  * This service holds everything between the six public routes and the
- * agent layer: the switch, the ceilings and rests, stopped spares, the
- * waiting line, one turn at a time per agent through the model door, Stop,
- * deletion, the sweeper and its leak guard, and the owner's transcripts.
+ * agent layer: the switch, the ceilings and rests, the build from nothing
+ * with its timed steps, one turn at a time per agent through the model door,
+ * Stop, deletion, the sweeper and its leak guard, and the owner's
+ * transcripts.
+ *
+ * No slots, no line, no spares (note #1055; Adam, 7 Nov 2026): every Make
+ * my agent builds that visitor's machine and agent right then, from nothing,
+ * however many others are alive, and the status names each real step as it
+ * runs. Only the day's 40, the address's 3 and the address's one live agent
+ * say no.
  * The seal itself lives on the machine (guest-agent-machine.ts) and in the
  * door (guest-model-door.ts); nothing here relies on the model behaving.
  *
@@ -32,9 +39,9 @@ import { GuestModelDoor } from './guest-model-door.js';
 import {
   GUEST_TURN_DIR,
   buildGuestClaudeCommand,
-  buildGuestDepsCommand,
   buildGuestReapCommand,
   buildGuestSetupCommand,
+  buildGuestWakeCommand,
   buildGuestVisitorPrompt,
   readGuestStream,
   type GuestStreamReading,
@@ -43,6 +50,8 @@ import { guestTranscriptCutoffMs, type GuestAgentRow, type GuestAgentSettings, t
 import {
   GUEST_AGENT_LIMITS,
   GUEST_AGENT_MACHINE,
+  GUEST_BUILD_ESTIMATE_SECONDS,
+  GUEST_CREATE_STEP_IDS,
   GUEST_AGENT_MODEL,
   GUEST_DECLINED_MARKER,
   GUEST_DECLINED_TEXT,
@@ -52,6 +61,7 @@ import {
   type GuestActivity,
   type GuestCreateAnswer,
   type GuestCreateStep,
+  type GuestCreateStepId,
   type GuestMessage,
   type GuestMessageAnswer,
   type GuestRemovedReason,
@@ -71,7 +81,7 @@ const KEY_PATTERN = /^[A-Za-z0-9_-]{40,64}$/;
 const MESSAGES_SPENT_GRACE_MS = 5 * MINUTE_MS;
 /** A removal that has not finished in this long is tried again (the leak guard). */
 const REMOVAL_RETRY_MS = 10 * MINUTE_MS;
-/** A spare or a creation stuck this long is abandoned and its record deleted. */
+/** A build stuck this long is abandoned and its record deleted. */
 const STUCK_MS = 15 * MINUTE_MS;
 /** How long a removed agent's key still answers `removed` (screen 6). */
 const REMOVED_KEY_DAYS = 1;
@@ -130,13 +140,6 @@ interface LiveTurn {
   sandboxId?: string;
 }
 
-interface LineEntry {
-  keyHash: string;
-  address: string;
-  joinedMs: number;
-  lastPollMs: number;
-}
-
 /**
  * What a visitor reads when a reply ran out of its minutes (note #1047): never
  * "something went wrong", since nothing did. What it had said so far, the
@@ -159,6 +162,23 @@ export function guestOutOfTimeAnswer(
   ].join('\n');
 }
 
+/**
+ * A build's five steps (note #1055), in order. A row from before (the four
+ * old steps, or none) reads as a fresh build whose machine step began when
+ * it was claimed.
+ */
+export function guestBuildSteps(row: Pick<GuestAgentRow, 'steps' | 'claimedAt' | 'preparedAt'>): GuestCreateStep[] {
+  const byId = new Map((row.steps ?? []).map((s) => [s.id, s]));
+  if (GUEST_CREATE_STEP_IDS.every((id) => byId.has(id))) {
+    return GUEST_CREATE_STEP_IDS.map((id) => {
+      const s = byId.get(id)!;
+      return { id, done: Boolean(s.done), startedAt: s.startedAt ?? null, doneAt: s.doneAt ?? null };
+    });
+  }
+  const began = row.claimedAt ?? row.preparedAt;
+  return GUEST_CREATE_STEP_IDS.map((id) => ({ id, done: false, startedAt: id === 'machine' ? began : null, doneAt: null }));
+}
+
 export function hashGuestKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
 }
@@ -174,7 +194,6 @@ export class GuestAgentService {
   private readonly now: () => number;
   private readonly turns = new Map<string, LiveTurn>();
   private readonly runningByAgent = new Map<string, string>();
-  private readonly line: LineEntry[] = [];
   /** address → live agent ids, and address → claim times today. In memory only. */
   private readonly addressLive = new Map<string, Set<string>>();
   private readonly addressMade = new Map<string, number[]>();
@@ -187,7 +206,6 @@ export class GuestAgentService {
   private lock: Promise<unknown> = Promise.resolve();
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastHourly = 0;
-  private preparing = false;
   private readonly inflight = new Set<Promise<unknown>>();
 
   constructor(private readonly deps: GuestAgentServiceDeps) {
@@ -207,7 +225,7 @@ export class GuestAgentService {
     this.timer = null;
   }
 
-  /** Background work (a claim finishing, a turn, a spare) — tracked so tests and shutdown can wait for it. */
+  /** Background work (a build, a turn) — tracked so tests and shutdown can wait for it. */
   private track(work: Promise<unknown>): void {
     const guarded = work.catch((error) => console.warn('[guest] background work failed:', error));
     this.inflight.add(guarded);
@@ -276,10 +294,6 @@ export class GuestAgentService {
     return kept;
   }
 
-  private async occupied(): Promise<number> {
-    return (await this.deps.storage.listByPhase(['creating', 'live'])).length;
-  }
-
   // ── What the visitor sees ───────────────────────────────────────────────
 
   private blankStatus(state: GuestState, extra: Partial<GuestStatus> = {}): GuestStatus {
@@ -290,6 +304,7 @@ export class GuestAgentService {
       messages: [],
       turn: null,
       steps: null,
+      step: null,
       estimateSeconds: null,
       createdAt: null,
       quietUntil: null,
@@ -325,7 +340,15 @@ export class GuestAgentService {
       return this.blankStatus('removed', { agent, removedReason: row.removedReason ?? 'quiet' });
     }
     if (row.phase === 'creating') {
-      return this.blankStatus('creating', { agent, steps: row.steps ?? null, estimateSeconds: row.fromSpare ? 15 : 120, createdAt: row.claimedAt, machine: { ...GUEST_AGENT_MACHINE, awake: true } });
+      const steps = guestBuildSteps(row);
+      return this.blankStatus('creating', {
+        agent,
+        steps,
+        step: steps.find((s) => !s.done)?.id ?? null,
+        estimateSeconds: GUEST_BUILD_ESTIMATE_SECONDS,
+        createdAt: row.claimedAt,
+        machine: { ...GUEST_AGENT_MACHINE, awake: true },
+      });
     }
     const now = this.now();
     const turnId = this.runningByAgent.get(row.agentId) ?? null;
@@ -355,11 +378,6 @@ export class GuestAgentService {
     const now = this.now();
     if (this.validKey(key)) {
       const keyHash = hashGuestKey(key);
-      const waiting = this.line.findIndex((entry) => entry.keyHash === keyHash);
-      if (waiting >= 0) {
-        this.line[waiting]!.lastPollMs = now;
-        return this.blankStatus('waiting', { linePosition: waiting + 1 });
-      }
       const failedAt = this.failedKeys.get(keyHash);
       if (failedAt && now - failedAt < HOUR_MS) return this.blankStatus('failed');
       const row = await this.deps.storage.byKeyHash(keyHash);
@@ -399,7 +417,7 @@ export class GuestAgentService {
   async create(args: { key?: unknown; turnstileToken?: unknown; address: string }): Promise<{ httpStatus: number; answer: GuestCreateAnswer | { state: 'invalid'; error: string } }> {
     if (this.validKey(args.key)) {
       const current = await this.status(args.key);
-      if (['creating', 'ready', 'working', 'asleep', 'waiting'].includes(current.state)) return { httpStatus: 200, answer: { status: current } };
+      if (['creating', 'ready', 'working', 'asleep'].includes(current.state)) return { httpStatus: 200, answer: { status: current } };
     }
     if (!await this.verifyTurnstile(args.turnstileToken, args.address)) {
       return { httpStatus: 400, answer: { state: 'invalid', error: 'challenge' } };
@@ -416,24 +434,15 @@ export class GuestAgentService {
       if (this.madeToday(args.address, now).length >= this.limits.perAddressPerDay) {
         return { httpStatus: 200, answer: { status: this.blankStatus('limited', { until: new Date(utcDayStart(now) + DAY_MS).toISOString() }) } };
       }
-      if (this.line.some((entry) => entry.address === args.address)) {
-        return { httpStatus: 200, answer: { status: this.blankStatus('limited', { until: null }) } };
-      }
+      // No ceiling on how many are alive and no line (note #1055): built now, from nothing.
       const key = randomBytes(32).toString('base64url');
       const keyHash = hashGuestKey(key);
-      if (this.line.length === 0 && await this.occupied() < this.limits.liveMax) {
-        const row = await this.claim(settings, keyHash, args.address);
-        if (!row) {
-          this.failedKeys.set(keyHash, now);
-          return { httpStatus: 200, answer: { status: this.blankStatus('failed') } };
-        }
-        return { httpStatus: 201, answer: { key, status: this.statusOfRow(row) } };
+      const row = await this.claim(settings, keyHash, args.address);
+      if (!row) {
+        this.failedKeys.set(keyHash, now);
+        return { httpStatus: 200, answer: { status: this.blankStatus('failed') } };
       }
-      if (this.line.length >= this.limits.lineMax) {
-        return { httpStatus: 200, answer: { status: this.blankStatus('resting', { until: null }) } };
-      }
-      this.line.push({ keyHash, address: args.address, joinedMs: now, lastPollMs: now });
-      return { httpStatus: 201, answer: { key, status: this.blankStatus('waiting', { linePosition: this.line.length }) } };
+      return { httpStatus: 201, answer: { key, status: this.statusOfRow(row) } };
     });
   }
 
@@ -442,49 +451,38 @@ export class GuestAgentService {
   }
 
   /**
-   * Gives the visitor an agent: a ready spare when there is one (seconds),
-   * else a new one built from nothing (a minute or two). Caller holds the lock.
+   * Gives the visitor an agent, built from nothing (note #1055): the record
+   * is reserved (its name) and its machine starts being made behind it; the
+   * rest of the build runs in finishClaim. Caller holds the lock. Holding it
+   * only spans the reservation, so builds run side by side.
    */
   private async claim(settings: GuestAgentSettings, keyHash: string, address: string): Promise<GuestAgentRow | null> {
     const now = this.now();
     const nowIso = new Date(now).toISOString();
-    const spare = (await this.deps.storage.listByPhase(['spare']))[0];
-    let row: GuestAgentRow;
-    if (spare) {
-      row = {
-        ...spare,
-        phase: 'creating',
-        keyHash,
-        claimedAt: nowIso,
-        fromSpare: true,
-        lastActiveAt: nowIso,
-        steps: [{ id: 'computer', done: true }, { id: 'code', done: true }, { id: 'claude', done: false }, { id: 'hello', done: false }],
-        transcript: { ...spare.transcript, createdAt: nowIso },
-      };
-    } else {
-      const made = await this.deps.host.createRecord(settings.userId, settings.orgId).catch((error) => ({ error: String(error) }));
-      if ('error' in made) {
-        console.warn(`[guest] could not make an agent: ${made.error}`);
-        return null;
-      }
-      row = {
-        agentId: made.id,
-        userId: settings.userId,
-        orgId: settings.orgId,
-        phase: 'creating',
-        keyHash,
-        preparedAt: nowIso,
-        claimedAt: nowIso,
-        lastActiveAt: nowIso,
-        messagesUsed: 0,
-        claudeSessionId: null,
-        steps: [{ id: 'computer', done: false }, { id: 'code', done: false }, { id: 'claude', done: false }, { id: 'hello', done: false }],
-        removedAt: null,
-        removedReason: null,
-        transcript: this.newTranscript(made.id, made.name),
-      };
+    const made = await this.deps.host.createRecord(settings.userId, settings.orgId).catch((error) => ({ error: String(error) }));
+    if ('error' in made) {
+      console.warn(`[guest] could not make an agent: ${made.error}`);
+      return null;
     }
+    const row: GuestAgentRow = {
+      agentId: made.id,
+      userId: settings.userId,
+      orgId: settings.orgId,
+      phase: 'creating',
+      keyHash,
+      preparedAt: nowIso,
+      claimedAt: nowIso,
+      lastActiveAt: nowIso,
+      messagesUsed: 0,
+      claudeSessionId: null,
+      // The machine is being made from the moment the record is reserved.
+      steps: GUEST_CREATE_STEP_IDS.map((id) => ({ id, done: false, startedAt: id === 'machine' ? nowIso : null, doneAt: null })),
+      removedAt: null,
+      removedReason: null,
+      transcript: this.newTranscript(made.id, made.name),
+    };
     await this.deps.storage.put(row);
+    console.log(`[guest] building ${made.name} (${made.id}) from nothing`);
     this.addressMade.set(address, [...this.madeToday(address, now), now]);
     const live = this.addressLive.get(address) ?? new Set<string>();
     live.add(row.agentId);
@@ -494,10 +492,18 @@ export class GuestAgentService {
     return row;
   }
 
-  private async step(agentId: string, id: GuestCreateStep['id']): Promise<void> {
+  /** One step done, and the next one started, at the same moment (note #1055). */
+  private async step(agentId: string, id: GuestCreateStepId): Promise<void> {
     const row = await this.deps.storage.get(agentId);
-    if (!row?.steps) return;
-    row.steps = row.steps.map((s) => (s.id === id ? { ...s, done: true } : s));
+    if (!row || row.phase !== 'creating') return;
+    const at = new Date(this.now()).toISOString();
+    const index = GUEST_CREATE_STEP_IDS.indexOf(id);
+    const next = GUEST_CREATE_STEP_IDS[index + 1];
+    row.steps = guestBuildSteps(row).map((s) => {
+      if (s.id === id) return { ...s, done: true, startedAt: s.startedAt ?? at, doneAt: s.doneAt ?? at };
+      if (s.id === next && !s.startedAt) return { ...s, startedAt: at };
+      return s;
+    });
     await this.deps.storage.put(row);
   }
 
@@ -508,19 +514,24 @@ export class GuestAgentService {
       const agent = await this.deps.host.agent(userId, agentId).catch(() => null);
       if (!agent) return null;
       if (agent.serverId) return agent;
-      await new Promise((resolve) => setTimeout(resolve, 3_000));
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     return null;
   }
 
-  /** Runs the machine's setup (users, lock, proxy, copy, runner); true when it is ready for a turn. */
-  private async setupMachine(row: GuestAgentRow): Promise<string | null> {
+  /**
+   * Runs the machine's setup (users, lock, proxy, runner, and the copy unless
+   * `copy` is false); its sandbox id when it is ready, else null. Before every
+   * turn it runs whole; a build runs it twice, without the copy and then with
+   * it, so the visitor sees the two steps apart (note #1055).
+   */
+  private async setupMachine(row: GuestAgentRow, options: { copy?: boolean } = {}): Promise<string | null> {
     const agent = await this.waitForMachine(row.userId, row.agentId);
     if (!agent) return null;
     const sandboxId = await this.deps.host.sandbox(row.userId, row.agentId).catch(() => null);
     const source = sandboxId ? await this.deps.host.source(row.userId, agent).catch(() => null) : null;
     if (!sandboxId || !source || !this.deps.doorUrl) return null;
-    const setup = await this.deps.sandboxClient().execSync(sandboxId, buildGuestSetupCommand({ ...source, doorUrl: this.deps.doorUrl, agentName: row.transcript.name }), undefined, {
+    const setup = await this.deps.sandboxClient().execSync(sandboxId, buildGuestSetupCommand({ ...source, doorUrl: this.deps.doorUrl, agentName: row.transcript.name }, { copy: options.copy ?? true }), undefined, {
       timeoutMs: 420_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
     }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
     if (setup.exitCode !== 0 || setup.timedOut) {
@@ -530,71 +541,61 @@ export class GuestAgentService {
     return sandboxId;
   }
 
+  /**
+   * The build, from nothing, each step a real event (note #1055): the machine
+   * exists and has started; the sealed agent is set up on it; the public copy
+   * is cloned; Claude Code runs once as the agent's user; the greeting.
+   * A restart resumes it from the top (each part is idempotent).
+   */
   private async finishClaim(agentId: string): Promise<void> {
     if (this.busy.has(agentId)) return;
     this.busy.add(agentId);
+    const startedMs = this.now();
     try {
       const row = await this.deps.storage.get(agentId);
       if (!row || row.phase !== 'creating') return;
-      const agent = await this.waitForMachine(row.userId, agentId);
-      if (agent) await this.step(agentId, 'computer');
-      const sandboxId = agent ? await this.setupMachine(row) : null;
-      if (!sandboxId) {
+      const fail = async (where: GuestCreateStepId) => {
+        console.warn(`[guest] building ${row.transcript.name} (${agentId}) failed at ${where}`);
         if (row.keyHash) this.failedKeys.set(row.keyHash, this.now());
         await this.remove(agentId, 'quiet', { failed: true });
-        return;
-      }
+      };
+      const agent = await this.waitForMachine(row.userId, agentId);
+      if (!agent) return await fail('machine');
+      await this.step(agentId, 'machine');
+      if (!await this.stillBuilding(agentId)) return;
+      if (!await this.setupMachine(row, { copy: false })) return await fail('agent');
+      await this.step(agentId, 'agent');
+      if (!await this.stillBuilding(agentId)) return;
+      const sandboxId = await this.setupMachine(row);
+      if (!sandboxId) return await fail('code');
       await this.step(agentId, 'code');
-      await this.step(agentId, 'claude');
+      if (!await this.stillBuilding(agentId)) return;
+      const woke = await this.deps.sandboxClient().execSync(sandboxId, buildGuestWakeCommand(), undefined, {
+        timeoutMs: 60_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
+      }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
+      if (woke.exitCode !== 0 || woke.timedOut) {
+        console.warn(`[guest] Claude Code did not start on ${sandboxId}: ${String(woke.stderr ?? '').slice(-300) || `exit ${woke.exitCode}`}`);
+        return await fail('waking');
+      }
+      await this.step(agentId, 'waking');
       const ready = await this.deps.storage.get(agentId);
       if (!ready || ready.phase !== 'creating') return;
       const nowIso = new Date(this.now()).toISOString();
-      ready.steps = (ready.steps ?? []).map((s) => ({ ...s, done: true }));
+      ready.steps = guestBuildSteps(ready).map((s) => ({ ...s, done: true, startedAt: s.startedAt ?? nowIso, doneAt: s.doneAt ?? nowIso }));
       ready.phase = 'live';
       ready.lastActiveAt = nowIso;
       ready.transcript.messages = [{ id: randomUUID(), role: 'agent', text: guestGreeting(ready.transcript.name), at: nowIso, state: 'answered' }];
       await this.deps.storage.put(ready);
-      console.log(`[guest] ${ready.transcript.name} (${agentId}) is live`);
+      const took = (step: GuestCreateStep) => (step.startedAt && step.doneAt ? `${step.id} ${((Date.parse(step.doneAt) - Date.parse(step.startedAt)) / 1000).toFixed(1)}s` : step.id);
+      console.log(`[guest] ${ready.transcript.name} (${agentId}) is live, built from nothing in ${((Date.parse(nowIso) - Date.parse(ready.claimedAt ?? nowIso)) / 1000).toFixed(1)}s (${guestBuildSteps(ready).map(took).join(', ')}; this run ${((this.now() - startedMs) / 1000).toFixed(1)}s)`);
     } finally {
       this.busy.delete(agentId);
     }
-    this.track(this.tick());
   }
 
-  /** One stopped spare, made ahead so a visitor waits seconds. */
-  private async prepareSpare(settings: GuestAgentSettings): Promise<void> {
-    if (this.preparing) return;
-    this.preparing = true;
-    try {
-      const made = await this.deps.host.createRecord(settings.userId, settings.orgId).catch((error) => ({ error: String(error) }));
-      if ('error' in made) { console.warn(`[guest] could not make a spare: ${made.error}`); return; }
-      const nowIso = new Date(this.now()).toISOString();
-      const row: GuestAgentRow = {
-        agentId: made.id, userId: settings.userId, orgId: settings.orgId, phase: 'preparing', keyHash: null,
-        preparedAt: nowIso, claimedAt: null, lastActiveAt: null, messagesUsed: 0, claudeSessionId: null, steps: null,
-        removedAt: null, removedReason: null, transcript: this.newTranscript(made.id, made.name),
-      };
-      await this.deps.storage.put(row);
-      const sandboxId = await this.setupMachine(row);
-      const after = await this.deps.storage.get(made.id);
-      if (!after || after.phase !== 'preparing') return;
-      if (!sandboxId) {
-        await this.remove(made.id, 'quiet', { failed: true });
-        return;
-      }
-      // Packages, once, so a visitor's "run that test" takes seconds (note #1047). Best effort.
-      const deps = await this.deps.sandboxClient().execSync(sandboxId, buildGuestDepsCommand(), undefined, {
-        timeoutMs: 660_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
-      }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
-      if (deps.exitCode !== 0) console.warn(`[guest] spare ${made.name}: packages not installed (${String(deps.stderr ?? '').slice(-200) || `exit ${deps.exitCode}`}); it stays a spare`);
-      const ready = await this.deps.storage.get(made.id);
-      if (!ready || ready.phase !== 'preparing') return;
-      ready.phase = 'spare';
-      await this.deps.storage.put(ready);
-      console.log(`[guest] spare ${made.name} (${made.id}) is ready`);
-    } finally {
-      this.preparing = false;
-    }
+  /** A visitor may delete the agent mid-build; the build then stops where it is. */
+  private async stillBuilding(agentId: string): Promise<boolean> {
+    return (await this.deps.storage.get(agentId))?.phase === 'creating';
   }
 
   // ── Talking ─────────────────────────────────────────────────────────────
@@ -864,10 +865,7 @@ export class GuestAgentService {
   /** DELETE /api/public/guest — the visitor's Delete. */
   async deleteByVisitor(key: unknown): Promise<GuestStatus> {
     if (!this.validKey(key)) return this.blankStatus('none');
-    const keyHash = hashGuestKey(key);
-    const waiting = this.line.findIndex((entry) => entry.keyHash === keyHash);
-    if (waiting >= 0) { this.line.splice(waiting, 1); return this.blankStatus('none'); }
-    const row = await this.deps.storage.byKeyHash(keyHash);
+    const row = await this.deps.storage.byKeyHash(hashGuestKey(key));
     if (!row) return this.blankStatus('none');
     if (row.phase === 'live' || row.phase === 'creating') await this.remove(row.agentId, 'visitor');
     const after = await this.deps.storage.get(row.agentId);
@@ -919,7 +917,7 @@ export class GuestAgentService {
     after.removedAt = after.removedAt ?? nowIso;
     after.transcript.removedAt = after.removedAt;
     after.transcript.removedReason = after.removedReason;
-    // A spare that never met a visitor has no key to answer to.
+    // A spare (before note #1055) that never met a visitor has no key to answer to.
     if (!wasClaimed) after.keyHash = null;
     await this.deps.storage.put(after);
     console.log(`[guest] ${after.transcript.name} (${agentId}) removed: ${reason}${options.failed ? ' (failed)' : ''}`);
@@ -927,7 +925,7 @@ export class GuestAgentService {
 
   // ── The sweeper ─────────────────────────────────────────────────────────
 
-  /** Every minute: the 30-minute rule, the life cap, the leak guard, the line, the spares. */
+  /** Every minute: the 30-minute rule, the life cap, the leak guard, and the last spares retired. */
   async tick(): Promise<void> {
     const now = this.now();
     const settings = await this.settings();
@@ -945,35 +943,18 @@ export class GuestAgentService {
     for (const row of await this.deps.storage.listByPhase(['removing'])) {
       if (now - Date.parse(row.removedAt ?? row.preparedAt) >= REMOVAL_RETRY_MS) await this.remove(row.agentId, row.removedReason ?? 'quiet');
     }
-    for (const row of await this.deps.storage.listByPhase(['creating', 'preparing'])) {
+    // No spares any more (note #1055): one left from before is deleted with its machine.
+    for (const row of await this.deps.storage.listByPhase(['spare', 'preparing'])) {
+      if (!this.busy.has(row.agentId)) await this.remove(row.agentId, 'owner');
+    }
+    for (const row of await this.deps.storage.listByPhase(['creating'])) {
       const since = Date.parse(row.claimedAt ?? row.preparedAt);
       if (now - since >= STUCK_MS && !this.busy.has(row.agentId)) {
         if (row.keyHash) this.failedKeys.set(row.keyHash, now);
         await this.remove(row.agentId, 'quiet', { failed: true });
-      } else if (row.phase === 'creating' && !this.busy.has(row.agentId)) {
+      } else if (!this.busy.has(row.agentId)) {
         this.track(this.finishClaim(row.agentId)); // a restart interrupted it
       }
-    }
-    // The line: places kept only while the page polls; the head gets the next free slot.
-    for (let i = this.line.length - 1; i >= 0; i--) if (now - this.line[i]!.lastPollMs > this.limits.linePollGraceMs) this.line.splice(i, 1);
-    if (settings?.enabled && this.line.length) {
-      await this.withLock(async () => {
-        while (this.line.length && await this.occupied() < this.limits.liveMax && !await this.restingState(settings, true)) {
-          const head = this.line.shift()!;
-          const row = await this.claim(settings, head.keyHash, head.address);
-          if (!row) this.failedKeys.set(head.keyHash, now);
-        }
-      });
-    }
-    // Spares: kept at the target while guests are on, inside the machine ceiling.
-    if (settings?.enabled && this.deps.doorUrl && !this.preparing) {
-      const spares = (await this.deps.storage.listByPhase(['spare', 'preparing'])).length;
-      const machines = spares + await this.occupied();
-      if (spares < this.limits.sparesTarget && machines < this.limits.liveMax + this.limits.sparesTarget) {
-        this.track(this.prepareSpare(settings));
-      }
-    } else if (settings && !settings.enabled) {
-      for (const row of await this.deps.storage.listByPhase(['spare'])) await this.remove(row.agentId, 'owner');
     }
     for (const [keyHash, at] of this.failedKeys) if (now - at > HOUR_MS) this.failedKeys.delete(keyHash);
     if (now - this.lastHourly >= HOUR_MS) {
@@ -1017,7 +998,7 @@ export class GuestAgentService {
         messages: row.transcript.messages.filter((m) => m.role === 'visitor').length,
         costUsd: Math.round(row.transcript.messages.reduce((sum, m) => sum + (m.costUsd ?? 0), 0) * 10_000) / 10_000,
       })),
-      limits: { liveMax: this.limits.liveMax, sparesTarget: this.limits.sparesTarget, globalPerDay: this.limits.globalPerDay },
+      limits: { globalPerDay: this.limits.globalPerDay, perAddressPerDay: this.limits.perAddressPerDay },
       madeToday: await this.deps.storage.countClaimedSince(utcDayStart(now)),
     };
   }

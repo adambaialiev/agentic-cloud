@@ -46,16 +46,14 @@ export const GUEST_KEY_STORAGE = 'acc.guestKey';
 /**
  * The numbers (note #1038: the pilot ceilings, raised only on Adam's word).
  * One place; the routes and the sweeper read nothing else.
+ *
+ * No ceiling on guests alive at once, no waiting line and no spares (note
+ * #1055; Adam, 7 Nov 2026: "no slots needed. no queue needed. guest agent
+ * creates separate agent."): every Make my agent builds that visitor's
+ * machine and agent right then, from nothing, and the visitor watches the
+ * steps. The day's 40 and the address's 3 are what bound the spend.
  */
 export const GUEST_AGENT_LIMITS = {
-  /** Guest agents alive at once (pilot 2; the design's 5 later). */
-  liveMax: 2,
-  /** Stopped spares kept ready so making one takes seconds (pilot 1; 2 later). */
-  sparesTarget: 1,
-  /** Places in the waiting line. */
-  lineMax: 20,
-  /** A waiting visitor must have polled within this to keep their place (90 s: Chrome slows a background tab's timers). */
-  linePollGraceMs: 90_000,
   /** Agents made in a UTC day, everyone together. */
   globalPerDay: 40,
   /** Live agents per address. */
@@ -88,14 +86,16 @@ export const GUEST_AGENT_LIMITS = {
 /**
  * Where the visitor stands, one word the page draws a screen for (the boards
  * on note #1036):
- *  - `none`      no agent and no place in line: the invitation (screen 1).
- *  - `creating`  being made; `steps` tick off (screen 2).
+ *  - `none`      no agent: the invitation (screen 1).
+ *  - `creating`  being built from nothing; `steps` say which step is running
+ *                and since when, `step` names it (screen 2, note #1055).
  *  - `ready`     awake and listening (screen 3).
  *  - `working`   a turn is running; `turn` names it (screen 3).
  *  - `asleep`    its machine is stopped; the next message wakes it (screen 5).
  *  - `removed`   gone; `removedReason` says why (screens 4 and 6).
- *  - `waiting`   in the line; `linePosition` (1 = next). Poll GET every 5 s
- *                with the key: a place is kept only while the page polls.
+ *  - `waiting`   NEVER ANSWERED since note #1055 (there is no line). Kept in
+ *                the type only until the page's continuation drops its
+ *                screen; then delete it here.
  *  - `resting`   guests are off, the seat is out of service or hit the plan's
  *                limit, or today's guests are used up; `until`. Never the
  *                seat's share alone (note #1048).
@@ -108,12 +108,36 @@ export type GuestState =
 
 export type GuestRemovedReason = 'quiet' | 'visitor' | 'owner' | 'lifetime' | 'messages';
 
-/** The four steps of screen 2, each a real event on the backend. */
-export type GuestCreateStepId = 'computer' | 'code' | 'claude' | 'hello';
+/**
+ * The build, step by step (note #1055): each one a real event on the
+ * backend, in this order, every visitor's agent built from nothing.
+ *  - `machine`  its own computer is made: a Fly app, a volume and a
+ *               2-core machine, started (the longest step).
+ *  - `agent`    the sealed agent is made on it: the guide user, the network
+ *               lock, the egress proxy, Claude Code's runner and instructions.
+ *  - `code`     the public agentic-cloud repository is copied onto its volume.
+ *  - `waking`   Claude Code is started once as the agent's user, to prove it
+ *               runs there.
+ *  - `ready`    the greeting is written; the status turns `ready` with it.
+ */
+export type GuestCreateStepId = 'machine' | 'agent' | 'code' | 'waking' | 'ready';
+export const GUEST_CREATE_STEP_IDS: readonly GuestCreateStepId[] = ['machine', 'agent', 'code', 'waking', 'ready'];
 export interface GuestCreateStep {
   id: GuestCreateStepId;
+  /** Finished. */
   done: boolean;
+  /** When the step began (ISO), or null while it has not. The page's clock for a step runs from here. */
+  startedAt: string | null;
+  /** When it finished (ISO), or null. */
+  doneAt: string | null;
 }
+
+/**
+ * About how long a build from nothing takes, measured (note #1055): the
+ * page's `estimateSeconds` while `creating`. Spares built from nothing on
+ * production took 25 to 55 s from reservation to ready (6 and 7 Nov 2026).
+ */
+export const GUEST_BUILD_ESTIMATE_SECONDS = 35;
 
 /** One line of the conversation. The first is always the agent's fixed greeting. */
 export interface GuestMessage {
@@ -139,8 +163,8 @@ export interface GuestActivity {
 }
 
 /**
- * GET /workspace/api/public/guest — read once on load and while waiting
- * (every 5 s) or creating (every 1.5 s). With no key, or a key the server no
+ * GET /workspace/api/public/guest — read once on load and while creating
+ * (every 1.5 s). With no key, or a key the server no
  * longer knows, the answer is `none` — or `resting` (with `until`) when no
  * agent could be made right now, so the page can draw screen 8 before the
  * tap — and `removed` when the key's agent was deleted within the last day.
@@ -155,11 +179,13 @@ export interface GuestStatus {
   messages: GuestMessage[];
   /** The running turn, while `working`. */
   turn: { turnId: string } | null;
-  /** While `creating`. */
+  /** While `creating`: all five steps, in order, each with when it started and finished (note #1055). */
   steps: GuestCreateStep[] | null;
-  /** While `creating`: about how long it takes in all (about 15 s from a spare, about 120 s from nothing). */
+  /** While `creating`: the step running now. */
+  step: GuestCreateStepId | null;
+  /** While `creating`: about how long a build takes in all (GUEST_BUILD_ESTIMATE_SECONDS). */
   estimateSeconds: number | null;
-  /** When the visitor made it (ISO). */
+  /** When the visitor tapped Make my agent (ISO): the build's whole clock runs from here. */
   createdAt: string | null;
   /** When the agent goes if it stays quiet (ISO). */
   quietUntil: string | null;
@@ -167,7 +193,7 @@ export interface GuestStatus {
   endsAt: string | null;
   /** Messages it can still take. */
   messagesLeft: number | null;
-  /** While `waiting`: 1 is next. */
+  /** Always null since note #1055 (there is no line); goes with `waiting`. */
   linePosition: number | null;
   /** While `resting` or `limited`: when to come back (ISO), if known. */
   until: string | null;
@@ -189,8 +215,8 @@ export interface GuestCreateRequest {
 
 /**
  * POST /workspace/api/public/guest — the answer. 201 with a NEW key when an
- * agent is being made or a place in line was given (`creating` or
- * `waiting`); 200 with the status alone when the key already has one, or the
+ * agent is being built (`creating`, its first step running); 200 with the
+ * status alone when the key already has one, or the
  * visitor is `resting`/`limited`; 400 `{state:'invalid', error:'challenge'}`
  * when the Turnstile check failed; 403 from another Origin.
  * Keep `key` and send it on every later call.
@@ -289,6 +315,6 @@ export interface GuestTranscriptRecord {
 export interface WorkspaceGuestsAnswer {
   live: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; messages: number; state: GuestState; quietUntil: string | null }>;
   past: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; removedAt: string | null; removedReason: GuestRemovedReason | null; messages: number; costUsd: number }>;
-  limits: { liveMax: number; sparesTarget: number; globalPerDay: number };
+  limits: { globalPerDay: number; perAddressPerDay: number };
   madeToday: number;
 }

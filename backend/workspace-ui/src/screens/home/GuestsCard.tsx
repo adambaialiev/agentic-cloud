@@ -86,7 +86,7 @@ export function GuestsCard({ now }: { now: number }) {
     <div className="card" id="agentGuests">
       <button className="drow visitrow" type="button" id="agentGuestsToggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         <div className="k">{`Guests · ${list.live.length} live`}</div>
-        <div className="v dim">{`Agents visitors made on the home page: ${list.madeToday} of ${list.limits.globalPerDay} today, at most ${list.limits.liveMax} at once. Read-only; kept 90 days, nothing about a visitor beyond what they typed.`}</div>
+        <div className="v dim">{`Agents visitors made on the home page: ${list.madeToday} of ${list.limits.globalPerDay} today, each built on its own computer when its visitor asked. Read-only; kept 90 days, nothing about a visitor beyond what they typed.`}</div>
       </button>
       {!expanded ? null : rows.length === 0
         ? <div className="empty" id="agentGuestsEmpty">No visitor has made an agent yet.</div>

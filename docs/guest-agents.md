@@ -1,4 +1,4 @@
-# Guests' own agents (note #1038)
+# Guests' own agents (notes #1038, #1055)
 
 A visitor of the home page, signed out, makes a Claude Code agent of their
 own: a name and a face, a dedicated 2-core machine nobody else uses, Sonnet
@@ -7,7 +7,10 @@ with it, can stop a turn, and can delete it. Its machine sleeps after a few
 quiet minutes like every agent's. After 30 quiet minutes, 3 hours, or 40
 messages, the agent is deleted with its machine, volume and app. The owner
 keeps the transcript for 90 days. The design and its screens are note #1036.
-Adam's decisions are note #1038.
+Adam's decisions are note #1038. Since note #1055 (Adam, 7 Nov 2026) there
+are no slots, no waiting line and no spares: every visitor's Make my agent
+builds that visitor's machine and agent from nothing, and the visitor
+watches the real steps.
 
 This is the backend's half. The home page section is built to the contract
 in `backend/src/shared/guest-agent.ts`.
@@ -78,7 +81,7 @@ checks passed:
 - The instructions say there is no limit, and ask the agent to say what it is about to run, and roughly how long, before anything long.
 - A reply that is ended without an answer (the agent's life ending mid-reply, or a ceiling if one is ever set) becomes an answer that says why and names the command it was in. A Stop gets the reply so far. Neither counts against the visitor's 40 messages, and neither reads "something went wrong", because nothing did.
 - Known gap: a guest turn runs as one SSH exec from the backend, so a backend restart (a deploy) ends a turn in flight. The page then gives up after 4 minutes of silence. Long turns make this likelier than 3-minute ones did.
-- **Spares get their packages** while they are prepared: `npm ci --ignore-scripts` in the root and in `backend/`, run as the guide through the egress proxy, marked by `/data/guest/.deps-ready`. No install script runs. better-sqlite3's own script would fetch Node headers from nodejs.org, which is outside the allow-list, and its bundled linux-x64 prebuild loads without them. With packages in place, one test file runs in about 3 s. This is best effort: a spare whose install failed is still a spare. An agent built from nothing (no spare ready) has no packages, and its instructions tell it to run `npm ci --ignore-scripts` in the root and in `backend/` itself, about half a minute (note #1050: plain `npm ci` runs the backend's install script, which reaches nodejs.org and fails under the lock).
+- **No packages are installed while building** (note #1055; there are no spares to do it ahead). The instructions tell the agent its packages are not installed and to run `npm ci --ignore-scripts --no-audit --no-fund` in the root and then in `backend/` before tests or a build, saying so first. Run as the guide through the egress proxy; no install script runs. better-sqlite3's own script would fetch Node headers from nodejs.org, which is outside the allow-list, and its bundled linux-x64 prebuild loads without them (note #1050: plain `npm ci` runs the backend's install script, which fails under the lock).
 
 ## The kind
 
@@ -93,21 +96,58 @@ checks passed:
   and out of every agent's `agent list`. The person sees them in the
   **Guests** group at the foot of their agents list.
 
-## The switch, spares and ceilings
+## The build, from nothing (note #1055)
+
+Make my agent reserves a sealed guest record (its name) and builds the rest
+behind the answer. There is no ceiling on how many are alive at once, no
+waiting line and no spare: the 40 a day, 3 per address a day and one live
+per address are what bound the spend. Each step is a real event, written
+with its start and finish times on the row and answered by the status route:
+
+| Step | What happens | Ends when |
+|------|--------------|-----------|
+| `machine` | A Fly app, volume and 2-core machine are made and started (the owner's New agent path, `performance-2x`) | the record has its machine and sshd answers |
+| `agent` | The seal: the `guide` and `guidenet` users, the nftables lock, the egress proxy, the runner and the instructions (the setup without the copy) | the setup exits 0 |
+| `code` | An anonymous, shallow clone of the public repository onto the volume (the whole setup again, which now clones) | the setup exits 0 |
+| `waking` | Claude Code is started once as the guide (`claude --version`, no model call) | it answers a version |
+| `ready` | The fixed greeting is written; the status turns `ready` | at once |
+
+A step that fails deletes what was built and the status answers `failed`
+for an hour. A build stuck for 15 minutes is abandoned the same way. A
+backend restart mid-build resumes it from the top (every part is
+idempotent). The visitor may delete it mid-build; the build stops there.
+
+**Measured.** Spares built from nothing on production on 6 and 7 Nov 2026,
+the same path from reservation to ready, took 25 to 31 s (once 55 s), and
+46 s when they also installed packages. The probe's machine-side steps from
+nothing are in `scripts/probe-guest-agent.mts --fresh` (see the PR for the
+numbers). `GUEST_BUILD_ESTIMATE_SECONDS` (35) is the page's estimate.
+
+**The status while `creating`** (`GET /workspace/api/public/guest`):
+`step` names the step running now; `steps` lists all five in order, each
+`{ id, done, startedAt, doneAt }` (ISO times, null until they happen);
+`createdAt` is the tap, so the build's whole clock runs from it;
+`estimateSeconds` is 35. `linePosition` is always null and `waiting` is
+never answered.
+
+**Spares from before** (Zoe, Nina): the sweeper deletes any row still in
+`spare` or `preparing`, with its machine, on its first minute after the
+deploy. None is ever handed to a visitor.
+
+## The switch and the ceilings
 
 - `agentbuilt agent guests on|off|status` (CLI 1.72.0; its help corrected
   in 1.73.0) is the Workspace Agent's switch, run by an admin's agent. Guests
   are made in that person's workplace and spend that person's Claude seat.
   Only one workplace on a platform can have guests on. Off, the public route
-  rests and the spare is deleted.
-- **Stopped spares:** a sealed guest record with its machine built and set
-  up, waiting. A visitor claims one in seconds, and the next is built behind
-  it. Without a spare, an agent is built from nothing, which takes a minute
-  or two.
-- `GUEST_AGENT_LIMITS` (one place): pilot 2 live, 1 spare, 40 a UTC day,
-  per address 1 live and 3 a day, a line of 20 places (kept only while the
-  page polls), 1,000 characters a message, 40 messages, 3 hours, 30 quiet
+  rests.
+- `GUEST_AGENT_LIMITS` (one place): 40 a UTC day, per address 1 live and 3
+  a day, 1,000 characters a message, 40 messages, 3 hours, 30 quiet
   minutes, no time limit on a reply (note #1054), and 30 tool rounds a turn.
+  No ceiling at once, no line, no spares (note #1055).
+- **Cost:** each live guest is a dedicated 2-core machine while it is awake
+  (it sleeps after a few quiet minutes like every agent, and is deleted
+  after 30), so hosting spend follows visitors. Nothing sits warm waiting.
 - **Rests:** the seat out of service (missing, dead, disabled or benched), a
   turn that hits the plan's limit, today's 40 made, guests switched off, or a
   backend with no public https URL for the door. The seat's share of its
@@ -123,13 +163,12 @@ checks passed:
 
 - Live agents: deleted after 30 quiet minutes (no message, no turn
   running), after 3 hours busy or not, or 5 quiet minutes after their last
-  message is spent.
+  message is spent. A running turn is activity.
 - **Leak guard:** a deletion still unfinished after 10 minutes is tried
-  again. A creation or spare stuck for 15 minutes is abandoned and deleted.
-  A guest record on the owner's profile that the table does not know is
-  deleted (hourly).
-- The line: the head gets the next free slot.
-- Spares: kept at the target.
+  again. A build stuck for 15 minutes is abandoned and deleted. A guest
+  record on the owner's profile that the table does not know is deleted
+  (hourly).
+- Any spare left from before note #1055 is deleted.
 - Hourly: keys dropped a day after removal, rows after 90 days.
 
 ## Transcripts

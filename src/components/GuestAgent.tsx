@@ -54,20 +54,21 @@ export const GUEST_LEAD = 'A real Claude Code agent with our whole code and docu
 export const GUEST_CHIPS: ReadonlyArray<[string, string]> = [['2 cores', 'its own'], ['Sonnet', 'high effort']];
 export const GUEST_MAKE = 'Make my agent';
 export const GUEST_LIFE_LINE = 'It sleeps when you’re quiet, and goes after 30 quiet minutes.';
+/* The build's five real steps (note #1055); the page's continuation redraws them with each step's own clock. */
 export const GUEST_STEPS: Record<GuestCreateStep['id'], string> = {
-  computer: 'A computer of its own · 2 cores, 4 GB',
-  code: 'A copy of the open-source code',
-  claude: 'Starting Claude Code on Sonnet',
-  hello: 'Saying hello',
+  machine: 'Making its computer · 2 cores, 4 GB',
+  agent: 'Making the agent · Claude Code on Sonnet',
+  code: 'Copying the open-source code',
+  waking: 'Waking it up',
+  ready: 'Ready',
 };
 export const GUEST_IDENTITY = 'Your agent · its own computer, 2 cores · Claude Code on Sonnet';
 export const GUEST_FAILED = 'Something went wrong on our side. Try again in a minute.';
 export const GUEST_CHECK_FAILED = 'The check that you’re a person didn’t go through. Try again.';
 export const BUILD_YOURS_LABEL = 'Build your own Agentic Cloud';
-/* A spare is ready in about fifteen seconds; built from nothing it takes a
-   minute or two. The status's estimateSeconds says which; should a spare
-   run long, the line changes once the wait has passed a spare's. */
-const SPARE_SECONDS = 40;
+/* Every agent is built from nothing (note #1055): about half a minute
+   (estimateSeconds). Should one run long, the line changes past this. */
+const SPARE_SECONDS = 50;
 
 const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
 export function lineWords(position: number): string {
@@ -567,7 +568,7 @@ function Invite({ making, problem, onMake }: { making: boolean; problem?: string
 }
 
 function Creating({ agent, steps, since, estimate, now }: { agent: Agent | null; steps: GuestCreateStep[] | null; since: number; estimate: number | null; now: number }) {
-  const list = steps?.length ? steps : (['computer', 'code', 'claude', 'hello'] as const).map((id) => ({ id, done: false }));
+  const list = steps?.length ? steps : (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id) => ({ id, done: false }));
   const doing = list.findIndex((step) => !step.done);
   const seconds = (now - since) / 1000;
   return (
@@ -590,7 +591,7 @@ function Creating({ agent, steps, since, estimate, now }: { agent: Agent | null;
           );
         })}
       </ol>
-      <p className="mt-7 type-sm text-hint">{(estimate ?? 0) > 60 || seconds > SPARE_SECONDS ? 'Keep this page open. This one takes about two minutes.' : 'Keep this page open. It takes about fifteen seconds.'}</p>
+      <p className="mt-7 type-sm text-hint">{(estimate ?? 0) > 60 || seconds > SPARE_SECONDS ? 'Keep this page open. This one takes about a minute.' : 'Keep this page open. It takes about half a minute.'}</p>
     </div>
   );
 }
