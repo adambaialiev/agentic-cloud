@@ -3,10 +3,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GUEST_STEP_DETAIL, GuestAgentSection, buildWords, minutesLeft, removedWords, stepTime, whenWords, workingWords } from './GuestAgent';
+import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GUEST_STEP_DETAIL, GuestAgentSection, buildWords, jobClock, jobCount, minutesLeft, removedWords, stepTime, whenWords, workingWords } from './GuestAgent';
 import {
   GUEST_CREATING_POLL_MS,
   GUEST_IDLE_POLL_MS,
+  GUEST_JOB_POLL_MS,
+  jobsOf,
   GUEST_KEY_HEADER,
   GUEST_KEY_STORAGE,
   GUEST_TURN_POLL_MS,
@@ -476,6 +478,140 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(removedWords('Juno', 'messages')).toBe('Juno had its 40 messages, and was removed.');
     expect(workingWords([{ kind: 'edit', label: 'README.md' }], 12)).toBe('Changing its copy · 0:12');
     expect(workingWords([], 3)).toBe('Reading the code · 0:03');
+  });
+});
+
+// Note #1064: the background job pill, fixed above the composer, as the
+// Workspace chat's. The status's `jobs` field is Rosa's (note #1063, shape
+// agreed there): [{ id, label, startedAt }], running jobs only.
+describe('the background job pill (note #1064)', () => {
+  const job = (id: string, label: string, secondsAgo: number) => ({ id, label, startedAt: new Date(Date.now() - secondsAgo * 1000).toISOString() });
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    window.localStorage.clear();
+    window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
+    stubFetch();
+    stubTurnstile();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    delete (window as unknown as { turnstile?: unknown }).turnstile;
+  });
+  const pill = () => document.querySelector('[data-guest-jobs-pill]') as HTMLButtonElement | null;
+  const withJobs = (jobs: unknown, patch: Partial<GuestStatus> = {}) => ({ ...readyStatus(patch), jobs });
+
+  it('shows the count with the breathing dot, sticks above the composer, and is gone with no job', async () => {
+    routes = { [`GET ${GUEST}`]: () => ({ body: withJobs([job('j1', 'npm run test:coverage', 74)]) }) };
+    draw();
+    await flush();
+    expect(pill()!.textContent).toBe('1 background job');
+    expect(pill()!.querySelector('.guest-breathe')).not.toBeNull();
+    const holder = document.querySelector('[data-guest-jobs]')!;
+    expect(holder.className).toContain('sticky');
+    expect(holder.className).toContain('bottom-3');
+    // Right above the composer, after the conversation: it never scrolls away with the messages.
+    expect(holder.nextElementSibling!.tagName).toBe('FORM');
+    expect(document.querySelector('[data-guest-left]')!.textContent).toBe('Juno stays awake while its background job runs.');
+
+    routes[`GET ${GUEST}`] = () => ({ body: withJobs([job('j1', 'npm run test:coverage', 80), job('j2', 'npm run build', 3)]) });
+    await flush(GUEST_JOB_POLL_MS);
+    expect(pill()!.textContent).toBe('2 background jobs');
+
+    routes[`GET ${GUEST}`] = () => ({ body: withJobs([]) });
+    await flush(GUEST_JOB_POLL_MS);
+    expect(pill()).toBeNull();
+    expect(document.querySelector('[data-guest-left]')!.textContent).toMatch(/goes after 30 quiet minutes/);
+  });
+
+  it('opens the running list with a stopwatch that runs on its own, and Back closes it where it was', async () => {
+    routes = { [`GET ${GUEST}`]: () => ({ body: withJobs([job('j1', 'npm run test:coverage', 74)]) }) };
+    draw();
+    await flush();
+    expect(document.querySelector('[data-guest-jobs-list]')).toBeNull();
+    fireEvent.click(pill()!);
+    expect(pill()!.getAttribute('aria-expanded')).toBe('true');
+    const list = document.querySelector('[data-guest-jobs-list]')!;
+    expect(list.querySelector('code')!.textContent).toBe('npm run test:coverage');
+    expect(list.querySelector('[data-job-clock]')!.textContent).toBe('1:14');
+    expect(list.textContent).not.toMatch(/RUNNING|Running(?! for)/);
+    await flush(3000);
+    expect(document.querySelector('[data-job-clock]')!.textContent).toBe('1:17');
+    // The ticking clocks are not read aloud every second.
+    expect(list.querySelector('ul')!.getAttribute('aria-live')).toBe('off');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(document.querySelector('[data-guest-jobs-list]')).toBeNull();
+    expect(document.activeElement).toBe(pill());
+    fireEvent.click(pill()!);
+    fireEvent.keyDown(document.querySelector('[data-guest-jobs-list]')!, { key: 'Escape' });
+    expect(document.querySelector('[data-guest-jobs-list]')).toBeNull();
+  });
+
+  it('reads every 5 s while a job runs, not while the tab is hidden, and draws the answer its finish brings', async () => {
+    routes = { [`GET ${GUEST}`]: () => ({ body: withJobs([job('j1', 'npm run test:coverage', 10)]) }) };
+    draw();
+    await flush();
+    const reads = () => calls.filter((c) => c.url === GUEST && !c.init?.method).length;
+    const before = reads();
+    await flush(GUEST_JOB_POLL_MS);
+    expect(reads()).toBe(before + 1);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    await flush(GUEST_JOB_POLL_MS * 2);
+    expect(reads()).toBe(before + 1);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    // The job ended; its receipt turn answered; the visitor typed nothing.
+    routes[`GET ${GUEST}`] = () => ({ body: withJobs([], { messages: [greeting, { id: 'm9', role: 'agent', text: 'Coverage is 81% of lines.', at: new Date().toISOString(), state: 'answered', activity: [] }] }) });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flush();
+    expect(reads()).toBe(before + 2);
+    expect(document.querySelector('[data-guest-messages]')!.textContent).toContain('Coverage is 81% of lines.');
+    expect(pill()).toBeNull();
+    // Back to the quiet pace.
+    await flush(GUEST_JOB_POLL_MS);
+    expect(reads()).toBe(before + 2);
+    await flush(GUEST_IDLE_POLL_MS);
+    expect(reads()).toBe(before + 3);
+  });
+
+  it('follows the turn a finished job starts, like a visitor’s', async () => {
+    routes = { [`GET ${GUEST}`]: () => ({ body: withJobs([job('j1', 'npm test', 50)]) }) };
+    draw();
+    await flush();
+    routes[`GET ${GUEST}`] = () => ({ body: withJobs([], { state: 'working', turn: { turnId: 't7' } }) });
+    routes[`GET ${GUEST}/turns/t7`] = () => ({ body: { turnId: 't7', state: 'working', partial: 'The tests finished:', answer: null, activity: [], files: [], elapsedSeconds: 2 } });
+    await flush(GUEST_JOB_POLL_MS);
+    expect(document.querySelector('[data-guest-working]')).not.toBeNull();
+    await flush(GUEST_TURN_POLL_MS);
+    expect(document.querySelector('[data-guest-messages]')!.textContent).toContain('The tests finished:');
+  });
+
+  it('never says the computer went to sleep while a job keeps it awake', async () => {
+    routes = { [`GET ${GUEST}`]: () => ({ body: withJobs([job('j1', 'npm test', 50)], { state: 'asleep', machine: { ...MACHINE, awake: false } }) }) };
+    draw();
+    await flush();
+    expect(document.querySelector('[data-guest-asleep]')).toBeNull();
+    expect(document.querySelector('[data-guest-chip]')!.textContent).toBe('Ready');
+    expect(document.querySelector('[data-guest-computer]')!.textContent).toContain('Stays awake while its job runs');
+  });
+
+  it('reads the field strictly, and as none while the route does not carry it', () => {
+    expect(jobsOf(status({}))).toEqual([]);
+    expect(jobsOf({ ...status({}), jobs: 'x' } as unknown as GuestStatus)).toEqual([]);
+    const ok = { id: 'a', label: 'npm test', startedAt: '2026-11-07T19:00:00Z' };
+    expect(jobsOf({ ...status({}), jobs: [ok, { id: 'b' }, null, { ...ok, startedAt: 'never' }, ok, ok, ok, ok] } as unknown as GuestStatus)).toHaveLength(4);
+    expect(jobCount(1)).toBe('1 background job');
+    expect(jobCount(3)).toBe('3 background jobs');
+    const t0 = Date.parse('2026-11-07T19:00:00Z');
+    expect(jobClock('2026-11-07T19:00:00Z', t0 + 42_000)).toBe('0:42');
+    expect(jobClock('2026-11-07T19:00:00Z', t0 + 725_000)).toBe('12:05');
+    expect(jobClock('2026-11-07T19:00:00Z', t0 + 3_789_000)).toBe('1:03:09');
+    expect(jobClock('2026-11-07T19:00:00Z', t0 - 5_000)).toBe('0:00');
+  });
+
+  it('breathes like the Workspace chat’s dot, still under reduced motion', () => {
+    const css = readFileSync(path.resolve(__dirname, '../index.css'), 'utf8');
+    expect(css).toMatch(/@keyframes guest-breathe \{ 0%, 100% \{ opacity: \.35; \} 50% \{ opacity: 1; \} \}/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{ \.guest-breathe \{ animation: none; \} \}/);
   });
 });
 

@@ -50,10 +50,28 @@ export const GUEST_TURN_POLL_MS = 1000;
 export const GUEST_CREATING_POLL_MS = 1500;
 /** …and, while nothing happens, every 20 s, for the chip, the minutes left and removal. */
 export const GUEST_IDLE_POLL_MS = 20_000;
+/** …but every 5 s while a background job runs, so its answer arrives by itself (note #1064). */
+export const GUEST_JOB_POLL_MS = 5000;
 /** A turn the page has not been able to read for this long is drawn as failed. Every read that answers resets it: a turn has no time limit (note #1054). */
 export const GUEST_TURN_GIVE_UP_MS = 240_000;
 
 export type GuestAgent = NonNullable<GuestStatus['agent']>;
+
+/**
+ * A background job the guest's agent runs (note #1063, Rosa's side; the
+ * shape agreed in a comment there): a redacted display label, never the
+ * command line, its cwd or its output. The status lists the running ones,
+ * at most 4, oldest first. Read through `jobsOf`, which answers [] while the
+ * route does not carry `jobs` yet, and drops anything not in this shape.
+ */
+export interface GuestJob { id: string; label: string; startedAt: string }
+export const GUEST_JOBS_MAX = 4;
+export function jobsOf(status: GuestStatus | null | undefined): GuestJob[] {
+  const jobs = (status as { jobs?: unknown } | null | undefined)?.jobs;
+  if (!Array.isArray(jobs)) return [];
+  return jobs.filter((job): job is GuestJob => Boolean(job) && typeof job.id === 'string' && typeof job.label === 'string'
+    && typeof job.startedAt === 'string' && !Number.isNaN(Date.parse(job.startedAt))).slice(0, GUEST_JOBS_MAX);
+}
 /** POST's answer as the page reads it: the contract's, or the 400 refusal. */
 export type GuestCreateAnswer = GuestCreated | { state: 'invalid'; error: string };
 

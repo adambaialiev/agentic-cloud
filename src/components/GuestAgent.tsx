@@ -6,12 +6,14 @@ import { PRIVATE_COPY_URL } from '../lib/workspace-link';
 import {
   GUEST_CREATING_POLL_MS,
   GUEST_IDLE_POLL_MS,
+  GUEST_JOB_POLL_MS,
   GUEST_MAX_CHARS,
   GUEST_TURN_GIVE_UP_MS,
   GUEST_TURN_POLL_MS,
   deleteGuest,
   guestKey,
   isRunning,
+  jobsOf,
   keepGuestKey,
   makeGuest,
   passTurnstile,
@@ -22,6 +24,7 @@ import {
   type GuestActivity,
   type GuestAgent as Agent,
   type GuestCreateStep,
+  type GuestJob,
   type GuestMessage,
   type GuestRemovedReason,
   type GuestStatus,
@@ -340,13 +343,20 @@ export function GuestAgentSection() {
      times), every 20 s while the chat is quiet (the chip, the minutes left,
      removal). And at once when the tab comes back, since a hidden tab's
      timers slow down. */
+  /* While a background job runs (note #1064), every 5 s instead of 20, so
+     the answer its finish brings appears without the visitor typing. A
+     hidden tab is not read at all; it catches up the moment it is back. */
+  const jobs = jobsOf(status);
   const pollEvery = view.kind === 'creating' ? GUEST_CREATING_POLL_MS
-    : view.kind === 'chat' && !running ? GUEST_IDLE_POLL_MS
+    : view.kind === 'chat' && !running ? (jobs.length ? GUEST_JOB_POLL_MS : GUEST_IDLE_POLL_MS)
     : 0;
   useEffect(() => {
     if (!pollEvery) return undefined;
     const abort = new AbortController();
-    const read = () => { refresh(abort.signal).catch(() => { /* next tick */ }); };
+    const read = () => {
+      if (document.visibilityState === 'hidden') return;
+      refresh(abort.signal).catch(() => { /* next tick */ });
+    };
     const timer = window.setInterval(read, pollEvery);
     const back = () => { if (document.visibilityState === 'visible') read(); };
     document.addEventListener('visibilitychange', back);
@@ -354,7 +364,7 @@ export function GuestAgentSection() {
   }, [pollEvery, refresh]);
 
   /* The clocks ("Your agent · 0:09", "Reading the code · 0:11"). */
-  const ticking = view.kind === 'creating' || running;
+  const ticking = view.kind === 'creating' || running || (view.kind === 'chat' && jobs.length > 0);
   useEffect(() => {
     if (!ticking) return undefined;
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -656,6 +666,77 @@ function Ending({ title, line, children }: { title: string; line: string; childr
   );
 }
 
+/** How long a job has run, as the Workspace's job list says it: "0:42", "12:05", "1:03:09". */
+export function jobClock(startedAt: string, now: number): string {
+  const secs = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
+  if (Number.isNaN(secs)) return '';
+  const ss = String(secs % 60).padStart(2, '0');
+  const mins = Math.floor(secs / 60);
+  return mins < 60 ? `${mins}:${ss}` : `${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}:${ss}`;
+}
+
+export function jobCount(count: number): string {
+  return `${count} background ${count === 1 ? 'job' : 'jobs'}`;
+}
+
+/* The background job pill (note #1064; Adam, 7 Nov 2026, 18:48 UTC: "it
+   should be set up the same way as for our regular agents. background job
+   pill should have fixed position in the chat."). The Workspace chat's own
+   pill (PR #1017, .chatjobs in workspace.css): a paper chip on a soft
+   shadow, the breathing dot, "1 background job". Here it sticks to the
+   bottom of the screen just above the composer, so however far the visitor
+   scrolls back through the conversation it stays in view, and it rests
+   above the composer at the end. A tap opens the running list above it,
+   in place: nothing scrolls, so closing it leaves the visitor exactly where
+   they were. Being on the list is the state; there is no "Running" label. */
+function JobsPill({ jobs, now }: { jobs: GuestJob[]; now: number }) {
+  const [open, setOpen] = useState(false);
+  const pill = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); pill.current?.focus(); };
+  return (
+    <div
+      data-guest-jobs
+      className="sticky bottom-3 z-10 mt-5 flex flex-col items-center gap-2"
+      onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.stopPropagation(); close(); } }}
+    >
+      {open ? (
+        <div id="guest-jobs-list" role="region" aria-labelledby="guest-jobs-title" data-guest-jobs-list className="w-full max-w-[30rem] rounded-2xl border border-hint/20 bg-panel p-4 shadow-[0_6px_24px_rgba(0,0,0,0.12)] sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p id="guest-jobs-title" className="type-sm font-semibold text-white">Background jobs</p>
+            <button type="button" onClick={close} className="-mr-2 inline-flex min-h-11 items-center rounded-full px-3 type-sm font-semibold text-white underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+              Back
+            </button>
+          </div>
+          <ul aria-live="off" className="mt-2 grid max-h-[45vh] gap-3 overflow-y-auto">
+            {jobs.map((job) => (
+              <li key={job.id} data-job-id={job.id} className="grid gap-1 border-t border-hint/15 pt-3 first:border-t-0 first:pt-1">
+                <code className="break-words font-mono type-sm leading-snug text-white [overflow-wrap:anywhere]">{job.label}</code>
+                <p className="type-sm text-hint">Running for <span data-job-clock className="tabular-nums">{jobClock(job.startedAt, now)}</span></p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <button
+        ref={pill}
+        type="button"
+        data-guest-jobs-pill
+        aria-expanded={open}
+        aria-controls="guest-jobs-list"
+        aria-label={`${jobCount(jobs.length)}. ${open ? 'Hide' : 'Show'} details`}
+        onClick={() => setOpen((was) => !was)}
+        className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border border-hint/20 bg-panel pl-3.5 pr-3 type-sm font-medium text-white shadow-[0_2px_8px_rgba(0,0,0,0.10)] transition-shadow hover:shadow-[0_3px_12px_rgba(0,0,0,0.14)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      >
+        <span aria-hidden="true" className="guest-breathe h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+        <span className="min-w-0 truncate">{jobCount(jobs.length)}</span>
+        <svg viewBox="0 0 20 20" aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 text-hint transition-transform ${open ? 'rotate-180' : ''}`} fill="none">
+          <path d="M5.5 12.5L10 8l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 type ChatProps = {
   agent: Agent | null;
   status: GuestStatus | null;
@@ -714,7 +795,10 @@ function ActivityList({ activity, running }: { activity: GuestActivity[]; runnin
 function Chat({ agent, status, messages, turn, lastActivity, now, draft, notice, confirming, deleting, onDraft, onSend, onStop, onAskDelete, onKeep, onDelete }: ChatProps) {
   const name = agent?.name ?? 'Your agent';
   const running = turn ? isRunning(turn.state) : false;
-  const asleep = !running && (status?.state === 'asleep' || status?.machine?.awake === false);
+  /* A running background job keeps its computer awake (note #1063), so the
+     sleep notice never shows while one runs, whatever a stale read says. */
+  const jobs = jobsOf(status);
+  const asleep = !running && !jobs.length && (status?.state === 'asleep' || status?.machine?.awake === false);
   const lastKind = turn?.activity[turn.activity.length - 1]?.kind;
   const chip: Chip = running ? (turn!.state === 'waking' ? 'Waking' : !lastKind || lastKind === 'read' || lastKind === 'search' ? 'Reading' : 'Working') : asleep ? 'Asleep' : 'Ready';
   const left = minutesLeft(status?.quietUntil, now);
@@ -811,6 +895,8 @@ function Chat({ agent, status, messages, turn, lastActivity, now, draft, notice,
 
         {notice ? <p data-guest-notice role="status" className="mt-4 type-sm text-hint">{notice}</p> : null}
 
+        {jobs.length ? <JobsPill jobs={jobs} now={now} /> : null}
+
         <form onSubmit={onSend} className="mt-5 flex min-h-14 items-center gap-3 rounded-2xl bg-panel-soft py-2 pl-4 pr-1.5 sm:min-h-[60px] sm:pl-5 sm:pr-2.5">
           <label htmlFor="guest-input" className="sr-only">Your message to {name}</label>
           <input
@@ -841,7 +927,8 @@ function Chat({ agent, status, messages, turn, lastActivity, now, draft, notice,
             </button>
           )}
         </form>
-        {left !== null ? <p data-guest-left className="mt-2 type-sm tabular-nums text-hint">{name} goes after 30 quiet minutes · {left} left</p> : null}
+        {jobs.length ? <p data-guest-left className="mt-2 type-sm text-hint">{name} stays awake while its background {jobs.length === 1 ? 'job runs' : 'jobs run'}.</p>
+          : left !== null ? <p data-guest-left className="mt-2 type-sm tabular-nums text-hint">{name} goes after 30 quiet minutes · {left} left</p> : null}
       </div>
 
       {/* The desk margin: what it does, as it does it (files linked to the
@@ -857,7 +944,7 @@ function Chat({ agent, status, messages, turn, lastActivity, now, draft, notice,
         <p className="mb-2 type-xs font-semibold uppercase tracking-[0.06em] text-hint">{name}’s computer</p>
         <ul data-guest-computer className="grid gap-1">
           <li><b className="font-semibold text-white">{asleep ? 'Asleep' : 'Awake'}</b> · {size}</li>
-          <li>{asleep ? 'Wakes on your next message' : 'Sleeps after 3 quiet minutes'}</li>
+          <li>{asleep ? 'Wakes on your next message' : jobs.length ? `Stays awake while ${jobs.length === 1 ? 'its job runs' : 'its jobs run'}` : 'Sleeps after 3 quiet minutes'}</li>
           <li>{status?.quietUntil && localTime(status.quietUntil) ? `Goes at ${localTime(status.quietUntil)} if it stays quiet` : 'Goes after 30 quiet minutes'}</li>
         </ul>
       </aside>
