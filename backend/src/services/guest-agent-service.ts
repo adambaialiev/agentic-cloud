@@ -310,7 +310,6 @@ export class GuestAgentService {
       quietUntil: null,
       endsAt: null,
       messagesLeft: null,
-      linePosition: null,
       until: null,
       removedReason: null,
       turnstileSiteKey: this.deps.turnstile?.siteKey ?? null,

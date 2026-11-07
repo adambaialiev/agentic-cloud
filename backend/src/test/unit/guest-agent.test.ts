@@ -358,7 +358,8 @@ describe('GuestAgentService — making one', () => {
     const key = (made.answer as { key: string }).key;
     expect(key).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const first = (made.answer as { status: GuestStatus }).status;
-    expect(first).toMatchObject({ state: 'creating', step: 'machine', estimateSeconds: GUEST_BUILD_ESTIMATE_SECONDS, createdAt: '2026-11-06T18:00:00.000Z', linePosition: null });
+    expect(first).toMatchObject({ state: 'creating', step: 'machine', estimateSeconds: GUEST_BUILD_ESTIMATE_SECONDS, createdAt: '2026-11-06T18:00:00.000Z' });
+    expect(first).not.toHaveProperty('linePosition');
     expect(first.steps).toEqual([
       { id: 'machine', done: false, startedAt: '2026-11-06T18:00:00.000Z', doneAt: null },
       { id: 'agent', done: false, startedAt: null, doneAt: null },
@@ -425,7 +426,7 @@ describe('GuestAgentService — making one', () => {
     expect(answers.map((a) => a.httpStatus)).toEqual([201, 201, 201, 201, 201]);
     const statuses = answers.map((a) => (a.answer as { status: GuestStatus }).status);
     expect(statuses.map((st) => st.state)).toEqual(['creating', 'creating', 'creating', 'creating', 'creating']);
-    expect(statuses.every((st) => st.linePosition === null)).toBe(true);
+    expect(statuses.every((st) => !('linePosition' in st) && (st.state as string) !== 'waiting')).toBe(true);
     // Five records, five machines, all being built side by side.
     expect([...x.agents.keys()]).toEqual(['guest-1', 'guest-2', 'guest-3', 'guest-4', 'guest-5']);
     expect((await x.storage.listByPhase(['creating'])).length).toBe(5);

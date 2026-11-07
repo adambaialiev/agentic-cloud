@@ -127,8 +127,8 @@ numbers). `GUEST_BUILD_ESTIMATE_SECONDS` (35) is the page's estimate.
 `step` names the step running now; `steps` lists all five in order, each
 `{ id, done, startedAt, doneAt }` (ISO times, null until they happen);
 `createdAt` is the tap, so the build's whole clock runs from it;
-`estimateSeconds` is 35. `linePosition` is always null and `waiting` is
-never answered.
+`estimateSeconds` is 35. There is no line: no `waiting` state and no
+`linePosition` (both deleted with the page's line screen, note #1060).
 
 **Spares from before** (Zoe, Nina): the sweeper deletes any row still in
 `spare` or `preparing`, with its machine, on its first minute after the

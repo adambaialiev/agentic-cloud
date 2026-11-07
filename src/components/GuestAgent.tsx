@@ -9,7 +9,6 @@ import {
   GUEST_MAX_CHARS,
   GUEST_TURN_GIVE_UP_MS,
   GUEST_TURN_POLL_MS,
-  GUEST_WAITING_POLL_MS,
   deleteGuest,
   guestKey,
   isRunning,
@@ -54,28 +53,43 @@ export const GUEST_LEAD = 'A real Claude Code agent with our whole code and docu
 export const GUEST_CHIPS: ReadonlyArray<[string, string]> = [['2 cores', 'its own'], ['Sonnet', 'high effort']];
 export const GUEST_MAKE = 'Make my agent';
 export const GUEST_LIFE_LINE = 'It sleeps when you’re quiet, and goes after 30 quiet minutes.';
-/* The build's five real steps (note #1055); the page's continuation redraws them with each step's own clock. */
+/* The build's five real steps (note #1055), in the words of note #1060:
+   each is a real event on our side, in this order, every agent built from
+   nothing. The running one says what is happening under it. */
 export const GUEST_STEPS: Record<GuestCreateStep['id'], string> = {
-  machine: 'Making its computer · 2 cores, 4 GB',
-  agent: 'Making the agent · Claude Code on Sonnet',
-  code: 'Copying the open-source code',
-  waking: 'Waking it up',
+  machine: 'Making your computer',
+  agent: 'Setting up your agent',
+  code: 'Copying our code',
+  waking: 'Waking up',
   ready: 'Ready',
+};
+export const GUEST_STEP_DETAIL: Record<GuestCreateStep['id'], string> = {
+  machine: 'A computer of its own, with 2\u00a0cores and 4\u00a0GB. This is most of the wait.',
+  agent: 'Claude Code on Sonnet, on its new computer.',
+  code: 'Our open-source code and documentation, onto its disk.',
+  waking: 'Claude Code starts once, to check it answers.',
+  ready: 'Writing its hello.',
 };
 export const GUEST_IDENTITY = 'Your agent · its own computer, 2 cores · Claude Code on Sonnet';
 export const GUEST_FAILED = 'Something went wrong on our side. Try again in a minute.';
 export const GUEST_CHECK_FAILED = 'The check that you’re a person didn’t go through. Try again.';
 export const BUILD_YOURS_LABEL = 'Build your own Agentic Cloud';
-/* Every agent is built from nothing (note #1055): about half a minute
-   (estimateSeconds). Should one run long, the line changes past this. */
-const SPARE_SECONDS = 50;
+/* Every agent is built from nothing (note #1055): measured 25 to 31 s on
+   production, once 55; estimateSeconds is 35. Past this, the clock line says
+   it is taking longer than usual rather than promising half a minute. */
+const LONG_SECONDS = 50;
 
-const ORDINALS = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'];
-export function lineWords(position: number): string {
-  const place = ORDINALS[position] ?? `number ${position}`;
-  return position <= 1
-    ? 'You’re next in line. Keep the page open and yours starts as soon as a computer frees up.'
-    : `You’re ${place} in line. Keep the page open and yours starts as soon as a computer frees up.`;
+/** How long a finished step took, as the build screen says it: tenths under
+ *  ten seconds (most steps take about one), whole seconds after. */
+export function stepTime(ms: number): string {
+  const seconds = Math.max(0, ms) / 1000;
+  return seconds < 10 ? `${seconds.toFixed(1)} s` : `${Math.round(seconds)} s`;
+}
+
+/** The line under the build's heading, after its clock. */
+export function buildWords(seconds: number, estimate: number | null): string {
+  if (seconds > Math.max(LONG_SECONDS, (estimate ?? 0) + 15)) return 'longer than usual';
+  return (estimate ?? 0) > 45 ? 'of about a minute' : 'of about half a minute';
 }
 
 export function removedWords(name: string, reason: GuestRemovedReason | null | undefined): string {
@@ -156,7 +170,7 @@ function Trash() {
   );
 }
 
-type StepState = 'done' | 'doing' | 'waiting';
+type StepState = 'done' | 'doing' | 'next';
 function StepMark({ state }: { state: StepState }) {
   if (state === 'done') {
     return (
@@ -209,7 +223,6 @@ type View =
   | { kind: 'chat' }
   | { kind: 'removed'; reason: GuestRemovedReason | null }
   | { kind: 'deleted' }
-  | { kind: 'waiting'; position: number }
   | { kind: 'resting'; until: string | null }
   | { kind: 'limited'; until: string | null }
   | { kind: 'failed' };
@@ -231,6 +244,12 @@ export function GuestAgentSection() {
   const [now, setNow] = useState(() => Date.now());
   const [creatingSince, setCreatingSince] = useState<number | null>(null);
   const checkHost = useRef<HTMLDivElement>(null);
+  /* The build's times are our server's clock; the clocks on the screen are
+     the visitor's. When this page made the agent, the gap between its own
+     tap and the answer's createdAt is that difference (plus the trip), so
+     the clocks start at 0:00 even on a computer whose clock is off. */
+  const tapAt = useRef<number | null>(null);
+  const [skew, setSkew] = useState(0);
   const turnRef = useRef<Turn | null>(null);
   turnRef.current = turn;
 
@@ -259,11 +278,13 @@ export function GuestAgentSection() {
         setView((v) => (v.kind === 'deleted' || v.kind === 'removed' ? v : { kind: 'invite' }));
         return;
       case 'creating':
+        if (tapAt.current !== null && next.createdAt) {
+          const served = Date.parse(next.createdAt);
+          if (!Number.isNaN(served)) setSkew(served - tapAt.current);
+          tapAt.current = null;
+        }
         setCreatingSince((since) => since ?? Date.now());
         setView({ kind: 'creating' });
-        return;
-      case 'waiting':
-        setView({ kind: 'waiting', position: next.linePosition ?? 1 });
         return;
       case 'resting':
         if (next.agent && next.messages.length) {
@@ -315,12 +336,11 @@ export function GuestAgentSection() {
     return () => abort.abort();
   }, [refresh]);
 
-  /* Keep reading the state: every 1.5 s while it is made, every 5 s in line
-     (the place is kept only while the page asks), every 20 s while the chat
-     is quiet (the chip, the minutes left, removal). And at once when the
-     tab comes back, since a hidden tab's timers slow down. */
+  /* Keep reading the state: every 1.5 s while it is made (each step and its
+     times), every 20 s while the chat is quiet (the chip, the minutes left,
+     removal). And at once when the tab comes back, since a hidden tab's
+     timers slow down. */
   const pollEvery = view.kind === 'creating' ? GUEST_CREATING_POLL_MS
-    : view.kind === 'waiting' ? GUEST_WAITING_POLL_MS
     : view.kind === 'chat' && !running ? GUEST_IDLE_POLL_MS
     : 0;
   useEffect(() => {
@@ -400,6 +420,7 @@ export function GuestAgentSection() {
       }
     }
     try {
+      tapAt.current = Date.now();
       const reply = await makeGuest(token);
       if ('state' in reply) {
         setView({ kind: 'invite', problem: reply.error === 'challenge' ? GUEST_CHECK_FAILED : GUEST_FAILED });
@@ -475,7 +496,7 @@ export function GuestAgentSection() {
         {view.kind === 'loading' || view.kind === 'invite' ? (
           <Invite making={making} problem={view.kind === 'invite' ? view.problem : undefined} onMake={make} />
         ) : null}
-        {view.kind === 'creating' ? <Creating agent={agent} steps={status?.steps ?? null} since={status?.createdAt ? new Date(status.createdAt).getTime() : creatingSince ?? now} estimate={status?.estimateSeconds ?? null} now={now} /> : null}
+        {view.kind === 'creating' ? <Creating agent={agent} steps={status?.steps ?? null} since={status?.createdAt ? Date.parse(status.createdAt) - skew : creatingSince ?? now} estimate={status?.estimateSeconds ?? null} now={now} skew={skew} /> : null}
         {view.kind === 'chat' ? (
           <Chat
             agent={agent}
@@ -513,9 +534,6 @@ export function GuestAgentSection() {
             <button type="button" onClick={again} disabled={making} className={INK_BUTTON}>Try again</button>
             <BuildYours />
           </Ending>
-        ) : null}
-        {view.kind === 'waiting' ? (
-          <Ending title="Every guest agent is taken right now." line={lineWords(view.position)} />
         ) : null}
         {view.kind === 'resting' ? (
           <Ending
@@ -567,31 +585,63 @@ function Invite({ making, problem, onMake }: { making: boolean; problem?: string
   );
 }
 
-function Creating({ agent, steps, since, estimate, now }: { agent: Agent | null; steps: GuestCreateStep[] | null; since: number; estimate: number | null; now: number }) {
-  const list = steps?.length ? steps : (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id) => ({ id, done: false }));
+/* Screen 2, redrawn for note #1060 (Adam: "let guest see the process of
+   machine creation, agent creation"). The five real steps in order, each
+   with its own clock: ticking while it runs, how long it took once done.
+   The first step is nearly the whole wait (about 25 s of 25 to 31), so the
+   running step carries a spinner, its clock and a line on what is
+   happening; the heading's clock runs from the tap. The clocks are hidden
+   from screen readers (the section is a live region and would read every
+   second); each step says its state in words instead. */
+function Creating({ agent, steps, since, estimate, now, skew }: { agent: Agent | null; steps: GuestCreateStep[] | null; since: number; estimate: number | null; now: number; skew: number }) {
+  const local = (iso: string | null | undefined) => {
+    const at = iso ? Date.parse(iso) : Number.NaN;
+    return Number.isNaN(at) ? null : at - skew;
+  };
+  const list: GuestCreateStep[] = steps?.length
+    ? steps
+    : (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id, index) => ({ id, done: false, startedAt: index === 0 ? new Date(since + skew).toISOString() : null, doneAt: null }));
   const doing = list.findIndex((step) => !step.done);
-  const seconds = (now - since) / 1000;
+  const seconds = Math.max(0, (now - since) / 1000);
   return (
     <div className="max-w-[40rem]">
       <div className="flex items-center gap-4">
         <Face agent={agent} size={56} />
         <div className="min-w-0">
           <h2 className={`[text-wrap:balance] ${H2}`}>{agent ? `${agent.name} is getting ready.` : 'Your agent is getting ready.'}</h2>
-          <p className="mt-1 type-sm tabular-nums text-hint">Your agent · {clock(seconds)}</p>
+          <p data-guest-clock className="mt-1 type-sm text-hint">
+            <span aria-hidden="true"><span className="font-semibold tabular-nums text-white">{clock(seconds)}</span> {buildWords(seconds, estimate)}</span>
+            <span className="sr-only">{(estimate ?? 0) > 45 ? 'It usually takes about a minute.' : 'It usually takes about half a minute.'}</span>
+          </p>
         </div>
       </div>
-      <ol data-guest-steps className="mt-7 grid gap-3.5">
+      <ol data-guest-steps className="mt-7 grid max-w-[30rem] gap-4">
         {list.map((step, index) => {
-          const state: StepState = step.done ? 'done' : index === doing ? 'doing' : 'waiting';
+          const state: StepState = step.done ? 'done' : index === doing ? 'doing' : 'next';
+          const started = local(step.startedAt);
+          const ended = local(step.doneAt);
+          const time = step.id === 'ready' ? null
+            : state === 'done' && started !== null && ended !== null ? stepTime(ended - started)
+            : state === 'doing' ? `${Math.floor(Math.max(0, now - (started ?? since)) / 1000)} s`
+            : null;
           return (
-            <li key={step.id} data-step={state} className={`flex items-center gap-3 type-base ${state === 'waiting' ? 'text-hint/70' : 'text-white'}`}>
-              <StepMark state={state} />
-              {GUEST_STEPS[step.id]}
+            <li key={step.id} data-step={state} data-step-id={step.id} className="grid grid-cols-[20px_minmax(0,1fr)_auto] items-start gap-x-3">
+              <span className="flex pt-0.5"><StepMark state={state} /></span>
+              <div className="min-w-0">
+                <p className={`type-base ${state === 'next' ? 'text-hint' : 'text-white'} ${state === 'doing' ? 'font-semibold' : ''}`}>
+                  {GUEST_STEPS[step.id]}
+                  <span className="sr-only">{state === 'done' ? ', done' : state === 'doing' ? ', happening now' : ''}</span>
+                </p>
+                {state === 'doing' ? <p data-step-detail className="mt-0.5 type-sm text-hint">{GUEST_STEP_DETAIL[step.id]}</p> : null}
+              </div>
+              {time ? (
+                <span aria-hidden="true" data-step-time className={`pt-0.5 type-sm tabular-nums ${state === 'doing' ? 'font-semibold text-white' : 'text-hint'}`}>{time}</span>
+              ) : <span />}
             </li>
           );
         })}
       </ol>
-      <p className="mt-7 type-sm text-hint">{(estimate ?? 0) > 60 || seconds > SPARE_SECONDS ? 'Keep this page open. This one takes about a minute.' : 'Keep this page open. It takes about half a minute.'}</p>
+      <p className="mt-7 type-sm text-hint">Keep this page open.</p>
     </div>
   );
 }

@@ -1013,7 +1013,7 @@ export async function startMockWorkspace(repoRoot, options = {}) {
     if (req.method === 'GET' && url.pathname === '/workspace/api/public/guest') {
       respondJson(200, {
         state: 'resting', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null,
-        quietUntil: null, endsAt: null, messagesLeft: null, linePosition: null, until: null, removedReason: null, turnstileSiteKey: null,
+        quietUntil: null, endsAt: null, messagesLeft: null, until: null, removedReason: null, turnstileSiteKey: null,
         limits: { messageMaxChars: 1000, quietMinutes: 30, lifetimeHours: 3, messagesMax: 40 },
       });
       return true;

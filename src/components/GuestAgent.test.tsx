@@ -3,14 +3,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GuestAgentSection, lineWords, minutesLeft, removedWords, whenWords, workingWords } from './GuestAgent';
+import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GUEST_STEP_DETAIL, GuestAgentSection, buildWords, minutesLeft, removedWords, stepTime, whenWords, workingWords } from './GuestAgent';
 import {
   GUEST_CREATING_POLL_MS,
   GUEST_IDLE_POLL_MS,
   GUEST_KEY_HEADER,
   GUEST_KEY_STORAGE,
   GUEST_TURN_POLL_MS,
-  GUEST_WAITING_POLL_MS,
   type GuestCreateStep,
   type GuestStatus,
 } from '../lib/guest-api';
@@ -52,6 +51,19 @@ function stubTurnstile(pass = true) {
 
 const JUNO = { name: 'Juno', avatarUrl: '/agent-avatars/juno.jpg' };
 /** The build's five steps (note #1055), the first `done` of them finished. */
+/* A build as the route reports it (note #1055): the computer is nearly the
+   whole wait, the rest about a second each. `at` is the tap, `done` how many
+   steps have finished. */
+const TOOK = { machine: 25_400, agent: 800, code: 1_500, waking: 700, ready: 0 };
+function timedSteps(at: number, done: number): GuestCreateStep[] {
+  let t = at;
+  return (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id, i) => {
+    const startedAt = i <= done ? new Date(t).toISOString() : null;
+    const doneAt = i < done ? new Date(t + TOOK[id]).toISOString() : null;
+    if (i < done) t += TOOK[id];
+    return { id, done: i < done, startedAt, doneAt };
+  });
+}
 function buildSteps(done: number): GuestCreateStep[] {
   return (['machine', 'agent', 'code', 'waking', 'ready'] as const).map((id, i) => ({
     id, done: i < done, startedAt: i <= done ? '2026-11-07T16:00:00.000Z' : null, doneAt: i < done ? '2026-11-07T16:00:10.000Z' : null,
@@ -65,7 +77,7 @@ const MACHINE = { cores: 2, memoryGb: 4, dedicated: true, awake: true };
 function status(patch: Partial<GuestStatus>): GuestStatus {
   return {
     state: 'none', agent: null, machine: null, messages: [], turn: null, steps: null, estimateSeconds: null, createdAt: null, quietUntil: null, endsAt: null,
-    messagesLeft: null, linePosition: null, step: null, until: null, removedReason: null, turnstileSiteKey: null,
+    messagesLeft: null, step: null, until: null, removedReason: null, turnstileSiteKey: null,
     limits: { messageMaxChars: 1000, quietMinutes: 30, lifetimeHours: 3, messagesMax: 40 },
     ...patch,
   };
@@ -143,18 +155,14 @@ describe('GuestAgentSection (note #1039)', () => {
 
     routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, step: 'code', estimateSeconds: 35, steps: buildSteps(2) }) });
     await flush(GUEST_CREATING_POLL_MS);
-    expect([...document.querySelectorAll('[data-guest-steps] li')].map((li) => [li.textContent, li.getAttribute('data-step')])).toEqual([
-      ['Making its computer · 2 cores, 4 GB', 'done'],
-      ['Making the agent · Claude Code on Sonnet', 'done'],
-      ['Copying the open-source code', 'doing'],
-      ['Waking it up', 'waiting'],
-      ['Ready', 'waiting'],
+    expect([...document.querySelectorAll('[data-guest-steps] li')].map((li) => [li.querySelector('p')!.textContent, li.getAttribute('data-step')])).toEqual([
+      ['Making your computer, done', 'done'],
+      ['Setting up your agent, done', 'done'],
+      ['Copying our code, happening now', 'doing'],
+      ['Waking up', 'next'],
+      ['Ready', 'next'],
     ]);
-    expect(words()).toContain('It takes about half a minute.');
     expect(keyOf(calls[calls.length - 1])).toBe(KEY);
-    // Past the usual build, the line says the longer one.
-    await flush(55_000);
-    expect(words()).toContain('This one takes about a minute.');
 
     // Ready: the chat opens on the fixed greeting.
     routes[`GET ${GUEST}`] = () => ({ body: readyStatus() });
@@ -166,13 +174,79 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(document.querySelector('[data-guest-left]')!.textContent).toBe('Juno goes after 30 quiet minutes · 30 left');
   });
 
-  it('says the longer line at once when the status expects a long build', async () => {
+  // Note #1060: the five steps, each with its own clock, the long first one
+  // alive while it runs.
+  it('draws the long first step alive: its clock ticks, it says what is happening, and the heading keeps time', async () => {
     window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
-    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 120, createdAt: new Date(Date.now() - 12_000).toISOString(), step: 'machine', steps: buildSteps(0) }) });
+    const tap = Date.now();
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 35, createdAt: new Date(tap).toISOString(), step: 'machine', steps: timedSteps(tap, 0) }) });
     draw();
     await flush();
-    expect(words()).toContain('This one takes about a minute.');
-    expect(words()).toMatch(/Your agent · 0:1\d/);
+    const row = (id: string) => document.querySelector(`[data-step-id="${id}"]`)!;
+    expect(row('machine').getAttribute('data-step')).toBe('doing');
+    expect(row('machine').querySelector('[data-step-detail]')!.textContent).toBe(GUEST_STEP_DETAIL.machine);
+    expect(row('machine').querySelector('[data-step-time]')!.textContent).toBe('0 s');
+    expect(row('agent').querySelector('[data-step-time]')).toBeNull();
+    expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:00 of about half a minute');
+    await flush(12_000);
+    expect(row('machine').querySelector('[data-step-time]')!.textContent).toBe('12 s');
+    expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:12 of about half a minute');
+    // The clocks are not read aloud every second; the state is, in words.
+    expect(row('machine').querySelector('[data-step-time]')!.getAttribute('aria-hidden')).toBe('true');
+    expect(row('machine').querySelector('p')!.textContent).toBe('Making your computer, happening now');
+    // Only the running step explains itself.
+    expect(document.querySelectorAll('[data-step-detail]')).toHaveLength(1);
+  });
+
+  it('gives each finished step the time it took, and the running one its own clock from when it started', async () => {
+    window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
+    const tap = Date.now() - 27_000;
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 35, createdAt: new Date(tap).toISOString(), step: 'code', steps: timedSteps(tap, 2) }) });
+    draw();
+    await flush();
+    const times = [...document.querySelectorAll('[data-guest-steps] li')].map((li) => li.querySelector('[data-step-time]')?.textContent ?? null);
+    // 25.4 s, 0.8 s done; code started at 26.2 s, so 0 s into its own clock at 27 s; nothing for what has not begun.
+    expect(times).toEqual(['25 s', '0.8 s', '0 s', null, null]);
+    expect(document.querySelector('[data-step-id="code"] [data-step-detail]')!.textContent).toBe(GUEST_STEP_DETAIL.code);
+    expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:27');
+  });
+
+  it('says it is taking longer than usual instead of promising half a minute', async () => {
+    window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, estimateSeconds: 35, createdAt: new Date(Date.now() - 56_000).toISOString(), step: 'machine', steps: timedSteps(Date.now() - 56_000, 0) }) });
+    draw();
+    await flush();
+    expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:56 longer than usual');
+    expect(buildWords(20, 35)).toBe('of about half a minute');
+    expect(buildWords(20, 120)).toBe('of about a minute');
+    expect(buildWords(51, 35)).toBe('longer than usual');
+    expect(stepTime(800)).toBe('0.8 s');
+    expect(stepTime(25_400)).toBe('25 s');
+    expect(stepTime(-5)).toBe('0.0 s');
+  });
+
+  it('starts the clocks at 0:00 when the visitor’s computer clock is off', async () => {
+    // The server's clock is 40 s behind this browser's: unadjusted, the clock would open at 0:40.
+    const ahead = -40_000;
+    routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO, estimateSeconds: 35, createdAt: new Date(Date.now() + ahead).toISOString(), step: 'machine', steps: timedSteps(Date.now() + ahead, 0) }) } });
+    routes[`GET ${GUEST}`] = () => ({ body: status({ turnstileSiteKey: null }) });
+    draw();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:00');
+    expect(document.querySelector('[data-step-id="machine"] [data-step-time]')!.textContent).toBe('0 s');
+  });
+
+  it('has no waiting line any more: no line screen, no place in line (note #1060)', async () => {
+    window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, step: 'machine', steps: buildSteps(0), estimateSeconds: 35 }) });
+    draw();
+    await flush();
+    expect(words()).not.toMatch(/in line|taken right now|frees up/);
+    const source = readFileSync(path.resolve(__dirname, 'GuestAgent.tsx'), 'utf8') + readFileSync(path.resolve(__dirname, '../lib/guest-api.ts'), 'utf8');
+    expect(source).not.toMatch(/linePosition|GUEST_WAITING_POLL_MS|'waiting'|180 s/);
   });
 
   it('sends no token when the check is off (no site key)', async () => {
@@ -368,28 +442,6 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(h2()).toBe(removedWords('Juno', 'lifetime'));
   });
 
-  it('puts the visitor in line when every slot is taken, with no Hugo, polls every 5 s, and starts theirs when one frees', async () => {
-    routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'waiting', linePosition: 2 }) } });
-    draw();
-    await flush();
-    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'waiting', linePosition: 2 }) });
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
-    await flush();
-    await flush();
-    expect(window.localStorage.getItem(GUEST_KEY_STORAGE)).toBe(KEY);
-    expect(h2()).toBe('Every guest agent is taken right now.');
-    expect(words()).toContain(lineWords(2));
-    expect(words()).not.toMatch(/Hugo|Ask about/);
-    expect(document.querySelector('input')).toBeNull();
-    const before = calls.length;
-    await flush(GUEST_WAITING_POLL_MS);
-    expect(calls.length).toBe(before + 1);
-    expect(keyOf(calls[calls.length - 1])).toBe(KEY);
-    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, steps: [{ id: 'computer', done: false }] }) });
-    await flush(GUEST_WAITING_POLL_MS);
-    expect(h2()).toBe('Juno is getting ready.');
-  });
-
   it('offers to try again when making it failed on our side', async () => {
     window.localStorage.setItem(GUEST_KEY_STORAGE, KEY);
     routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'failed', agent: JUNO }) });
@@ -417,11 +469,9 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(h2()).toBe('Guest agents are resting until Monday at 10:00.');
   });
 
-  it('counts the minutes left, the place in line and the work in words', () => {
+  it('counts the minutes left and the work in words', () => {
     expect(minutesLeft(new Date(60_000 * 19).toISOString(), 0)).toBe(19);
     expect(minutesLeft(null)).toBeNull();
-    expect(lineWords(1)).toMatch(/^You’re next in line\./);
-    expect(lineWords(3)).toMatch(/^You’re third in line\./);
     expect(removedWords('Juno', 'visitor')).toBe('Juno was removed.');
     expect(removedWords('Juno', 'messages')).toBe('Juno had its 40 messages, and was removed.');
     expect(workingWords([{ kind: 'edit', label: 'README.md' }], 12)).toBe('Changing its copy · 0:12');

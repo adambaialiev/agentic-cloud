@@ -93,9 +93,6 @@ export const GUEST_AGENT_LIMITS = {
  *  - `working`   a turn is running; `turn` names it (screen 3).
  *  - `asleep`    its machine is stopped; the next message wakes it (screen 5).
  *  - `removed`   gone; `removedReason` says why (screens 4 and 6).
- *  - `waiting`   NEVER ANSWERED since note #1055 (there is no line). Kept in
- *                the type only until the page's continuation drops its
- *                screen; then delete it here.
  *  - `resting`   guests are off, the seat is out of service or hit the plan's
  *                limit, or today's guests are used up; `until`. Never the
  *                seat's share alone (note #1048).
@@ -104,7 +101,7 @@ export const GUEST_AGENT_LIMITS = {
  */
 export type GuestState =
   | 'none' | 'creating' | 'ready' | 'working' | 'asleep' | 'removed'
-  | 'waiting' | 'resting' | 'limited' | 'failed';
+  | 'resting' | 'limited' | 'failed';
 
 export type GuestRemovedReason = 'quiet' | 'visitor' | 'owner' | 'lifetime' | 'messages';
 
@@ -193,8 +190,6 @@ export interface GuestStatus {
   endsAt: string | null;
   /** Messages it can still take. */
   messagesLeft: number | null;
-  /** Always null since note #1055 (there is no line); goes with `waiting`. */
-  linePosition: number | null;
   /** While `resting` or `limited`: when to come back (ISO), if known. */
   until: string | null;
   /** While `removed`. */
