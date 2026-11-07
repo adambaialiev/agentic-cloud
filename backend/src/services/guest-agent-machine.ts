@@ -61,14 +61,14 @@ export const GUEST_TURN_KEY_ENV = 'ACC_GUEST_TURN_KEY';
 export const GUEST_PACKAGE_HOSTS = ['registry.npmjs.org', 'registry.yarnpkg.com', 'pypi.org', 'files.pythonhosted.org'] as const;
 /** Claude Code tools turned off: the network is closed to them anyway, and WebSearch would run on Anthropic's side. */
 export const GUEST_DISALLOWED_TOOLS = 'WebFetch,WebSearch';
-/**
- * One shell command's time (note #1047): a reply has 180 s, so no single
- * command may take most of it. Claude Code's own caps; a command asking for
- * longer is cut at the max and the agent sees it timed out, with time left
- * to say so. Adam's Otis once spent a whole reply on a full install and test run.
+/*
+ * One shell command's time: Claude Code's own defaults (2 minutes unless the
+ * agent asks for more, 10 at most; past that a command moves to the
+ * background and the agent can wait on it). Note #1047 capped commands at
+ * 100 s to fit a 3-minute reply; note #1054 (Adam, 7 Nov 2026) removed the
+ * reply's limit, so the runner sets no override and a full install or a
+ * whole test suite may run.
  */
-export const GUEST_BASH_DEFAULT_TIMEOUT_MS = 60_000;
-export const GUEST_BASH_MAX_TIMEOUT_MS = 100_000;
 /** Processes one guide may have at once (a fork bomb ends here, not in the machine). */
 export const GUEST_MAX_PROCESSES = 512;
 
@@ -174,7 +174,6 @@ export DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUD
 export CLAUDE_CODE_OAUTH_TOKEN="$__key" ANTHROPIC_BASE_URL=${quoteShellArg(doorUrl)}
 export HTTPS_PROXY='${proxy}' HTTP_PROXY='${proxy}' https_proxy='${proxy}' http_proxy='${proxy}' NO_PROXY='localhost,127.0.0.1,::1' no_proxy='localhost,127.0.0.1,::1'
 export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1
-export BASH_DEFAULT_TIMEOUT_MS=${GUEST_BASH_DEFAULT_TIMEOUT_MS} BASH_MAX_TIMEOUT_MS=${GUEST_BASH_MAX_TIMEOUT_MS}
 unset __key __name
 ulimit -u ${GUEST_MAX_PROCESSES} 2>/dev/null || true
 __args=()
