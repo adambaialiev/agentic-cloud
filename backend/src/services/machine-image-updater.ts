@@ -42,6 +42,37 @@ export interface MachineImageUpdaterDeps {
    * what makes "current" mean one thing across the fleet.
    */
   getTargetImage: () => string | undefined;
+  /**
+   * The public keys every agent machine should trust (`FLY_SSH_PUBLIC_KEY`,
+   * one key per line). A function for the same reason as the image: the
+   * value is what NEW machines get as `AUTHORIZED_KEYS`, and this is what
+   * brings the machines that already exist into line with it, at the same
+   * free moment the image rolls — asleep (note #1074).
+   *
+   * That is the whole fleet-key rotation: put the new key next to the old
+   * one here, and every machine trusts both from its next sleep; once the
+   * backend has switched, take the old one out, and every machine drops it
+   * at its next sleep. A machine only reads `AUTHORIZED_KEYS` at boot, so
+   * an awake one needs its live file edited as well — see
+   * docs/fleet-ssh-key.md.
+   *
+   * Unset or empty: the machine's own list is never touched.
+   */
+  getAuthorizedKeys?: () => string | undefined;
+}
+
+/**
+ * One key per line, in order, without blanks or surrounding space. Accepts
+ * the literal `\n` an env file can carry instead of a newline, which the
+ * machine's entrypoint also accepts, so the two spellings compare equal.
+ */
+export function normalizeAuthorizedKeys(value: string | undefined): string {
+  return (value ?? '')
+    .replace(/\\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n');
 }
 
 export interface MachineImageUpdateResult {
@@ -156,6 +187,8 @@ export class MachineImageUpdater {
     listedImage?: string;
     /** `rootfs.persist` from that same listing. */
     listedRootfsPersist?: string;
+    /** `AUTHORIZED_KEYS` from that same listing's env. */
+    listedAuthorizedKeys?: string;
     /**
      * Set by a caller that has JUST stopped this machine: wait for the
      * transition to finish before reading. Fly reports `stopping` for a moment
@@ -173,12 +206,15 @@ export class MachineImageUpdater {
      */
     stopFirst?: boolean;
   }): Promise<MachineImageUpdateResult> {
-    const { sandboxId, listedImage, listedRootfsPersist, waitForStopped, stopFirst } = args;
+    const { sandboxId, listedImage, listedRootfsPersist, listedAuthorizedKeys, waitForStopped, stopFirst } = args;
     try {
       const targetImage = this.deps.getTargetImage()?.trim();
       if (!targetImage) {
         return { outcome: 'no-target' };
       }
+      const targetKeys = normalizeAuthorizedKeys(this.deps.getAuthorizedKeys?.());
+      const keysCurrent = (keys: string | undefined): boolean =>
+        !targetKeys || normalizeAuthorizedKeys(keys) === targetKeys;
       const target = parseFlySandboxId(sandboxId);
       if (!target) {
         return { outcome: 'unaddressable' };
@@ -193,7 +229,11 @@ export class MachineImageUpdater {
       // learn nothing. A listing stale the other way (says drifted, isn't)
       // costs one authoritative read below and resolves as 'current': that is
       // the safe direction to be wrong in, and the only one this skips.
-      if (listedImage === targetImage && listedRootfsPersist === ROOTFS_PERSIST_TARGET) {
+      if (
+        listedImage === targetImage
+        && listedRootfsPersist === ROOTFS_PERSIST_TARGET
+        && keysCurrent(listedAuthorizedKeys)
+      ) {
         await this.stamp(args, listedImage);
         return { outcome: 'current', fromImage: listedImage, toImage: targetImage };
       }
@@ -228,7 +268,7 @@ export class MachineImageUpdater {
       // rootfs on EVERY start, so those agents lose their apt installs at every
       // sleep. Same write, same free moment.
       const persist = config.rootfs?.persist ?? 'never';
-      if (fromImage === targetImage && persist === ROOTFS_PERSIST_TARGET) {
+      if (fromImage === targetImage && persist === ROOTFS_PERSIST_TARGET && keysCurrent(config.env?.AUTHORIZED_KEYS)) {
         await this.stamp(args, fromImage);
         return { outcome: 'current', fromImage, toImage: targetImage };
       }
@@ -270,6 +310,9 @@ export class MachineImageUpdater {
             ...config.env,
             ...machineCpuKindEnv(config.guest?.cpu_kind),
             ...(!config.env?.BACKEND_PEER_IP && peer ? { BACKEND_PEER_IP: peer } : {}),
+            // And the fleet's SSH keys (note #1074): this write is how a key
+            // rotation reaches a machine that already exists, at its sleep.
+            ...(targetKeys ? { AUTHORIZED_KEYS: targetKeys } : {}),
           },
         },
         // Without this Fly BOOTS the machine it just updated — the whole fleet
@@ -281,14 +324,14 @@ export class MachineImageUpdater {
       // Verify — but give the write time to become visible. Fly serves the
       // PRE-update config for a few seconds after a successful update, so a
       // single immediate read is not evidence of anything.
-      const after = await this.confirmImage(appName, machineId, targetImage, updated);
+      const after = await this.confirmImage(appName, machineId, targetImage, updated, keysCurrent);
       const observed = after?.config?.image ?? '';
-      if (observed !== targetImage) {
+      if (observed !== targetImage || !keysCurrent(after?.config?.env?.AUTHORIZED_KEYS)) {
         const attempts = (this.rollAttempts.get(sandboxId) ?? 0) + 1;
         this.rollAttempts.set(sandboxId, attempts);
         console.warn(
           `[MachineImageUpdater] ${sandboxId}: image still reads "${observed}" after writing `
-          + `"${targetImage}" (attempt ${attempts}/${MAX_ROLL_ATTEMPTS})`
+          + `"${targetImage}"${keysCurrent(after?.config?.env?.AUTHORIZED_KEYS) ? '' : ', or its SSH keys are not the fleet\'s'} (attempt ${attempts}/${MAX_ROLL_ATTEMPTS})`
           + (attempts >= MAX_ROLL_ATTEMPTS ? '; not retrying until the next deploy' : ''),
         );
         return { outcome: 'failed', fromImage, toImage: targetImage };
@@ -314,7 +357,11 @@ export class MachineImageUpdater {
           console.warn(`[MachineImageUpdater] ${sandboxId}: could not re-stop after the write:`, error);
         });
       }
-      console.log(`[MachineImageUpdater] ${sandboxId}: ${fromImage || 'unknown'} → ${targetImage}`);
+      const keysChanged = Boolean(targetKeys) && !keysCurrent(config.env?.AUTHORIZED_KEYS);
+      console.log(
+        `[MachineImageUpdater] ${sandboxId}: ${fromImage || 'unknown'} → ${targetImage}`
+        + (keysChanged ? ` (SSH keys → ${targetKeys.split('\n').length} fleet key(s))` : ''),
+      );
       await this.stamp(args, observed);
       return { outcome: 'rolled', fromImage, toImage: targetImage };
     } catch (error) {
@@ -338,8 +385,11 @@ export class MachineImageUpdater {
     machineId: string,
     targetImage: string,
     updated: FlyMachine | undefined,
+    keysCurrent: (keys: string | undefined) => boolean = () => true,
   ): Promise<FlyMachine | undefined> {
-    if (updated?.config?.image === targetImage) {
+    const landed = (m: FlyMachine | undefined): boolean =>
+      m?.config?.image === targetImage && keysCurrent(m?.config?.env?.AUTHORIZED_KEYS);
+    if (landed(updated)) {
       return updated;
     }
     const delayMs = this.deps.settleDelayMs ?? 2_000;
@@ -351,7 +401,7 @@ export class MachineImageUpdater {
       const machine = await (await this.clientFor(appName)).getMachine(appName, machineId).catch(() => undefined);
       if (machine) {
         latest = machine;
-        if (machine.config?.image === targetImage) {
+        if (landed(machine)) {
           return machine;
         }
       }

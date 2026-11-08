@@ -1558,6 +1558,10 @@ const machineImageUpdater = FLY_API_TOKEN && FLY_MACHINE_IMAGE
     // …and a machine built with no SSH pin is given its network's (note #664).
     resolveBackendPeerForApp: async (appName) => (await resolveFlyAppOrgContext(appName))?.backendPeerIp,
     getTargetImage: () => FLY_MACHINE_IMAGE,
+    // …and every sleeping machine comes to trust exactly the keys a new one
+    // would get: how a fleet SSH key rotation reaches existing machines
+    // (note #1074, docs/fleet-ssh-key.md).
+    getAuthorizedKeys: () => FLY_SSH_PUBLIC_KEY,
     persistObservedImage: async ({ userId, agentId, image, checkedAt }) => {
       await userStorage.updateAgentFields(userId, agentId, {
         machineImage: image,

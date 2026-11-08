@@ -943,7 +943,11 @@ describe('FlyIdleReaper.runOnce', () => {
       listMachines: vi.fn(async (app: string) => (app === APP
         ? [startedMachine({
             state: 'stopped',
-            config: { image: 'registry.fly.io/ia-machine-images:old', rootfs: { persist: 'restart' } },
+            config: {
+              image: 'registry.fly.io/ia-machine-images:old',
+              rootfs: { persist: 'restart' },
+              env: { AUTHORIZED_KEYS: 'ssh-ed25519 AAAAold backend' },
+            },
           })]
         : [])),
     });
@@ -951,14 +955,15 @@ describe('FlyIdleReaper.runOnce', () => {
 
     const result = await makeReaper({ flyClient, userStorage, rollImageWhileStopped }).runOnce();
 
-    // The listing's own image/rootfs travel with the offer, so a converged
-    // machine needs no extra Fly read to confirm.
+    // The listing's own image/rootfs/keys travel with the offer, so a
+    // converged machine needs no extra Fly read to confirm (note #1074).
     expect(rollImageWhileStopped).toHaveBeenCalledWith({
       sandboxId: SANDBOX_ID,
       userId: 'u1',
       agentId: 'a1',
       listedImage: 'registry.fly.io/ia-machine-images:old',
       listedRootfsPersist: 'restart',
+      listedAuthorizedKeys: 'ssh-ed25519 AAAAold backend',
     });
     // A stopped machine is neither considered for stopping nor metered.
     expect(result).toEqual({ consideredStarted: 0, stopped: 0, kept: 0, orphansStopped: 0, unrecordedApps: 0 });

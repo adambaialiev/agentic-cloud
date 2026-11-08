@@ -33,6 +33,8 @@ function makeUpdater(args: {
   updateMachine?: ReturnType<typeof vi.fn>;
   /** The backend's address in the machine's network, when a resolver is wired. */
   peer?: string;
+  /** The fleet's FLY_SSH_PUBLIC_KEY, when wired (note #1074). */
+  keys?: string;
 } = {}) {
   const reads = args.reads ?? [machine(), machine({ config: { image: TARGET } })];
   let call = 0;
@@ -45,6 +47,7 @@ function makeUpdater(args: {
     getTargetImage: () => ('targetImage' in args ? args.targetImage : TARGET),
     persistObservedImage,
     ...('peer' in args ? { resolveBackendPeerForApp: async () => args.peer } : {}),
+    ...('keys' in args ? { getAuthorizedKeys: () => args.keys } : {}),
     // No real waiting in tests.
     settleDelayMs: 0,
     settleTimeoutMs: 10,
@@ -627,5 +630,105 @@ describe('the roll after a pin bump at an unchanged commit (note #1052)', () => 
     expect(await updater.readStatus({ sandboxId: SANDBOX_ID })).toEqual({
       target: AFTER, observed: BEFORE, current: false,
     });
+  });
+});
+
+describe('the fleet SSH keys ride the same sleep (note #1074)', () => {
+  const OLD_KEY = 'ssh-ed25519 AAAAold backend';
+  const NEW_KEY = 'ssh-ed25519 AAAAnew backend-2026-11';
+  const BOTH = `${OLD_KEY}\n${NEW_KEY}`;
+  const onTarget = (env: Record<string, string>, extra: Record<string, unknown> = {}) =>
+    machine({ config: { image: TARGET, env: { AGENT_ID: 'a1', ...env } }, ...extra });
+
+  it('gives a sleeping machine already on the fleet image the fleet\'s keys, and keeps it asleep', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: OLD_KEY }), onTarget({ AUTHORIZED_KEYS: BOTH })];
+    const { updater, updateMachine } = makeUpdater({ reads, keys: BOTH });
+
+    const result = await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(result).toEqual({ outcome: 'rolled', fromImage: TARGET, toImage: TARGET });
+    expect(updateMachine).toHaveBeenCalledTimes(1);
+    const [, , config, options] = updateMachine.mock.calls[0];
+    expect(config.env).toEqual({ AGENT_ID: 'a1', CPU_KIND: 'shared', AUTHORIZED_KEYS: BOTH });
+    expect(config.mounts).toEqual([{ volume: 'vol_123', path: '/data' }]);
+    expect(options).toEqual({ skipLaunch: true });
+  });
+
+  it('takes a retired key out the same way once the setting no longer names it', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: BOTH }), onTarget({ AUTHORIZED_KEYS: NEW_KEY })];
+    const { updater, updateMachine } = makeUpdater({ reads, keys: NEW_KEY });
+
+    await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(updateMachine.mock.calls[0][2].env.AUTHORIZED_KEYS).toBe(NEW_KEY);
+  });
+
+  it('does not skip on a converged image when the listing shows other keys', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: OLD_KEY }), onTarget({ AUTHORIZED_KEYS: BOTH })];
+    const { updater, getMachine, updateMachine } = makeUpdater({ reads, keys: BOTH });
+
+    await updater.rollWhileStopped({
+      sandboxId: SANDBOX_ID,
+      listedImage: TARGET,
+      listedRootfsPersist: 'restart',
+      listedAuthorizedKeys: OLD_KEY,
+    });
+
+    expect(getMachine).toHaveBeenCalled();
+    expect(updateMachine).toHaveBeenCalledTimes(1);
+  });
+
+  it('costs no API call when the listing already carries the fleet keys', async () => {
+    const { updater, getMachine, updateMachine } = makeUpdater({ keys: BOTH });
+
+    const result = await updater.rollWhileStopped({
+      sandboxId: SANDBOX_ID,
+      listedImage: TARGET,
+      listedRootfsPersist: 'restart',
+      listedAuthorizedKeys: BOTH,
+    });
+
+    expect(result.outcome).toBe('current');
+    expect(getMachine).not.toHaveBeenCalled();
+    expect(updateMachine).not.toHaveBeenCalled();
+  });
+
+  it('reads an env file\'s literal \\n and stray blanks as the same list', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: `  ${OLD_KEY}\\n\\n${NEW_KEY}  \n` })];
+    const { updater, updateMachine } = makeUpdater({ reads, keys: `${OLD_KEY}\\n${NEW_KEY}` });
+
+    const result = await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(result.outcome).toBe('current');
+    expect(updateMachine).not.toHaveBeenCalled();
+  });
+
+  it('never restarts an awake machine to change its keys', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: OLD_KEY }, { state: 'started' })];
+    const { updater, updateMachine, stopMachine } = makeUpdater({ reads, keys: BOTH });
+
+    const result = await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(result.outcome).toBe('not-stopped');
+    expect(updateMachine).not.toHaveBeenCalled();
+    expect(stopMachine).not.toHaveBeenCalled();
+  });
+
+  it('calls a write whose keys never show up a failure, not a roll', async () => {
+    const reads = [onTarget({ AUTHORIZED_KEYS: OLD_KEY })];
+    const { updater } = makeUpdater({ reads, keys: BOTH });
+
+    const result = await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(result.outcome).toBe('failed');
+  });
+
+  it('leaves a machine\'s keys alone when the fleet setting is unset', async () => {
+    const reads = [machine({ config: { env: { AGENT_ID: 'a1', AUTHORIZED_KEYS: OLD_KEY } } }), machine({ config: { image: TARGET } })];
+    const { updater, updateMachine } = makeUpdater({ reads, keys: '' });
+
+    await updater.rollWhileStopped({ sandboxId: SANDBOX_ID });
+
+    expect(updateMachine.mock.calls[0][2].env.AUTHORIZED_KEYS).toBe(OLD_KEY);
   });
 });

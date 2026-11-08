@@ -308,6 +308,8 @@ export interface FlyIdleReaperDeps {
      */
     listedImage?: string;
     listedRootfsPersist?: string;
+    /** The listing's `AUTHORIZED_KEYS`, for the same reason (note #1074). */
+    listedAuthorizedKeys?: string;
     /** Set when this machine was stopped a moment ago and is still settling. */
     waitForStopped?: boolean;
   }) => Promise<unknown>;
@@ -997,6 +999,9 @@ export class FlyIdleReaper {
                 ...(machine.config?.rootfs?.persist
                   ? { listedRootfsPersist: machine.config.rootfs.persist }
                   : {}),
+                ...(machine.config?.env?.AUTHORIZED_KEYS
+                  ? { listedAuthorizedKeys: machine.config.env.AUTHORIZED_KEYS }
+                  : {}),
               }).catch((error) => {
                 console.warn(`[FlyIdleReaper] image roll failed for ${sandboxId}`, error);
               });
@@ -1326,6 +1331,7 @@ export class FlyIdleReaper {
       agentId: owner.agentId,
       ...(machine.config?.image ? { listedImage: machine.config.image } : {}),
       ...(machine.config?.rootfs?.persist ? { listedRootfsPersist: machine.config.rootfs.persist } : {}),
+      ...(machine.config?.env?.AUTHORIZED_KEYS ? { listedAuthorizedKeys: machine.config.env.AUTHORIZED_KEYS } : {}),
     }).catch((error) => {
       console.warn(`[FlyIdleReaper] image roll failed for ${sandboxId}`, error);
     });
