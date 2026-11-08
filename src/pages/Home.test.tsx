@@ -9,6 +9,7 @@ import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 import { GUEST_HEADING } from '../components/GuestAgent';
+import { VALUE_FACTS, VALUE_HEADING, VALUE_LEAD } from '../lib/value-copy';
 
 void React;
 
@@ -63,7 +64,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(links.some((link) => link.closest('footer'))).toBe(true);
   });
 
-  it('runs six screens: the film, the workplace, the own cloud, how to build yours, an agent of your own, the footer', () => {
+  it('runs seven screens: the film, the value, the workplace, the own cloud, how to build yours, an agent of your own, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -71,6 +72,7 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       .map((node) => node.textContent);
     expect(headings).toEqual([
       HOME_HEADLINE,
+      VALUE_HEADING,
       OWN_CLOUD_HEADING,
       'Build your own Agentic Cloud.',
       GUEST_HEADING,
@@ -90,6 +92,31 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     for (const gone of ['#proof', '#homeFounder', '#home-context', '#built-in', '#subscriptions', '#apps', '#home-close']) expect(document.querySelector(gone), gone).toBeNull();
   });
 
+  // Note #1085 (Adam, 8 Nov 2026): the value in one breath, right after the
+  // film. Option B of three, with his changes: two facts, no link, the word
+  // fatigue, independence from Anthropic and OpenAI, and a short data
+  // sentence that still admits the daily report. Never "leaves".
+  it('says the value right after the film: heading, lead and two facts, no link', () => {
+    answer();
+    draw();
+    const value = document.querySelector('main > section#value')!;
+    expect(value.previousElementSibling?.id).toBe(PRODUCT_FILM ? 'film' : undefined);
+    expect(value.nextElementSibling?.id).toBe('workplace');
+    expect(value.querySelector('h2')!.textContent).toBe('Your agents. Your cloud. Your data.');
+    expect(value.querySelector('p')!.textContent).toBe(VALUE_LEAD);
+    expect(VALUE_LEAD).toMatch(/None of your data comes to us, only a daily report\.$/);
+    expect(VALUE_HEADING).toBe('Your agents. Your cloud. Your data.');
+    const facts = [...value.querySelectorAll('[data-value-fact]')].map((fact) => [fact.querySelector('dt')!.textContent, fact.querySelector('dd')!.textContent]);
+    expect(facts).toEqual(VALUE_FACTS.map(({ title, line }) => [title, line]));
+    expect(facts.map(([title]) => title)).toEqual(['Built in', 'Switch tools, keep the context']);
+    expect(facts[0]![1]).toMatch(/fatigue/);
+    expect(facts[1]![1]).toMatch(/not to Anthropic or OpenAI/);
+    expect(value.querySelectorAll('a, button')).toHaveLength(0);
+    const words = value.textContent ?? '';
+    expect(words).not.toMatch(/leaves|never sees|cutting.edge|latest|best|free|price/i);
+    expect(words).not.toMatch(/Kept current/);
+  });
+
   // Note #841 (the owner, 30 Oct 2026, 13:31 UTC): one drawing of the whole
   // workplace right after the first screen, before the five parts zoom in.
   // Drawn in code, wide on a desk and tall on a phone, each one picture with
@@ -101,7 +128,8 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     const plan = document.querySelector('#workplace')!;
     // Since note #984 it follows the film and leads to the own cloud, with
     // no heading: "Here's the workplace." came off; the plan's labels say it.
-    expect(plan.previousElementSibling?.id).toBe(PRODUCT_FILM ? 'film' : undefined);
+    // Since note #1085 the value screen sits between the film and the plan.
+    expect(plan.previousElementSibling?.id).toBe('value');
     expect(plan.nextElementSibling?.id).toBe('own-cloud');
     expect(plan.querySelectorAll('h1, h2, h3, p')).toHaveLength(0);
     expect(plan.querySelectorAll('img')).toHaveLength(0);
@@ -243,7 +271,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const film = document.querySelector('#film')!;
     expect(document.querySelector('main section')).toBe(film);
     // The first screen; the page's h1 (not drawn, note #984) precedes it.
-    expect(film.nextElementSibling?.id).toBe('workplace');
+    expect(film.nextElementSibling?.id).toBe('value');
     expect(film.previousElementSibling?.tagName).toBe('H1');
     // No heading, paragraph or caption around it; one link, to the site.
     expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
@@ -466,7 +494,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'workplace', 'own-cloud', 'start', 'your-agent',
+      ...(PRODUCT_FILM ? ['film'] : []), 'value', 'workplace', 'own-cloud', 'start', 'your-agent',
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);
