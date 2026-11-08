@@ -2147,6 +2147,7 @@ console.log(`[config] GUEST_AGENTS door=${guestDoorUrl ?? 'off (AGENTBUILT_API_U
 
 const deps: RouteDeps = {
   publicGuide: publicGuideService,
+  ...(opsNotifier ? { opsNotifier } : {}),
   guestAgents: guestAgentService,
   ...(workspaceWebAuth && WORKSPACE_ORIGIN
     ? {

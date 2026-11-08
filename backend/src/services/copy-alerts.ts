@@ -1,5 +1,5 @@
 import type { CopyPulseStore } from './copy-pulse-storage.js';
-import { COPY_ALERT_CONDITIONS, copyConditions, type CopyAlertCondition } from '../shared/copy-pulse.js';
+import { COPY_ALERT_CONDITIONS, copyConditions, sumCounts, type CopyAlertCondition, type CopyPulseRecord } from '../shared/copy-pulse.js';
 import type { WorkspaceAgentEvent, WorkspaceAgentEventKind } from '../shared/workspace-agent-proactive.js';
 import { workspaceRoutePath } from '../shared/workspace-routes.js';
 
@@ -18,11 +18,42 @@ import { workspaceRoutePath } from '../shared/workspace-routes.js';
  * The sweep reads every copy hourly and soon after a pulse arrives
  * (`nudge`). Everything new in one sweep goes to each recipient together, as
  * one delivery, so five copies going quiet at once is one look, not five.
+ *
+ * A NEW COPY ALSO GOES TO THE OPS TELEGRAM CHAT (note #1083): one message per
+ * copy, sent right after its first-pulse row is recorded in the ledger, so it
+ * rides the same once-ever guarantee (first-pulse never clears) and never
+ * repeats on later pulses or sweeps. Only first-pulse goes there; the other
+ * conditions stay chat-only. A Telegram failure is logged and dropped: it
+ * never stops the sweep, and the receiving route never waits on the sweep.
  */
 
 export const COPY_ALERT_SWEEP_MS = 60 * 60 * 1000;
 export const COPY_ALERT_BOOT_DELAY_MS = 5 * 60 * 1000;
 const NUDGE_DEBOUNCE_MS = 30 * 1000;
+
+const OPS_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const opsCount = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The ops chat's message about a new copy (note #1083). Plain text, as the
+ * ops notifier sends it: the domain, who runs it, the release, people and
+ * agents, and when we first heard from it, in UTC.
+ */
+export function newCopyOpsMessage(record: CopyPulseRecord): string {
+  const { pulse } = record;
+  const name = pulse.contactName.trim();
+  const contact = name ? `${name} <${pulse.contactEmail}>` : pulse.contactEmail;
+  const first = new Date(record.firstSeenAt);
+  const when = Number.isNaN(first.getTime())
+    ? record.firstSeenAt
+    : `${first.getUTCDate()} ${OPS_MONTHS[first.getUTCMonth()]} ${first.getUTCFullYear()}, ${String(first.getUTCHours()).padStart(2, '0')}:${String(first.getUTCMinutes()).padStart(2, '0')} UTC`;
+  return [
+    `🆕 New private copy installed: ${pulse.domain}`,
+    `Contact: ${contact}`,
+    `Release ${pulse.release ?? 'unknown'} · ${opsCount(pulse.people, 'person', 'people')} · ${opsCount(sumCounts(pulse.agentsByCli), 'agent', 'agents')}`,
+    `First pulse: ${when}`,
+  ].join('\n');
+}
 
 /** The kind each condition is handed over as. */
 export const COPY_ALERT_KIND: Record<CopyAlertCondition, WorkspaceAgentEventKind> = {
@@ -44,6 +75,8 @@ export interface CopyAlertDeps {
   recipients(): Promise<CopyAlertRecipient[]>;
   /** Land the rows (and start a turn where the person wants one). Resolves whether they landed. */
   deliver(recipient: CopyAlertRecipient, events: WorkspaceAgentEvent[]): Promise<boolean>;
+  /** The ops Telegram chat (note #1083): told once about each new copy. Absent without the ops bot. */
+  notifyOps?(text: string): Promise<void>;
   now?(): Date;
   log?(line: string): void;
 }
@@ -87,7 +120,7 @@ export class CopyAlertSweep {
     const now = this.now();
     const offered = await this.deps.offered().catch(() => null);
     const copies = await this.deps.store.list();
-    const fresh: Array<{ copyId: string; condition: CopyAlertCondition; event: WorkspaceAgentEvent }> = [];
+    const fresh: Array<{ copyId: string; condition: CopyAlertCondition; event: WorkspaceAgentEvent; record: CopyPulseRecord }> = [];
     for (const record of copies) {
       const { holding, unknown } = copyConditions(record, offered, now);
       const said = await this.deps.store.alerts(record.copyId);
@@ -95,7 +128,7 @@ export class CopyAlertSweep {
       for (const alert of holding) {
         if (said[alert.condition]) continue;
         fresh.push({
-          copyId: record.copyId, condition: alert.condition,
+          copyId: record.copyId, condition: alert.condition, record,
           event: { kind: COPY_ALERT_KIND[alert.condition], key: `copy:${record.copyId}:${alert.condition}:${record.lastSeenAt}`, text: alert.text, at: record.lastSeenAt, ...(href ? { href } : {}) },
         });
       }
@@ -122,6 +155,18 @@ export class CopyAlertSweep {
     if (!landed) return 0;
     for (const item of fresh) await this.deps.store.setAlert(item.copyId, item.condition, now.toISOString());
     this.deps.log?.(`[copy-alerts] said ${fresh.length}: ${fresh.map((item) => `${item.condition}@${item.copyId}`).join(', ')}`);
+    // After the ledger has them: a crash between the two can lose a Telegram
+    // line, never send one twice.
+    if (this.deps.notifyOps) {
+      for (const item of fresh) {
+        if (item.condition !== 'first-pulse') continue;
+        try {
+          await this.deps.notifyOps(newCopyOpsMessage(item.record));
+        } catch (error) {
+          this.deps.log?.(`[copy-alerts] ops chat not told about ${item.copyId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
     return fresh.length;
   }
 }

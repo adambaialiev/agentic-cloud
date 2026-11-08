@@ -320,6 +320,8 @@ export interface RouteDeps {
    * route nudges it when a pulse arrives.
    */
   copyAlerts?: import('../services/copy-alerts.js').CopyAlertSweep;
+  /** The ops Telegram chat's sender (createOpsNotifier); absent without TELEGRAM_OPS_BOT_TOKEN and TELEGRAM_OPS_CHAT_ID. */
+  opsNotifier?: (text: string) => Promise<void>;
   /**
    * The daily pulse, the COPY's side (note #1057): the admin's screen reads
    * what was last sent and changes the contact and the off switch. Only set
