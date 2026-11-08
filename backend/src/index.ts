@@ -294,9 +294,10 @@ console.log(`[config] AI_MODEL=${AI_MODEL}`);
 // Real newlines pass through unchanged.
 const decodeMultilineEnv = (value: string | undefined): string =>
   (value || '').replace(/\\n/g, '\n');
-// Legacy names kept as fallbacks: prod's backend.env still stores the shared
-// backend keypair under HETZNER_SSH_* (the Hetzner sandbox PROVIDER is retired;
-// the keypair itself is provider-neutral and authorizes SSH into Fly machines).
+// Legacy names kept as fallbacks for one release: production stored the shared
+// backend keypair under HETZNER_SSH_* until 8 Nov 2026, when Hetzner was retired
+// (note #1072) and the setting became FLY_SSH_*. Remove these after the next
+// release that every private copy has taken.
 const HETZNER_SSH_PRIVATE_KEY = decodeMultilineEnv(process.env.HETZNER_SSH_PRIVATE_KEY);
 const HETZNER_SSH_PUBLIC_KEY = decodeMultilineEnv(process.env.HETZNER_SSH_PUBLIC_KEY);
 const HETZNER_SSH_PASSPHRASE = process.env.HETZNER_SSH_PASSPHRASE || '';

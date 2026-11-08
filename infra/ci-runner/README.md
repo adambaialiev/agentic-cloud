@@ -1,5 +1,7 @@
 # Webhook CI/CD (GitHub-Actions-free)
 
+> **History.** The Hetzner box this describes was deleted on 8 Nov 2026 (note #1072); see `docs/control-plane-on-fly.md` for where each piece runs now.
+
 > **Lane A (2026-08-11):** `checks` can now run in a throwaway Fly machine
 > instead of on this box — see **Lane A** below and
 > [`docs/ci-two-lane-runner.md`](../../docs/ci-two-lane-runner.md). Deploys

@@ -1,5 +1,8 @@
 # The control plane moves onto Fly — build record
 
+**Done 8 Nov 2026.** Production runs entirely on Fly, with its backups in
+Cloudflare R2. Nothing of ours is on Hetzner any more (stage 5, note #1072).
+
 The design is note #1031 (6 Nov 2026), accepted in full by the owner the same
 day, and the build brief is note #1032. In short: the three Hetzner boxes
 (`ia-backend`, `ia-media`, `ia-ci-runner`) and the Storage Box go away.
@@ -366,3 +369,84 @@ rule (acc-updates, say) can be added with `FLY_PLATFORM_APPS` (comma-separated)
 in `backend.env`. A new control-plane role is added to `CONTROL_PLANE_ROLES`;
 every role must contain a letter that is not hex, so it can never match an
 agent app (`ia-` plus 16 hex). A test checks this.
+
+## Stage 4 — the cutover (7 Nov 2026, 22:32 UTC)
+
+The window opened after the copy release was offered, with CI's queue empty
+and no turn running but the operator's. `ia-ci` had been pointed at
+`ia-control.internal:2222` first.
+
+1. 22:32:19 — the backend on ia-backend is stopped and masked. Downtime starts.
+2. `.backup`, `integrity_check`, row counts of all 77 tables, then zstd. The
+   archive went over WireGuard to the new volume, where the sha256 matched and
+   every count was equal.
+3. The Fly backend is enabled and healthy 2 s later.
+4. 22:32:32 — ia-backend's Caddy forwards `api.` and its catch-all to the new
+   machine. **13 seconds down.**
+5. The workplace peers are taken down on the old box, their confs copied, and
+   brought up on the new machine (both handshaking).
+6. 22:32:49 — `api.agenticcloudcomputer.com` gets A and AAAA records to Fly
+   at TTL 60, and the 7 stale site CNAMEs are deleted.
+
+Then a real deploy-prod from CI: 879 public requests, none failed, the slowest
+1.2 s. An `ia-rollback` round trip: 249 requests, none failed. The re-pin pass
+moved the sleeping machines. The three always-on sites were re-pinned with a
+restart. One messaging machine was re-pinned by hand, because its image name
+used the old ghcr account (same digest).
+
+Follow-ups the next morning:
+
+- **#1065** `TRUST_PROXY`.
+- **#1067** On Fly nothing routes the /48, so the WireGuard guard saw no
+  conflict and opened a peer into our own organization. Fixed, and the peer
+  removed.
+- **#1068** A machine that does not answer now ends the wait: 15 s connects, a
+  2-minute give-up with the reason, and a re-pin of a wrong pin.
+
+## Stage 5 — teardown (8 Nov 2026)
+
+The owner waived the 14 quiet days. In order:
+
+**The gate.** Since the move, the only SSH logins to ia-backend were the
+operator's. A 3-minute capture on all three boxes saw only one-off scanners. No
+record in agenticcloudcomputer.com or agentbuilt.app named a box. Caddy kept no
+access logs, so the capture stood in for 36 hours of HTTP history.
+
+**Exports**, each verified by hash or checksum (names only):
+
+- **CI:** `/etc/ia-ci/env` against ia-ci's secrets: 24 equal, and 4 changed
+  on purpose (prod host, lane A result URL, state dir, the old git-host box).
+  The dispatcher's copy-test state and lane A image are newer on Fly. The last
+  30 days of CI logs (4,023 files) are in R2 under
+  `archive/ci-logs-hetzner/`. The GitHub Actions runner is deregistered.
+- **Code host:** `/etc/agentgit` against ia-git: every setting the image uses
+  is equal or changed on purpose. All 1,689 refs of the 24 repos on ia-media
+  exist on ia-git. MinIO's 458 + 3 objects are in `archive/minio-ia-media/`;
+  456 of the 457 user files were also on Tigris.
+- **Backend:** `backend.env` against ia-control: 3 intended differences. The
+  Tigris creds file was copied to the volume. The final database at cutover,
+  the 59 pre-deletion copies (9.7 GB), the two .bak files and the retired pool
+  credentials are under `archive/expire-31d/ia-backend-2026-11-08/` (30-day
+  lock, then deleted).
+- **Storage Box:** 23 database archives and 171 repo bundles are in
+  `archive/storagebox/`. A drill from that copy passed: the newest database's
+  integrity is ok and a bundle clones.
+
+**Second restore drill from R2** (the backend's own backup of 10:51 UTC):
+integrity ok, 77/77 tables (64 equal to live, 11 grown, the note search index's
+2 internal tables smaller after a merge), and 93/93 secrets still ciphertext.
+
+**Deleted, 12:39–12:40 UTC:**
+
+- the `ia-backend` WireGuard peer and an interactive peer that flyctl created
+  from that box, both in our organization;
+- servers ia-ci-runner, ia-media and ia-backend, with their 6 primary IPs;
+- Storage Box ia-git-backups;
+- snapshot "ia-backend-dev final snapshot", SSH keys hetzner-cloud and
+  felix-eldiyar, firewall eldiyar-math-fw.
+
+The Hetzner project then held nothing. The R2 watchdog was green the same hour.
+
+On ia-control, `TRUST_PROXY` dropped the old WireGuard address, and the SSH
+keypair setting was renamed `HETZNER_SSH_*` → `FLY_SSH_*`. The code still reads
+the old name for one release.

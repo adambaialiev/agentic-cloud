@@ -1,5 +1,7 @@
 # Internal git host (`ia-media`)
 
+> **History.** The Hetzner box this describes was deleted on 8 Nov 2026 (note #1072); see `docs/control-plane-on-fly.md` for where each piece runs now.
+
 Bare repos served over git's smart HTTP, on the box that already holds media
 and voice files. Design: [`docs/agent-git-phase1.md`](../../docs/agent-git-phase1.md).
 

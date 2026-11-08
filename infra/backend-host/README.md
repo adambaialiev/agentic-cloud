@@ -1,5 +1,7 @@
 # Backend host (Hetzner `ia-backend`)
 
+> **History.** The Hetzner box this describes was deleted on 8 Nov 2026 (note #1072); see `docs/control-plane-on-fly.md` for where each piece runs now.
+
 Provisioning + deploy target for the Infinite Agents backend as it moves off
 Render onto a Hetzner VM inside the Fly WireGuard org (growth-phase plan,
 implementation step 2). See the growth-phase infrastructure plan (kept privately) and the
