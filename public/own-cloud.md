@@ -59,7 +59,7 @@ Do not ask about email. It is not part of the install: once their Agentic Cloud 
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/1345d2b2b95a21a0d896988794e19dda5b5d3ae6?path=infra/copy-installer/install.mjs'
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/eb8b9d057b554ac04c93194c20c42b80ab149dfd?path=infra/copy-installer/install.mjs'
 ```
 
 Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `a469727d5694a55366d1da523570b5ec704d77a6a1644ef957da6d626465332f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
