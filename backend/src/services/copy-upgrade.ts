@@ -209,8 +209,17 @@ export interface CopyUpgradeOptions {
   upgraderReady: () => boolean;
   dataDir?: string;
   dbPath?: string;
-  /** When a Claude sign-in that lives in this process's memory began, if one is open. */
-  signInOpenSince: () => number | null;
+  /**
+   * The Claude sign-ins open in this process's memory: whose, and since when.
+   * An upgrade restarts the Workspace and would cut them (note #1008).
+   */
+  signInsOpen: () => Array<{ userId: string; startedAt: number }>;
+  /**
+   * Forget one person's open sign-in (their own Cancel). Since note #1082 the
+   * upgrade card offers it to the admin whose own forgotten sign-in holds the
+   * button: leaving the sign-in page any way but Cancel left it open 15 min.
+   */
+  cancelSignIn?: (userId: string) => Promise<void>;
   agentsWorking: () => number;
   /** Roll a mail receiver an installer before note #946 made. */
   rollMx: boolean;
@@ -220,6 +229,22 @@ export interface CopyUpgradeOptions {
 }
 
 const SIGNIN_MAX_AGE_MS = 15 * 60_000;
+
+/**
+ * What the confirmation says about time (note #1082). It said "about 3
+ * minutes" while a real upgrade took 9 min 12 s, nearly all of it copying the
+ * release into the copy's own registry (7:50 on the acceptance pass, 6:38 on
+ * a live copy, 8:44 at an install). So: how long the last finished upgrade
+ * on this copy took, rounded up to a whole minute; with none, a range that
+ * covers the copy step on every run measured so far.
+ */
+export const UPGRADE_MINUTES_RANGE = { from: 5, to: 15 } as const;
+export function lastUpgradeMinutes(run: WorkspaceCopyUpgradeRun | null): number | null {
+  if (!run || run.phase !== 'done' || run.drill || !run.startedAt || !run.finishedAt) return null;
+  const ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+  return Number.isFinite(ms) && ms > 0 ? Math.max(1, Math.ceil(ms / 60_000)) : null;
+}
+const hhmmUtc = (ms: number) => new Date(ms).toISOString().slice(11, 16);
 const compareVersions = (a: string, b: string) => {
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
@@ -274,7 +299,12 @@ export function createCopyUpgrade(options: CopyUpgradeOptions) {
   });
 
   /** Why an upgrade cannot start now, in the words the admin reads; null when it can. */
-  async function refusal(target: string | null, run: WorkspaceCopyUpgradeRun | null): Promise<string | null> {
+  /** The Claude sign-ins still open, oldest first, minus finished and expired ones (the flow drops those). */
+  const openSignIns = () => options.signInsOpen()
+    .filter((open) => now().getTime() - open.startedAt < SIGNIN_MAX_AGE_MS)
+    .sort((a, b) => a.startedAt - b.startedAt);
+
+  async function refusal(target: string | null, run: WorkspaceCopyUpgradeRun | null, asker: string | null = null): Promise<string | null> {
     if (!options.bucket) return 'This Agentic Cloud has no backup bucket, so an upgrade has nowhere to keep its record. Your engineer can upgrade with node install.mjs upgrade.';
     if (!options.upgraderReady()) return 'The upgrader is not set up here yet. Your engineer runs node install.mjs upgrade once; after that the button works.';
     if (!options.updatesUrl) return 'Update checks are off here, so there is nothing to upgrade to.';
@@ -295,28 +325,40 @@ export function createCopyUpgrade(options: CopyUpgradeOptions) {
       const db = options.dbPath ? await stat(options.dbPath).then((x) => x.size).catch(() => 0) : 0;
       if (s && s.bavail * s.bsize < 2 * db + DISK_MARGIN_BYTES) return 'The Workspace\'s disk is too full to keep the database\'s backup beside it. Free some space first.';
     }
-    const since = options.signInOpenSince();
-    if (since !== null && now().getTime() - since < SIGNIN_MAX_AGE_MS) {
-      const minutes = Math.max(1, Math.ceil((SIGNIN_MAX_AGE_MS - (now().getTime() - since)) / 60_000));
-      return `Someone is signing in to Claude, and that sign-in lives in the Workspace's memory: an upgrade now would cut it. Try again in ${minutes} min.`;
+    const open = openSignIns();
+    if (open.length) {
+      // Freed when the last of them expires, unless they finish or cancel first.
+      const newest = Math.max(...open.map((s) => s.startedAt));
+      const minutes = Math.max(1, Math.ceil((SIGNIN_MAX_AGE_MS - (now().getTime() - newest)) / 60_000));
+      const others = open.filter((s) => s.userId !== asker).length;
+      if (asker && others === 0) {
+        return `Your own Claude sign-in is still open, from ${hhmmUtc(open[0]!.startedAt)} UTC. It lives in the Workspace's memory, so an upgrade now would cut it. Cancel it here, or finish it, and the button comes back.`;
+      }
+      return `${others === 1 ? 'Someone' : `${others} people`} ${others === 1 ? 'is' : 'are'} signing in to Claude, and that sign-in lives in the Workspace's memory: an upgrade now would cut it. Try again in ${minutes} min.`;
     }
     return null;
   }
 
-  async function state(): Promise<WorkspaceCopyUpgradeState> {
+  async function state(asker: string | null = null): Promise<WorkspaceCopyUpgradeState> {
     const { running, latest, latestDate } = await options.releases();
     const behind = Boolean(running && latest && compareVersions(latest, running) > 0);
     const run = await currentRun().catch((error: unknown) => {
       log(`[copy-upgrade] the run record could not be read: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     });
-    const why = behind ? await refusal(latest, run) : null;
+    const why = behind ? await refusal(latest, run, asker) : null;
+    const open = behind && why && asker && options.cancelSignIn ? openSignIns() : [];
     return {
       running,
       latest,
       behind,
-      offer: behind && !why && latest ? { version: latest, date: latestDate, agentsWorking: options.agentsWorking(), minutes: 3 } : null,
+      offer: behind && !why && latest ? {
+        version: latest, date: latestDate, agentsWorking: options.agentsWorking(),
+        lastMinutes: lastUpgradeMinutes(run), minutes: UPGRADE_MINUTES_RANGE,
+      } : null,
       refusal: behind ? why : null,
+      // Only the asker's own sign-in, and only when it alone holds the button.
+      cancelSignIn: open.length > 0 && open.every((s) => s.userId === asker),
       run,
     };
   }
@@ -325,12 +367,12 @@ export function createCopyUpgrade(options: CopyUpgradeOptions) {
    * Start the upgrader. The button's version must be the newest offered; a
    * drill (API only, for the gate's own rehearsal) may also name the running one.
    */
-  async function start(input: { version: string; drill?: 'rollback' | 'backend' | null; by: string }) {
+  async function start(input: { version: string; drill?: 'rollback' | 'backend' | null; by: string; userId?: string }) {
     const { running, latest } = await options.releases();
     const allowed = input.drill ? [latest, running] : [latest];
     if (!input.version || !allowed.includes(input.version)) throw new CopyUpgradeRefused(`Release ${input.version || '(none)'} is not the one to upgrade to here${latest ? `: the newest is ${latest}` : ''}.`, 400);
     if (!input.drill && (!running || !latest || compareVersions(latest, running) <= 0)) throw new CopyUpgradeRefused('This Agentic Cloud already runs the newest release.');
-    const why = await refusal(input.version, await currentRun().catch(() => null));
+    const why = await refusal(input.version, await currentRun().catch(() => null), input.userId ?? null);
     if (why) throw new CopyUpgradeRefused(why);
     const installer = await (options.installer ?? loadInstaller)();
     const source = installer.updatesSource({ url: options.updatesUrl! });
@@ -384,7 +426,14 @@ export function createCopyUpgrade(options: CopyUpgradeOptions) {
     return { id: run.id, machine: machine.id };
   }
 
-  return { state, start, carryOn };
+  /** The asker's own open sign-in, forgotten (note #1082); then the state as they now see it. */
+  async function cancelSignIn(userId: string) {
+    if (!options.cancelSignIn) throw new CopyUpgradeRefused('A sign-in cannot be cancelled from here.');
+    await options.cancelSignIn(userId);
+    return state(userId);
+  }
+
+  return { state, start, carryOn, cancelSignIn };
 }
 
 export type CopyUpgrade = ReturnType<typeof createCopyUpgrade>;

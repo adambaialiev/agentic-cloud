@@ -36,15 +36,28 @@ const lasted = (from: string | null, to: string | null) => {
 /** A step's duration as the right-hand column reads it: "9 s", "6:38", "1:02:05". */
 const clock = (seconds: number | null) => (seconds === null ? '' : seconds < 60 ? `${Math.max(0, Math.floor(seconds))} s` : stopwatch(seconds));
 
+/**
+ * How long, in words the next real upgrade will not make a liar of (note
+ * #1082): "about 3 minutes" stood over a 9 min 12 s run. The last finished
+ * upgrade on this copy when there is one, else the measured range.
+ */
+function upgradeTimeWords(lastMinutes: number | null | undefined, minutes: { from: number; to: number } | undefined): string {
+  if (lastMinutes) return `The last upgrade here took ${lastMinutes} min.`;
+  const range = minutes ?? { from: 5, to: 15 };
+  return `It takes ${range.from} to ${range.to} minutes, most of it copying the release into your own registry.`;
+}
+
 /** The four lines the admin reads before saying yes (note #1007, picture B). */
-export function CopyUpgradeConfirm({ from, to, agentsWorking, onAnswer }: {
-  from: string; to: string; agentsWorking: number; onAnswer: (yes: boolean) => void;
+export function CopyUpgradeConfirm({ from, to, agentsWorking, lastMinutes, minutes, onAnswer }: {
+  from: string; to: string; agentsWorking: number;
+  lastMinutes?: number | null; minutes?: { from: number; to: number };
+  onAnswer: (yes: boolean) => void;
 }) {
   return (
     <Scrim onDismiss={() => onAnswer(false)}>
       <div id="copyUpgradeConfirm">
         <h3>Upgrade to {to}?</h3>
-        <p>From {from}. It takes about 3 minutes.</p>
+        <p>From {from}. {upgradeTimeWords(lastMinutes, minutes)}</p>
         <ul className="upconfirm">
           <li><span className="k" aria-hidden="true">↻</span><span>The Workspace restarts once and is away for about a minute. <span className="d">Everyone sees “reconnecting”; nobody signs in again.</span></span></li>
           <li><span className="k" aria-hidden="true">◉</span><span>{agentsWorking === 0 ? 'No agent is working right now.' : agentsWorking === 1 ? '1 agent is working.' : `${agentsWorking} agents are working.`} <span className="d">{agentsWorking ? 'Their turns pause during the restart and carry on after it.' : 'Any that start will pause during the restart and carry on after it.'}</span></span></li>

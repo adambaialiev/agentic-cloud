@@ -1102,6 +1102,11 @@ if (sqliteDb && sqliteDbPath && dbBackupsOn) {
       lastDbBackup = { at: new Date().toISOString(), ok: status === 'ok', ...(status === 'ok' ? {} : { detail }) };
       backupMonitor?.record(monitorJob, status, detail);
     },
+    // A good backup already in the bucket (from before this start) counts,
+    // unless this process has since recorded a newer run (note #1082).
+    found: (at) => {
+      if (!lastDbBackup || new Date(lastDbBackup.at).getTime() < at.getTime()) lastDbBackup = { at: at.toISOString(), ok: true };
+    },
   }).start(everyHours * 60 * 60_000, 10 * 60_000);
   console.log(`[config] DB_BACKUPS=every ${everyHours}h into ${BACKUP_S3.name}, keeping ${keep} dailies + ${keepWeekly} weeklies`
     + (lockDays ? `, lock ${lockDays}d` : '') + `, reporting as ${monitorJob}`);
@@ -1344,7 +1349,8 @@ const copyUpgrade = PRIVATE_COPY && copyAppPrefix && FLY_API_TOKEN
       },
       upgraderReady: () => copyUpgraderReady,
       ...(sqliteDbPath ? { dbPath: sqliteDbPath, dataDir: dirnameNode(sqliteDbPath) } : {}),
-      signInOpenSince: () => seatSignInFlow.openClaudeSignInSince(),
+      signInsOpen: () => seatSignInFlow.openClaudeSignIns(),
+      cancelSignIn: (userId) => seatSignInFlow.cancel(userId),
       agentsWorking: () => countActiveDetachedTurns(),
       rollMx: Boolean(process.env.RESEND_MAIL_API_KEY || process.env.SMTP_HOST),
     })

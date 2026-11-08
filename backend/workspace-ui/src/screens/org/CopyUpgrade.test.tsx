@@ -34,7 +34,7 @@ const run = (over: Partial<WorkspaceCopyUpgradeRun>): WorkspaceCopyUpgradeRun =>
 });
 const offer: WorkspaceCopyUpgradeState = {
   running: '2026.11.01.1', latest: '2026.11.10.0', behind: true,
-  offer: { version: '2026.11.10.0', date: '2026-11-10', agentsWorking: 3, minutes: 3 }, refusal: null, run: null,
+  offer: { version: '2026.11.10.0', date: '2026-11-10', agentsWorking: 3, lastMinutes: null, minutes: { from: 5, to: 15 } }, refusal: null, cancelSignIn: false, run: null,
 };
 const notes = '# Upgrades from the Workspace\n\n## What\'s new\n\n- An Upgrade button for admins.\n\n## Fixed\n\n- Nothing.\n\n## Needs you\n\n- Nothing.\n';
 const releases: WorkspaceCopyReleases = {
@@ -78,7 +78,9 @@ describe('the Upgrade button (note #1008)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Upgrade to 2026.11.10.0' }));
     const dialog = document.querySelector('#copyUpgradeConfirm')!;
     expect(dialog.textContent).toContain('Upgrade to 2026.11.10.0?');
-    expect(dialog.textContent).toContain('From 2026.11.01.1. It takes about 3 minutes.');
+    // Note #1082: never "about 3 minutes" again; with no upgrade here yet, the measured range.
+    expect(dialog.textContent).toContain('From 2026.11.01.1. It takes 5 to 15 minutes, most of it copying the release into your own registry.');
+    expect(dialog.textContent).not.toContain('about 3 minutes');
     expect(dialog.querySelectorAll('.upconfirm li')).toHaveLength(4);
     expect(dialog.textContent).toContain('3 agents are working.');
     expect(dialog.textContent).toContain('Anything written in those minutes is lost.');
@@ -94,6 +96,40 @@ describe('the Upgrade button (note #1008)', () => {
     expect(screen.queryByRole('button', { name: /^Upgrade to/ })).toBeNull();
     expect(document.querySelector('#orgCopyUpgradeRefusal')!.textContent).toContain('runs node install.mjs upgrade once');
     expect(document.querySelector('#orgCopyUpgradeHint')).not.toBeNull();
+  });
+
+  it('says how long the last upgrade here took, once there was one (note #1082)', async () => {
+    await open('/workplace', 'admin', () => ({ ...offer, offer: { ...offer.offer!, lastMinutes: 10 } }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upgrade to 2026.11.10.0' }));
+    expect(document.querySelector('#copyUpgradeConfirm')!.textContent).toContain('From 2026.11.01.1. The last upgrade here took 10 min.');
+  });
+
+  it('names the admin\'s own forgotten Claude sign-in, offers its Cancel, and gives the button back (note #1082)', async () => {
+    let current: WorkspaceCopyUpgradeState = {
+      ...offer, offer: null, cancelSignIn: true,
+      refusal: 'Your own Claude sign-in is still open, from 17:31 UTC. It lives in the Workspace\'s memory, so an upgrade now would cut it. Cancel it here, or finish it, and the button comes back.',
+    };
+    const scripted = await open('/workplace', 'admin', () => current, {
+      'POST api/copy/upgrade/cancel-sign-in': () => { current = offer; return offer; },
+    });
+    expect(document.querySelector('#orgCopyUpgradeRefusal')!.textContent).toContain('Your own Claude sign-in is still open');
+    // Nina's pass: the engineer's command stood here as if there were no button.
+    expect(document.querySelector('#orgCopyUpgradeHint')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel my Claude sign-in' }));
+    await wait(20);
+    expect(scripted.calls.some((call) => call.init?.method === 'POST' && call.path === 'api/copy/upgrade/cancel-sign-in')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Upgrade to 2026.11.10.0' })).toBeTruthy();
+    expect(document.querySelector('#orgCopyUpgradeRefusal')).toBeNull();
+  });
+
+  it('offers no Cancel for someone else\'s sign-in, and no engineer\'s command either', async () => {
+    await open('/workplace', 'admin', () => ({
+      ...offer, offer: null,
+      refusal: 'Someone is signing in to Claude, and that sign-in lives in the Workspace\'s memory: an upgrade now would cut it. Try again in 10 min.',
+    }));
+    expect(document.querySelector('#orgCopyUpgradeRefusal')!.textContent).toContain('Try again in 10 min.');
+    expect(screen.queryByRole('button', { name: 'Cancel my Claude sign-in' })).toBeNull();
+    expect(document.querySelector('#orgCopyUpgradeHint')).toBeNull();
   });
 
   it('shows a run under way to any admin, instead of the button', async () => {

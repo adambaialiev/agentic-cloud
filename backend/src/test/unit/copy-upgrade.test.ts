@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createCopyUpgrade, runView, stepLabel, type UpgradeBucket } from '../../services/copy-upgrade.js';
+import { createCopyUpgrade, lastUpgradeMinutes, runView, stepLabel, UPGRADE_MINUTES_RANGE, type UpgradeBucket } from '../../services/copy-upgrade.js';
+import type { WorkspaceCopyUpgradeRun } from '../../shared/workspace-api.js';
 import type { FlyMachine } from '../../services/fly-client.js';
 
 /**
@@ -27,7 +28,7 @@ function service(over: Partial<Parameters<typeof createCopyUpgrade>[0]> = {}, ma
     } as never,
     releases: async () => ({ running: '2026.11.01.1', latest: '2026.11.10.0', latestDate: '2026-11-10' }),
     upgraderReady: () => true,
-    signInOpenSince: () => null,
+    signInsOpen: () => [],
     agentsWorking: () => 3,
     rollMx: false,
     installer: async () => ({
@@ -113,8 +114,61 @@ describe('starting an upgrade (note #1008)', () => {
   it('offers the newest release, with how many agents are working', async () => {
     const { upgrade } = service();
     const state = await upgrade.state();
-    expect(state.offer).toEqual({ version: '2026.11.10.0', date: '2026-11-10', agentsWorking: 3, minutes: 3 });
+    expect(state.offer).toEqual({ version: '2026.11.10.0', date: '2026-11-10', agentsWorking: 3, lastMinutes: null, minutes: { from: 5, to: 15 } });
     expect(state.refusal).toBeNull();
+    expect(state.cancelSignIn).toBe(false);
+  });
+
+  // Note #1082: the confirmation said "about 3 minutes" over a 9 min 12 s run.
+  it('takes the time from the last finished upgrade here, never a drill or a failure', () => {
+    const finished = (over: Partial<WorkspaceCopyUpgradeRun>): WorkspaceCopyUpgradeRun => ({
+      id: 'r0', requestedBy: 'Ada', from: '2026.11.06.0', to: '2026.11.07.0', drill: null,
+      startedAt: '2026-11-08T17:36:17.000Z', finishedAt: '2026-11-08T17:45:29.000Z', phase: 'done',
+      heardSecondsAgo: null, message: null, snapshotAt: null, steps: [], ...over,
+    });
+    expect(lastUpgradeMinutes(finished({}))).toBe(10);
+    expect(lastUpgradeMinutes(finished({ finishedAt: '2026-11-08T17:38:17.000Z' }))).toBe(2);
+    expect(lastUpgradeMinutes(finished({ drill: 'rollback' }))).toBeNull();
+    expect(lastUpgradeMinutes(finished({ phase: 'put-back' }))).toBeNull();
+    expect(lastUpgradeMinutes(finished({ finishedAt: null }))).toBeNull();
+    expect(lastUpgradeMinutes(null)).toBeNull();
+    // The range covers every release copy measured: 6:38, 7:50 and 8:44, plus about 1.5 min for the rest.
+    expect(UPGRADE_MINUTES_RANGE).toEqual({ from: 5, to: 15 });
+  });
+
+  it('names the asker\'s own open sign-in and lets them cancel it; someone else\'s only waits (note #1082)', async () => {
+    let open = [{ userId: 'u-ada', startedAt: NOW.getTime() - 5 * 60_000 }];
+    const cancelled: string[] = [];
+    const { upgrade } = service({
+      signInsOpen: () => open,
+      cancelSignIn: async (userId) => { cancelled.push(userId); open = open.filter((s) => s.userId !== userId); },
+    });
+    const mine = await upgrade.state('u-ada');
+    expect(mine.offer).toBeNull();
+    expect(mine.refusal).toContain('Your own Claude sign-in is still open');
+    expect(mine.cancelSignIn).toBe(true);
+    await expect(upgrade.start({ version: '2026.11.10.0', by: 'Ada', userId: 'u-ada' })).rejects.toThrow('Your own Claude sign-in');
+
+    const theirs = await upgrade.state('u-ben');
+    expect(theirs.refusal).toBe('Someone is signing in to Claude, and that sign-in lives in the Workspace\'s memory: an upgrade now would cut it. Try again in 10 min.');
+    expect(theirs.cancelSignIn).toBe(false);
+
+    const after = await upgrade.cancelSignIn('u-ada');
+    expect(cancelled).toEqual(['u-ada']);
+    expect(after.refusal).toBeNull();
+    expect(after.offer?.version).toBe('2026.11.10.0');
+  });
+
+  it('never offers a Cancel while anyone else\'s sign-in is also open, and ignores expired ones', async () => {
+    const { upgrade } = service({
+      signInsOpen: () => [{ userId: 'u-ada', startedAt: NOW.getTime() - 60_000 }, { userId: 'u-ben', startedAt: NOW.getTime() - 2 * 60_000 }],
+      cancelSignIn: async () => {},
+    });
+    const both = await upgrade.state('u-ada');
+    expect(both.refusal).toContain('Someone is signing in to Claude');
+    expect(both.cancelSignIn).toBe(false);
+    const stale = service({ signInsOpen: () => [{ userId: 'u-ada', startedAt: NOW.getTime() - 16 * 60_000 }], cancelSignIn: async () => {} });
+    expect((await stale.upgrade.state('u-ada')).refusal).toBeNull();
   });
 
   it('copies the upgrader image in, records who asked, and starts the one-shot machine with no key in its env', async () => {
@@ -151,7 +205,7 @@ describe('starting an upgrade (note #1008)', () => {
     const deploying = service({}, { 'theirco-git': [{ id: 'g', state: 'replacing' }] });
     expect((await deploying.upgrade.state()).refusal).toBe('The code host is being changed right now (replacing). Try again in a few minutes.');
 
-    const signingIn = service({ signInOpenSince: () => NOW.getTime() - 5 * 60_000 });
+    const signingIn = service({ signInsOpen: () => [{ userId: 'u-ben', startedAt: NOW.getTime() - 5 * 60_000 }] });
     expect((await signingIn.upgrade.state()).refusal).toContain('Someone is signing in to Claude');
     expect((await signingIn.upgrade.state()).refusal).toContain('Try again in 10 min.');
 

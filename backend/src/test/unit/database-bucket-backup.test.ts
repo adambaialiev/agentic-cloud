@@ -54,7 +54,7 @@ async function liveDb() {
   return { dir, dbPath, db };
 }
 
-async function setup(keep: number, existing: string[] = [], extra: { lockDays?: number; shortHead?: boolean; backup?: (d: string) => Promise<unknown> } = {}) {
+async function setup(keep: number, existing: string[] = [], extra: { lockDays?: number; shortHead?: boolean; backup?: (d: string) => Promise<unknown>; found?: (at: Date) => void } = {}) {
   const { dbPath, db } = await liveDb();
   const bucket = fakeBucket(existing, { shortHead: extra.shortHead });
   const backup = new DatabaseBucketBackup({
@@ -63,6 +63,7 @@ async function setup(keep: number, existing: string[] = [], extra: { lockDays?: 
     bucket: { endpoint: 'https://fly.storage.tigris.dev', name: 'theirco-backups', accessKeyId: 'k', secretAccessKey: 's' },
     keep,
     ...(extra.lockDays !== undefined ? { lockDays: extra.lockDays } : {}),
+    ...(extra.found ? { found: extra.found } : {}),
     client: bucket.client as never,
     now: () => new Date('2026-10-27T03:00:00.000Z'),
   });
@@ -177,12 +178,12 @@ describe('checkSnapshot', () => {
 
 describe('the bucket is the clock (note #1032)', () => {
   const HOUR = 3_600_000;
-  async function scheduled(existingAgeHours: number | null) {
+  async function scheduled(existingAgeHours: number | null, found?: (at: Date) => void) {
     const now = new Date('2026-10-27T03:00:00.000Z');
     const existing = existingAgeHours === null ? [] : [
       `db/backend-${new Date(now.getTime() - existingAgeHours * HOUR).toISOString().replace(/[:.]/g, '-')}.db.gz`,
     ];
-    const { bucket, backup } = await setup(14, existing);
+    const { bucket, backup } = await setup(14, existing, found ? { found } : {});
     return { bucket, backup, before: bucket.objects.size };
   }
 
@@ -207,5 +208,33 @@ describe('the bucket is the clock (note #1032)', () => {
       } finally { vi.useRealTimers(); }
       await vi.waitFor(() => expect(bucket.objects.size).toBe(before + 1));
     }
+  });
+
+  // Note #1082: after the upgrade restart a copy's pulse said
+  // backupAgeHours null minutes after "backed up just now", because only a
+  // backup this process took was remembered.
+  it('reports the backup already in the bucket at start, and again on a check that skips', async () => {
+    const seen: string[] = [];
+    const { bucket, backup, before } = await scheduled(1, (at) => seen.push(at.toISOString()));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    try {
+      backup.start(6 * HOUR, 10 * 60_000);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(seen).toEqual(['2026-10-27T02:00:00.000Z']);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    } finally { vi.useRealTimers(); }
+    expect(seen).toEqual(['2026-10-27T02:00:00.000Z', '2026-10-27T02:00:00.000Z']);
+    expect(bucket.objects.size).toBe(before);
+  });
+
+  it('reports nothing found when the bucket is empty', async () => {
+    const seen: Date[] = [];
+    const { backup } = await scheduled(null, (at) => seen.push(at));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    try {
+      backup.start(6 * HOUR, 10 * 60_000);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally { vi.useRealTimers(); }
+    expect(seen).toEqual([]);
   });
 });

@@ -1834,10 +1834,19 @@ export interface WorkspaceCopyUpgradeState {
   running: string | null;
   latest: string | null;
   behind: boolean;
-  /** The button, when an upgrade may start now. */
-  offer: { version: string; date: string | null; agentsWorking: number; minutes: number } | null;
+  /**
+   * The button, when an upgrade may start now. Time, for the confirmation
+   * (note #1082): how long the last finished upgrade here took, in whole
+   * minutes, else null, and the range to say when there is none.
+   */
+  offer: {
+    version: string; date: string | null; agentsWorking: number;
+    lastMinutes: number | null; minutes: { from: number; to: number };
+  } | null;
   /** Why there is no button although a newer release exists. */
   refusal: string | null;
+  /** The refusal is the asker's own open Claude sign-in alone: offer them its Cancel here (note #1082). */
+  cancelSignIn: boolean;
   /** The open run, else the last one this Workspace started. */
   run: WorkspaceCopyUpgradeRun | null;
 }

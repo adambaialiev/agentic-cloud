@@ -320,13 +320,18 @@ describe('collectCopyPulseFacts', () => {
     const db = openSqliteDb(join(mkdtempSync(join(tmpdir(), 'pulse-facts-')), 'db.sqlite'));
     const now = new Date('2026-11-07T12:00:00.000Z');
     db.prepare('INSERT INTO users (user_id, doc) VALUES (?, ?)').run('u1', serializeDoc({
-      userId: 'u1', email: 'x@y.test', telegram: { agents: { a1: { cli: 'claude' }, a2: { cli: 'codex' }, a3: { cli: 'opencode' } } },
+      userId: 'u1', email: 'x@y.test', telegram: { agents: {
+        a1: { cli: 'claude' }, a2: { cli: 'codex' }, a3: { cli: 'opencode' },
+        // The Chief of Staff and the briefing machine are nobody's agents (note #1082).
+        cos: { cli: 'claude', purpose: 'workspace-recap' }, brief: { cli: 'claude', purpose: 'workspace-briefing' },
+      } },
     }));
     const msg = db.prepare('INSERT INTO agent_chat_messages (user_id, agent_id, seq, doc) VALUES (?, ?, ?, ?)');
     msg.run('u1', 'a1', 1, JSON.stringify({ role: 'owner', text: 'hi', at: '2026-11-07T10:00:00.000Z' }));
     msg.run('u1', 'a1', 2, JSON.stringify({ role: 'agent', text: 'hello', at: '2026-11-07T10:01:00.000Z' }));
     msg.run('u1', 'a1', 3, JSON.stringify({ role: 'agent', text: 'old', at: '2026-11-05T10:01:00.000Z' }));
     msg.run('u1', 'a2', 1, JSON.stringify({ role: 'agent', text: 'yo', at: '2026-11-07T11:00:00.000Z' }));
+    msg.run('u1', 'cos', 1, JSON.stringify({ role: 'agent', text: 'I run your agents', at: '2026-11-07T11:10:00.000Z' }));
     db.prepare('INSERT INTO agent_work_days (user_id, agent_id, day, working_ms) VALUES (?, ?, ?, ?)').run('u1', 'a1', '2026-11-07', 2 * 3_600_000);
     db.prepare('INSERT INTO agent_work_days (user_id, agent_id, day, working_ms) VALUES (?, ?, ?, ?)').run('u1', 'a1', '2026-11-06', 4 * 3_600_000);
     db.prepare('INSERT INTO deployments (deployment_id, name, user_id, doc) VALUES (?, ?, ?, ?)').run('d1', 'site', 'u1', JSON.stringify({ status: 'live' }));

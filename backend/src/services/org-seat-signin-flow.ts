@@ -457,18 +457,18 @@ export class OrgSeatSignInFlow {
   }
 
   /**
-   * When the oldest Claude sign-in still open in this process began, or
-   * null (note #1008): its PKCE verifier lives only in memory, so an upgrade
-   * that restarts the Workspace would cut it. Finished ones do not count.
+   * Every Claude sign-in still open in this process: whose, and since when
+   * (note #1082), so the upgrade card can tell an admin's own forgotten
+   * sign-in from someone else's and offer its Cancel.
    */
-  openClaudeSignInSince(): number | null {
-    let oldest: number | null = null;
+  openClaudeSignIns(): Array<{ userId: string; startedAt: number }> {
+    const open: Array<{ userId: string; startedAt: number }> = [];
     for (const session of this.sessions.values()) {
       if (session.provider !== 'claude' || session.state.phase === 'done') continue;
       if (Date.now() - session.startedAt > SIGNIN_MAX_AGE_MS) continue;
-      oldest = oldest === null ? session.startedAt : Math.min(oldest, session.startedAt);
+      open.push({ userId: session.userId, startedAt: session.startedAt });
     }
-    return oldest;
+    return open;
   }
 
   /** The screen's Cancel (or leaving a failed attempt): forget the session. */

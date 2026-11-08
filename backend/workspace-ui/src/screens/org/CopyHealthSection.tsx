@@ -65,6 +65,7 @@ export function CopyHealthSection() {
   const [upgrade, setUpgrade] = useState<WorkspaceCopyUpgradeState | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +92,18 @@ export function CopyHealthSection() {
       await load();
     } finally {
       setStarting(false);
+    }
+  };
+  // The admin's own forgotten Claude sign-in held the button (note #1082).
+  const cancelSignIn = async () => {
+    setCancelling(true);
+    try {
+      setUpgrade(await api.api<WorkspaceCopyUpgradeState>('api/copy/upgrade/cancel-sign-in', { method: 'POST' }));
+    } catch (err) {
+      banner.show(errorMessage(err));
+      await load();
+    } finally {
+      setCancelling(false);
     }
   };
   const openRun = upgrade?.run && ['starting', 'running', 'putting-back', 'stopped'].includes(upgrade.run.phase) ? upgrade.run : null;
@@ -152,8 +165,24 @@ export function CopyHealthSection() {
                     {part.ok ? null : <span className="badge warn">Needs a look</span>}
                     {badge ? <span className={`badge ${badge.tone}`} id="orgCopyUpdatesBadge">{badge.words}</span> : null}
                   </div>
-                  {updates?.state === 'behind' && updates.howToUpgrade && !upgrade?.offer && !openRun ? <UpgradeHint text={updates.howToUpgrade} /> : null}
+                  {/* The engineer's command only where the button cannot help:
+                      no button on this release, or a refusal that itself
+                      sends for the engineer. Beside a passing refusal (a
+                      sign-in, a deploy) it read as if there were no button
+                      at all (note #1082). */}
+                  {updates?.state === 'behind' && updates.howToUpgrade && !openRun
+                    && (!upgrade || (!upgrade.offer && (!upgrade.refusal || upgrade.refusal.includes('install.mjs'))))
+                    ? <UpgradeHint text={updates.howToUpgrade} /> : null}
                   {updates?.state === 'behind' && upgrade?.refusal && !openRun ? <div className="cabout" id="orgCopyUpgradeRefusal">{upgrade.refusal}</div> : null}
+                  {updates?.state === 'behind' && upgrade?.cancelSignIn && !openRun
+                    ? (
+                      <div className="cabout">
+                        <button className="btn ghost" id="orgCopyCancelSignIn" type="button" disabled={cancelling} onClick={() => { void cancelSignIn(); }}>
+                          {cancelling ? 'Cancelling…' : 'Cancel my Claude sign-in'}
+                        </button>
+                      </div>
+                    )
+                    : null}
                   {/* What each release brings (note #1006): the newer ones
                       when there are any, else what the running one brought. */}
                   {updates && updates.state !== 'off' && (updates.state === 'behind' || updates.running)
@@ -225,7 +254,7 @@ export function CopyHealthSection() {
         </button>
       </div>
       {confirming && upgrade?.offer && upgrade.running
-        ? <CopyUpgradeConfirm from={upgrade.running} to={upgrade.offer.version} agentsWorking={upgrade.offer.agentsWorking} onAnswer={(yes) => { void startUpgrade(yes); }} />
+        ? <CopyUpgradeConfirm from={upgrade.running} to={upgrade.offer.version} agentsWorking={upgrade.offer.agentsWorking} lastMinutes={upgrade.offer.lastMinutes} minutes={upgrade.offer.minutes} onAnswer={(yes) => { void startUpgrade(yes); }} />
         : null}
       <p className="formhint">
         {health ? `Checked ${relative(health.checkedAt)}. ` : ''}

@@ -49,6 +49,14 @@ export interface DatabaseBucketBackupOptions {
   log?: (line: string) => void;
   /** Told about every run, so a backup monitor can see the gaps. */
   record?: (status: 'ok' | 'fail', detail: string) => void;
+  /**
+   * Told when the bucket already holds a good backup this process did not
+   * take: at start, and on a check that finds the newest one still fresh
+   * (note #1082). Without it a restart forgot the last backup until the next
+   * one was due, a whole interval later, so a copy's pulse said
+   * `backupAgeHours: null` minutes after "backed up just now".
+   */
+  found?: (at: Date) => void;
 }
 
 export interface DatabaseBucketBackupResult {
@@ -171,11 +179,15 @@ export class DatabaseBucketBackup {
    * the bucket cannot be listed, in which case a backup is taken anyway).
    */
   async newestAgeMs(): Promise<number | null> {
+    const newest = await this.newestAt();
+    return newest ? (this.options.now?.() ?? new Date()).getTime() - newest.getTime() : null;
+  }
+
+  /** When the newest backup in the bucket was taken, or null (none, or the bucket cannot be listed). */
+  async newestAt(): Promise<Date | null> {
     try {
       const times = (await this.listKeys()).map(backupKeyTime).filter((t): t is Date => t !== null);
-      if (times.length === 0) return null;
-      const newest = Math.max(...times.map((t) => t.getTime()));
-      return (this.options.now?.() ?? new Date()).getTime() - newest;
+      return times.length === 0 ? null : new Date(Math.max(...times.map((t) => t.getTime())));
     } catch {
       return null;
     }
@@ -192,9 +204,13 @@ export class DatabaseBucketBackup {
    */
   start(intervalMs: number, firstAfterMs: number, checkEveryMs = 30 * 60_000): void {
     const tick = async () => {
-      const age = await this.newestAgeMs();
+      const newest = await this.newestAt();
+      const age = newest ? (this.options.now?.() ?? new Date()).getTime() - newest.getTime() : null;
       // A little slack, so a check that lands a minute early does not wait a whole round.
-      if (age !== null && age < intervalMs - Math.min(5 * 60_000, intervalMs / 10)) return;
+      if (newest && age !== null && age < intervalMs - Math.min(5 * 60_000, intervalMs / 10)) {
+        this.options.found?.(newest);
+        return;
+      }
       try {
         const result = await this.run();
         const line = `${result.key}: ${result.tables} tables, ${result.bytes} bytes (${result.gzippedBytes} gzipped), ${result.kept} kept`
@@ -207,6 +223,9 @@ export class DatabaseBucketBackup {
         this.options.record?.('fail', message);
       }
     };
+    // Say at once what the bucket already holds, so the health page and the
+    // pulse know the last backup from the first minute, not the first check.
+    if (this.options.found) void this.newestAt().then((at) => { if (at) this.options.found?.(at); });
     setTimeout(() => { void tick(); }, firstAfterMs).unref();
     setInterval(() => { void tick(); }, Math.min(checkEveryMs, intervalMs)).unref();
   }

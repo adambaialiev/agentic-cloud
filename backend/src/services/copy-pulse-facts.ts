@@ -9,8 +9,11 @@ import type { CopyPulseFacts } from './copy-pulse-sender.js';
  * database. Counts only: no names, no messages, no addresses.
  *
  *   people            members of a workplace, and people waiting to join one
- *   agentsByCli       agents per CLI
- *   turnsLast24hByCli agent replies in chats over the last 24 hours, per CLI
+ *   agentsByCli       agents per CLI: the people's agents, as the roster
+ *                     lists them, so never a workplace-wide record such as
+ *                     the Chief of Staff (note #1082)
+ *   turnsLast24hByCli those agents' replies in chats over the last 24 hours,
+ *                     per CLI
  *   machineHours24h   hours agents spent working in turns over the last 24
  *                     hours (the work ledger keeps UTC days: today's whole,
  *                     yesterday's in proportion to the part inside the window)
@@ -37,7 +40,7 @@ export interface CopyPulseFactsDeps {
 const zero = (): CopyCounts => ({ claude: 0, codex: 0, opencode: 0 });
 const cliOf = (value: unknown): CopyCli | null => (COPY_CLIS.includes(value as CopyCli) ? value as CopyCli : null);
 
-interface AgentDoc { cli?: unknown; deletedAt?: unknown; removedAt?: unknown }
+interface AgentDoc { cli?: unknown; purpose?: unknown; deletedAt?: unknown; removedAt?: unknown }
 
 export async function collectCopyPulseFacts(deps: CopyPulseFactsDeps): Promise<CopyPulseFacts> {
   const now = deps.now?.() ?? new Date();
@@ -46,10 +49,17 @@ export async function collectCopyPulseFacts(deps: CopyPulseFactsDeps): Promise<C
   // Agents, and which CLI each one runs.
   const agentsByCli = zero();
   const cliByAgent = new Map<string, CopyCli>();
+  // The Chief of Staff (purpose workspace-recap) and the briefing machine
+  // are no one's agents: the roster leaves out every record with a purpose,
+  // and so does the count. A copy's first pulse said claude: 1 before any
+  // agent existed (note #1082).
+  const workplaceRecords = new Set<string>();
   for (const row of deps.db.prepare('SELECT user_id, doc FROM users').iterate() as IterableIterator<{ user_id: string; doc: string }>) {
     const profile = deserializeDoc<{ telegram?: { agents?: Record<string, AgentDoc> } }>(row.doc);
     for (const [agentId, agent] of Object.entries(profile.telegram?.agents ?? {})) {
-      if (!agent || agent.deletedAt || agent.removedAt) continue;
+      if (!agent) continue;
+      if (agent.purpose) { workplaceRecords.add(`${row.user_id}/${agentId}`); continue; }
+      if (agent.deletedAt || agent.removedAt) continue;
       const cli = cliOf(agent.cli) ?? 'claude';
       agentsByCli[cli] += 1;
       cliByAgent.set(`${row.user_id}/${agentId}`, cli);
@@ -63,7 +73,7 @@ export async function collectCopyPulseFacts(deps: CopyPulseFactsDeps): Promise<C
     + " WHERE json_extract(doc, '$.role') = 'agent' AND json_extract(doc, '$.at') >= ?"
     + ' GROUP BY user_id, agent_id',
   ).all(since.toISOString()) as Array<{ user_id: string; agent_id: string; n: number }>;
-  for (const row of turns) turnsLast24hByCli[cliByAgent.get(`${row.user_id}/${row.agent_id}`) ?? 'claude'] += row.n;
+  for (const row of turns) if (!workplaceRecords.has(`${row.user_id}/${row.agent_id}`)) turnsLast24hByCli[cliByAgent.get(`${row.user_id}/${row.agent_id}`) ?? 'claude'] += row.n;
 
   // Working time: today's row whole, yesterday's in proportion.
   const today = now.toISOString().slice(0, 10);

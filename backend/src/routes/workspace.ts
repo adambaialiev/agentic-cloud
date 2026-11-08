@@ -13057,7 +13057,7 @@ self.addEventListener('activate', (event) => {
       res.status(403).json({ error: 'Only an admin can upgrade this Agentic Cloud.' });
       return null;
     }
-    return { upgrade: deps.copyUpgrade, by: auth.profile.displayName || 'An admin' };
+    return { upgrade: deps.copyUpgrade, by: auth.profile.displayName || 'An admin', userId: auth.userId };
   };
   const copyUpgradeAnswer = async (res: Response, run: () => Promise<unknown>) => {
     try {
@@ -13071,13 +13071,20 @@ self.addEventListener('activate', (event) => {
   router.get('/api/copy/upgrade', async (req, res) => {
     const ok = await copyUpgradeAdmin(req, res);
     if (!ok) return;
-    return copyUpgradeAnswer(res, () => ok.upgrade.state());
+    return copyUpgradeAnswer(res, () => ok.upgrade.state(ok.userId));
+  });
+  // The admin's own forgotten Claude sign-in, cancelled from the upgrade
+  // card (note #1082); only ever the asker's own.
+  router.post('/api/copy/upgrade/cancel-sign-in', async (req, res) => {
+    const ok = await copyUpgradeAdmin(req, res);
+    if (!ok) return;
+    return copyUpgradeAnswer(res, () => ok.upgrade.cancelSignIn(ok.userId));
   });
   router.post('/api/copy/upgrade', async (req, res) => {
     const ok = await copyUpgradeAdmin(req, res);
     if (!ok) return;
     const drill = req.body?.drill === 'backend' ? 'backend' : req.body?.drill === 'rollback' ? 'rollback' : null;
-    return copyUpgradeAnswer(res, () => ok.upgrade.start({ version: String(req.body?.version ?? ''), drill, by: ok.by }));
+    return copyUpgradeAnswer(res, () => ok.upgrade.start({ version: String(req.body?.version ?? ''), drill, by: ok.by, userId: ok.userId }));
   });
   router.post('/api/copy/upgrade/carry-on', async (req, res) => {
     const ok = await copyUpgradeAdmin(req, res);
