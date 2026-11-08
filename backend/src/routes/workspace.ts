@@ -5563,6 +5563,8 @@ self.addEventListener('activate', (event) => {
         }
         return recapChat.noticeEvents({ userId, orgId, events });
       },
+      // A new copy is also one line in the ops Telegram chat (note #1083).
+      ...(deps.opsNotifier ? { notifyOps: deps.opsNotifier } : {}),
       log: (line) => console.info(line),
     });
   }
