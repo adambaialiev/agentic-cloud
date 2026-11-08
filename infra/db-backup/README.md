@@ -1,5 +1,7 @@
 # Database backup (`ia-backend`)
 
+> **History.** The Hetzner box this describes was deleted on 8 Nov 2026 (note #1072); see `docs/control-plane-on-fly.md` for where each piece runs now.
+
 > **Being replaced (note #1032).** The backend's own `database-bucket-backup`
 > now writes the database to Cloudflare R2, off Fly, every 6 hours
 > (`docs/control-plane-on-fly.md`). This job and the Storage Box keep running
