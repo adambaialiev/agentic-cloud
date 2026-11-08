@@ -59,7 +59,6 @@ const PLAIN_CLICK_CEILING = new Map<string, number>([
   ['scripts/verify-workspace-react-home.mts', 5],
   ['scripts/verify-workspace-react-join.mts', 5],
   ['scripts/verify-workspace-react-knowledge.mts', 6],
-  ['scripts/verify-workspace-react-notes.mts', 25],
   ['scripts/verify-workspace-react-repos.mts', 13],
   ['scripts/verify-workspace-react-seat.mts', 40],
   ['scripts/verify-workspace-runtime-split.mts', 2],

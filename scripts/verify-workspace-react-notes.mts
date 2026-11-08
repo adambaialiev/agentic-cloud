@@ -185,6 +185,17 @@ const browser = await puppeteer.launch({
 });
 try {
   const page$ = await browser.newPage();
+  // A picture is decoded when its bytes have ARRIVED, which is later than the
+  // <img> appearing and later still on a loaded machine: three checks here
+  // asked naturalWidth the instant the element existed and failed 2 runs in 6
+  // with three copies running (note #1075). Wait for the state, then read it.
+  const decoded = async (selector: string) => {
+    await page$.waitForFunction((target: string) => {
+      const image = document.querySelector<HTMLImageElement>(target);
+      return Boolean(image && image.complete && image.naturalWidth > 0);
+    }, { timeout: 15_000 }, selector).catch(() => {});
+    return page$.$eval(selector, (node) => (node as HTMLImageElement).naturalWidth > 0).catch(() => false);
+  };
   await page$.setViewport({ width: 420, height: 860, deviceScaleFactor: 2 });
   page$.on('pageerror', (error) => check('no page error', false, String(error)));
   const consoleErrors: string[] = [];
@@ -321,7 +332,7 @@ try {
   await shot('home');
 
   // 3. The notes screen, and the archive behind its door.
-  await page$.click('#notes .crow:nth-last-child(2)');
+  await tap(page$, '#notes .crow:nth-last-child(2)');
   await page$.waitForSelector('#screenNotes #notesList .crow', { timeout: 10_000 });
   check('the notes screen leaves nothing off',
     (await page$.$$('#notesList .crow')).length === 8, String((await page$.$$('#notesList .crow')).length));
@@ -354,7 +365,7 @@ try {
     Math.abs(chipBox.word - chipBox.name) < 1.5 && chipBox.tap >= 44, JSON.stringify(chipBox));
   await shot('filter-all');
 
-  await page$.click('#notesFilter .chip[data-filter="working"]');
+  await tap(page$, '#notesFilter .chip[data-filter="working"]');
   await page$.waitForFunction(() => document.querySelectorAll('#notesList .crow').length === 1, { timeout: 10_000 });
   check('a chip narrows the list to that state, and the subtitle counts it',
     (await text('#notesList .crow .name')) === 'Filler note 1'
@@ -372,7 +383,7 @@ try {
   check('the chosen state is written into the address',
     new URL(page$.url()).searchParams.get('state') === 'working', page$.url());
   const narrowedBack = async (how: string, back: () => Promise<unknown>) => {
-    await page$.click('#notesList a.crow[href]');
+    await tap(page$, '#notesList a.crow[href]');
     await page$.waitForSelector('#screenNote #noteBody', { timeout: 10_000 });
     await back();
     await page$.waitForSelector('#screenNotes #notesFilter', { timeout: 10_000 });
@@ -382,9 +393,9 @@ try {
       && new URL(page$.url()).searchParams.get('state') === 'working',
       `${await text('#notesFilter .chip.here')} / ${page$.url()}`);
   };
-  await narrowedBack('header', () => page$.click('#pageBack'));
+  await narrowedBack('header', () => tap(page$, '#pageBack'));
   await narrowedBack('browser', () => page$.goBack());
-  await page$.click('#notesFilter .chip[data-filter="all"]');
+  await tap(page$, '#notesFilter .chip[data-filter="all"]');
   await page$.waitForFunction(() => document.querySelectorAll('#notesList .crow').length === 8, { timeout: 10_000 });
   check('All gives every note back',
     (await text('#notesSub')) === '8 notes, shared with the workplace and its agents.', await text('#notesSub'));
@@ -408,7 +419,7 @@ try {
   await page$.waitForFunction(() => document.querySelectorAll('#notesList .crow').length === 8, { timeout: 10_000 });
   check('…and are back with the list they narrow', Boolean(await page$.$('#notesFilter')));
 
-  await page$.click('#notesArchiveDoor button');
+  await tap(page$, '#notesArchiveDoor button');
   await page$.waitForSelector('#screenNoteArchive #noteArchiveList .crow', { timeout: 10_000 });
   check('the archive is its own screen, fetched on the tap',
     page$.url() === `${ORIGIN}/notes/archive`
@@ -418,7 +429,7 @@ try {
     await text('#noteArchiveSub'));
   const heads: Record<string, string> = { archive: await headShape(page$) };
   await shot('archive');
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenNotes', { timeout: 10_000 });
 
   // Note #284: the row is a link, and a plain tap on it must still belong to
@@ -426,13 +437,13 @@ try {
   // different app — so a marker planted on the window has to survive the tap.
   await page$.evaluate(() => { (window as unknown as { rowTap?: number }).rowTap = 1; });
   const rowHref = await page$.$eval('#notesList a.crow[href]', (node) => node.getAttribute('href'));
-  await page$.click('#notesList a.crow[href]');
+  await tap(page$, '#notesList a.crow[href]');
   await page$.waitForSelector('#screenNote', { timeout: 10_000 });
   check('a tap on a row is followed by the shell, not by a page load',
     page$.url() === `${ORIGIN}${rowHref}`
     && await page$.evaluate(() => (window as unknown as { rowTap?: number }).rowTap === 1),
     `${page$.url()} / ${rowHref}`);
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenNotes', { timeout: 10_000 });
 
   // 4. One note whole: the words, the hands, the margin, the files.
@@ -522,7 +533,7 @@ try {
 
   // 5. The handoff, as a leaf that keeps the note's address underneath it.
   const beforeSend = await page$.evaluate(() => history.length);
-  await page$.click('#noteHands .hand .handpick');
+  await tap(page$, '#noteHands .hand .handpick');
   await page$.waitForSelector('#screenNoteSend', { timeout: 10_000 });
   check('the message is written already, and names the note by number',
     (await page$.$eval('#noteSendText', (node) => (node as HTMLTextAreaElement).value))
@@ -548,7 +559,7 @@ try {
       && sendAction.lighterThanForm && sendAction.headerActions === 0,
     JSON.stringify(sendAction));
   await shot('send');
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenNote #noteBody', { timeout: 10_000 });
   check('Back closes the message and lands on the note, spending no entry',
     (await page$.evaluate(() => history.length)) === beforeSend,
@@ -577,7 +588,7 @@ try {
   await picker!.uploadFile(path.join(REPO, 'backend/assets/agent-avatars/kai.jpg'));
   await page$.waitForSelector('#noteFiles .notephoto img', { timeout: 15_000 });
   check('a photograph on a note is shown AS the photograph',
-    await page$.$eval('#noteFiles .notephoto img', (node) => (node as HTMLImageElement).naturalWidth > 0));
+    await decoded('#noteFiles .notephoto img'));
   check('…with the row of facts a plain file row carries under it',
     (await text('#noteFiles .caprow')).includes('kai.jpg'), await text('#noteFiles .caprow'));
   // Hidden again before the shot: the file input is the app's own, and a
@@ -594,7 +605,7 @@ try {
     () => document.querySelector('#noteFiles .notephoto')?.getAttribute('aria-label') === 'Open kai.jpg',
     { timeout: 10_000 },
   );
-  await page$.click('#noteFiles .notephoto');
+  await tap(page$, '#noteFiles .notephoto');
   await page$.waitForFunction(() => {
     const img = document.querySelector<HTMLImageElement>('#imageViewerImage');
     return Boolean(img && img.naturalWidth > 0);
@@ -619,7 +630,7 @@ try {
   const cdp = await page$.createCDPSession();
   await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: shelf });
   const beforeSave = page$.url();
-  await page$.click('#imageViewerSave');
+  await tap(page$, '#imageViewerSave');
   const landed = path.join(shelf, 'kai.jpg');
   const deadline = Date.now() + 10_000;
   while (!existsSync(landed) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 100));
@@ -695,7 +706,7 @@ try {
   // read 0.4 and 0.3 on three runs, 5-8 Nov 2026, with no error and nothing
   // over the page. The proof that it plays is the clock leaving zero (or the
   // clip reaching its end), with no media error.
-  await page$.click('#noteFiles .notevideo video');
+  await tap(page$, '#noteFiles .notevideo video');
   await page$.waitForFunction(() => {
     const video = document.querySelector<HTMLVideoElement>('#noteFiles .notevideo video');
     return Boolean(video && (video.currentTime > 0 || video.ended || video.error));
@@ -741,7 +752,7 @@ try {
     // the page out again and puts the strip back on its first slide.
     await page$.screenshot({ path: path.join(OUT, `n256-notes-${name}.png`) as `${string}.png`, clip: card, captureBeyondViewport: false });
   }
-  await page$.click('#noteFiles [aria-label="Download chat-clip.mp4"]');
+  await tap(page$, '#noteFiles [aria-label="Download chat-clip.mp4"]');
   const clipSaved = path.join(shelf, 'chat-clip.mp4');
   for (const until = Date.now() + 10_000; !existsSync(clipSaved) && Date.now() < until;) await new Promise((resolve) => setTimeout(resolve, 100));
   check('…and its Download saves the very clip that was attached, leaving the note where it was',
@@ -830,11 +841,11 @@ try {
     draftLabels.join(' | ') === 'Preview kai.jpg full screen | Preview leo.jpg full screen',
     draftLabels.join(' | '));
   await shot('composer-files');
-  await page$.click('#noteDraftFiles .notephoto');
+  await tap(page$, '#noteDraftFiles .notephoto');
   await page$.waitForSelector('#imageViewer', { timeout: 10_000 });
   check('…and the tap opens the shared viewer on the phone’s own bytes',
     (await text('#imageViewerName')) === 'kai.jpg'
-    && await page$.$eval('#imageViewerImage', (node) => (node as HTMLImageElement).naturalWidth > 0),
+    && await decoded('#imageViewerImage'),
     await text('#imageViewerName'));
   check('…with every picked photo as ONE gallery',
     (await text('#imageViewerCount')) === '1 of 2', await text('#imageViewerCount'));
@@ -877,13 +888,13 @@ try {
       `${closed.held} → ${closed.after}`);
     await cdp.detach();
   }
-  await page$.click('#imageViewerNext');
+  await tap(page$, '#imageViewerNext');
   await page$.waitForFunction(
     () => document.getElementById('imageViewerName')?.textContent === 'leo.jpg', { timeout: 10_000 },
   ).catch(() => {});
   check('the second pick is one step away, not a close and another tap',
     (await text('#imageViewerName')) === 'leo.jpg'
-    && await page$.$eval('#imageViewerImage', (node) => (node as HTMLImageElement).naturalWidth > 0),
+    && await decoded('#imageViewerImage'),
     await text('#imageViewerName'));
   await page$.keyboard.press('Escape');
   await page$.waitForFunction(() => !document.querySelector('#imageViewer'), { timeout: 10_000 });
@@ -894,7 +905,7 @@ try {
   // The ✕ sits INSIDE a block that now opens: taking a pick back off must not
   // open it on the way past.
   for (let left = 2; left > 0; left -= 1) {
-    await page$.click('#noteDraftFiles .caprow .chev');
+    await tap(page$, '#noteDraftFiles .caprow .chev');
     await page$.waitForFunction(
       (want: number) => document.querySelectorAll('#noteDraftFiles .notephoto').length === want,
       { timeout: 10_000 }, left - 1,
@@ -903,13 +914,20 @@ try {
   check('the ✕ takes a picked photo off without opening it',
     !(await page$.$('#imageViewer')) && (await page$.$$('#noteDraftFiles > *')).length === 0,
     `${(await page$.$$('#noteDraftFiles > *')).length} left`);
-  await page$.click('#saveNoteBtn');
+  await tap(page$, '#saveNoteBtn');
   await page$.waitForSelector('#screenNote #noteBody', { timeout: 10_000 });
-  check('a saved note ends on the note just created',
-    (await text('#noteTitle')) === 'Bring the drill on Thursday', await text('#noteTitle'));
+  // The body can be drawn a frame before the title is: this read the title
+  // once for the verdict and again for the message, and on a loaded machine
+  // failed while printing the right words (note #1075). Wait for the words,
+  // then judge and report the SAME reading.
+  await page$.waitForFunction(
+    () => document.getElementById('noteTitle')?.textContent === 'Bring the drill on Thursday', { timeout: 10_000 },
+  ).catch(() => {});
+  const savedTitle = await text('#noteTitle');
+  check('a saved note ends on the note just created', savedTitle === 'Bring the drill on Thursday', savedTitle);
   check('the removed Home action does not return after the composer closes',
     !(await page$.$('#pageHome')));
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenOverview', { timeout: 10_000 });
   check('…with Home’s overview still underneath it, one Back away', Boolean(await page$.$('#screenOverview')));
 
@@ -922,7 +940,7 @@ try {
   const doomed = await page$.$$eval('#notesList a.crow[href]', (nodes) => nodes
     .filter((node) => node.querySelector('.name')?.textContent?.trim() === 'Filler note 1')
     .map((node) => node.getAttribute('href'))[0] ?? '');
-  await page$.click(`#notesList a.crow[href="${doomed}"]`);
+  await tap(page$, `#notesList a.crow[href="${doomed}"]`);
   await page$.waitForSelector('#screenNote #noteActions', { timeout: 10_000 });
   const onNote = await page$.evaluate(() => history.length);
   await page$.evaluate(() => {
@@ -991,6 +1009,7 @@ try {
     (await text('#noteSub')).includes('Working by Kai'), await text('#noteSub'));
   // The picture is REAL bytes off the avatar route, not a frame around a
   // broken source: a face nobody can recognise is not a door anybody takes.
+  await decoded('#noteSub .workface img');
   const workFace = await page$.$eval('#noteSub .workface img', (node) => {
     const image = node as HTMLImageElement;
     const box = image.getBoundingClientRect();
@@ -1026,11 +1045,11 @@ try {
   check('a note an agent already holds is not offered to another one',
     Boolean(await page$.$('#noteHandsCard[hidden]')));
   await shot('working');
-  await page$.click('#noteSub .workface');
+  await tap(page$, '#noteSub .workface');
   await page$.waitForSelector('#screenAgent', { timeout: 10_000 });
   check('the face is a door: it opens the agent doing the work',
     (await text('#pageId')).includes('Kai'), await text('#pageId'));
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenNote #noteBody', { timeout: 10_000 });
   await quickNoteStorage.update(plumber.id, { claim: undefined } as never);
 
@@ -1149,10 +1168,10 @@ try {
   // Note #306: off to an agent and back, with a backend that will never answer
   // again — so anything on the screen is what the held copy put there, and a
   // screen that had lost the note would sit on the wait instead.
-  await page$.click('#noteHands .hand .handface');
+  await tap(page$, '#noteHands .hand .handface');
   await page$.waitForSelector('#screenAgent', { timeout: 10_000 });
   releasing = true;
-  await page$.click('#pageBack');
+  await tap(page$, '#pageBack');
   await page$.waitForSelector('#screenNote', { timeout: 10_000 });
   const backOn = {
     title: await text('#noteTitle'),
