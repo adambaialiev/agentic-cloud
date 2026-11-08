@@ -14,7 +14,7 @@ import type {
   WorkspaceStateAnswer,
 } from '../../../../src/shared/workspace-api.js';
 import { App } from '../../App.js';
-import { LIVE_POLL_MS } from '../../workspace/WorkspaceProvider.js';
+import { LIVE_POLL_MS, TRANSITION_POLL_MS } from '../../workspace/WorkspaceProvider.js';
 import { READ_AGAIN_MS, READ_LIMIT_MS } from '../../ui/read.js';
 import { WAIT_HOLD_MS, WAIT_QUIET_MS } from '../../ui/wait.js';
 import { WorkspaceApiError, type WorkspaceApi } from '../../api/client.js';
@@ -470,6 +470,67 @@ describe('who to ask about the note', () => {
     await waitFor(() => expect(sub().textContent).toContain('Unclaimed'));
     expect(calls.filter((call) => call.path === 'api/state')).toHaveLength(2);
     expect(calls.filter((call) => call.path === 'api/notes/12')).toHaveLength(2);
+  });
+
+  // Note #1075: with anything mid-transition (a check running, an agent
+  // being set up) the full read repeats on the same five seconds as the live
+  // tick, and lands a few milliseconds before it. The tick used to drop its
+  // whole answer when a full read had landed while it was out, so a claim
+  // could miss every tick for as long as both timers kept that order: the
+  // real-Chrome notes check saw four ticks carry the claim and the line stay
+  // Unclaimed. The full read clears the live-only claims, so this tick's are
+  // the only ones there are: they go onto the newest copy.
+  it('takes a live claim even when a full read landed while that tick was out', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const record = noteRecord({
+      number: 12, title: 'Deploys', byUser: true, authorName: 'Owner Example',
+      work: { state: 'handed', agentName: 'Kai', agentId: 'kai' },
+    });
+    let live: WorkspaceAgentsLiveAnswer = {
+      agents: [{ id: 'kai', working: true }], recaps: [], sessionLimits: [], noteClaims: [],
+    };
+    let holding = false;
+    let release: (() => void) | null = null;
+    const { calls } = openNote(
+      record,
+      workplaceState({
+        notes: [note({ number: 12, title: 'Deploys', work: record.work })],
+        agents: [
+          agent({ id: 'kai', name: 'Kai', working: true, avatarUrl: '/faces/kai.png' }),
+          // Being set up: this is what keeps the full read on its five-second turn.
+          agent({ id: 'ada', name: 'Ada', status: 'setting-up' }),
+        ],
+      }),
+      {
+        'GET api/agents/live': () => {
+          if (!holding) return live;
+          const answer = live;
+          return new Promise((resolve) => { release = () => resolve(answer); });
+        },
+        'GET api/notes/12': () => ({ note: record }),
+      },
+    );
+    await screen.findByRole('heading', { name: 'Deploys' });
+    expect(sub().textContent).toContain('Handed to Kai');
+
+    live = {
+      ...live,
+      noteClaims: [{ id: record.id, work: { state: 'working', agentName: 'Kai', agentId: 'kai', expiresAt: 'later' } }],
+    };
+    holding = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(LIVE_POLL_MS + 10); });
+    await waitFor(() => expect(release).not.toBeNull());
+    // While the tick is out, the full read goes out and comes back.
+    const reads = calls.filter((call) => call.path === 'api/state').length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(TRANSITION_POLL_MS + 10); });
+    await waitFor(() => expect(calls.filter((call) => call.path === 'api/state').length).toBeGreaterThan(reads));
+    holding = false;
+    const ticks = calls.filter((call) => call.path === 'api/agents/live').length;
+    await act(async () => { release!(); });
+    await waitFor(() => expect(sub().textContent).toContain('Working by Kai'));
+    // From THAT tick: the next one is no rescue in a browser, where it meets
+    // the same full read in the same order.
+    expect(calls.filter((call) => call.path === 'api/agents/live')).toHaveLength(ticks);
   });
 
   it('names a teammate’s agent without a face: there is no screen to land on', async () => {

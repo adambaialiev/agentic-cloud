@@ -336,6 +336,15 @@ export function WorkspaceProvider({ api, sessionId, initialOrgId, children }: {
             agents: result.agents,
             noteClaims: live.noteClaims === undefined ? current.noteClaims : live.noteClaims,
           });
+        } else if (live.noteClaims !== undefined && loadedRef.current) {
+          // A full read landed while this tick was out. Its own answer is
+          // newer for everything it carries, so the tick's rows are dropped;
+          // but it CLEARS the note claims (a live-only fact), so this tick's
+          // claims are the only ones there are, and they go onto it. With
+          // anything mid-transition the full read runs on the same five
+          // seconds as this tick and lands just before it, so dropping them
+          // could miss a claim on every tick for minutes (note #1075).
+          commit({ ...loadedRef.current, noteClaims: live.noteClaims });
         }
       }
     } catch (error) {

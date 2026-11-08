@@ -33,7 +33,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { settleAfterShot } from './browser-settle.mjs';
+import { settleAfterShot, tap } from './browser-settle.mjs';
 import { workspaceRoutes } from '../backend/src/routes/workspace.js';
 import { workspaceRootRoutes } from '../backend/src/routes/workspace-root.js';
 import type { RouteDeps } from '../backend/src/routes/deps.js';
@@ -220,7 +220,13 @@ try {
   });
   page.on('response', (response) => {
     const where = `${response.status()} ${new URL(response.url()).pathname}`;
-    if (response.status() >= 400 && !expected(where)) consoleErrors.push(where);
+    if (response.status() >= 400 && !expected(where)) {
+      // Which request and what the server said, so a red names its cause
+      // rather than only a status (note #1075: a lone 403 on this route under
+      // load said nothing else).
+      const at = consoleErrors.push(`${where} (${response.request().method()})`) - 1;
+      void response.text().then((body) => { consoleErrors[at] += ` ${body.slice(0, 160)}`; }).catch(() => {});
+    }
   });
   const view = (name: string) => page.screenshot({ path: path.join(OUT, `n233-${name}.png`) as `${string}.png` });
   const shot = async (name: string) => {
@@ -257,14 +263,14 @@ try {
   // and previously let microphone=() pass every voice check.
   const allowed = await page.evaluate('document.featurePolicy.allowsFeature("microphone")') as boolean;
   check('the delivered page policy allows this origin to request a microphone', allowed);
-  await page.click('.chatinput .voicebtn');
+  await tap(page, '.chatinput .voicebtn');
   await page.waitForFunction(() => document.querySelector('.voicereview-stop') || document.querySelector('.voicereview-error'));
   check('a mic tap records through native getUserMedia after browser permission is granted',
     Boolean(await page.$('.voicereview-stop')));
   await view('native-microphone');
-  await page.click('.voicereview-back');
+  await tap(page, '.voicereview-back');
   await installMicrophone(page);
-  await page.click('#agentChatText');
+  await tap(page, '#agentChatText');
   await page.type('#agentChatText', 'Tell Ada');
   const mic = await page.$('.chatinput .voicebtn');
   check('the chat composer has a microphone', Boolean(mic));
@@ -273,7 +279,7 @@ try {
   await view('composer-idle');
 
   // 3. Record. The button turns into Stop and the wave appears.
-  await page.click('.chatinput .voicebtn');
+  await tap(page, '.chatinput .voicebtn');
   // Either the wave appears or the app says why it could not; waiting only for
   // the wave turns a refusal into an unexplained timeout.
   await page.waitForFunction(
@@ -291,7 +297,8 @@ try {
     await page.evaluate(() => document.activeElement?.id !== 'agentChatText'));
   const modal = await page.$eval('.voicereview', (node) => {
     const rect = node.getBoundingClientRect();
-    return { modal: node.matches(':modal'), x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    // Whole pixels: a dialog still finishing its entrance reads 859.99997 (note #1075).
+    return { modal: node.matches(':modal'), x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
   });
   check('chat dictation fills the phone and makes the conversation inert',
     modal.modal && modal.x === 0 && modal.y === 0 && modal.width === 420 && modal.height === 860, JSON.stringify(modal));
@@ -328,7 +335,23 @@ try {
   // it failed 4 of 4 at 7 or 8. A third of the samples still tells a moving
   // strip from a frozen one. Moving WITH the sound is the fall-to-quiet check
   // below, not this one.
-  check('the strip is alive rather than a still picture', distinct >= Math.ceil(drawn.length / 3), `${distinct} distinct frames of ${drawn.length}`);
+  //
+  // And since note #1075 it is a STATE, not a rate. A third of twelve still
+  // asked how many frames a starved Chrome paints in a second: with four
+  // checks on two busy cores it read 3 of 12. So the sampling carries on,
+  // at the same pace, until four different paints have been seen, for up to
+  // sixty samples (about six seconds plus the reads). A still picture never
+  // gets past one however long it is watched; a living strip gets to four.
+  const paints = new Set(drawn.map((row) => row.join(',')));
+  let watched = loud.length;
+  while (paints.size < 4 && watched < 60) {
+    const row = await scales();
+    if (row.length > 0 && row.every((value) => Number.isFinite(value))) paints.add(row.join(','));
+    watched += 1;
+    await new Promise((resolve) => setTimeout(resolve, 90));
+  }
+  check('the strip is alive rather than a still picture', paints.size >= 4,
+    `${paints.size} distinct frames in ${watched} samples (${distinct} in the first ${drawn.length})`);
   await view('composer-recording-loud');
   // The bar on its own, at the size a thumb sees it: a full-page shot puts the
   // one control this note is about into forty pixels of a phone screen.
@@ -369,7 +392,7 @@ try {
 
   // 5. Stop: the recording goes up as real audio and the words come back into
   //    the box, after the ones already typed.
-  await page.click('.voicereview-stop');
+  await tap(page, '.voicereview-stop');
   await page.waitForFunction(
     () => (document.getElementById('agentChatText') as HTMLTextAreaElement | null)?.value.includes('Friday'),
     { timeout: 20_000 },
@@ -390,7 +413,7 @@ try {
     return { width: rect.width, height: rect.height, font: getComputedStyle(node).fontSize, value: (node as HTMLTextAreaElement).value };
   });
   check('the transcript is a page of editable text', editor.height > 500 && editor.font === '22px' && editor.value === composed, JSON.stringify(editor));
-  await page.click('.voicereview-text');
+  await tap(page, '.voicereview-text');
   await page.keyboard.down('Control');
   await page.keyboard.press('KeyA');
   await page.keyboard.up('Control');
@@ -403,13 +426,13 @@ try {
   //     reaches the same draft, and a picture must open ABOVE the native
   //     modal rather than in the document underneath its top layer.
   const choose = page.waitForFileChooser();
-  await page.click('.voicereview-attach');
+  await tap(page, '.voicereview-attach');
   await (await choose).accept([path.join(REPO, 'public/away/walk.jpg')]);
   await page.waitForSelector('.voicereview-draft:not([hidden]) .chatdraftitem');
   const picked = await page.$eval('.voicereview-draft .chatdraftitem .name', (node) => node.textContent ?? '');
   check('files can be attached without leaving the review', picked === 'walk.jpg', picked);
   await view('review-with-file');
-  await page.click('.voicereview-draft .chatdraftopen');
+  await tap(page, '.voicereview-draft .chatdraftopen');
   await page.waitForSelector('#imageViewer');
   const preview = await page.$eval('#imageViewer', (node) => {
     const box = node.getBoundingClientRect();
@@ -445,7 +468,7 @@ try {
     window.dispatchEvent(new Event('resize'));
     const dialog = document.querySelector('.voicereview').getBoundingClientRect();
     const send = document.querySelector('.voicereview-actions').getBoundingClientRect();
-    window.__voiceGeometry = { top: dialog.top, height: dialog.height, sendBottom: send.bottom };
+    window.__voiceGeometry = { top: Math.round(dialog.top), height: Math.round(dialog.height), sendBottom: Math.round(send.bottom) };
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: actual });
     window.dispatchEvent(new Event('resize'));
   })()`);
@@ -457,8 +480,18 @@ try {
   await view('review-desktop');
   await page.setViewport({ width: 420, height: 860, deviceScaleFactor: 2 });
   await page.waitForFunction(() => document.querySelector('.voicereview')?.getBoundingClientRect().height === window.innerHeight);
-  await page.click('.voicereview-actions .primary');
+  await tap(page, '.voicereview-actions .primary');
   await page.waitForSelector('.voicereview', { hidden: true });
+  // The dialog closes on the press; the send is a request still on its way.
+  // Reading the fake's list the moment the dialog was gone read [] on a
+  // loaded machine, 1 round in 20 (note #1075). Wait for the request to land,
+  // then for the composer to clear (the send's own answer), then count, so
+  // "exactly once" is still counted after the answer rather than before it.
+  for (const until = Date.now() + 10_000; sentMessages.length === 0 && Date.now() < until;) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await page.waitForFunction(() => (document.getElementById('agentChatText') as HTMLTextAreaElement | null)?.value === '', { timeout: 10_000 })
+    .catch(() => {});
   check('Send delivers the corrected words exactly once and returns to chat',
     sentMessages.length === 1 && sentMessages[0] === 'Tell Ada: ship it on Monday.\nPlease check the mobile version first.', JSON.stringify(sentMessages));
   check('the file picked in the review travels with those words',
@@ -472,10 +505,16 @@ try {
   //    covered by scripts/verify-voice-on-a-note.mts. What is worth proving
   //    here is only that the two screens really do share the one recorder.
   // Back to a personal account: its Home is the overview this step needs.
+  // Off the chat FIRST: it polls its transcript with ?org= every few seconds,
+  // and a poll landing after the membership is gone is answered 403 "You do
+  // not belong to this workplace", which the console check then reports. Under
+  // load that gap was caught 1 run in 10 (note #1075). about:blank stops every
+  // poll before anything changes.
+  await page.goto('about:blank');
   await orgStorage.removeMember(voiceOrg.orgId, me.userId);
   await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#screenOverview #newNoteBtn', { timeout: 15_000 });
-  await page.click('#newNoteBtn');
+  await tap(page, '#newNoteBtn');
   await page.waitForSelector('#screenNoteNew #noteText', { timeout: 15_000 });
   // The recording is still paid by a workplace, so the account rejoins one
   // before it speaks.
@@ -483,13 +522,13 @@ try {
   await installMicrophone(page);
   await page.type('#noteText', 'Bring the drill on Thursday.\nAsk about the gate.\nThe code is on the fridge.');
   check('a note is dictated into too', Boolean(await page.$('.voicefield > #noteText')));
-  await page.click('#screenNoteNew .voicebtn');
+  await tap(page, '#screenNoteNew .voicebtn');
   await page.waitForSelector('dialog.voicereview[open]', { timeout: 15_000 });
   const noteRecorder = await page.$eval('dialog.voicereview', (node) => node.textContent ?? '');
   check('a note opens the same full-screen recorder, in its own words',
     noteRecorder.includes('Voice note') && !noteRecorder.includes('Voice message'), noteRecorder.slice(0, 60));
   await shot('note-composer');
-  await page.click('button[aria-label="Stop recording"]');
+  await tap(page, 'button[aria-label="Stop recording"]');
   await page.waitForFunction(
     () => (document.querySelector('.voicereview-text') as HTMLTextAreaElement | null)?.value.includes('Friday'),
     { timeout: 20_000 },
