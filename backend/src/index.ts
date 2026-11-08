@@ -179,6 +179,7 @@ import { FlySandboxClient } from './services/fly-sandbox-client.js';
 import { FlyClient } from './services/fly-client.js';
 import { CopyPeerRepin } from './services/copy-peer-repin.js';
 import { ensureCopyUpgrader, upgraderAppName } from './services/copy-upgrader.js';
+import { platformAppNames } from './services/platform-apps.js';
 import { createCopyUpgrade, s3UpgradeBucket } from './services/copy-upgrade.js';
 import { SmtpMailSender, SmtpWorkspaceVerificationEmailSender, createSmtpTransport, smtpSettingsFromEnv } from './services/smtp-mail.js';
 import {
@@ -1922,6 +1923,15 @@ if (flySandboxClient) {
     ),
     // A copy's upgrader app (note #1008) is the installer's, not an agent's.
     skipAppNames: [FLY_IMAGE_APP, ...(PRIVATE_COPY && copyAppPrefix ? [upgraderAppName(copyAppPrefix)] : [])],
+    // The platform's own control plane (note #1070): this backend's app and
+    // its siblings by role (ia-git, ia-ci… / <prefix>-git, <prefix>-router…),
+    // learned from FLY_APP_NAME so production and every copy agree. Never
+    // walked, stopped, deleted or alerted on.
+    platformAppNames: platformAppNames({
+      ownAppName: process.env.FLY_APP_NAME,
+      imageApp: FLY_IMAGE_APP,
+      extra: parseCsvEnv('FLY_PLATFORM_APPS'),
+    }),
     // Record-allowlist ownership (byo-fly-design): the sweep walks only apps
     // an agent or deployment record claims; anything else is reported, never
     // touched — the posture that has to hold before any client Fly org.

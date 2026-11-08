@@ -216,6 +216,14 @@ export interface FlyIdleReaperDeps {
   /** App slugs to never touch (e.g. the machine-image registry app). */
   skipAppNames?: Iterable<string>;
   /**
+   * The platform's own control-plane apps (note #1070, `platform-apps.ts`):
+   * the backend, its code host, CI, the image registry. In the reaper's own
+   * org these are never probed, stopped, deleted or reported, whatever any
+   * record says; the journal names them once per change instead. A client
+   * org's app of the same name is that client's and is treated as usual.
+   */
+  platformAppNames?: Iterable<string>;
+  /**
    * App slugs the deployment records claim (DeploymentStorage.listAll →
    * appName). Deployment-shaped apps are never walked either way; this feeds
    * only the unrecorded-app report, so an `iapp-…` name nothing claims is
@@ -433,7 +441,8 @@ interface AlertableUnrecordedApp {
  * operator's question either way, not a machine to stop on a name's evidence. The orphan
  * corroboration above therefore applies only to unattributed machines INSIDE
  * claimed apps (a provision retry's extra machine); whole unclaimed apps are
- * the report's job. `skipAppNames` still excludes the shared machine-image app.
+ * the report's job. `skipAppNames` still excludes the shared machine-image app,
+ * and `platformAppNames` the platform's own control plane in its own org.
  */
 export class FlyIdleReaper {
   private readonly idleMs: number;
@@ -459,6 +468,9 @@ export class FlyIdleReaper {
   private readonly now: () => number;
   private readonly bootedAt: number;
   private readonly skipAppNames: Set<string>;
+  private readonly platformAppNames: Set<string>;
+  /** The control-plane apps last named in the journal, to log only changes. */
+  private loggedPlatformApps = '';
   private timer?: ReturnType<typeof setInterval>;
   private running = false;
 
@@ -516,6 +528,7 @@ export class FlyIdleReaper {
     this.bootedAt = this.now();
     this.prevSweepAt = this.bootedAt;
     this.skipAppNames = new Set(deps.skipAppNames ?? []);
+    this.platformAppNames = new Set(deps.platformAppNames ?? []);
   }
 
   start(): void {
@@ -771,10 +784,19 @@ export class FlyIdleReaper {
       let orphansStopped = 0;
       /** Every sandbox id this sweep actually laid eyes on, for pruning. */
       const seenSandboxIds = new Set<string>();
+      /** Control-plane apps this sweep recognised and left alone. */
+      const platformAppsSeen: string[] = [];
 
       for (const { app, orgSlug, flyClient } of listedApps) {
         const appName = app.name?.trim();
         if (!appName || this.skipAppNames.has(appName)) {
+          continue;
+        }
+        // The platform itself (note #1070): ahead of every branch that could
+        // walk, stop, delete or report an app, so no record can ever make the
+        // reaper act on the backend, its code host or its CI.
+        if (orgSlug === this.deps.orgSlug && this.platformAppNames.has(appName)) {
+          platformAppsSeen.push(appName);
           continue;
         }
         // A workplace's messaging machine (note #608) belongs to the ORG, not
@@ -1007,6 +1029,13 @@ export class FlyIdleReaper {
         });
       }
 
+      const platformLine = [...platformAppsSeen].sort().join(', ');
+      if (platformLine !== this.loggedPlatformApps) {
+        this.loggedPlatformApps = platformLine;
+        if (platformLine) {
+          console.log(`[FlyIdleReaper] control-plane apps, never touched: ${platformLine}`);
+        }
+      }
       await this.reportUnrecordedApps(unrecordedApps, now);
       if (auditPins) {
         this.lastPinAuditAt = now;

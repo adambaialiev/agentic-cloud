@@ -347,3 +347,22 @@ record names. Unlike a copy's pass, production's **never restarts an awake
 machine**: it moves each one when it next sleeps, retrying every 10 minutes
 for a day. For a machine awake at the move, the new address is added to its
 live firewall by hand, so it is reachable without a restart.
+
+## After the move: the idle reaper knows the control plane (note #1070, 8 Nov 2026)
+
+On the nights of 7 and 8 Nov, the ops bot alerted "UNCLAIMED FLY APP RUNNING" for
+ia-git, ia-ci and ia-control. No agent or deployment record names them, so
+the reaper's ownership test listed them as claimed by no record. They are
+now recognised by `backend/src/services/platform-apps.ts`. The backend reads
+its own app from `FLY_APP_NAME` (`ia-control`). That name is
+`<family>-<role>`, and every sibling is the same family with another fixed
+role: `ia-git`, `ia-ci`, `ia-ci-builder`, `ia-ci-jobs`, `ia-machine-images`.
+A private copy's `<prefix>-backend` gives `<prefix>-git`, `-router`, `-mx`,
+`-media`, `-backups`, `-images` and `-upgrader` by the same rule. In the
+reaper's own org these apps are never listed, probed, stopped, deleted or
+alerted on, whatever a record says. The journal names them once per change:
+`[FlyIdleReaper] control-plane apps, never touched: …`. An app outside the
+rule (acc-updates, say) can be added with `FLY_PLATFORM_APPS` (comma-separated)
+in `backend.env`. A new control-plane role is added to `CONTROL_PLANE_ROLES`;
+every role must contain a letter that is not hex, so it can never match an
+agent app (`ia-` plus 16 hex). A test checks this.

@@ -6,6 +6,7 @@ import {
   type FlyIdleReaperAlertStore,
 } from '../../services/fly-idle-reaper.js';
 import { FlyApiError } from '../../services/fly-client.js';
+import { CONTROL_PLANE_ROLES, controlPlaneFamily, platformAppNames } from '../../services/platform-apps.js';
 import { InMemoryUserStorage } from '../../services/user-storage.js';
 
 const NOW = Date.parse('2026-07-12T12:00:00.000Z');
@@ -107,6 +108,7 @@ function makeReaper(args: {
   cliInstallInFlight?: (sandboxId: string) => boolean;
   scheduleHoldsAwake?: (userId: string, agentId: string) => boolean;
   recoveryReady?: Promise<unknown>;
+  platformAppNames?: Iterable<string>;
 }) {
   return new FlyIdleReaper({
     flyClient: args.flyClient as never,
@@ -144,6 +146,7 @@ function makeReaper(args: {
     ...(args.cliInstallInFlight ? { cliInstallInFlight: args.cliInstallInFlight } : {}),
     ...(args.scheduleHoldsAwake ? { scheduleHoldsAwake: args.scheduleHoldsAwake } : {}),
     ...(args.recoveryReady ? { recoveryReady: args.recoveryReady } : {}),
+    ...(args.platformAppNames ? { platformAppNames: args.platformAppNames } : {}),
   });
 }
 
@@ -1703,5 +1706,143 @@ describe('FlyIdleReaper retired apps (note #792)', () => {
     await makeReaper({ flyClient, userStorage }).runOnce();
 
     expect(flyClient.deleteApp).not.toHaveBeenCalled();
+  });
+});
+
+describe('FlyIdleReaper control-plane apps (note #1070)', () => {
+  // The night of 7 to 8 Nov 2026: ia-git, ia-ci and ia-control — the control
+  // plane the Hetzner retirement built — were reported every night as
+  // "UNCLAIMED FLY APP RUNNING", because no agent or deployment record names them.
+  const CONTROL_PLANE = ['ia-control', 'ia-git', 'ia-ci', 'ia-ci-builder', 'ia-ci-jobs'];
+  const ORPHAN = 'ia-0123456789abcdef';
+  const longRunning = (id: string) => ({
+    id, state: 'started', private_ip: `fdaa:0:1:a7b::${id.length}`,
+    events: [startedEvent(NOW - 25 * 60 * 60_000)],
+  });
+
+  function controlPlaneFleet(apps: string[]) {
+    return makeFlyClient({
+      listApps: vi.fn().mockResolvedValue([{ name: APP }, ...apps.map((name) => ({ name }))]),
+      listMachines: vi.fn(async (app: string) => (app === APP ? [startedMachine()] : [longRunning(`m-${app}`)])),
+      deleteApp: vi.fn().mockResolvedValue(undefined),
+    });
+  }
+
+  it('leaves the control plane out of the alert while a real orphan still alerts', async () => {
+    const userStorage = new InMemoryUserStorage();
+    await userWithFlyAgent(userStorage, 'u1');
+    const notifyUnrecordedApps = vi.fn().mockResolvedValue(undefined);
+    const flyClient = controlPlaneFleet([...CONTROL_PLANE, ORPHAN]);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = await makeReaper({
+        flyClient,
+        userStorage,
+        notifyUnrecordedApps,
+        platformAppNames: platformAppNames({ ownAppName: 'ia-control', imageApp: 'ia-machine-images' }),
+      }).runOnce();
+
+      expect(result.unrecordedApps).toBe(1);
+      expect(notifyUnrecordedApps).toHaveBeenCalledTimes(1);
+      const text = notifyUnrecordedApps.mock.calls[0]![0] as string;
+      expect(text).toContain('UNCLAIMED FLY APP RUNNING');
+      expect(text).toContain(ORPHAN);
+      for (const app of CONTROL_PLANE) expect(text).not.toContain(`${app} (`);
+      // The journal's "claimed by no record" line names the orphan alone.
+      const unclaimedLine = warn.mock.calls.map((call) => String(call[0])).find((line) => line.includes('claimed by no record'));
+      expect(unclaimedLine).toContain(ORPHAN);
+      for (const app of CONTROL_PLANE) expect(unclaimedLine).not.toContain(`/${app},`);
+      for (const app of CONTROL_PLANE) expect(unclaimedLine?.endsWith(`/${app}`)).toBe(false);
+      expect(log).toHaveBeenCalledWith(
+        '[FlyIdleReaper] control-plane apps, never touched: ia-ci, ia-ci-builder, ia-ci-jobs, ia-control, ia-git',
+      );
+      // Never even listed: nothing about them is read, let alone changed.
+      for (const app of CONTROL_PLANE) expect(flyClient.listMachines).not.toHaveBeenCalledWith(app);
+      expect(flyClient.stopMachine).toHaveBeenCalledTimes(1);
+      expect(flyClient.stopMachine).toHaveBeenCalledWith(APP, MACHINE);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it('never stops or deletes a control-plane app, even when a record claims or retires it', async () => {
+    const userStorage = new InMemoryUserStorage();
+    await userStorage.createProfile('u1', {
+      email: 'u1@x.io',
+      telegram: {
+        agents: {
+          a1: { id: 'a1', cli: 'claude', name: 'Main', createdAt: 't', serverId: 'fly_ia-control.m-ia-control', connectedAt: 't' },
+        },
+      } as never,
+    });
+    await userStorage.updateAgentFields('u1', 'a1', {
+      retiredMachineApps: [{ appName: 'ia-git', retiredAt: new Date(NOW - 30 * 24 * 60 * 60_000).toISOString() }],
+    });
+    const flyClient = controlPlaneFleet(CONTROL_PLANE);
+    flyClient.listMachines.mockImplementation(async () => []);
+    const reaper = makeReaper({
+      flyClient,
+      userStorage,
+      getAgentLastActiveAt: () => NOW - 24 * 60 * 60_000,
+      retiredAppRetentionMs: 0,
+      platformAppNames: platformAppNames({ ownAppName: 'ia-control' }),
+    });
+    for (let sweep = 0; sweep < 5; sweep += 1) await reaper.runOnce();
+
+    expect(flyClient.stopMachine).not.toHaveBeenCalled();
+    expect(flyClient.deleteApp).not.toHaveBeenCalled();
+    for (const app of CONTROL_PLANE) expect(flyClient.listMachines).not.toHaveBeenCalledWith(app);
+  });
+
+  it("a client org's app of the same name is the client's, and is reported as before", async () => {
+    const userStorage = new InMemoryUserStorage();
+    await userWithFlyAgent(userStorage, 'u1');
+    const notifyUnrecordedApps = vi.fn().mockResolvedValue(undefined);
+    const clientFly = controlPlaneFleet(['ia-git']);
+    clientFly.listApps.mockResolvedValue([{ name: 'ia-git' }]);
+    const result = await makeReaper({
+      flyClient: controlPlaneFleet([]),
+      userStorage,
+      notifyUnrecordedApps,
+      platformAppNames: platformAppNames({ ownAppName: 'ia-control' }),
+      listAdditionalOrgContexts: async () => [{ orgSlug: 'client-org', connectionRevision: 'r1', flyClient: clientFly }],
+    }).runOnce();
+
+    expect(result.unrecordedApps).toBe(1);
+    expect(notifyUnrecordedApps).toHaveBeenCalledWith(expect.stringContaining('ia-git (client-org)'));
+    expect(clientFly.stopMachine).not.toHaveBeenCalled();
+  });
+});
+
+describe('platformAppNames (note #1070)', () => {
+  it('learns production\'s control plane from the backend\'s own app name', () => {
+    const names = platformAppNames({ ownAppName: 'ia-control', imageApp: 'ia-machine-images' });
+    for (const app of ['ia-control', 'ia-git', 'ia-ci', 'ia-ci-builder', 'ia-ci-jobs', 'ia-machine-images']) {
+      expect(names.has(app)).toBe(true);
+    }
+  });
+
+  it('holds unchanged for a private copy, from <prefix>-backend', () => {
+    expect(controlPlaneFamily('acme-backend')).toBe('acme');
+    const names = platformAppNames({ ownAppName: 'acme-backend' });
+    for (const role of ['backend', 'git', 'router', 'mx', 'media', 'backups', 'images', 'upgrader']) {
+      expect(names.has(`acme-${role}`)).toBe(true);
+    }
+  });
+
+  it('can never name an agent app: every role carries a letter that is not hex', () => {
+    for (const role of CONTROL_PLANE_ROLES) expect(role).toMatch(/[g-z]/);
+    const names = platformAppNames({ ownAppName: 'ia-control' });
+    expect([...names].some((name) => /^ia-[0-9a-f]{16}$/.test(name))).toBe(false);
+  });
+
+  it('off Fly it names only what it is told, and FLY_PLATFORM_APPS adds the rest', () => {
+    expect(controlPlaneFamily(undefined)).toBeUndefined();
+    expect(controlPlaneFamily('ia-1838e1651f5bb726')).toBeUndefined();
+    expect(controlPlaneFamily('-backend')).toBeUndefined();
+    expect([...platformAppNames({ imageApp: 'ia-machine-images', extra: [' acc-updates ', ''] })].sort())
+      .toEqual(['acc-updates', 'ia-machine-images']);
   });
 });
