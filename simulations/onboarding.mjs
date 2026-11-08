@@ -83,6 +83,13 @@ await runBrowserScenario({
     // Since note #984 the page is five screens and How to start is one of
     // them: the first screen's text link to it left with its screen.
     assert.equal(await page.$('a[href="#start"]'), null, 'a link to How to start came back above it');
+    // Since note #1085 the value screen comes right after the film, and the
+    // own cloud keeps its place further down.
+    assert.deepEqual(
+      await page.$$eval('main > section[data-screen]', (screens) => screens.map((screen) => screen.id)),
+      ['film', 'value', 'workplace', 'own-cloud', 'start', 'your-agent'],
+    );
+    assert.equal(normalizedText(await textOf(page, '#value h2')), 'Your agents. Your cloud. Your data.');
     await page.goto(`${app.origin}/signup`, { waitUntil: 'domcontentloaded' });
 
     // 2. One card makes the account: their name, an address here, a password.

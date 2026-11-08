@@ -8,6 +8,7 @@ import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films
 import { HowToStart, OwnCloud } from './PrivateCopy';
 import { NewTabContext } from '../lib/new-tab';
 import BrandMark from '../components/BrandMark';
+import ValueSection from '../components/ValueSection';
 
 /**
  * The one home page, for a stranger and for a CTO who arrives from a cold
@@ -276,6 +277,11 @@ export default function Home() {
           </div>
         </Screen>
       ) : null}
+
+      {/* ── The value in one breath (note #1085) ───────────────────────── */}
+      {/* Adam, 8 Nov 2026: right after the film, what you get and what stays
+          yours. Screen 3 (the own cloud) stays as it is, further down. */}
+      <ValueSection />
 
       {/* Since note #984 (the owner, 4 Nov 2026, 14:07 UTC, on the storyboard,
           note #982) the page is five screens: the film, the workplace
