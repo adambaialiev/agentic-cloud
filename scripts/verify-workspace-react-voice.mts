@@ -482,6 +482,16 @@ try {
   await page.waitForFunction(() => document.querySelector('.voicereview')?.getBoundingClientRect().height === window.innerHeight);
   await tap(page, '.voicereview-actions .primary');
   await page.waitForSelector('.voicereview', { hidden: true });
+  // The dialog closes on the press; the send is a request still on its way.
+  // Reading the fake's list the moment the dialog was gone read [] on a
+  // loaded machine, 1 round in 20 (note #1075). Wait for the request to land,
+  // then for the composer to clear (the send's own answer), then count, so
+  // "exactly once" is still counted after the answer rather than before it.
+  for (const until = Date.now() + 10_000; sentMessages.length === 0 && Date.now() < until;) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  await page.waitForFunction(() => (document.getElementById('agentChatText') as HTMLTextAreaElement | null)?.value === '', { timeout: 10_000 })
+    .catch(() => {});
   check('Send delivers the corrected words exactly once and returns to chat',
     sentMessages.length === 1 && sentMessages[0] === 'Tell Ada: ship it on Monday.\nPlease check the mobile version first.', JSON.stringify(sentMessages));
   check('the file picked in the review travels with those words',
