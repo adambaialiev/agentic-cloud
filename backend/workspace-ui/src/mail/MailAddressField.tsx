@@ -24,7 +24,7 @@ export type MailAddressStatus = 'empty' | 'checking' | 'free' | 'taken' | 'inval
 
 const CHECK_DELAY_MS = 400;
 
-export function MailAddressField({ api, id, value, onChange, onStatus, autoFocus, disabled }: {
+export function MailAddressField({ api, id, value, onChange, onStatus, autoFocus, disabled, domain = MAIL_DOMAIN }: {
   api: WorkspaceApi;
   id: string;
   value: string;
@@ -32,6 +32,9 @@ export function MailAddressField({ api, id, value, onChange, onStatus, autoFocus
   onStatus?: (status: MailAddressStatus) => void;
   autoFocus?: boolean;
   disabled?: boolean;
+  /** The domain shown after the @. Only the documentation's pictures pass
+   *  one (an own Agentic Cloud's example domain); the app uses its own. */
+  domain?: string;
 }) {
   const local = normalizeMailLocal(value);
   const problem = local ? mailLocalProblem(local) : null;
@@ -61,10 +64,10 @@ export function MailAddressField({ api, id, value, onChange, onStatus, autoFocus
   }, [api, value, local, problem]);
 
   const note = status === 'invalid'
-    ? (problem ? mailLocalHint(problem) : `An address here ends in @${MAIL_DOMAIN}.`)
+    ? (problem ? mailLocalHint(problem) : `An address here ends in @${domain}.`)
     : status === 'taken' ? 'That name is taken. Try another.'
       : status === 'checking' ? 'Checking…'
-        : status === 'free' ? `${local}@${MAIL_DOMAIN} is yours.`
+        : status === 'free' ? `${local}@${domain} is yours.`
           : `Choose the name before the @ — people will write to it.`;
 
   return (
@@ -79,13 +82,13 @@ export function MailAddressField({ api, id, value, onChange, onStatus, autoFocus
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
-          maxLength={MAIL_LOCAL_MAX + MAIL_DOMAIN.length + 1}
+          maxLength={MAIL_LOCAL_MAX + domain.length + 1}
           autoFocus={autoFocus}
           disabled={disabled}
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
-        <span className="maildomain" aria-hidden="true">@{MAIL_DOMAIN}</span>
+        <span className="maildomain" aria-hidden="true">@{domain}</span>
       </div>
       <span
         className={`mailnote${status === 'free' ? ' ok' : status === 'taken' || status === 'invalid' ? ' bad' : ''}`}

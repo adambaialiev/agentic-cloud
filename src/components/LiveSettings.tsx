@@ -28,12 +28,12 @@ const JAMES = {
     browserLogin: {
       enabled: true as const,
       method: 'email' as const,
-      email: 'james@agenticcloudcomputer.com',
+      email: 'james@agents.northstar.com',
       secondFactorEnabled: false,
       verificationStatus: 'verified' as const,
       recoveryEmail: { email: 'james.okafor@gmail.com', status: 'verified' as const },
     },
-    mailbox: { address: 'james@agenticcloudcomputer.com' },
+    mailbox: { address: 'james@agents.northstar.com' },
   },
 };
 

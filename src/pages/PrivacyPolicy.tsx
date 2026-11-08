@@ -74,10 +74,18 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  * user agent or cookie; the address only keys an in-memory hourly limit; the
  * visit id lives in the tab's sessionStorage; the founder reads them in
  * Visits; the guide is Claude Code on the founder's own Claude subscription.
+ *
+ * 2026-11-08 (note #1081, after the acceptance pass of notes #1077–#1080):
+ * section 2 names what release 2026.11.07.0 sends and reads. The daily
+ * pulse (note #1057; routes/copy-pulse.ts keeps it in copy_pulses) is held
+ * by us with the contact's name and email, so "What we hold" is no longer
+ * only what someone sends; "What crosses" lists the hourly release list, the
+ * daily CLI pin read (services/harness-cli-pin-follower.ts, held by an
+ * admin's pin) and the pulse, in the installer README's words.
  */
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="November 6, 2026">
+    <LegalLayout title="Privacy Policy" effectiveDate="November 8, 2026">
       <LegalSection title="1. Who we are">
         <p>
           Agentic Cloud Computer makes a shared Workspace for a company&rsquo;s AI agents. We offer it
@@ -103,17 +111,44 @@ export default function PrivacyPolicy() {
           send them under yours.
         </p>
         <p>
-          <b className="text-white">What we hold.</b> Only what you send us: the addresses you write to
-          us from and what you write, such as your company&rsquo;s name and domain. Your own Agentic
-          Cloud is free for now, so we hold no payment record or card details for it.
+          <b className="text-white">What we hold.</b> What you send us: the addresses you write to us
+          from and what you write, such as your company&rsquo;s name and domain, and a diagnostics
+          bundle if an admin sends one. And the daily report below, with the name and email of the
+          contact person it carries, which your Agentic Cloud sends us by itself unless an admin has
+          turned it off. We keep those reports on our side. Your own Agentic Cloud is free for now,
+          so we hold no payment record or card details for it.
         </p>
         <p>
           <b className="text-white">What crosses, and when.</b> When your agent fetches a release, it
-          downloads it from our update service, which reads nothing from your Agentic Cloud. Its
-          admins can make a
-          diagnostics bundle for support: the health report, its settings with every key said only as
-          set or not set, and how many people use it, now and at most. It holds no messages, code,
-          files, mail, keys or names of people, and it reaches us only if an admin sends it.
+          downloads it from our update service, which reads nothing from your Agentic Cloud. Once it
+          is installed, your Agentic Cloud reaches us in three ways:
+        </p>
+        <ul className="list-disc space-y-2 pl-5">
+          <li>
+            About once an hour it reads our public list of releases, so its health page can say
+            whether a newer one is out. The question carries nothing about your Agentic Cloud.
+          </li>
+          <li>
+            Once a day it reads our public list of the versions of Claude Code, Codex and OpenCode
+            we run, the same way, and its agents&rsquo; machines follow it unless an admin holds a
+            version of their own.
+          </li>
+          <li>
+            <b className="text-white">A daily report.</b> Once a day, about two minutes after every
+            start, and when an admin changes the contact, it sends us a short signed report: counts
+            only (people, agents, their replies in the last day, machine hours, live sites, last
+            activity, the release, backup age, free disk and health) and the name and email of the
+            contact person your admin chose, the one piece of personal data in it, so we know who to
+            write to. An admin sees every report exactly as it was sent, changes the contact, or
+            turns the report off, in the Workspace under Workplace &rsaquo; What we tell Agentic
+            Cloud.
+          </li>
+        </ul>
+        <p>
+          Its admins can also make a diagnostics bundle for support: the health report, its settings
+          with every key said only as set or not set, and how many people use it, now and at most.
+          It holds no messages, code, files, mail, keys or names of people, and it reaches us only
+          if an admin sends it.
         </p>
       </LegalSection>
 

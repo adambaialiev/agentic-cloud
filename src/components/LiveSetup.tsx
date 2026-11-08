@@ -48,6 +48,16 @@ import { FLEET, ORG, ago, useHydrated } from './live/fixture';
 const noop = () => {};
 const never = async () => {};
 
+/**
+ * The docs describe your own Agentic Cloud (note #822), so the forms are
+ * drawn as one draws them: addresses on the company's own domain (the
+ * fixture's, as on the Surfaces panel) and the "Nothing else" row that says
+ * the computers run in the company's own cloud account. Until note #1081
+ * they were drawn with the public site's defaults, which are our hosted
+ * platform's: "@agenticcloudcomputer.com" and "no cloud account to connect".
+ */
+export const DOCS_MAIL_DOMAIN = 'agents.northstar.com';
+
 /** The sign-up and sign-in forms take the app's API from the session. */
 function SignUpForm({ creating }: { creating: boolean }) {
   const { api } = useSession();
@@ -64,6 +74,8 @@ function SignUpForm({ creating }: { creating: boolean }) {
         onMode={noop}
         onForgot={noop}
         invited={false}
+        privateCopy
+        mailDomain={DOCS_MAIL_DOMAIN}
       />
     </AuthShell>
   );
@@ -71,7 +83,7 @@ function SignUpForm({ creating }: { creating: boolean }) {
 
 export function LiveSignUp({ className = '' }: { className?: string }) {
   return (
-    <LivePanel size="wide" className={className} says="The sign-up page: Create your Workspace, with fields for first name, last name, your email address, password and confirm password, the Create account button, and beside it the box listing what comes after: sign in Codex or Claude, and nothing else, because the agents’ computers run on the cloud.">
+    <LivePanel size="wide" className={className} says="The sign-up page: Create your Workspace, with fields for first name, last name, your email address, password and confirm password, the Create account button, and beside it the box listing what comes after: sign in Codex or Claude, and nothing else, because the agents’ computers run in your company’s own cloud account, connected when it was installed.">
       <LiveWorkspace><SignUpForm creating /></LiveWorkspace>
     </LivePanel>
   );

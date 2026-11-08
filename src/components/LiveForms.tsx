@@ -40,7 +40,7 @@ export function LiveMailCompose({ className = '' }: { className?: string }) {
     <LivePanel size="wide" className={className} says="The New message screen: To, an Add Cc link, Subject, a Message box, Attach files, and the Send message button. The head says it is from james at the mail domain.">
       <LiveWorkspace>
         <div className="screen" id="screenMailCompose">
-          <Head title="New message" sub="from james@agenticcloudcomputer.com" />
+          <Head title="New message" sub="from james@agents.northstar.com" />
           <div className="mailcompose">
             <label className="drow frow">
               <div className="head"><div className="k">To</div></div>

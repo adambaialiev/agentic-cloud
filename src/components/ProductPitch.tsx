@@ -167,7 +167,13 @@ export default function ProductPitch({ on }: { on: 'product' | 'home' }) {
           here an app is made and found in one place, because the deploying
           agent writes its listing. The panel is /apps' own card; the door
           goes to the real catalogue. The catalogue held one app the day this
-          was written; see landing-copy-rules for the timing call. */}
+          was written; see landing-copy-rules for the timing call.
+          2026-11-08 (note #1081, claim 48 of the acceptance pass): the page
+          sells your own Agentic Cloud, whose /apps is private to the
+          workplace (note #1014), so "joins a public catalogue … with your
+          name on it" came off; the paragraph says the directory is private,
+          and the door goes to the docs section that explains it, not to our
+          own public catalogue. */}
       {/* Not on the home page (note #789): it opens on the real catalogue's
           newest apps, and a fixture catalogue under the founder's card would
           put made-up apps on the same page as real ones. */}
@@ -177,12 +183,13 @@ export default function ProductPitch({ on }: { on: 'product' | 'home' }) {
         <div className="max-w-[640px]">
           <h2 className={H2}>Built here. Found here.</h2>
           <p className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
-            Most app builders hand you a link and leave you to find the users. Here every app
-            your agents ship joins a public catalogue the moment it goes live, with your name
-            on it.
+            Most app builders hand you a link and leave you to keep track of it. Here every app
+            your agents ship goes into your workplace&rsquo;s apps directory the moment it goes
+            live: its name, a line on what it does, who built it and a picture. Each app is public
+            at its own address, and the directory is private to your workplace.
           </p>
           <div className="mt-6">
-            <PrimaryLink href="/apps">See the apps</PrimaryLink>
+            <PrimaryLink href="/docs/sites-and-domains#the-app-catalogue">How the directory works</PrimaryLink>
           </div>
         </div>
         <LiveApps className="mt-10 sm:mt-12" />

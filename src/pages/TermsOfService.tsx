@@ -50,10 +50,18 @@ const LINK = 'text-accent-bright underline decoration-accent-bright/40 underline
  * update key's promise came out again. Both offers are free for now, and the
  * words do not describe a mechanism that is being switched off (Iris, note
  * #935). Hosted accounts stay invite-only.
+ *
+ * 2026-11-08 (note #1081, after the acceptance pass, Ada's verdicts on note
+ * #1080): section 2 names the one thing that moves without a release (the
+ * agents' coding tools follow our published pin, services/harness-cli-pin-
+ * follower.ts, unless an admin holds one); section 6 names auto-merge, which
+ * is each person's own switch for their own agents' proposals and needs
+ * passing checks (shared/auto-approve.ts); section 7 names the daily report
+ * (note #1057, routes/copy-pulse.ts) and the contact it carries.
  */
 export default function TermsOfService() {
   return (
-    <LegalLayout title="Terms of Service" effectiveDate="November 1, 2026">
+    <LegalLayout title="Terms of Service" effectiveDate="November 8, 2026">
       <LegalSection title="1. What this is">
         <p>
           Agentic Cloud Computer (&ldquo;we&rdquo;, &ldquo;us&rdquo;) makes one shared Workspace for a
@@ -91,7 +99,11 @@ export default function TermsOfService() {
         </p>
         <p>
           <span className="text-white">What we provide.</span> The releases and support by email. A
-          release is installed when you choose to upgrade; nothing upgrades itself.
+          release is installed only when you choose to upgrade, with an admin&rsquo;s button in the
+          Workspace or your engineer&rsquo;s command. One thing moves without a release: since
+          release 2026.11.07.0, the coding tools on your agents&rsquo; machines (Claude Code, Codex
+          and OpenCode) follow the versions we publish within about a day, unless an admin holds a
+          version of their own.
         </p>
         <p>
           <span className="text-white">Who gets in.</span> The first admin is made with a one-time
@@ -171,7 +183,11 @@ export default function TermsOfService() {
           An agent can build, test and prepare a change. On a protected repository that change
           arrives as a proposal carrying the exact diff and its checks, and an agent cannot merge
           it, approve it, complete the deletion of a site or repository, or widen access to a
-          saved secret. Those decisions stay with a member of your organisation.
+          saved secret. Those decisions stay with a member of your organisation. The one exception
+          is auto-merge: a person can turn it on for their own agents, and then a protected change
+          one of those agents proposes merges by itself once its checks pass, without waiting for
+          anyone, and is recorded as merged automatically. It is off unless that person turns it
+          on, and no agent can turn it on.
         </p>
         <p>
           That gate is a control, not a guarantee of correctness: you are responsible for what you
@@ -186,8 +202,11 @@ export default function TermsOfService() {
         </p>
         <p>
           In your own Agentic Cloud, your messages, code, files, mail, keys and logs stay in your Fly
-          organization and never reach us. We hold only what you send us, such as your email and a
-          diagnostics bundle if your admin chooses to send one.
+          organization and never reach us. We hold what you send us, such as your email and a
+          diagnostics bundle if your admin chooses to send one, and the daily report your Agentic
+          Cloud sends us by itself: counts plus the name and email of the contact person your admin
+          chose, sent once a day and at every start, which your admin sees and can turn off. We
+          keep those reports on our side. The Privacy Policy says exactly what the report holds.
         </p>
         <p>
           In our hosted Workspace you give us only the permissions needed to operate it: authenticate

@@ -29,7 +29,7 @@ import { DAY, HOUR, MINUTE, ago, useHydrated } from './live/fixture';
  */
 function inbox(): WorkspaceMailConversationsAnswer {
   return {
-    address: 'james@agenticcloudcomputer.com',
+    address: 'james@agents.northstar.com',
     conversations: [
       {
         id: 'mail_dana',
