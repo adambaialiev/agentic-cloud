@@ -6753,6 +6753,60 @@ describe('the workplace screens (members, seats, invites)', () => {
     orgStorage.getMembership = getMembership;
   });
 
+  it('answers only what changed since the version the reader names, and the whole conversation for a version it does not know (note #1071)', async () => {
+    const { deps, orgStorage, org } = await buildOrgDeps();
+    deps.orgGit = new OrgGitService({ orgStorage });
+    const repos = new InMemoryGitRepoStorage();
+    const prs = new InMemoryGitPullRequestStorage();
+    Object.assign(deps, { gitRepoStorage: repos, gitPullRequestStorage: prs, knowledgeProposalStorage: new InMemoryKnowledgeProposalStorage() });
+    const repo = await repos.create({ userId: 'user-1', name: 'site', createdByAgentId: 'agent-a', defaultBranch: 'main', sizeBytes: 1 } as never);
+    const pr = await prs.create({
+      repoId: repo.id, userId: 'user-1', roomNamespaceId: 'user-1', createdByUserId: 'user-1', createdByAgentId: 'agent-a',
+      sourceBranch: 'agent/checkout', targetBranch: 'main', headSha: 'a'.repeat(40), title: 'Checkout', body: '', commitSubjects: [], status: 'open',
+    } as never);
+    const rows = [
+      { id: 'r1', role: 'owner', at: '2026-11-08T11:00:00.000Z', text: 'Ship the checkout' },
+      { id: 'r2', role: 'action', at: '2026-11-08T11:01:00.000Z', text: 'Forwarded PR #1 in site — Checkout', proposals: [{ kind: 'pr', id: pr.id }] },
+      { id: 'r3', role: 'assistant', at: '2026-11-08T11:02:00.000Z', text: 'It waits for you.' },
+    ];
+    const store = (messages: unknown[]) => orgStorage.touchMember(org.orgId, 'user-1', { workspaceRecapChat: { messages, receipts: [], pending: [] } } as never);
+    await store(rows);
+    // ONE router, as in production: its version store is the router's own.
+    const built = workspaceRoutes(deps as RouteDeps) as unknown as { stack: Array<{ route?: { path: string; methods: Record<string, boolean>; stack: Array<{ handle: (req: Partial<Request>, res: MockResponse) => Promise<unknown> }> } }> };
+    const get = async (router: typeof built, since?: string) => {
+      const layer = router.stack.find((candidate) => candidate.route?.path === '/api/recap/chat' && candidate.route.methods.get)!;
+      const res = createMockResponse();
+      await layer.route!.stack.at(-1)!.handle(mockRequest({ headers: authHeader(42), query: { org: org.orgId, ...(since ? { since } : {}) } }), res);
+      expect(res.statusCode).toBe(200);
+      return res.body as Record<string, any>;
+    };
+    const whole = await get(built);
+    expect(whole.messages.map((m: { id: string }) => m.id)).toEqual(['r1', 'r2', 'r3']);
+    expect(typeof whole.version).toBe('string');
+    expect(whole).not.toHaveProperty('delta');
+    // Nothing new: no rows, the small state only.
+    const quiet = await get(built, whole.version);
+    expect(quiet).not.toHaveProperty('messages');
+    expect(quiet).toMatchObject({ orgId: org.orgId, working: false, version: whole.version, delta: { since: whole.version, rows: [], removed: [] } });
+    // The card's proposal merged — its stored row never moved — and a reply arrived.
+    await prs.update(pr.id, { status: 'merged', decidedAt: '2026-11-08T11:03:00.000Z' } as never);
+    await store([...rows, { id: 'r4', role: 'assistant', at: '2026-11-08T11:04:00.000Z', text: 'Merged.' }]);
+    const moved = await get(built, whole.version);
+    expect(moved.delta.rows.map((m: { id: string }) => m.id)).toEqual(['r2', 'r4']);
+    expect(moved.delta.rows[0].forwarded[0].pr.status).toBe('merged');
+    expect(moved.delta.removed).toEqual([]);
+    // A row that leaves the screen (a quiet event's row hidden) says so by id.
+    await store([rows[0], { ...rows[1], hidden: true }, rows[2], { id: 'r4', role: 'assistant', at: '2026-11-08T11:04:00.000Z', text: 'Merged.' }]);
+    expect((await get(built, moved.version)).delta).toEqual({ since: moved.version, rows: [], removed: ['r2'] });
+    // A version this router never answered — a restarted backend is a new
+    // router — or no version at all: the whole conversation.
+    const restarted = workspaceRoutes(deps as RouteDeps) as unknown as typeof built;
+    const fresh = await get(restarted, moved.version);
+    expect(fresh).not.toHaveProperty('delta');
+    expect(fresh.messages.map((m: { id: string }) => m.id)).toEqual(['r1', 'r3', 'r4']);
+    expect((await get(built, 'x'.repeat(65))).messages).toHaveLength(3);
+  });
+
   it('stops, steers and takes files for the Workspace Agent by the room chat\'s routes (note #423)', async () => {
     const { deps, orgStorage, org } = await buildOrgDeps();
     const model = vi.fn(async (...args: unknown[]) => new Promise<{ failure: 'interrupted' }>((resolve) => {

@@ -1674,3 +1674,82 @@ describe('the Chief of Staff\'s conversation through a bad read (note #1069)', (
     expect(document.getElementById('recapChatLive')!.hidden).toBe(true);
   });
 });
+
+/** Note #1071: the poll reads only what is new, and starts again whole when it has to. */
+describe('the Chief of Staff\'s conversation read as deltas (note #1071)', () => {
+  const v1: RecapChatAnswer = { ...conversation, version: 'v1', working: true, phase: 'Thinking…' };
+  const tick = async (ms = 3000) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+  const reads = (calls: Array<{ path: string; init?: RequestInit }>) => calls.filter((c) => c.path.startsWith('api/recap/chat') && (c.init?.method ?? 'GET') === 'GET').map((c) => c.path);
+  const setHidden = (hidden: boolean) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
+  afterEach(() => { setHidden(false); vi.useRealTimers(); });
+
+  it('names the version it holds and draws what changed, arrived and left — the rest stays as it was', async () => {
+    const { calls } = mount(v1, undefined, {
+      'GET api/recap/chat?since=v1': () => ({
+        orgId: 'o1', working: false, waiting: [], version: 'v2',
+        delta: { since: 'v1', removed: ['m5'], rows: [
+          { id: 'm4', role: 'assistant', text: 'Theo says the booking page is live and taking payments.', at: now },
+          { id: 'm7', role: 'assistant', text: 'Handed the loose end to Rosa.', at: now },
+        ] },
+      }),
+      'GET api/recap/chat?since=v2': () => ({ orgId: 'o1', working: false, waiting: [], version: 'v2', delta: { since: 'v2', rows: [], removed: [] } }),
+    });
+    await screen.findByText('Ask Theo for an update');
+    await tick(); await tick();
+    expect(reads(calls).slice(0, 3)).toEqual(['api/recap/chat', 'api/recap/chat?since=v1', 'api/recap/chat?since=v2']);
+    expect(screen.getByText('Theo says the booking page is live and taking payments.')).toBeTruthy();
+    expect(screen.queryByText('Theo says the booking page is live.')).toBeNull();
+    expect(screen.getByText('Handed the loose end to Rosa.')).toBeTruthy();
+    expect(screen.queryByText(/is still open/)).toBeNull();
+    expect(screen.getByText('Ask Theo for an update')).toBeTruthy();
+    expect(document.getElementById('recapChatLive')!.hidden).toBe(true);
+    expect(heldRecapChat('o1')?.version).toBe('v2');
+  });
+
+  it('a delta that does not fit what it holds is not drawn, and the next read asks for the whole conversation', async () => {
+    const { calls } = mount(v1, undefined, {
+      'GET api/recap/chat?since=v1': () => ({ orgId: 'o1', working: false, waiting: [], version: 'v3', delta: { since: 'v0', rows: [{ id: 'mx', role: 'assistant', text: 'Not from here.', at: now }], removed: [] } }),
+    });
+    await screen.findByText('Ask Theo for an update');
+    await tick(); await tick();
+    expect(reads(calls).slice(0, 3)).toEqual(['api/recap/chat', 'api/recap/chat?since=v1', 'api/recap/chat']);
+    expect(screen.queryByText('Not from here.')).toBeNull();
+    expect(screen.queryAllByRole('alert').filter((n) => /Retrying/.test(n.textContent ?? ''))).toHaveLength(0);
+  });
+
+  it('back from a long sleep, it reads the whole conversation once, then deltas again', async () => {
+    const { calls } = mount(v1, undefined, {
+      'GET api/recap/chat?since=v1': () => ({ orgId: 'o1', working: true, waiting: [], version: 'v1', delta: { since: 'v1', rows: [], removed: [] } }),
+    });
+    await screen.findByText('Ask Theo for an update');
+    await tick();
+    setHidden(true);
+    await tick(61_000);
+    const before = reads(calls).length;
+    setHidden(false);
+    await tick(10); await tick();
+    expect(reads(calls).slice(before)).toEqual(['api/recap/chat', 'api/recap/chat?since=v1']);
+  });
+
+  it('keeps note #1069\'s rule with deltas: quiet misses, a banner after three, and the next delta clears it and draws', async () => {
+    let bad = false;
+    mount(v1, undefined, {
+      'GET api/recap/chat?since=v1': () => bad ? null : ({ orgId: 'o1', working: false, waiting: [], version: 'v2', delta: { since: 'v1', rows: [{ id: 'm7', role: 'assistant', text: 'Done while you were away.', at: now }], removed: [] } }),
+      'GET api/recap/chat?since=v2': () => ({ orgId: 'o1', working: false, waiting: [], version: 'v2', delta: { since: 'v2', rows: [], removed: [] } }),
+    });
+    await screen.findByText('Ask Theo for an update');
+    bad = true;
+    const banner = () => [...document.querySelectorAll('[role=alert]')].find((n) => /Retrying/.test(n.textContent ?? '')) ?? null;
+    await tick(); await tick();
+    expect(banner()).toBeNull();
+    await tick();
+    expect(banner()).not.toBeNull();
+    bad = false; await tick();
+    expect(banner()).toBeNull();
+    expect(screen.getByText('Done while you were away.')).toBeTruthy();
+  });
+});
