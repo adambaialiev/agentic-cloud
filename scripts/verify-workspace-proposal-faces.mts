@@ -79,7 +79,8 @@ try {
   if (!process.argv.includes('--shot-only')) {
     assert.equal(rows.length, 2, 'one face on the knowledge row, one on the change row');
     for (const row of rows) {
-      assert.equal(row.width, 24); assert.equal(row.height, 24);
+      // Whole pixels: the sheet can still be finishing its slide (23.99997 px, note #1073 CI).
+      assert.equal(Math.round(row.width), 24); assert.equal(Math.round(row.height), 24);
       assert.ok(row.top >= 0 && row.bottom >= 0, `face sits inside its line (${JSON.stringify(row)})`);
     }
     console.log('PASS proposal faces are 24px and fit their line');

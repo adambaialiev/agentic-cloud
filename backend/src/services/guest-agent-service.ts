@@ -96,6 +96,8 @@ const MESSAGES_SPENT_GRACE_MS = 5 * MINUTE_MS;
 const REMOVAL_RETRY_MS = 10 * MINUTE_MS;
 /** A build stuck this long is abandoned and its record deleted. */
 const STUCK_MS = 15 * MINUTE_MS;
+/** The pause before a failed build step is tried once more (note #1073). */
+const BUILD_RETRY_MS = 3_000;
 /** How long a removed agent's key still answers `removed` (screen 6). */
 const REMOVED_KEY_DAYS = 1;
 
@@ -137,6 +139,13 @@ export interface GuestAgentServiceDeps {
   sweepEveryMs?: number | null;
   /** How often running background jobs are read (note #1063); off in tests. */
   jobsEveryMs?: number | null;
+  /**
+   * The pause before a build step that failed is tried once more (note #1073,
+   * default 3 s). Every step is idempotent, and one blip — Fly answering 404
+   * for a machine that was there a second later — must not cost a visitor
+   * their agent.
+   */
+  buildRetryMs?: number;
 }
 
 interface LiveTurn {
@@ -613,20 +622,34 @@ export class GuestAgentService {
       if (!agent) return await fail('machine');
       await this.step(agentId, 'machine');
       if (!await this.stillBuilding(agentId)) return;
-      if (!await this.setupMachine(row, { copy: false })) return await fail('agent');
+      // Each machine step gets one more try after a short pause (note #1073):
+      // all of them are idempotent, and on 8 Nov 2026 a single Fly 404 for a
+      // machine that still existed failed a whole build at its last step.
+      const twice = async <T>(where: GuestCreateStepId, attempt: () => Promise<T | null>): Promise<T | null> => {
+        const first = await attempt();
+        if (first !== null) return first;
+        if (!await this.stillBuilding(agentId)) return null;
+        console.warn(`[guest] building ${row.transcript.name} (${agentId}): ${where} failed once; trying it again`);
+        await new Promise((resolve) => setTimeout(resolve, this.deps.buildRetryMs ?? BUILD_RETRY_MS));
+        if (!await this.stillBuilding(agentId)) return null;
+        return attempt();
+      };
+      if (!await twice('agent', () => this.setupMachine(row, { copy: false }))) return await fail('agent');
       await this.step(agentId, 'agent');
       if (!await this.stillBuilding(agentId)) return;
-      const sandboxId = await this.setupMachine(row);
+      const sandboxId = await twice('code', () => this.setupMachine(row));
       if (!sandboxId) return await fail('code');
       await this.step(agentId, 'code');
       if (!await this.stillBuilding(agentId)) return;
-      const woke = await this.deps.sandboxClient().execSync(sandboxId, buildGuestWakeCommand(), undefined, {
-        timeoutMs: 60_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
-      }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
-      if (woke.exitCode !== 0 || woke.timedOut) {
-        console.warn(`[guest] Claude Code did not start on ${sandboxId}: ${String(woke.stderr ?? '').slice(-300) || `exit ${woke.exitCode}`}`);
-        return await fail('waking');
-      }
+      const woke = await twice('waking', async () => {
+        const result = await this.deps.sandboxClient().execSync(sandboxId, buildGuestWakeCommand(), undefined, {
+          timeoutMs: 60_000, sshUser: DEFAULT_DEVELOPMENT_SSH_USER,
+        }).catch((error) => ({ exitCode: 1, stderr: String(error), timedOut: false, stdout: '' }));
+        if (result.exitCode === 0 && !result.timedOut) return true;
+        console.warn(`[guest] Claude Code did not start on ${sandboxId}: ${String(result.stderr ?? '').slice(-300) || `exit ${result.exitCode}`}`);
+        return null;
+      });
+      if (!woke) return await fail('waking');
       await this.step(agentId, 'waking');
       const ready = await this.deps.storage.get(agentId);
       if (!ready || ready.phase !== 'creating') return;

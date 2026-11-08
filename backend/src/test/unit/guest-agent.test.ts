@@ -337,6 +337,7 @@ function world(options: {
     now: () => clock,
     sweepEveryMs: null,
     jobsEveryMs: null,
+    buildRetryMs: 0,
     limits: options.limits ?? {},
   });
   if (options.enabled !== false) void service.setEnabled('owner-1', 'org-1', true);
@@ -420,6 +421,25 @@ describe('GuestAgentService — making one', () => {
     const { key } = await makeAgent(x, 'a');
     expect((await x.service.status(key)).state).toBe('failed');
     expect(x.deleted).toEqual(['guest-1']);
+  });
+
+  // Note #1073: Sadie's build failed at waking on one Fly 404 for a machine
+  // that was there a second later. Every step now gets one more try.
+  it('a step that fails once is tried again, and the build still reaches ready', async () => {
+    let wakes = 0;
+    const x = world({ fails: (command) => command.includes('claude --version') && (wakes += 1) === 1 });
+    const { key } = await makeAgent(x, 'a');
+    expect((await x.service.status(key)).state).toBe('ready');
+    expect(x.commands.filter((c) => c.includes('claude --version'))).toHaveLength(2);
+    expect(x.deleted).toEqual([]);
+  });
+
+  it('a setup step that fails once is tried again too', async () => {
+    let setups = 0;
+    const x = world({ fails: (command) => command.includes('GUEST_SETUP_EOF') && (setups += 1) === 1 });
+    const { key } = await makeAgent(x, 'a');
+    expect((await x.service.status(key)).state).toBe('ready');
+    expect(x.deleted).toEqual([]);
   });
 
   it('no slots and no line: a third, fourth and fifth visitor at the same moment each get an agent built, never a place in line (note #1055)', async () => {

@@ -250,6 +250,49 @@ describe('FlySandboxClient wake-on-connect', () => {
     server.close();
   });
 
+  // Note #1073: Fly answered 404 once for a guest's machine that the cleanup
+  // found a second later, and the whole build failed at its last step.
+  it('reads a machine Fly answered 404 for again before giving up on it', async () => {
+    const flyClient = createFakeFlyClient({
+      getMachine: vi.fn()
+        .mockRejectedValueOnce(new FlyApiError('Fly API error (404): machine not found', 404))
+        .mockResolvedValue(startedMachine()),
+    });
+    const sshClient = createFakeSshClient();
+    const client = createClient(flyClient, sshClient, { notFoundRereadMs: 1 });
+    const sandboxId = FlySandboxClient.buildSandboxId('ia-9f0a1b2c3d4e5f60', MACHINE_ID);
+
+    const result = await client.execSync(sandboxId, 'echo hi');
+
+    expect(result.exitCode).toBe(0);
+    expect(flyClient.getMachine).toHaveBeenCalledTimes(2);
+    expect(sshClient.execCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('still fails on a machine that stays 404, after two re-reads', async () => {
+    const flyClient = createFakeFlyClient({
+      getMachine: vi.fn().mockRejectedValue(new FlyApiError('Fly API error (404): machine not found', 404)),
+    });
+    const sshClient = createFakeSshClient();
+    const client = createClient(flyClient, sshClient, { notFoundRereadMs: 1 });
+    const sandboxId = FlySandboxClient.buildSandboxId('ia-9f0a1b2c3d4e5f60', MACHINE_ID);
+
+    await expect(client.execSync(sandboxId, 'echo hi')).rejects.toMatchObject({ status: 404 });
+    expect(flyClient.getMachine).toHaveBeenCalledTimes(3);
+    expect(sshClient.execCommand).not.toHaveBeenCalled();
+  });
+
+  it('does not re-read on any answer but 404', async () => {
+    const flyClient = createFakeFlyClient({
+      getMachine: vi.fn().mockRejectedValue(new FlyApiError('Fly API error (401): unauthorized', 401)),
+    });
+    const client = createClient(flyClient, createFakeSshClient(), { notFoundRereadMs: 1 });
+    const sandboxId = FlySandboxClient.buildSandboxId('ia-9f0a1b2c3d4e5f60', MACHINE_ID);
+
+    await expect(client.execSync(sandboxId, 'echo hi')).rejects.toMatchObject({ status: 401 });
+    expect(flyClient.getMachine).toHaveBeenCalledTimes(1);
+  });
+
   it('does not start an already-started machine', async () => {
     const flyClient = createFakeFlyClient();
     const client = createClient(flyClient, createFakeSshClient());

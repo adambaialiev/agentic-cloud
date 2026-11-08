@@ -163,6 +163,12 @@ const DEFAULT_FLY_CONNECT_TIMEOUT_MS = 15_000;
 // A machine found refusing us because it admits another address is re-pinned
 // at most this often (note #1068).
 const UNREACHABLE_REPIN_INTERVAL_MS = 10 * 60_000;
+// Note #1073: Fly once answered 404 "machine not found" for a machine that
+// was there a second later (a guest build, 8 Nov 2026, 12:27 UTC). Before a
+// command is given up on a 404, the machine is read again, twice, 2 s apart.
+// A machine that is really gone still fails, 4 s later.
+const DEFAULT_FLY_NOT_FOUND_REREADS = 2;
+const DEFAULT_FLY_NOT_FOUND_REREAD_MS = 2_000;
 
 /** Outcome of provisioning one machine inside a user's shared Fly app. */
 export interface CreatedFlyAgentMachine {
@@ -262,6 +268,10 @@ export interface FlySandboxClientOptions {
   connectRetryAttempts?: number;
   /** One SSH connection's whole budget: TCP connect, handshake and auth (default 15 s, note #1068). */
   connectTimeoutMs?: number;
+  /** Re-reads of a machine Fly answered 404 for, before a command fails (default 2, note #1073). */
+  notFoundRereads?: number;
+  /** The pause before each of those re-reads (default 2 s). */
+  notFoundRereadMs?: number;
   /** Base backoff between connect retries, scaled by attempt (default 1s). */
   connectRetryBackoffMs?: number;
   flyClient?: FlyClient;
@@ -364,6 +374,8 @@ export class FlySandboxClient {
   private readonly wakePollIntervalMs: number;
   private readonly wakeReadinessTimeoutMs: number;
   private readonly connectTimeoutMs: number;
+  private readonly notFoundRereads: number;
+  private readonly notFoundRereadMs: number;
   /** When each machine was last re-pinned for refusing us (note #1068). */
   private readonly unreachableRepinAt = new Map<string, number>();
   private readonly wakeReadinessProbeIntervalMs: number;
@@ -407,6 +419,8 @@ export class FlySandboxClient {
     this.wakeReadinessProbeIntervalMs = options.wakeReadinessProbeIntervalMs ?? DEFAULT_FLY_WAKE_READINESS_PROBE_INTERVAL_MS;
     this.connectRetryAttempts = options.connectRetryAttempts ?? DEFAULT_FLY_CONNECT_RETRY_ATTEMPTS;
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_FLY_CONNECT_TIMEOUT_MS;
+    this.notFoundRereads = options.notFoundRereads ?? DEFAULT_FLY_NOT_FOUND_REREADS;
+    this.notFoundRereadMs = options.notFoundRereadMs ?? DEFAULT_FLY_NOT_FOUND_REREAD_MS;
     this.connectRetryBackoffMs = options.connectRetryBackoffMs ?? DEFAULT_FLY_CONNECT_RETRY_BACKOFF_MS;
   }
 
@@ -888,7 +902,7 @@ export class FlySandboxClient {
     { wake = true }: Pick<ExecSyncOptions, 'wake'> = {},
   ): Promise<ConnectTarget> {
     const { appName, machineId } = FlySandboxClient.parseSandboxId(sandboxId);
-    let machine = await (await this.contextFor(appName)).client.getMachine(appName, machineId);
+    let machine = await this.readMachineToConnect(appName, machineId);
 
     // Only a machine that was NOT already started needs the readiness wait: the
     // hot path (already running, sshd up) must not pay for a probe.
@@ -920,6 +934,24 @@ export class FlySandboxClient {
       }
     }
     return { appName, machineId, machine, host };
+  }
+
+  /**
+   * The machine a command is about to run on. A 404 is read again before it
+   * is believed (note #1073): Fly answered "machine not found" once for a
+   * guest's machine that the cleanup found, and deleted, a second later.
+   * Only a 404 is re-read; any other answer stands at once.
+   */
+  private async readMachineToConnect(appName: string, machineId: string): Promise<FlyMachine> {
+    for (let reread = 0; ; reread += 1) {
+      try {
+        return await (await this.contextFor(appName)).client.getMachine(appName, machineId);
+      } catch (error) {
+        if (!(error instanceof FlyApiError && error.status === 404) || reread >= this.notFoundRereads) throw error;
+        console.warn(`[fly-sandbox] Fly answered 404 for machine ${machineId} in app ${appName}; reading it again in ${this.notFoundRereadMs} ms`);
+        await this.sleep(this.notFoundRereadMs);
+      }
+    }
   }
 
   /**
