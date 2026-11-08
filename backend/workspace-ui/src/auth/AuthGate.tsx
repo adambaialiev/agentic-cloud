@@ -251,11 +251,12 @@ function AuthError({ id, message }: { id: string; message: string }) {
  * Note #562: it is labelled Email — the domain beside it already says what
  * to type, so there is no example name in the box.
  */
-function SignInNameField({ id, value, onChange, autoFocus }: {
+function SignInNameField({ id, value, onChange, autoFocus, domain = MAIL_DOMAIN }: {
   id: string;
   value: string;
   onChange: (value: string) => void;
   autoFocus?: boolean;
+  domain?: string;
 }) {
   const wholeAddress = value.includes('@');
   return (
@@ -276,13 +277,13 @@ function SignInNameField({ id, value, onChange, autoFocus }: {
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
-        {wholeAddress ? null : <span className="maildomain" id={`${id}Domain`} aria-hidden="true">@{MAIL_DOMAIN}</span>}
+        {wholeAddress ? null : <span className="maildomain" id={`${id}Domain`} aria-hidden="true">@{domain}</span>}
       </div>
     </div>
   );
 }
 
-export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerificationRequired, onSecondFactor, onMode, onForgot, invited, inviteToken, firstAccountCode }: {
+export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerificationRequired, onSecondFactor, onMode, onForgot, invited, inviteToken, firstAccountCode, privateCopy = PRIVATE_COPY, mailDomain = MAIL_DOMAIN }: {
   api: WorkspaceApi;
   email: string;
   creating: boolean;
@@ -297,6 +298,11 @@ export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerifi
    *  invite link it came through, or the installer's first-account code. */
   inviteToken?: string;
   firstAccountCode?: string;
+  /** Only the documentation's pictures pass these (note #1081): the public
+   *  site has no copy settings of its own, and its docs describe an own
+   *  Agentic Cloud on its own domain. The app always takes the defaults. */
+  privateCopy?: boolean;
+  mailDomain?: string;
 }) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -330,7 +336,7 @@ export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerifi
       // In a private copy the link's token rides the sign-in too: an account
       // that is in no workplace is let back in only through it (note #814).
       const answer = await api.authApi<WorkspaceEmailLoginAnswer>('auth/email/login', jsonBody({
-        email: email.trim().toLowerCase(), password, ...(inviteToken && (PRIVATE_COPY || SIGNUP_CLOSED) ? { inviteToken } : {}),
+        email: email.trim().toLowerCase(), password, ...(inviteToken && (privateCopy || SIGNUP_CLOSED) ? { inviteToken } : {}),
       }));
       if (!answer.authenticated && 'verificationRequired' in answer) { onVerificationRequired(false); return; }
       if (!answer.authenticated) { onSecondFactor(answer.secondFactorToken); return; }
@@ -361,9 +367,10 @@ export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerifi
               value={mailbox}
               onChange={setMailbox}
               onStatus={setMailboxStatus}
+              domain={mailDomain}
             />
           ) : (
-            <SignInNameField id="authEmail" value={email} onChange={onEmail} autoFocus />
+            <SignInNameField id="authEmail" value={email} onChange={onEmail} autoFocus domain={mailDomain} />
           )}
           <label className="authfield">
             <span>Password</span>
@@ -410,7 +417,7 @@ export function EmailPanel({ api, email, creating, onEmail, onSignedIn, onVerifi
               "no cloud account" are our hosted platform's promise, not its. */}
           <div className="authneedsrow">
             <strong>Nothing else</strong>
-            <span>{PRIVATE_COPY
+            <span>{privateCopy
               ? 'Your agents’ computers run in your company’s own cloud account, which pays for them. It was connected when your Agentic Cloud was installed.'
               : 'Your agents’ computers run on the cloud, free — there is no cloud account to connect.'}</span>
           </div>

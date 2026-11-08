@@ -8,20 +8,20 @@ The whole installer is one file, [`install.mjs`](install.mjs). It needs Node and
 
 Your person asked you to set up their own Agentic Cloud with this installer. You can run all of it, but some steps belong to them, and the installer tells you which. Nothing is needed from us: no key, no licence, no email. The product is free for now. Email is not part of the install: once it is up, an admin sets it up in the Workspace, under Mail.
 
-1. **Plan.** Run the install command with `--plan --json`. It changes nothing and costs nothing. Show your person what it will create and what it costs, and wait for their yes.
+1. **Plan.** Ask your person who Agentic Cloud should write to about this cloud: a name and an email address (`--contact-email`, and `--contact-name` for the name). It rides the daily report described under "Where it connects, and what it sends", which their admin sees and can turn off. Then run the install command with `--plan --json`. It changes nothing and costs nothing. Show your person what it will create and what it costs, and wait for their yes.
 2. **Install.** Run the same command with `--json --wait 0` instead of `--plan`. It builds everything, then stops with exit code 3 and `"reason": "dns"`, listing the exact DNS records.
 3. **DNS.** Give your person the records, or add them yourself if you can edit their DNS. Run `node install.mjs status --json` until its reason is no longer `dns`.
 4. **Finish.** Run the install command again with `--json --wait 20`. If it ends with exit code 4, nothing is wrong: Fly is still issuing a certificate, so run it again later.
 5. **Hand over.** The result names `<prefix>-handover.txt`, which holds the first-admin link and the master key. Do not read it out or copy it anywhere. Tell your person to open it, keep the master key offline, open the link, then delete the file.
 
 ```sh
-node install.mjs install --org <org> --domain <domain> --plan --json
-node install.mjs install --org <org> --domain <domain> --json --wait 0
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --plan --json
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --json --wait 0
 node install.mjs status --json
-node install.mjs install --org <org> --domain <domain> --json --wait 20
+node install.mjs install --org <org> --domain <domain> --contact-email <email> --contact-name "<name>" --json --wait 20
 ```
 
-Stop and ask your person when the result says `needs-person`. Ask them before you choose the Fly organization (its bill pays for every machine) or the domain. The Fly sign-in (`fly auth login`) opens a browser, so they sign in themselves.
+Stop and ask your person when the result says `needs-person`. Ask them before you choose the Fly organization (its bill pays for every machine), the domain or the contact. The Fly sign-in (`fly auth login`) opens a browser, so they sign in themselves.
 
 With `--json`, every line on stdout is one JSON object, and the last line is always `{"event": "result", ...}`. The readable lines go to stderr, and no line on either holds a key. The exit codes are:
 
@@ -30,7 +30,7 @@ With `--json`, every line on stdout is one JSON object, and the last line is alw
 | `0` | Done. |
 | `1` | It failed. `message` says why. |
 | `2` | The command was wrong. |
-| `3` | A person is needed. `reason` is one of `domain`, `fly-organization`, `fly-sign-in`, `billing` or `dns`. |
+| `3` | A person is needed. `reason` is one of `domain`, `contact`, `fly-organization`, `fly-sign-in`, `billing` or `dns`. |
 | `4` | Still waiting on Fly or Let's Encrypt. Nobody needs to do anything; run the same command again later. |
 
 ## What you need
@@ -38,13 +38,16 @@ With `--json`, every line on stdout is one JSON object, and the last line is alw
 - **Node 20 or newer** and **[flyctl](https://fly.io/docs/flyctl/install/)**, signed in or with `FLY_API_TOKEN` set to a token for the organization.
 - **A Fly organization** with billing in order. The installer checks this before it creates anything.
 - **A domain for your own Agentic Cloud**, such as `agents.yourcompany.com`, where you can add DNS records. Use a name of its own, not your company's main domain: the Workspace, code, previews, sites and (once an admin sets it up) mail all live on it.
+- **A contact.** The name and email address of the person Agentic Cloud should write to about this cloud (`--contact-email`, `--contact-name`). Without it the installer stops with exit code 3 and `"reason": "contact"`.
 - **Nothing from us.** No key, no licence and no email: the product is free for now. (The licensing code is still here, off; `COPY_LICENCE=on` brings back `--key-file` and `--licence-file`.)
 
 ## Install
 
 ```sh
-node install.mjs install --org <fly organization> --domain <domain>
+node install.mjs install --org <fly organization> --domain <domain> --contact-email <address> [--contact-name <name>]
 ```
+
+`--contact-email` is who Agentic Cloud writes to about this cloud, and `--contact-name` their name (the address alone is fine). They ride the daily report, the one piece of personal data in it; an admin can change the contact, or turn the report off, in the Workspace.
 
 Options:
 
@@ -110,7 +113,7 @@ Keys are made on your machine and stored only as Fly secrets on your apps:
 - shared secrets between the backend and the code host, and the one a mail receiver will present once there is one;
 - the first-admin code.
 
-It also asks Fly for a separate organization token for the backend. It writes `<prefix>-copy.json` beside itself, holding names and addresses only and never a key; the upgrade command reads it. A log of each run goes to `<prefix>-install.log` or `<prefix>-upgrade.log`.
+The backend needs a Fly organization token to start agent machines. Signed in with `fly auth login`, the installer asks Fly for a separate one for the backend. Run with an organization token in `FLY_API_TOKEN`, it cannot make a second one, so the backend keeps the very token the install ran with, and the install says so. Either way, revoking the backend's token stops every agent machine. So if you install with an organization token, make one for this Agentic Cloud alone (`fly tokens create org -o <org>`), use it for nothing else, and keep it. It writes `<prefix>-copy.json` beside itself, holding names and addresses only and never a key; the upgrade command reads it. A log of each run goes to `<prefix>-install.log` or `<prefix>-upgrade.log`.
 
 It prints six DNS records for you to add and checks them with your domain's own name servers.
 

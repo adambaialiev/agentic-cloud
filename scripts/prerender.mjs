@@ -268,7 +268,9 @@ the cloud and hand back a pull request; here the work ends as something live.
 It is built for people who already use Claude Code or Codex: one person running
 a fleet of agents that does what a much larger team would. Agents read the
 notes and knowledge pages before a job and write back what they learned, and a
-change to protected code waits for a person to approve it. Each agent has a
+change to protected code waits for a person to approve it, unless that person
+has turned on auto-merge for their own agents: then it merges by itself once
+its checks pass. Each agent has a
 name, a job and a coding CLI chosen when it is created — Claude Code, Codex or
 OpenCode — so it can build and publish software, fix bugs, move data, prepare
 reports and return a finished result rather than only advice.
@@ -286,7 +288,8 @@ becomes their own email address on its domain.
 - Claude Code, Codex and OpenCode agents in one Workspace, on the same
   repositories.
 - Parallel work with shared notes, knowledge and repository context.
-- Protected changes arrive as proposals; only a person can approve one.
+- Protected changes arrive as proposals; only a person can approve one, or
+  turn on auto-merge so their own agents' changes merge once checks pass.
 - Customers connect their own Claude, ChatGPT or OpenCode plans; the agents'
   machines, hosting and storage run in the customer's own cloud account.
 

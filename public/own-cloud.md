@@ -40,7 +40,7 @@ If not, your person signs in themselves; never sign in with an account of your o
 
 Then run `fly auth whoami` again, and tell your person which Fly user you are signed in as.
 
-Instead of signing in, your person can give you an organization token as `FLY_API_TOKEN` in your environment. Do not ask them to paste a token into the chat.
+Instead of signing in, your person can give you an organization token as `FLY_API_TOKEN` in your environment. Do not ask them to paste a token into the chat. Tell them first what happens to it: the installer cannot make a second token from an organization token, so the Workspace keeps this very one to start agent machines, and revoking it later stops every agent. So ask for a token made for this Agentic Cloud alone (`fly tokens create org -o <org>`), used for nothing else, and kept.
 
 ## 3. ASK YOUR PERSON
 
@@ -49,8 +49,8 @@ Run `fly orgs list` and show your person the organizations it lists. Then ask al
 1. **The Fly organization.** Which of those, by its slug. It needs a card on file and its bill paid up: Fly bills it directly for everything the install runs. Nothing of ours is on that bill. If the one they want is not listed, the Fly user signed in is not a member of it: go back to step 2, and they sign in as one who is.
 2. **The domain name.** A name of its own, such as `agents.yourcompany.com`, never the company's main domain: the company's mail lives there, and the sites its agents publish will share this name.
 3. **Who adds the DNS records:** your person, or you, if you can edit the domain's DNS and they want you to.
-4. **Who Agentic Cloud writes to about this cloud:** a name and an email address (`--contact-email`, and `--contact-name` for the name). Offer the first admin's address. Tell your person what it is for: once a day their Agentic Cloud sends Agentic Cloud a short signed report, counts only (people, agents, how much they worked, sites, the release, whether it is healthy) and this contact, the one piece of personal data in it, so we know who to write to. An admin can change the contact, or turn the report off, any time in the Workspace, under Workplace › What we tell Agentic Cloud.
-5. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) becomes public app names on Fly. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
+4. **Who Agentic Cloud writes to about this cloud:** a name and an email address (`--contact-email`, and `--contact-name` for the name). Offer your person's own work address, one that already receives mail: an address on the new domain takes no mail until an admin sets up email. Tell your person what it is for: once a day, about two minutes after every start, and when an admin changes the contact, their Agentic Cloud sends Agentic Cloud a short signed report, counts only (people, agents, their replies in the last day, machine hours, live sites, last activity, the release, backup age, free disk and health) and this contact, the one piece of personal data in it, so we know who to write to. We keep the reports on our side. An admin can change the contact, or turn the report off, any time in the Workspace, under Workplace › What we tell Agentic Cloud.
+5. **The prefix and the region,** if they care. The prefix (`--name`; by default it comes from the domain, so `agents.yourcompany.com` gives `agents-yourcompany`; lowercase letters, digits and hyphens, starting with a letter) names the apps the installer makes, and Fly app names are public. The agents' machines and the sites get app names of the Workspace's own, without the prefix. The region is the Fly region nearest to this computer by default, which may not be nearest to their people (`--region <code>`).
 
 Do not ask about email. It is not part of the install: once their Agentic Cloud is up, an admin sets it up in the Workspace, under Mail, with their mail provider's details, and the Workspace makes the mail receiver and shows the records to add. Tell your person that, so nobody expects it at the end.
 
@@ -59,7 +59,7 @@ Do not ask about email. It is not part of the install: once their Agentic Cloud 
 Download the installer this guide is written for into an empty folder. The guide names one exact file, so the commands below always match it:
 
 ```
-curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/1345d2b2b95a21a0d896988794e19dda5b5d3ae6?path=infra/copy-installer/install.mjs'
+curl -fsSL -o install.mjs 'https://agenticcloudcomputer.com/workspace/api/public/workplaces/acc/repos/agentic-cloud/raw/eb8b9d057b554ac04c93194c20c42b80ab149dfd?path=infra/copy-installer/install.mjs'
 ```
 
 Check that it is that file: `shasum -a 256 install.mjs` (`sha256sum install.mjs` on Linux, `Get-FileHash install.mjs` in PowerShell) must print `a469727d5694a55366d1da523570b5ec704d77a6a1644ef957da6d626465332f`. If it does not, stop and tell your person. Do not take a newer `install.mjs` from the repository's main branch instead: this guide is written for this one.
@@ -74,7 +74,7 @@ node install.mjs install --org <org> --domain <domain> --contact-email <email> -
 
 Add `--name` and `--region` here too, if your person gave them.
 
-- **Exit 0:** the plan is ready. Its result lists `creates[]` (every app, disk, bucket, address, certificate, token and secret it will make, each with Fly's list price), `monthlyUsd` (the total) and `records[]` (the DNS records it will ask for). Show your person all three, in plain words, and **wait for their yes**. Point out two things: the Workspace keeps a Fly organization token so it can start agent machines (revoking it stops that), and the prices are Fly's list prices, billed by Fly to their organization.
+- **Exit 0:** the plan is ready. Its result lists `creates[]` (every app, disk, bucket, address, certificate, token and secret it will make, each with Fly's list price), `monthlyUsd` (the total) and `records[]` (the DNS records it will ask for). Show your person all three, in plain words, and **wait for their yes**. Point out two things. First, the token in the plan: the Workspace keeps a Fly organization token so it can start agent machines. Signed in to Fly, the installer makes a new one for it; run with an organization token, it cannot, and the Workspace keeps the token you run with. Either way, revoking that token stops every agent. Second, the prices are Fly's list prices, billed by Fly to their organization.
 - **Exit 3:** a person is needed first. The result's `reason` and `person[]` say what (see the table at the end). Ask your person, then run the plan again.
 
 ## 5. Install

@@ -5,6 +5,19 @@ import TermsOfService from './TermsOfService';
 import PrivacyPolicy from './PrivacyPolicy';
 
 describe('Terms of Service', () => {
+  // Note #1081 (claims 9, 11 and 44 of the acceptance pass, note #1080).
+  it('names the daily report, the coding tools that move without a release, and auto-merge', () => {
+    render(<TermsOfService />);
+    const body = document.body.textContent ?? '';
+    expect(body).not.toMatch(/nothing upgrades itself/);
+    expect(body).toMatch(/One thing moves without a release: since\s+release 2026\.11\.07\.0, the coding tools/);
+    expect(body).toMatch(/unless an admin holds a\s+version of their own/);
+    expect(body).not.toMatch(/We hold only what you send us/);
+    expect(body).toMatch(/the daily report your Agentic\s+Cloud sends us by itself: counts plus the name and email of the contact person/);
+    expect(body).toMatch(/The one exception\s+is auto-merge/);
+    expect(body).toMatch(/November 8, 2026/);
+  });
+
   it('describes the Workspace, offered as your own Agentic Cloud, plus the invite-only hosted Workspace', () => {
     render(<TermsOfService />);
 
@@ -89,7 +102,7 @@ describe('Privacy Policy', () => {
     expect(body).toMatch(/We keep the questions you type and\s+its answers for 90 days, and the founder reads them/);
     expect(body).toMatch(/We store no\s+address, cookie or account with them/);
     expect(body).toMatch(/processed by Anthropic’s Claude, on the\s+founder’s own Claude subscription/);
-    expect(body).toMatch(/November 6, 2026/);
+    expect(body).toMatch(/November 8, 2026/);
   });
 
   it('says a builder page’s numbers are shown only to its person, and names no Leaderboard (note #824)', () => {
@@ -181,7 +194,16 @@ describe('Privacy Policy', () => {
     const body = document.body.textContent ?? '';
     expect(body).toMatch(/Your messages, code, files, mail, keys and logs never\s+reach us/);
     expect(body).toMatch(/no access to your Agentic Cloud unless you give it to us/);
-    expect(body).toMatch(/Only what you send us/);
+    // Note #1081 (claims 8 and 9 of the acceptance pass, note #1080): since
+    // release 2026.11.07.0 a copy sends us a daily report by itself, so
+    // section 2 names it, the contact it carries, and the two public lists
+    // it reads. "Only what you send us" was false from that day.
+    expect(body).not.toMatch(/Only what you send us/);
+    expect(body).toMatch(/the daily report below, with the name and email of the\s+contact person it carries/);
+    expect(body).toMatch(/reaches us in three ways/);
+    expect(body).toMatch(/Once a day, about two minutes after every\s+start, and when an admin changes the contact, it sends us a short signed report/);
+    expect(body).toMatch(/turns the report off, in the Workspace under Workplace › What we tell Agentic\s+Cloud/);
+    expect(body).toMatch(/follow it unless an admin holds a\s+version of their own/);
     expect(body).toMatch(/free for now, so we hold no payment record or card details for it/);
     expect(body).toMatch(/downloads it from our update service, which reads nothing from your Agentic Cloud/);
     expect(body).not.toMatch(/licen[cs]e|update key|renewal/i);
