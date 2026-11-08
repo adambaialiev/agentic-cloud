@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { DirectMessageInbox } from '../../../../src/shared/direct-messages.js';
 import type { WorkspaceOrgMember } from '../../../../src/shared/workspace-api.js';
-import { WorkspaceApiError } from '../../api/client.js';
+import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError } from '../../api/client.js';
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
 import { useBackClaim } from '../../chrome/useBack.js';
 import { toFor } from '../../routes.js';
@@ -13,7 +13,7 @@ import { relative, useNow } from '../../ui/time.js';
 import { PersonRow } from '../org/PersonRow.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
 import { usePeople } from '../org/usePeople.js';
-import { isOpening, useMessagePoll } from './useMessagePoll.js';
+import { isAnswerObject, isOpening, pollFailureLine, useMessagePoll, usePollMisses } from './useMessagePoll.js';
 
 /** The same People plates in a transient picker, with the normal Back. */
 function NewMessagePicker({ people, orgName, orgId, loading, error, close }: {
@@ -43,18 +43,21 @@ export function MessagesScreen() {
   const [inbox, setInbox] = useState<DirectMessageInbox | null>(null);
   const [error, setError] = useState(''), [choosing, setChoosing] = useState(false), [opening, setOpening] = useState(false);
   const closePicker = useCallback(() => setChoosing(false), []);
+  // A missed read is quiet until it keeps missing (note #1069).
+  const misses = usePollMisses();
   const read = useCallback(async (alive: () => boolean) => {
     try {
-      const answer = await api.api<DirectMessageInbox>('api/messages');
-      if (alive()) { setInbox(answer); setError(''); setOpening(false); }
+      const answer = await api.api<unknown>('api/messages');
+      if (!isAnswerObject(answer)) throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
+      if (alive()) { misses.hit(); setInbox(answer as unknown as DirectMessageInbox); setError(''); setOpening(false); }
     } catch (err) {
       if (!alive()) return;
-      if (isOpening(err)) { setError(''); setOpening(true); return; }
+      if (isOpening(err)) { misses.hit(); setError(''); setOpening(true); return; }
       setOpening(false);
-      setError(errorMessage(err));
-      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) setInbox(null);
+      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { setError(errorMessage(err)); setInbox(null); return; }
+      if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api]);
+  }, [api, misses]);
   useMessagePoll(read);
   const address = (id: string) => toFor({ kind: 'directMessage', id, orgId: orgId ?? undefined })!;
   const peers = people.filter(person => !person.you);

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DIRECT_MESSAGE_MAX_LENGTH, type DirectMessage, type DirectMessagePage } from '../../../../src/shared/direct-messages.js';
-import { jsonBody, WorkspaceApiError } from '../../api/client.js';
+import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { directDraftKey, recallDraft, rememberDraft } from '../../chrome/draft-memory.js';
 import { useReturnToParent } from '../../chrome/history.js';
 import { toFor } from '../../routes.js';
@@ -9,7 +9,7 @@ import { PersonFace } from '../../ui/PersonFace.js';
 import { Svg } from '../../ui/icons.js';
 import { errorMessage } from '../../ui/format.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
-import { isOpening, useMessagePoll } from './useMessagePoll.js';
+import { isAnswerObject, isOpening, pollFailureLine, useMessagePoll, usePollMisses } from './useMessagePoll.js';
 import { useChatViewport } from '../chat/ChatScreen.js';
 import { chatDayLabel } from '../chat/chat-notice.js';
 import { CHAT_COUNT_FROM, CHAT_TOUCH_QUERY, chatEnterSends } from '../chat/chat-compose.js';
@@ -50,22 +50,26 @@ export function DirectMessageScreen() {
     catch { /* Retry the receipt on a later tick. */ }
     finally { receiptBusy.current = false; }
   }, [api, path]);
+  const misses = usePollMisses();
   const read = useCallback(async (current: () => boolean) => {
     try {
       const after = newestFetched.current;
-      const answer = await api.api<DirectMessagePage>(path + (after ? `?after=${after}` : ''));
+      const read = await api.api<unknown>(path + (after ? `?after=${after}` : ''));
+      if (!isAnswerObject(read) || !Array.isArray(read.messages)) throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
+      const answer = read as unknown as DirectMessagePage;
       if (!current()) return;
-      setPage(answer); setError(''); setOpening(false); if (!after) setMore(answer.hasMore);
+      misses.hit(); setPage(answer); setError(''); setOpening(false); if (!after) setMore(answer.hasMore);
       if (answer.messages.length) { newestFetched.current = answer.messages.at(-1)!.id; setFetchedCursor(newestFetched.current); setRows(old => merge(old, answer.messages)); if (!following.current) setNewMessages(true); }
       await acknowledge();
     } catch (err) {
       if (!current()) return;
-      if (isOpening(err)) { setError(''); setOpening(true); return; }
+      if (isOpening(err)) { misses.hit(); setError(''); setOpening(true); return; }
       setOpening(false);
-      setError(errorMessage(err));
-      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { setPage(null); setRows([]); }
+      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { setError(errorMessage(err)); setPage(null); setRows([]); return; }
+      // A missed read is quiet until it keeps missing (note #1069).
+      if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api, path, acknowledge]);
+  }, [api, path, acknowledge, misses]);
   useMessagePoll(read);
   useLayoutEffect(() => {
     const el = pane.current; if (!el) return;

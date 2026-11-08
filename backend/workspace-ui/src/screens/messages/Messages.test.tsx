@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App.js';
-import { WorkspaceApiError } from '../../api/client.js';
+import { ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError } from '../../api/client.js';
 import { emptyState, scriptedApi, workspaceScript, type Answer } from '../../test/fixtures.js';
 import type { DirectMessage, DirectMessagePage } from '../../../../src/shared/direct-messages.js';
 const org = { orgId: 'o1', name: 'Studio', role: 'member', members: 2, seats: 0, seatProviders: [] };
@@ -221,5 +221,34 @@ describe('human messages', () => {
     open('/messages?org=o1', { 'GET api/messages': () => ({ threads: [], unread: 0 }) });
     await flush(); fireEvent.click(screen.getByText('New message'));
     const picker = screen.getByLabelText('Choose a teammate'); expect(within(picker).getByText('Bob')).toBeTruthy(); expect(within(picker).queryByText('Alice')).toBeNull();
+  });
+  it('reads a non-object answer on the inbox and in a conversation as a quiet miss, says so after three, and redraws when reads land (note #1069)', async () => {
+    let bad = false;
+    const alert = () => screen.queryAllByRole('alert').find((node) => /Retrying/.test(node.textContent ?? '')) ?? null;
+    open('/messages?org=o1', {
+      'GET api/messages': () => bad ? null : { threads: [{ person: page().person, lastMessage: msg(1, 'Hello'), unread: 1 }], unread: 1 },
+      'GET api/messages/bob': () => bad ? null : page([msg(1, 'Hello')]),
+      'GET api/messages/bob?after=1': () => bad ? null : page([]),
+    });
+    await flush();
+    expect(screen.getByRole('link', { name: /Bob/ })).toBeTruthy();
+    bad = true;
+    await flush(3100); await flush(3100);
+    expect(alert()).toBeNull();
+    expect(screen.getByRole('link', { name: /Bob/ })).toBeTruthy();
+    await flush(3100);
+    expect(alert()?.textContent).toBe(`${ANSWER_UNREADABLE_SENTENCE} Retrying…`);
+    bad = false; await flush(3100);
+    expect(alert()).toBeNull();
+    fireEvent.click(screen.getByRole('link', { name: /Bob/ })); await flush();
+    expect(screen.getByText('Hello')).toBeTruthy();
+    bad = true;
+    await flush(3100); await flush(3100);
+    expect(alert()).toBeNull();
+    expect(screen.getByText('Hello')).toBeTruthy();
+    await flush(3100);
+    expect(alert()?.textContent).toBe(`${ANSWER_UNREADABLE_SENTENCE} Retrying…`);
+    bad = false; await flush(3100);
+    expect(alert()).toBeNull();
   });
 });

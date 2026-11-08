@@ -39,6 +39,14 @@ export class WorkspaceApiError extends Error {
   }
 }
 
+/**
+ * A call the server answered with success whose body never arrived whole, or
+ * was not JSON (note #1069). Thrown as a `WorkspaceApiError` carrying the
+ * success status, so a poll treats it like any other missed read.
+ */
+export const ANSWER_UNREADABLE_CODE = 'answer_unreadable';
+export const ANSWER_UNREADABLE_SENTENCE = 'The answer was cut off on its way here.';
+
 /** Where an ordinary call stands: the workplace it rides as `?org=`. */
 export interface WorkspaceApiScope {
   org?: string | null;
@@ -136,8 +144,16 @@ export function createWorkspaceApi(options: WorkspaceApiOptions = {}): Workspace
     const reading = (init?.method ?? 'GET').toUpperCase() === 'GET' && init?.body == null;
     const early = reading ? await takeEarlyRead(url)?.catch(() => null) : null;
     const response = early?.ok ? early : await doFetch(url, { credentials: 'same-origin', ...init, headers });
-    let body: unknown = null;
-    try { body = await response.json(); } catch { /* non-JSON error page, or no body */ }
+    // The body is read as text first, so the two ways it can fail stay
+    // apart (note #1069): a body that never arrived whole — the connection
+    // dropped mid-answer, as a phone does on a weak signal or when it locks
+    // with a large read in flight — and a body that arrived and is not JSON.
+    // Both used to come back as `null` from a SUCCESSFUL call, and the
+    // caller read a field off it and crashed with "null is not an object".
+    let text = '', cut = false;
+    try { text = await response.text(); } catch { cut = true; }
+    let body: unknown = null, parsed = !text;
+    if (text) { try { body = JSON.parse(text); parsed = true; } catch { /* non-JSON error page */ } }
     if (!response.ok) {
       const sentence = (body as Partial<WorkspaceApiErrorBody> | null)?.error;
       throw new WorkspaceApiError(
@@ -145,6 +161,11 @@ export function createWorkspaceApi(options: WorkspaceApiOptions = {}): Workspace
         response.status,
         body,
       );
+    }
+    // A success whose answer could not be read is a failed read, not an
+    // empty one. An empty body (204, a bare `res.end()`) is still `null`.
+    if (cut || !parsed) {
+      throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, response.status, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
     }
     return body as T;
   };

@@ -6729,6 +6729,30 @@ describe('the workplace screens (members, seats, invites)', () => {
     expect(JSON.stringify(teammate.body)).not.toContain('Checkout');
   });
 
+  it('answers the conversation as an object naming its workplace, or a JSON error with a status — never an empty success (note #1069)', async () => {
+    const { deps, orgStorage, org } = await buildOrgDeps();
+    const get = async () => {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/recap/chat', 'get')(mockRequest({ headers: authHeader(42), query: { org: org.orgId } }), res);
+      return res;
+    };
+    const fresh = await get();
+    expect(fresh.statusCode).toBe(200);
+    expect(fresh.body).toMatchObject({ orgId: org.orgId, working: false, waiting: [] });
+    expect(Array.isArray((fresh.body as { messages: unknown }).messages)).toBe(true);
+    // The record cannot be read: a status and a sentence, which the page
+    // counts as a miss, rather than a 200 it would have to guess about.
+    const getMembership = orgStorage.getMembership.bind(orgStorage);
+    orgStorage.getMembership = vi.fn(async (orgId: string, userId: string) => {
+      if (userId === 'user-1') throw new Error('database is locked');
+      return getMembership(orgId, userId);
+    }) as typeof orgStorage.getMembership;
+    const broken = await get();
+    expect(broken.statusCode).toBe(503);
+    expect(broken.body).toEqual({ error: 'Workspace Agent could not be reached.' });
+    orgStorage.getMembership = getMembership;
+  });
+
   it('stops, steers and takes files for the Workspace Agent by the room chat\'s routes (note #423)', async () => {
     const { deps, orgStorage, org } = await buildOrgDeps();
     const model = vi.fn(async (...args: unknown[]) => new Promise<{ failure: 'interrupted' }>((resolve) => {
