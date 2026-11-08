@@ -15,6 +15,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { settleAfterShot, tap } from './browser-settle.mjs';
 import { emptyState, signedIn } from '../backend/workspace-ui/src/test/fixtures.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -82,10 +83,18 @@ try {
   await noAddress('the workplace screen');
   assert.equal(await page.$('#orgHandleBtn'), null, 'no Change address');
   await page.screenshot({ path: path.join(out, 'handles-workplace.png'), fullPage: true });
+  // Rename sits on the phone's bottom edge (top 808 of 860 here), and CI's
+  // font metrics can put it a few pixels past it. A plain page.click there
+  // scrolls by script, the app puts that scroll back, and the press lands on
+  // empty space: #orgNameSub never came, on both attempts, in 7 CI runs on 6
+  // and 7 Nov 2026 (note #1075). Reproduced here at a 790 px window, every
+  // time. A full-page shot also sends the page a resize. So: wait the shot
+  // out, then tap, which scrolls with the wheel and presses a still box.
+  await settleAfterShot(page);
   console.log('PASS: the workplace screen shows no address under its title and offers nothing to change one');
 
   // 2. Renaming says nothing of an address.
-  await page.click('#orgRenameBtn');
+  await tap(page, '#orgRenameBtn');
   await page.waitForSelector('#orgNameSub');
   // It listed the rooms among what stays until rooms left the product (note
   // #843).
@@ -97,7 +106,7 @@ try {
   // 3. New workplace: the name, and nothing else — no address row, no line about it.
   await page.goto(`http://127.0.0.1:${port}/workplaces`);
   await page.waitForSelector('#orgNewDoor');
-  await page.click('#orgNewDoor');
+  await tap(page, '#orgNewDoor');
   await page.waitForSelector('#orgCreateName');
   await page.type('#orgCreateName', 'Acme Trading');
   assert.equal(await page.$('#orgCreateHandle'), null, 'no address row');

@@ -274,10 +274,11 @@ try {
     const control = button.getBoundingClientRect();
     const link = button.closest('.orgjoin-link')!.getBoundingClientRect();
     const glyph = button.querySelector('svg')!.getBoundingClientRect();
+    // Whole pixels: a measured box can read 27.99997 while it settles (note #1075).
     return {
-      width: control.width, height: control.height,
-      glyphWidth: glyph.width, glyphHeight: glyph.height,
-      top: control.top - link.top, right: link.right - control.right,
+      width: Math.round(control.width), height: Math.round(control.height),
+      glyphWidth: Math.round(glyph.width), glyphHeight: Math.round(glyph.height),
+      top: Math.round(control.top - link.top), right: Math.round(link.right - control.right),
     };
   });
   check('revoke is a small control in the link’s top-right corner',

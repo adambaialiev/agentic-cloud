@@ -2061,17 +2061,22 @@ try {
   await page.evaluate(() => document.querySelector('#agentChatLog .chatvideoitem')!.scrollIntoView({ block: 'center' }));
   await new Promise((resolve) => setTimeout(resolve, 200));
   const mediaFrom = await scrolled();
+  // PLAYING IS A STATE, NOT A SPEED (note #1075). These used to wait up to 10 s
+  // for the clock to pass 0.4 s (0.3 s for the recording), which asks how fast a
+  // busy machine decodes rather than whether the press played anything: the same
+  // wait in verify-workspace-react-notes read 0.4 and 0.3 on CI three times. The proof that it plays is the clock leaving zero (or the
+  // clip reaching its end), with no media error.
   await page.click('#agentChatLog .chatvideoitem video');
-  await page.waitForFunction(
-    () => (document.querySelector<HTMLVideoElement>('#agentChatLog .chatvideoitem video')?.currentTime ?? 0) > 0.4,
-    { timeout: 10_000 },
-  ).catch(() => {});
+  await page.waitForFunction(() => {
+    const video = document.querySelector<HTMLVideoElement>('#agentChatLog .chatvideoitem video');
+    return Boolean(video && (video.currentTime > 0 || video.ended || video.error));
+  }, { timeout: 20_000 }).catch(() => {});
   const played = await page.$eval('#agentChatLog .chatvideoitem video', (node) => {
     const video = node as HTMLVideoElement;
-    return { at: Number(video.currentTime.toFixed(2)), error: video.error?.code ?? 0, fullscreen: document.fullscreenElement !== null };
+    return { at: Number(video.currentTime.toFixed(2)), started: video.currentTime > 0 || video.ended, error: video.error?.code ?? 0, fullscreen: document.fullscreenElement !== null };
   });
   check('…and pressed, it plays in the conversation, not thrown full screen',
-    played.at > 0.4 && !played.error && !played.fullscreen && Math.abs((await scrolled()).y - mediaFrom.y) <= 2,
+    played.started && !played.error && !played.fullscreen && Math.abs((await scrolled()).y - mediaFrom.y) <= 2,
     JSON.stringify(played));
   const recording = await page.$eval('#agentChatLog .chataudioitem', (node) => {
     const audio = node.querySelector('audio')!;
@@ -2087,14 +2092,18 @@ try {
     };
   });
   await page.evaluate(() => document.querySelector<HTMLAudioElement>('#agentChatLog .chataudioitem audio')!.play());
-  await page.waitForFunction(
-    () => (document.querySelector<HTMLAudioElement>('#agentChatLog .chataudioitem audio')?.currentTime ?? 0) > 0.3,
-    { timeout: 10_000 },
-  ).catch(() => {});
-  const heard = await page.$eval('#agentChatLog .chataudioitem audio', (node) => Number((node as HTMLAudioElement).currentTime.toFixed(2)));
+  await page.waitForFunction(() => {
+    const audio = document.querySelector<HTMLAudioElement>('#agentChatLog .chataudioitem audio');
+    return Boolean(audio && (audio.currentTime > 0 || audio.ended || audio.error));
+  }, { timeout: 20_000 }).catch(() => {});
+  const heardState = await page.$eval('#agentChatLog .chataudioitem audio', (node) => {
+    const audio = node as HTMLAudioElement;
+    return { at: Number(audio.currentTime.toFixed(2)), started: audio.currentTime > 0 || audio.ended, error: audio.error?.code ?? 0 };
+  });
+  const heard = heardState.at;
   check('a recording plays where it was said, above the name that saves it',
     recording.ready >= 1 && recording.duration === 3 && recording.controls && recording.player.height > 20
-    && recording.player.width > 200 && recording.stacked && recording.label === 'Download chat-voice.mp3' && heard > 0.3,
+    && recording.player.width > 200 && recording.stacked && recording.label === 'Download chat-voice.mp3' && heardState.started && !heardState.error,
     `${JSON.stringify(recording)} played to ${heard}s`);
   await page.evaluate(() => { for (const player of document.querySelectorAll<HTMLMediaElement>('#agentChatLog video, #agentChatLog audio')) player.pause(); });
   // The name is the way to the file: the very bytes, under its own name, and

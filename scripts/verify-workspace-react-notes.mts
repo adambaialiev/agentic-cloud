@@ -689,33 +689,41 @@ try {
   check('…with the facts row a photo has under it, and Download beside the ✕',
     noteClip.caption.includes('chat-clip.mp4 · 10 KB · you attached this') && noteClip.download && noteClip.remove,
     JSON.stringify(noteClip));
+  // PLAYING IS A STATE, NOT A SPEED (note #1075). These used to wait up to 10 s
+  // for the clock to pass 0.4 s (0.3 s for the recording), which asks how fast a
+  // busy machine decodes rather than whether the press played anything: CI
+  // read 0.4 and 0.3 on three runs, 5-8 Nov 2026, with no error and nothing
+  // over the page. The proof that it plays is the clock leaving zero (or the
+  // clip reaching its end), with no media error.
   await page$.click('#noteFiles .notevideo video');
-  await page$.waitForFunction(
-    () => (document.querySelector<HTMLVideoElement>('#noteFiles .notevideo video')?.currentTime ?? 0) > 0.4,
-    { timeout: 10_000 },
-  ).catch(() => {});
+  await page$.waitForFunction(() => {
+    const video = document.querySelector<HTMLVideoElement>('#noteFiles .notevideo video');
+    return Boolean(video && (video.currentTime > 0 || video.ended || video.error));
+  }, { timeout: 20_000 }).catch(() => {});
   const notePlayed = await page$.$eval('#noteFiles .notevideo video', (node) => {
     const video = node as HTMLVideoElement;
-    return { at: Number(video.currentTime.toFixed(2)), error: video.error?.code ?? 0, fullscreen: document.fullscreenElement !== null, viewer: Boolean(document.querySelector('#imageViewer, #pdfViewer')) };
+    return { at: Number(video.currentTime.toFixed(2)), started: video.currentTime > 0 || video.ended, error: video.error?.code ?? 0, fullscreen: document.fullscreenElement !== null, viewer: Boolean(document.querySelector('#imageViewer, #pdfViewer')) };
   });
   check('…and pressed, it plays right there, opening nothing over the note',
-    notePlayed.at > 0.4 && !notePlayed.error && !notePlayed.fullscreen && !notePlayed.viewer, JSON.stringify(notePlayed));
+    notePlayed.started && !notePlayed.error && !notePlayed.fullscreen && !notePlayed.viewer, JSON.stringify(notePlayed));
   await page$.evaluate(() => document.querySelector<HTMLAudioElement>('#noteFiles .noteaudio audio')!.play());
-  await page$.waitForFunction(
-    () => (document.querySelector<HTMLAudioElement>('#noteFiles .noteaudio audio')?.currentTime ?? 0) > 0.3,
-    { timeout: 10_000 },
-  ).catch(() => {});
+  await page$.waitForFunction(() => {
+    const audio = document.querySelector<HTMLAudioElement>('#noteFiles .noteaudio audio');
+    return Boolean(audio && (audio.currentTime > 0 || audio.ended || audio.error));
+  }, { timeout: 20_000 }).catch(() => {});
   const noteHeard = await page$.$eval('#noteFiles .noteaudio', (node) => {
     const audio = node.querySelector('audio')!;
     return {
       at: Number(audio.currentTime.toFixed(2)),
+      started: audio.currentTime > 0 || audio.ended,
+      error: audio.error?.code ?? 0,
       duration: Math.round(audio.duration),
       width: Math.round(audio.getBoundingClientRect().width),
       caption: (node.nextElementSibling as HTMLElement | null)?.textContent?.replace(/\s+/g, ' ').trim() ?? '',
     };
   });
   check('a recording on a note plays on its slide, as a play bar above its facts',
-    noteHeard.at > 0.3 && noteHeard.duration === 3 && noteHeard.width > 200 && noteHeard.caption.includes('chat-voice.mp3'),
+    noteHeard.started && !noteHeard.error && noteHeard.duration === 3 && noteHeard.width > 200 && noteHeard.caption.includes('chat-voice.mp3'),
     JSON.stringify(noteHeard));
   await page$.evaluate(() => { for (const player of document.querySelectorAll<HTMLMediaElement>('#noteFiles video, #noteFiles audio')) player.pause(); });
   // The card itself, slid to each player in turn: a full-page shot keeps the
@@ -959,9 +967,26 @@ try {
       && liveClaims.some((row: { id?: string }) => row.id === plumber.id)
       && !JSON.stringify(liveClaims).includes('closed on Mondays'),
     JSON.stringify(liveClaims));
+  // This wait went red once on CI (6 Nov 2026) and once under load here, and
+  // passed every other time (note #1075). The line can only move on the page's
+  // own five-second live poll, so if it times out again, say what the polls
+  // did rather than only that 20 s ran out: how many there were after the
+  // claim, whether they carried it, and whether the tab thought itself hidden.
+  const livePolls: { at: number; claimed: boolean }[] = [];
+  const claimedAt = Date.now();
+  const onLive = async (response: import('puppeteer-core').HTTPResponse) => {
+    if (!response.url().includes('/workspace/api/agents/live')) return;
+    const body = await response.text().catch(() => '');
+    livePolls.push({ at: Date.now() - claimedAt, claimed: body.includes(plumber.id) });
+  };
+  page$.on('response', onLive);
   await page$.waitForFunction(() => (
     document.getElementById('noteSub')?.textContent?.includes('Working by Kai')
-  ), { timeout: 20_000 });
+  ), { timeout: 20_000 }).catch(async (error) => {
+    const seen = await page$.evaluate(() => ({ line: document.getElementById('noteSub')?.textContent ?? '', hidden: document.hidden }));
+    throw new Error(`${String(error)} — the line read "${seen.line}", hidden=${seen.hidden}, live polls since the claim: ${JSON.stringify(livePolls)}`);
+  });
+  page$.off('response', onLive);
   check('the line follows a claim taken after the note was already open',
     (await text('#noteSub')).includes('Working by Kai'), await text('#noteSub'));
   // The picture is REAL bytes off the avatar route, not a frame around a

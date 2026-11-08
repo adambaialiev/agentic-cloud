@@ -313,13 +313,13 @@ try {
     await page.waitForSelector('#screenHome #homeWorkplaceDoor', { timeout: 10_000 });
     if (half === 'workplace') {
       await closeHomeWindow(page);
-      await page.click('#homeWorkplaceDoor');
+      await tap(page, '#homeWorkplaceDoor');
       await page.waitForSelector('#homeSheet #homeWorkplace', { timeout: 10_000 });
       return;
     }
     if (!(await page.$('#agentSwitchSheet'))) {
       await closeHomeWindow(page);
-      await page.click('#agentChatSwitch');
+      await tap(page, '#agentChatSwitch');
     }
     await page.waitForSelector(halfShown('agents'), { timeout: 10_000 });
   };
@@ -384,7 +384,7 @@ try {
   await page.goto(`${ORIGIN}/`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#screenHome #agentChatSwitch', { timeout: 10_000 });
   await closeHomeWindow(page);
-  await page.click('#agentChatSwitch');
+  await tap(page, '#agentChatSwitch');
   await page.waitForSelector('#agentSwitchSheet #agentSwitchGrid', { timeout: 10_000 });
   // The picker had the rooms as its tabs, the room the workplace stood in
   // first, and a room's page held its actions (note #585), until rooms left
@@ -420,7 +420,7 @@ try {
     `switch ${homeSwitch.right}px/${homeSwitch.width}×${homeSwitch.height} “${homeSwitch.name}” · face ${homeSwitch.faceLeft}–${homeSwitch.faceRight}px · column ${homeSwitch.followingRight}px`);
   // Note #609: the switch drops a menu over Home rather than leaving it.
   const homeAddress = page.url();
-  await page.click('#homeOrganizations');
+  await tap(page, '#homeOrganizations');
   await page.waitForSelector('#workplaceMenu', { visible: true, timeout: 10_000 });
   const menuShape = await page.$eval('#workplaceMenu', (node) => {
     const box = node.getBoundingClientRect();
@@ -443,14 +443,14 @@ try {
   check('…every one of those actions carries its icon, as New workplace does (note #622)',
     menuShape.iconless === 0, JSON.stringify(menuShape));
   await shotOrg('workplace-menu');
-  await page.click('#workplaceMenuInvite');
+  await tap(page, '#workplaceMenuInvite');
   await page.waitForSelector('#screenInvite', { timeout: 10_000 });
   await page.waitForSelector('#inviteTitle', { timeout: 10_000 });
   check('that door opens the invite page', (await text('#inviteTitle')) === 'Invite to this workplace', await text('#inviteTitle'));
   await page.goto(homeAddress, { waitUntil: 'networkidle0' });
-  await page.click('#homeOrganizations');
+  await tap(page, '#homeOrganizations');
   await page.waitForSelector('#workplaceMenu', { visible: true, timeout: 10_000 });
-  await page.click('#workplaceMenuSettings');
+  await tap(page, '#workplaceMenuSettings');
   // ScreenTitle is portalled into the persistent page header, so the title
   // and the screen are siblings rather than one containing the other.
   await page.waitForSelector('#screenOrg', { timeout: 10_000 });
@@ -471,7 +471,10 @@ try {
   check('rename sits at the bottom right as a secondary action',
     renamePosition.afterCloud && renamePosition.last && renamePosition.secondary && renamePosition.rightEdge, JSON.stringify(renamePosition));
   const detailAddress = page.url();
-  await page.click('#orgNameActions button');
+  // Rename is the last thing on this screen, on the phone's bottom edge: a
+  // plain page.click there missed on CI three times (both attempts each,
+  // 6 and 8 Nov 2026, note #1075). Every press in this harness is a tap.
+  await tap(page, '#orgNameActions button');
   await page.waitForSelector('#screenOrgName', { timeout: 10_000 });
   check('rename is a transient screen over the workplace address', page.url() === detailAddress, page.url());
   check('the rename field starts with the current name', await page.$eval('#orgName', (node) => (node as HTMLInputElement).value) === 'saddam’s workplace');
@@ -483,12 +486,12 @@ try {
     return style.borderLeftWidth === '0px' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
   }));
   await shotOrg('rename-phone');
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await page.waitForSelector('#screenOrg', { timeout: 10_000 });
   check('Back closes rename without moving or changing the workplace',
     page.url() === detailAddress && (await text('#orgTitle')) === 'saddam’s workplace',
     `${page.url()} · ${await text('#orgTitle')}`);
-  await page.click('#orgNameActions button');
+  await tap(page, '#orgNameActions button');
   await page.waitForSelector('#screenOrgName', { timeout: 10_000 });
   await page.setViewport({ width: 1280, height: 900, deviceScaleFactor: 2 });
   const desktopRename = await page.$eval('#screenOrgName', (node) => ({
@@ -501,7 +504,7 @@ try {
     JSON.stringify(desktopRename));
   await shotOrg('rename-desktop');
   await page.setViewport({ width: 420, height: 860, deviceScaleFactor: 2 });
-  await page.click('#orgName');
+  await tap(page, '#orgName');
   await page.keyboard.down('Control');
   await page.keyboard.press('A');
   await page.keyboard.up('Control');
@@ -510,16 +513,16 @@ try {
     await page.$eval('#orgName', (node) => (node as HTMLInputElement).value) === '  Northstar   Studio  ',
     await page.$eval('#orgName', (node) => (node as HTMLInputElement).value));
   check('a changed name makes Save available', !(await page.$eval('#orgNameSave', (node) => (node as HTMLButtonElement).disabled)));
-  await page.click('#orgNameSave');
+  await tap(page, '#orgNameSave');
   await page.waitForFunction(() => document.querySelector('#orgTitle')?.textContent === 'Northstar Studio', { timeout: 10_000 });
   check('the workplace title changes without moving its address', page.url() === detailAddress, page.url());
   check('the shared workplace record carries the normalized name', (await orgStorage.listOrgs())[0]!.name === 'Northstar Studio');
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await homeBare();
-  await page.click('#homeOrganizations');
+  await tap(page, '#homeOrganizations');
   await page.waitForSelector('#workplaceMenu', { visible: true, timeout: 10_000 });
   check('the workplace menu carries the new name', (await text('#workplaceMenu [aria-checked="true"] .orgmenunametext')) === 'Northstar Studio', await text('#workplaceMenu [aria-checked="true"] .orgmenunametext'));
-  await page.click('#workplaceMenuNew');
+  await tap(page, '#workplaceMenuNew');
   await page.waitForSelector('#orgCreateBtn', { timeout: 10_000 });
   const workplaceCommit = await page.$eval('#orgCreateBtn', (node) => {
     const button = node as HTMLButtonElement;
@@ -530,7 +533,8 @@ try {
       className: button.className,
       afterField: box.top >= document.getElementById('orgCreateName')!.getBoundingClientRect().bottom,
       rightDelta: Math.abs(box.right - form.right),
-      height: box.height,
+      // Whole pixels: a box measured mid-transition reads 39.99997 (note #1075).
+      height: Math.round(box.height),
       width: box.width,
       formWidth: form.width,
       radius: style.borderRadius,
@@ -546,7 +550,7 @@ try {
   check('New workplace ends at its Create workplace action',
     !(await text('#screenOrgCreate')).includes('Your company or team’s name is the usual choice'));
   await shotOrg('new-workplace');
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await waitHome();
   check('the menu closed behind the form', !(await page.$('#workplaceMenu')));
   check('Home carries the new workplace name', (await text('#homeOrganizations .orgswapname')) === 'Northstar Studio', await text('#homeOrganizations .orgswapname'));
@@ -564,13 +568,13 @@ try {
   await page.waitForSelector('#screenSecrets #secretsAddBtn', { timeout: 10_000 });
   await page.$eval('#screenSecrets #secretsAddBtn', (node) => (node as HTMLButtonElement).click());
   await page.waitForSelector('#secretName');
-  await page.click('#secretName');
+  await tap(page, '#secretName');
   check('the shared secret fields lost the same left focus border',
     await page.$eval('#screenAdd .frow', (node) => getComputedStyle(node).borderLeftWidth === '0px'));
   await page.type('#secretName', 'GH_TOKEN');
   await page.type('#secretValue', 'ghp_example_value_1234');
   check('the value counts its characters', (await text('#valueCount')) === '22 characters', await text('#valueCount'));
-  await page.click('#saveBtn');
+  await tap(page, '#saveBtn');
   await page.waitForSelector('#screenSecrets #secretsList', { timeout: 10_000 });
   check('saving lands on the workplace\'s secrets list', new URL(page.url()).pathname === '/secrets' && !new URL(page.url()).searchParams.has('room'), page.url());
   await page.waitForFunction(() => [...document.querySelectorAll('#secretsList .crow .name')].some((n) => n.textContent === 'GH_TOKEN'), { timeout: 10_000 }).catch(() => {});
@@ -674,7 +678,7 @@ try {
   // Her own address on the mail domain — what the admin reads on her
   // screen as where to reach her (note #626).
   await mailbox.mailboxes.claim('user-mira', 'mira');
-  await page.click('#orgPeopleDoor');
+  await tap(page, '#orgPeopleDoor');
   await page.waitForSelector('#people .crow', { timeout: 10_000 });
   check('the door opens the People page at its own address', page.url() === `${ORIGIN}/workplace/people?org=${orgDoc.orgId}`, page.url());
   check('the page counts its people and who is here', (await text('#peopleSub')) === 'Northstar Studio · 2 people · 1 here now', await text('#peopleSub'));
@@ -698,7 +702,7 @@ try {
   await shotOrg('people');
   // Her name, not the plate's middle: since 2026-10-28 the middle holds her
   // agents' lines, and each of those opens its agent.
-  await page.click('#people .crow:nth-child(2) .name');
+  await tap(page, '#people .crow:nth-child(2) .name');
   await page.waitForSelector('#orgMemberCard', { timeout: 10_000 });
   check('a plate opens the member, who says when she was seen and her latest line',
     (await text('#orgMemberCard')).includes('SeenActive 2h ago') && (await text('#orgMemberCard')).includes('LatestApproved proposal #12'), await text('#orgMemberCard'));
@@ -762,12 +766,12 @@ try {
   // #925) made the screen taller, the scroll back from Remove stopped with
   // this row under the sticky title, where a click lands on the title.
   await page.$eval('#orgMemberEmail button.v.act', (node) => node.scrollIntoView({ block: 'center' }));
-  await page.click('#orgMemberEmail button.v.act');
+  await tap(page, '#orgMemberEmail button.v.act');
   await page.waitForSelector('#screenMailCompose', { timeout: 10_000 });
   const writingTo = await page.$eval('#mailToField', (node) => (node as HTMLInputElement).value);
   check('…which opens the Workspace\'s own composer, written to her', /^mira@/.test(writingTo), writingTo);
   await shotOrg('people-member-write');
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await page.waitForSelector('#orgMemberCard', { timeout: 10_000 });
   check('…and Back from it returns to her screen', page.url() === memberUrl, page.url());
   // The presence branch, which Mira (here two hours ago) cannot render: the
@@ -946,7 +950,7 @@ try {
     await text('#orgNewAgentCard'));
   heads.cloud = await headShape(page);
   await shotOrg('cloud');
-  await page.click('#orgNewAgentRow');
+  await tap(page, '#orgNewAgentRow');
   await page.waitForSelector('#orgMachineDedicated [data-size]', { timeout: 10_000 });
   const rungs = await page.$$eval('#screenOrgMachine [data-size]', (nodes) => nodes.map((node) => ({
     id: node.getAttribute('data-size') ?? '',
@@ -961,7 +965,7 @@ try {
     && rungs.find((rung) => rung.id === 'performance-4x')?.tag === 'BUTTON',
     JSON.stringify(rungs));
   await shotOrg('new-agent-machine');
-  await page.click('[data-size="performance-4x"]');
+  await tap(page, '[data-size="performance-4x"]');
   await page.waitForSelector('#orgMachineDone', { timeout: 10_000 });
   check('choosing one says so where the thumb is, and moves the badge',
     (await text('#orgMachineDone')).startsWith('Saved. New agents are built on 4 dedicated cores · 8 GB.')
@@ -973,7 +977,7 @@ try {
   check('…and the workplace record itself carries the choice',
     (await orgStorage.getOrg(orgDoc.orgId))?.agentMachineSizeId === 'performance-4x',
     String((await orgStorage.getOrg(orgDoc.orgId))?.agentMachineSizeId));
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await page.waitForSelector('#orgNewAgentCard', { timeout: 10_000 });
   check('…and Back leaves the row saying what was chosen',
     (await text('#orgNewAgentCard')) === '4 dedicated cores · 8 GBabout $0.17 an hour awake',
@@ -1111,7 +1115,7 @@ try {
 
     // The other direction is the half that must NOT be reset: Back owes the
     // workplace screen the line the reader left it on.
-    await page.click('#pageBack');
+    await tap(page, '#pageBack');
     await page.waitForSelector('#orgCloudCard', { timeout: 10_000 });
     await settle(900);
     const backOnOrg = await where();
@@ -1126,7 +1130,7 @@ try {
   await page.goto(`${ORIGIN}/seats?org=${orgDoc.orgId}`, { waitUntil: 'networkidle0' });
   await page.waitForFunction(() => document.querySelector('#seatsList .crow') !== null, { timeout: 10_000 }).catch(() => {});
   check('the seeded seat is listed', (await text('#seatsList .crow .name')).startsWith('Claude · signed in today'), await text('#seatsList .crow .name'));
-  await page.click('#seatsList .crow');
+  await tap(page, '#seatsList .crow');
   await page.waitForSelector('#seatCard', { timeout: 10_000 });
   check('a seat opens at its own address', /\/seats\/[^/?]+\?org=/.test(page.url()), page.url());
   // The pace of every window, against the even spend its own length implies:
@@ -1381,13 +1385,13 @@ try {
   await shotOrg('home-people-deck');
   check('…the reader\u2019s picture closes the header row, at 32px', header.last === 'homeAccount' && header.face === '32x32', JSON.stringify(header));
   await homeBare();
-  await page.click('#homeAccount');
+  await tap(page, '#homeAccount');
   await page.waitForSelector('#accountMenu', { visible: true, timeout: 5_000 });
   const menuRows = await page.$$eval('#accountMenu [role=menuitem]:not(#accountMenuSelf) .orgmenuname', (rows) => rows.map((row) => row.textContent ?? ''));
   // The Leaderboard row went with the board (note #824).
   check('…and opens a menu of People, Apps and Settings', menuRows.join(' | ') === 'People | Apps | Settings', menuRows.join(' | '));
   await shotOrg('home-account-menu');
-  await page.click('#accountMenuPeople');
+  await tap(page, '#accountMenuPeople');
   await page.waitForSelector('#people .crow', { timeout: 10_000 });
   const people = await page.$$eval('#people .crow', (rows) => rows.map((node) => node.querySelector('.name')?.textContent ?? ''));
   check('…whose People row opens everyone in the workplace',
@@ -1535,7 +1539,7 @@ try {
     }) === 'false facehover');
   // And it really opens: a click where a reader would put one, through the
   // hover box that stands over this picture to raise the card.
-  await page.click('#orgSpendList .spendrow .spendname a.facebtn');
+  await tap(page, '#orgSpendList .spendrow .spendname a.facebtn');
   await page.waitForSelector('#agentInfoTitle', { timeout: 10_000 }).catch(() => {});
   check('tapping it opens that agent\u2019s own screen',
     page.url() === `${ORIGIN}/agents/ada` && (await text('#agentInfoTitle')) === 'Ada',
@@ -1558,11 +1562,11 @@ try {
   //     look identical, and this would pass on a cache that was not there.
   await page.goto(`${ORIGIN}/workplace/cloud?org=${orgDoc.orgId}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#orgSpendList .spendrow', { timeout: 10_000 });
-  await page.click('#orgSpendList .spendrow .spendname a.facebtn');
+  await tap(page, '#orgSpendList .spendrow .spendname a.facebtn');
   await page.waitForSelector('#agentInfoTitle', { timeout: 10_000 });
   spendDelayMs = 4000;
   const spendReadsBefore = spendReads;
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await page.waitForSelector('#screenOrgCloud', { timeout: 10_000 });
   const backAtOnce = await page.evaluate(() => document.querySelectorAll('#orgSpendList .spendrow').length);
   // Past the quiet window a wait would have been drawn in, and nowhere near
@@ -1636,7 +1640,7 @@ try {
     JSON.stringify(removeBtn));
   // Asking is not doing: the card names the machine, and Cancel leaves the
   // account exactly as it was.
-  await page.click('#orgSpendList .spendremove');
+  await tap(page, '#orgSpendList .spendremove');
   await page.waitForSelector('.ask', { timeout: 5_000 }).catch(() => {});
   check('…and it asks first, naming the machine it would destroy',
     (await text('.ask')).includes('ia-agent00000002 and everything on it are destroyed, for good.'),
@@ -1647,7 +1651,7 @@ try {
     !(await page.$('.ask')) && (await page.$$('#orgSpendList .spendrow')).length === 3
     && removedApps.size === 0, String((await page.$$('#orgSpendList .spendrow')).length));
 
-  await page.click('#orgSpendList .spendremove');
+  await tap(page, '#orgSpendList .spendremove');
   await page.waitForSelector('.ask', { timeout: 5_000 }).catch(() => {});
   await clickText('.ask .btn.danger', /^Remove$/);
   await page.waitForFunction(() => document.querySelectorAll('#orgSpendList .spendrow').length === 2, { timeout: 10_000 })
@@ -1673,9 +1677,9 @@ try {
   // touched the screen's own state would put the machine back on the glass.
   // Out through the door on the row above it and back with Back — the same
   // trip note #368 holds this cache for, made without a reload.
-  await page.click('#orgSpendList .spendrow .spendname a.facebtn');
+  await tap(page, '#orgSpendList .spendrow .spendname a.facebtn');
   await page.waitForSelector('#agentInfoTitle', { timeout: 10_000 });
-  await page.click('#pageBack');
+  await tap(page, '#pageBack');
   await page.waitForSelector('#orgSpendList .spendrow', { timeout: 10_000 });
   check('…and coming back to the screen does not put it back on the glass',
     (await page.$$('#orgSpendList .spendrow')).length === 2
@@ -1715,12 +1719,12 @@ try {
   // invites the paste it should be waiting for.
   check('…and asks for no token until somebody asks it to',
     (await page.$('#replaceCloudToken')) === null);
-  await page.click('#orgCloudReplace');
+  await tap(page, '#orgCloudReplace');
   await page.waitForSelector('#replaceCloudToken', { timeout: 10_000 });
   await shotOrg('cloud-replace-form');
   const tunnelBefore = tunnel.length;
   await page.type('#replaceCloudToken', 'fo1_same_account');
-  await page.click('#replaceCloudConnect');
+  await tap(page, '#replaceCloudConnect');
   await page.waitForFunction(() => document.getElementById('banner')?.textContent?.includes('token replaced'), { timeout: 10_000 });
   check('a fresh token for the same account rotates the key and moves nothing',
     (await text('#banner')) === 'Cloud token replaced. nomad-trading is still your cloud.'
@@ -1734,10 +1738,10 @@ try {
   check('…and converges the tunnel only if it is missing, rather than flapping a live one',
     tunnel.slice(tunnelBefore).join('|') === 'if-missing', tunnel.join('|'));
 
-  await page.click('#orgCloudReplace');
+  await tap(page, '#orgCloudReplace');
   await page.waitForSelector('#replaceCloudToken', { timeout: 10_000 });
   await page.type('#replaceCloudToken', 'fo1_somewhere_else');
-  await page.click('#replaceCloudConnect');
+  await tap(page, '#replaceCloudConnect');
   await page.waitForSelector('#replaceCloudMove', { timeout: 10_000 });
   const asked = await text('#replaceCloudMove');
   check('a token for another account is a question, naming where Fly says it points',
@@ -1757,21 +1761,21 @@ try {
     && asked.includes('keeps billing in nomad-trading until you remove it in Fly'),
     asked);
   await shotOrg('cloud-replace-move-ask');
-  await page.click('#replaceCloudKeep');
+  await tap(page, '#replaceCloudKeep');
   await page.waitForFunction(() => document.querySelector('.scrim') === null, { timeout: 10_000 });
   check('…and answering no leaves the account exactly where it was',
     (await text('#orgCloudAccount .name')) === 'nomad-trading'
     && (await page.$$('#orgSpendList .spendrow')).length === 2,
     await text('#orgCloudAccount'));
 
-  await page.click('#orgCloudReplace');
+  await tap(page, '#orgCloudReplace');
   await page.waitForSelector('#replaceCloudToken', { timeout: 10_000 });
   await page.type('#replaceCloudToken', 'fo1_somewhere_else');
-  await page.click('#replaceCloudConnect');
+  await tap(page, '#replaceCloudConnect');
   await page.waitForSelector('#replaceCloudMoveGo', { timeout: 10_000 });
   // The yes names the org the question named — the stub above throws on
   // anything else, exactly as the service does.
-  await page.click('#replaceCloudMoveGo');
+  await tap(page, '#replaceCloudMoveGo');
   await page.waitForFunction(() => document.getElementById('banner')?.textContent?.includes('Your cloud is now'), { timeout: 10_000 });
   // The machines held here were a reading of an account this workplace has
   // just left. They go rather than standing while a fresh walk is out — the
@@ -1821,13 +1825,13 @@ try {
   // and the founder's subscription carried in by its first read.
   orgStorage.createOrg = InMemoryOrgStorage.prototype.createOrg.bind(orgStorage);
   orgStorage.addMember = InMemoryOrgStorage.prototype.addMember.bind(orgStorage);
-  await page.click('#homeOrganizations');
+  await tap(page, '#homeOrganizations');
   await page.waitForSelector('#workplaceMenu', { visible: true, timeout: 10_000 });
-  await page.click('#workplaceMenuNew');
+  await tap(page, '#workplaceMenuNew');
   await page.waitForSelector('#orgCreateName', { timeout: 10_000 });
   await page.type('#orgCreateName', 'Second Shop');
   await shotOrg('second-workplace-named');
-  await page.click('#orgCreateBtn');
+  await tap(page, '#orgCreateBtn');
   await page.waitForSelector('#screenHome #chiefOfStaffEmpty', { timeout: 15_000 }).catch(() => {});
   const secondOrg = (await orgStorage.listOrgs()).find((row) => row.name === 'Second Shop');
   if (!secondOrg) throw new Error('Create workplace made no workplace');

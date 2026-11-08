@@ -30,7 +30,7 @@
 #
 # Env: JOBS (parallel checks, default: cores, capped at 4), SIM_JOBS (parallel
 # JOURNEYS, default 2 — see below), OUT_ROOT, PER_TIMEOUT (seconds per
-# attempt), RETRIES, CHROME (an explicit binary).
+# attempt), CHROME (an explicit binary).
 #
 # THE JOURNEYS RUN AT A LOWER CONCURRENCY than the harnesses, and are started
 # FIRST — but in the SAME pool since 2026-09-20, so a journey slot nobody may
@@ -56,12 +56,31 @@
 # matters off the top of the only record anybody reads. So: a tally, then the
 # TAIL of each failing harness, last.
 #
-# ONE RETRY, and it is not a rug. These drive a real browser against a real
-# socket on a machine that may be sharing its cores; a lost frame or a slow
-# first paint is a flake, and a suite that cries wolf is a suite people learn
-# to ignore — which is the exact failure this lane exists to end, so the
-# journeys get the same retry the harnesses do. Anything that fails twice is
-# reported as failed, and both attempts are in its log.
+# NO RETRY, EXCEPT BY NAME (note #1075, 8 Nov 2026). Until then every check
+# got a second attempt, silently. It bought almost nothing: in the 17 red runs
+# of 25 Oct-8 Nov whose logs show the browser stage, every flaky check except
+# one failed BOTH attempts, because what broke it (a layout a few pixels
+# different on that machine, a box measured mid-transition, a slow decoder)
+# held for the whole run. And it hid the one it did rescue: a pass on the
+# second attempt printed as a plain `ok`, so nobody learned a check was
+# flaking until the day it lost both. The causes were fixed instead — see the
+# browser-harnesses knowledge page, "Writing a check that does not flake".
+#
+# A retry is now allowed only where the flakiness is in the BROWSER and has
+# been chased and cannot be removed: RETRY_BECAUSE below, one entry per check,
+# each with the reason. It is one retry, never more, and it is LOUD: a check
+# that passes on its second attempt prints as `ok … RETRIED` in the tally and
+# its first attempt's failure is printed under "Passed only on a retry", on a
+# green run too. A new entry needs the same: the cause, the measurement, and
+# why it cannot be fixed in the check. It is not where a red goes to be quiet.
+declare -A RETRY_BECAUSE=(
+  # Note #563: under heavy load the cold-open step (9d) timed out on 1 run in
+  # 15 because Puppeteer could neither finish goto nor evaluate in the page
+  # until the held state read landed, while the page itself had answered in
+  # ~360 ms. Holding the read behind a gate made it worse (7 in 21). Chrome's
+  # side of the wait, not the app's; why is not established.
+  [verify-workspace-react-agent-chat]='Puppeteer navigation held by a pending read in Chrome (note #563, step 9d)'
+)
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
@@ -70,7 +89,6 @@ JOBS=${JOBS:-$(( $(nproc 2>/dev/null || echo 2) > 4 ? 4 : $(nproc 2>/dev/null ||
 SIM_JOBS=${SIM_JOBS:-2}
 (( SIM_JOBS > JOBS )) && SIM_JOBS=$JOBS
 PER_TIMEOUT=${PER_TIMEOUT:-420}
-RETRIES=${RETRIES:-1}
 BASE_PORT=${BASE_PORT:-4400}
 OUT_ROOT=${OUT_ROOT:-$(mktemp -d -t browser-checks-XXXXXX)}
 LOGS="$OUT_ROOT/logs"
@@ -136,7 +154,9 @@ run_one() {
     return
   fi
   started=$(date +%s)
-  for (( attempt = 0; attempt <= RETRIES; attempt++ )); do
+  local retries=0
+  [[ -n "${RETRY_BECAUSE[$name]:-}" ]] && retries=1
+  for (( attempt = 0; attempt <= retries; attempt++ )); do
     if (( attempt > 0 )); then
       printf '\n=== attempt %s (the one before it exited %s) ===\n' "$((attempt + 1))" "$rc" >> "$log"
     fi
@@ -147,6 +167,8 @@ run_one() {
     rc=$?
     (( rc == 0 )) && break
   done
+  # A pass that needed the retry is recorded as such, so the tally can say so.
+  (( rc == 0 && attempt > 0 )) && printf '%s\n' "$attempt" > "$LOGS/$name.retried"
   printf '%s\n' "$rc" > "$LOGS/$name.rc"
   printf '%s\n' "$(( $(date +%s) - started ))" > "$LOGS/$name.secs"
 }
@@ -254,23 +276,36 @@ did_what() {
 }
 
 failed=()
+retried=()
 for name in "${names[@]}"; do
   rc=$(cat "$LOGS/$name.rc" 2>/dev/null || echo 1)
   secs=$(cat "$LOGS/$name.secs" 2>/dev/null || echo 0)
-  if [[ "$rc" == "0" ]]; then
+  if [[ "$rc" == "0" && -f "$LOGS/$name.retried" ]]; then
+    printf '  ok    %-44s %-12s %ss  RETRIED (passed on attempt 2)\n' "$name" "$(did_what "$LOGS/$name.log")" "$secs"
+    retried+=("$name")
+  elif [[ "$rc" == "0" ]]; then
     printf '  ok    %-44s %-12s %ss\n' "$name" "$(did_what "$LOGS/$name.log")" "$secs"
   else
     printf '  FAIL  %-44s exit %-7s %ss\n' "$name" "$rc" "$secs"
     failed+=("$name")
   fi
 done
-printf 'browser checks: %s of %s passed in %ss\n' \
-  "$(( ${#names[@]} - ${#failed[@]} ))" "${#names[@]}" "$(( $(date +%s) - started ))"
+printf 'browser checks: %s of %s passed in %ss%s\n' \
+  "$(( ${#names[@]} - ${#failed[@]} ))" "${#names[@]}" "$(( $(date +%s) - started ))" \
+  "$( (( ${#retried[@]} )) && printf ', %s of them only on a retry' "${#retried[@]}")"
+
+# A pass on the second attempt is still a first attempt that failed, and the
+# one place anybody will see it is here. Short, because the failures below
+# own the 64 KB tail; the full first attempt is in the check's log.
+for name in "${retried[@]}"; do
+  printf '\n=== %s: passed only on a retry (%s) — first attempt ===\n' "$name" "${RETRY_BECAUSE[$name]}"
+  sed '/^=== attempt 2 /q' "$LOGS/$name.log" | grep -a -E '^FAIL|Error|Timeout|timed out' | cut -c1-300 | head -n 12
+done
 
 # The failures last, and only the failures: see the note about the 64 KB cap.
 for name in "${failed[@]}"; do
-  printf '\n=== %s (last 120 lines of both attempts) ===\n' "$name"
-  # The checks that FAILED first, from both attempts: a harness keeps going
+  printf '\n=== %s (last 120 lines of its log) ===\n' "$name"
+  # The checks that FAILED first, from every attempt: a harness keeps going
   # after a FAIL, so the line that names the failure is usually far above the
   # tail — on 2026-09-18 CI's record of a red run was 120 passes and
   # "1 FAILED", and the check had to be reproduced to learn its name.
