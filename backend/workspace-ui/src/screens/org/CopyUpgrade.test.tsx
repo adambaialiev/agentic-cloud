@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -24,7 +24,8 @@ const health: WorkspaceCopyHealth = {
   release: '2026.11.01.1', commit: null, running: '2026.11.01.1', latest: '2026.11.10.0', updates: behind, checkedAt: new Date().toISOString(),
   parts: [{ key: 'workspace', name: 'Workspace', ok: true, line: 'Up 6 days · release 2026.11.01.1 · latest 2026.11.10.0' }],
 };
-const step = (key: string, label: string, state: 'done' | 'now' | 'wait' | 'fail', seconds: number | null = null, back = false) => ({ key, label, state, seconds, back });
+const step = (key: string, label: string, state: 'done' | 'now' | 'wait' | 'fail', seconds: number | null = null, back = false, more: { startedAt?: string; detail?: string } = {}) => (
+  { key, label, state, seconds, back, startedAt: more.startedAt ?? null, detail: more.detail ?? null });
 const run = (over: Partial<WorkspaceCopyUpgradeRun>): WorkspaceCopyUpgradeRun => ({
   id: 'r1', requestedBy: 'Dana Rivera', from: '2026.11.01.1', to: '2026.11.10.0', drill: null,
   startedAt: '2026-11-10T15:02:00.000Z', finishedAt: null, phase: 'running', heardSecondsAgo: 4, message: null, snapshotAt: '2026-11-10T15:02:50.000Z',
@@ -46,8 +47,9 @@ const detail = (role: 'admin' | 'member'): WorkspaceOrgDetail => ({
   members: [{ userId: 'u1', name: 'Dana Rivera', you: true, role, joinedAt: '2026-10-27T00:00:00Z', agents: 0, workedMs: 0 }],
 });
 
-async function open(path: string, role: 'admin' | 'member', upgrade: () => WorkspaceCopyUpgradeState, extra: Record<string, Answer> = {}) {
+async function open(path: string, role: 'admin' | 'member', upgrade: () => WorkspaceCopyUpgradeState, extra: Record<string, Answer> = {}, at?: string) {
   vi.useFakeTimers();
+  if (at) vi.setSystemTime(new Date(at));
   const org = { orgId: 'o1', name: 'Theirco', role, members: 2, seats: 0, seatProviders: [] };
   const state = () => emptyState({ org, canCreateOrg: true, organizations: [{ orgId: 'o1', name: 'Theirco', role, active: true, members: 2, agents: 0 }] });
   const scripted = scriptedApi({
@@ -118,6 +120,11 @@ describe('the progress screen (note #1008)', () => {
     await wait(20);
     expect(document.querySelector('#copyUpgradeNotesTitle')!.textContent).toBe('What\'s new in 2026.11.10.0');
     expect(document.querySelector('.copyreleasenotes')!.textContent).toContain('An Upgrade button for admins.');
+    // Adam, 8 Nov 2026 (note #1076): the way out of a finished run says only "Done", and still goes back to This copy.
+    expect(document.querySelector('#copyUpgradeBack')!.textContent).toBe('Done');
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await wait(20);
+    expect(document.querySelector('#screenCopyUpgrade')).toBeNull();
   });
 
   it('after five minutes away, says the upgrade carries on outside the Workspace and names the engineer\'s check', async () => {
@@ -158,5 +165,61 @@ describe('the progress screen (note #1008)', () => {
   it('is an admin\'s alone', async () => {
     await open('/workplace/upgrade', 'member', () => offer);
     expect(document.querySelector('#screenCopyUpgrade')!.textContent).toContain('Only an admin of this workplace can upgrade it.');
+  });
+});
+
+describe('the running step\'s time (note #1076)', () => {
+  const STEP_START = '2026-11-10T15:03:00.000Z';
+  const running = (over: Partial<WorkspaceCopyUpgradeRun> = {}, detail?: string): WorkspaceCopyUpgradeState => ({
+    ...offer, offer: null,
+    run: run({
+      steps: [
+        step('copy', 'Release copied into your registry', 'done', 398),
+        step('snapshot', 'Database backed up, disks snapshotted', 'done', 9),
+        step('to-b', 'Workspace → 2026.11.10.0', 'now', null, false, { startedAt: STEP_START, ...(detail ? { detail } : {}) }),
+        step('smoke', 'Final check', 'wait'),
+      ],
+      ...over,
+    }),
+  });
+  const row = (label: string) => [...document.querySelectorAll('.upsteps li')].find((li) => li.textContent!.includes(label))!;
+  const time = (label: string) => row(label).querySelector('.t')!.textContent;
+
+  afterEach(() => { cleanup(); });
+
+  it('ticks every second on the right, where a finished step shows its duration, and the word "now" is gone', async () => {
+    await open('/workplace/upgrade', 'admin', () => running(), {}, '2026-11-10T15:03:07.000Z');
+    expect(time('Release copied')).toBe('6:38');
+    expect(time('Database backed up')).toBe('9 s');
+    expect(time('Workspace →')).toBe('7 s');
+    expect(row('Workspace →').querySelector('.upelapsed')!.getAttribute('role')).toBe('timer');
+    expect(row('Workspace →').querySelector('.s')!.textContent).toBe('Workspace → 2026.11.10.0');
+    expect(document.querySelector('#copyUpgradeSteps')!.textContent).not.toMatch(/\bnow\b/);
+    await wait(1_000);
+    expect(time('Workspace →')).toBe('8 s');
+    await wait(75_000);
+    expect(time('Workspace →')).toBe('1:23');
+    expect(time('Final check')).toBe('');
+  });
+
+  it('counts from the step\'s recorded start, so a reload mid-step shows the same number, not zero', async () => {
+    await open('/workplace/upgrade', 'admin', () => running(), {}, '2026-11-10T15:04:00.000Z');
+    expect(time('Workspace →')).toBe('1:00');
+    cleanup();
+    vi.useRealTimers();
+    await open('/workplace/upgrade', 'admin', () => running(), {}, '2026-11-10T15:09:38.000Z');
+    expect(time('Workspace →')).toBe('6:38');
+  });
+
+  it('shows what the upgrader says it is doing under the title, when it says something', async () => {
+    await open('/workplace/upgrade', 'admin', () => running({}, 'waiting for the machine to answer'), {}, '2026-11-10T15:03:30.000Z');
+    expect(row('Workspace →').querySelector('.s .d')!.textContent).toBe('waiting for the machine to answer');
+    expect(time('Workspace →')).toBe('30 s');
+  });
+
+  it('a run nobody hears from any more shows no clock on its open step', async () => {
+    await open('/workplace/upgrade', 'admin', () => running({ phase: 'stopped', heardSecondsAgo: 300 }), {}, '2026-11-10T15:20:00.000Z');
+    expect(time('Workspace →')).toBe('');
+    expect(time('Release copied')).toBe('6:38');
   });
 });

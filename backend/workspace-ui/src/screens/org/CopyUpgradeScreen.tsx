@@ -18,6 +18,7 @@ import { Markdown } from '../../render/Markdown.js';
 import { toFor } from '../../routes.js';
 import { Scrim } from '../../ui/Ask.js';
 import { errorMessage } from '../../ui/format.js';
+import { stopwatch, useNow } from '../../ui/time.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { notesBody } from './CopyReleasesScreen.js';
 import { useOrgApi } from './useOrgApi.js';
@@ -32,7 +33,8 @@ const lasted = (from: string | null, to: string | null) => {
   const s = Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000));
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 };
-const clock = (seconds: number | null) => (seconds === null ? '' : seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+/** A step's duration as the right-hand column reads it: "9 s", "6:38", "1:02:05". */
+const clock = (seconds: number | null) => (seconds === null ? '' : seconds < 60 ? `${Math.max(0, Math.floor(seconds))} s` : stopwatch(seconds));
 
 /** The four lines the admin reads before saying yes (note #1007, picture B). */
 export function CopyUpgradeConfirm({ from, to, agentsWorking, onAnswer }: {
@@ -58,17 +60,38 @@ export function CopyUpgradeConfirm({ from, to, agentsWorking, onAnswer }: {
   );
 }
 
-function Steps({ steps }: { steps: WorkspaceCopyUpgradeStep[] }) {
+/**
+ * How long a step has taken: its reported duration once done, and while it
+ * runs a time that ticks every second, counted from the step's recorded start
+ * (note #1076) — so a reload, or a second admin's screen, shows the same
+ * number rather than restarting at zero.
+ */
+function stepTime(step: Pick<WorkspaceCopyUpgradeStep, 'state' | 'seconds' | 'startedAt'>, now: number): string {
+  if (step.state === 'now') {
+    const started = step.startedAt ? new Date(step.startedAt).getTime() : NaN;
+    return Number.isFinite(started) ? clock(Math.max(0, (now - started) / 1000)) : '';
+  }
+  return clock(step.seconds);
+}
+
+function StepRow({ step, running }: { step: WorkspaceCopyUpgradeStep; running: boolean }) {
+  const now = useNow(running && step.state === 'now');
+  // A run nobody hears from any more has no clock worth showing on its open step.
+  const time = step.state === 'now' && !running ? '' : stepTime(step, now);
+  return (
+    <li data-state={step.state}>
+      <span className={`updot ${step.state}${step.back && step.state === 'done' ? ' wayback' : ''}`} aria-hidden="true">{step.state === 'done' ? '✓' : step.state === 'fail' ? '✕' : ''}</span>
+      <span className="s">{step.label}{step.state === 'now' && step.detail ? <span className="d">{step.detail}</span> : null}</span>
+      <span className="t">{step.state === 'now' && time ? <span className="upelapsed" role="timer" aria-label={`Running for ${time}`}>{time}</span> : time}</span>
+    </li>
+  );
+}
+
+function Steps({ steps, running }: { steps: WorkspaceCopyUpgradeStep[]; running: boolean }) {
   return (
     <div className="card" id="copyUpgradeSteps">
       <ul className="upsteps">
-        {steps.map((step) => (
-          <li key={step.key} data-state={step.state}>
-            <span className={`updot ${step.state}${step.back && step.state === 'done' ? ' wayback' : ''}`} aria-hidden="true">{step.state === 'done' ? '✓' : step.state === 'fail' ? '✕' : ''}</span>
-            <span className="s">{step.label}{step.state === 'now' ? <span className="d">{step.back ? 'putting back now' : 'now'}</span> : null}</span>
-            <span className="t">{clock(step.seconds)}</span>
-          </li>
-        ))}
+        {steps.map((step) => <StepRow key={step.key} step={step} running={running} />)}
       </ul>
     </div>
   );
@@ -222,7 +245,7 @@ export function CopyUpgradeScreen() {
       : null}
 
     <h2>Steps</h2>
-    <Steps steps={run.steps} />
+    <Steps steps={run.steps} running={!ended && run.phase !== 'stopped'} />
 
     {away && !ended
       ? <div className="upnotice" id="copyUpgradeAway" role="status"><span aria-hidden="true">↻</span><span>
@@ -241,7 +264,7 @@ export function CopyUpgradeScreen() {
         ? <button className={run.phase === 'stopped' ? 'btn primary' : 'btn fill'} id="copyUpgradeDiagnostics" type="button" onClick={() => { void diagnostics(); }}>Download diagnostics</button>
         : null}
       {run.phase === 'put-back' || run.phase === 'failed' ? <button className="btn primary" id="copyUpgradeTryAgain" type="button" onClick={back}>Try again</button> : null}
-      {run.phase === 'done' || run.phase === 'drill-done' || run.phase === 'unchanged' ? <button className="btn primary" id="copyUpgradeBack" type="button" onClick={back}>Back to This copy</button> : null}
+      {run.phase === 'done' || run.phase === 'drill-done' || run.phase === 'unchanged' ? <button className="btn primary" id="copyUpgradeBack" type="button" onClick={back}>Done</button> : null}
     </div>
     {run.phase === 'done' ? <p className="formhint">The database as it was before is kept on the Workspace&apos;s disk until the next upgrade.</p> : null}
     {run.phase === 'put-back' || run.phase === 'drill-done' || run.phase === 'failed'

@@ -76,6 +76,33 @@ describe('the run as the admin reads it (note #1008)', () => {
     expect(view.steps.map((s) => s.state)).toEqual(['done', 'fail', 'done', 'done']);
   });
 
+  it('a running step carries its recorded start, from its latest attempt, and what the upgrader says inside it (note #1076)', () => {
+    const at = (iso: string, event: Record<string, unknown>) => ({ ...event, at: iso });
+    const backend = 'theirco-backend to 2026.11.10.0';
+    const view = runView(
+      { id: 'r1', toVersion: '2026.11.10.0', upgrade: { from: { version: '2026.11.01.1' } } },
+      [
+        at('2026-11-10T15:02:00Z', ev('Snapshotting the database', 'running')),
+        at('2026-11-10T15:02:09Z', ev('Snapshotting the database', 'done', 9)),
+        at('2026-11-10T15:02:10Z', ev(backend, 'running')),
+        // The upgrader restarted and runs the step again: the clock is this attempt's.
+        at('2026-11-10T15:03:40Z', ev(backend, 'running')),
+        at('2026-11-10T15:04:00Z', { event: 'step', title: backend, status: 'waiting', detail: 'waiting for the machine to answer' }),
+      ],
+      '2026-11-10T15:04:55Z', 'theirco', NOW, true,
+    );
+    const workspace = view.steps.find((s) => s.key === 'to-theirco-backend')!;
+    expect(workspace).toMatchObject({ state: 'now', startedAt: '2026-11-10T15:03:40Z', detail: 'waiting for the machine to answer', seconds: null });
+    const snapshot = view.steps.find((s) => s.key === 'snapshot')!;
+    expect(snapshot).toMatchObject({ state: 'done', seconds: 9, detail: null });
+    expect(view.steps.find((s) => s.key === 'smoke')).toMatchObject({ state: 'wait', startedAt: null, detail: null });
+  });
+
+  it('a step the upgrader reports no inside-word for has none', () => {
+    const view = runView({ id: 'r1', toVersion: '2026.11.10.0' }, [{ ...ev('Snapshotting the database', 'running'), at: '2026-11-10T15:04:50Z' }], '2026-11-10T15:04:55Z', 'theirco', NOW, true);
+    expect(view.steps[0]).toMatchObject({ state: 'now', startedAt: '2026-11-10T15:04:50Z', detail: null });
+  });
+
   it('a run nobody has heard from for two minutes has stopped part-way', () => {
     const view = runView({ id: 'r1', toVersion: '2026.11.10.0' }, [ev('Snapshotting the database', 'done', 9)], '2026-11-10T15:02:00Z', 'theirco', NOW, true);
     expect(view.phase).toBe('stopped');

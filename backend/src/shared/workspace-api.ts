@@ -1800,6 +1800,14 @@ export interface WorkspaceCopyUpgradeStep {
   label: string;
   state: 'done' | 'now' | 'wait' | 'fail';
   seconds: number | null;
+  /**
+   * When the step's current attempt began, from the upgrader's own stamped
+   * event (note #1076): a running step counts its elapsed time from here, so a
+   * reload or a second admin's screen shows the same number.
+   */
+  startedAt: string | null;
+  /** What the upgrader says it is doing inside the step, when it says; else null. */
+  detail: string | null;
   /** A step of the way back (putting the old release back). */
   back: boolean;
 }

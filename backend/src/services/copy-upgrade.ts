@@ -98,7 +98,7 @@ interface RunRecord {
   shape?: { prefix?: string; release?: { version?: string } };
   upgrade?: { phase?: string; from?: { version?: string }; toVersion?: string; snapshot?: { at?: string } } | null;
 }
-interface StepEvent { event: string; title?: string; status?: string; seconds?: number; at?: string }
+interface StepEvent { event: string; title?: string; status?: string; seconds?: number; at?: string; detail?: string }
 
 /** Plain words for one of the upgrade's own step titles (install.mjs upgrade()). */
 export function stepLabel(title: string, prefix: string, snapshotAt?: string | null): { key: string; label: string; back: boolean } {
@@ -136,15 +136,23 @@ export function runView(run: RunRecord, events: StepEvent[], heartbeatAt: string
     let step = byKey.get(key);
     // A restart of the upgrader reports a step again: one row, its latest state.
     if (!step || (back && step.back === false)) {
-      step = { key, label, state: 'now', seconds: null, back };
+      step = { key, label, state: 'now', seconds: null, startedAt: null, detail: null, back };
       byKey.set(key, step);
       steps.push(step);
     }
     if (event.status === 'done') {
       step.state = 'done';
       step.seconds = event.seconds ?? null;
+      step.detail = null;
+    } else if (event.status === 'running') {
+      // Each attempt starts its own clock: a restarted upgrader runs the step
+      // again, and the duration it reports when done is that attempt's.
+      step.state = 'now';
+      step.startedAt = event.at ?? null;
+      step.detail = null;
     } else {
       step.state = 'now';
+      if (event.detail) step.detail = event.detail;
     }
   }
   const heardMs = heartbeatAt ? now.getTime() - new Date(heartbeatAt).getTime() : null;
@@ -163,11 +171,11 @@ export function runView(run: RunRecord, events: StepEvent[], heartbeatAt: string
       [`to-${prefix}-router`, `Previews and sites → ${to}`],
       ['smoke', 'Final check'],
     ] as const;
-    for (const [key, label] of plan) if (!byKey.has(key)) steps.push({ key, label, state: 'wait', seconds: null, back: false });
+    for (const [key, label] of plan) if (!byKey.has(key)) steps.push({ key, label, state: 'wait', seconds: null, startedAt: null, detail: null, back: false });
   }
   if (open && backStarted) {
     for (const [key, label] of [['db-back', 'Database back as it was']] as const) {
-      if (!byKey.has(key)) steps.push({ key, label, state: 'wait', seconds: null, back: true });
+      if (!byKey.has(key)) steps.push({ key, label, state: 'wait', seconds: null, startedAt: null, detail: null, back: true });
     }
   }
   const phase: WorkspaceCopyUpgradeRun['phase'] = run.outcome
@@ -262,7 +270,7 @@ export function createCopyUpgrade(options: CopyUpgradeOptions) {
     id: asked.id!, requestedBy: asked.by ?? null, from: null, to: asked.version ?? null,
     drill: asked.drill ? (asked.drill === 'backend' ? 'backend' : 'rollback') : null,
     startedAt: asked.at ?? null, finishedAt: null, phase: 'starting', heardSecondsAgo: null, message: null, snapshotAt: null,
-    steps: [{ key: 'start', label: 'Starting the upgrader', state: 'now', seconds: null, back: false }],
+    steps: [{ key: 'start', label: 'Starting the upgrader', state: 'now', seconds: null, startedAt: asked.at ?? null, detail: null, back: false }],
   });
 
   /** Why an upgrade cannot start now, in the words the admin reads; null when it can. */
