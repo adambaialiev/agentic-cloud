@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { WorkspaceApiError, cookieValue, createWorkspaceApi, jsonBody } from './client.js';
+import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError, cookieValue, createWorkspaceApi, jsonBody } from './client.js';
 
 /**
  * The client is the legacy `api()` / `authApi()` pair as an importable
@@ -116,6 +116,34 @@ describe('createWorkspaceApi', () => {
     const fetchImpl = vi.fn(async () => new Response('<html>gateway</html>', { status: 502 })) as unknown as typeof fetch;
     const client = createWorkspaceApi({ fetch: fetchImpl, cookies: () => '' });
     await expect(client.api('api/state')).rejects.toMatchObject({ message: 'Request failed (502)', status: 502, body: null });
+  });
+
+  // Note #1069: Adam's Chief of Staff chat on a phone read a successful
+  // answer whose body never arrived whole as `null`, and crashed on `.orgId`.
+  it('throws a success whose body was cut off on the way, rather than answering null (note #1069)', async () => {
+    const cut = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(new TextEncoder().encode('{"orgId":"o1","messa')); controller.error(new TypeError('Load failed')); },
+    });
+    const fetchImpl = vi.fn(async () => new Response(cut, { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
+    const client = createWorkspaceApi({ fetch: fetchImpl, cookies: () => '' });
+    const error = await client.api('api/recap/chat').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WorkspaceApiError);
+    expect(error).toMatchObject({ status: 200, code: ANSWER_UNREADABLE_CODE, message: ANSWER_UNREADABLE_SENTENCE });
+  });
+
+  it('throws a success that is not JSON — a truncated body or an edge page — as unreadable (note #1069)', async () => {
+    for (const text of ['{"orgId":"o1","messages":[', '<html>please wait</html>']) {
+      const fetchImpl = vi.fn(async () => new Response(text, { status: 200 })) as unknown as typeof fetch;
+      const client = createWorkspaceApi({ fetch: fetchImpl, cookies: () => '' });
+      await expect(client.api('api/recap/chat')).rejects.toMatchObject({ status: 200, code: ANSWER_UNREADABLE_CODE });
+    }
+  });
+
+  it('still answers null for a success with no body at all, or a literal JSON null', async () => {
+    for (const make of [() => new Response(null, { status: 204 }), () => new Response('', { status: 200 }), () => new Response('null', { status: 200 })]) {
+      const client = createWorkspaceApi({ fetch: vi.fn(async () => make()) as unknown as typeof fetch, cookies: () => '' });
+      await expect(client.api('api/thing')).resolves.toBeNull();
+    }
   });
 
   it('jsonBody is a JSON POST', () => {

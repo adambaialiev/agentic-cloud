@@ -5,7 +5,8 @@ import { App } from '../../App.js';
 import { recallDraft, recapDraftKey } from '../../chrome/draft-memory.js';
 import { agent, emptyState, scriptedApi, workspaceScript } from '../../test/fixtures.js';
 import type { RecapChatAnswer } from '../../../../src/shared/workspace-recap-chat.js';
-import { WorkspaceApiError } from '../../api/client.js';
+import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError } from '../../api/client.js';
+import { POLL_MISSES_BEFORE_BANNER } from '../messages/useMessagePoll.js';
 import { forgetRecapChats, heldRecapChat } from './recap-chat-cache.js';
 import { forgetAgents } from '../agent/agent-cache.js';
 import { CHAT_TOUCH_QUERY } from '../chat/chat-compose.js';
@@ -1581,5 +1582,95 @@ describe('the recap line under its latest request (note #945)', () => {
     answer = { ...asked, messages: [...asked.messages, { id: 'a3', role: 'owner', text: 'Thanks', at: new Date().toISOString() }], lastTurn: { ...ended, recap: 'Done.' } };
     await screen.findByText('Thanks', undefined, { timeout: 5000 });
     expect(line()).toBeNull();
+  });
+});
+
+/**
+ * Note #1069: Adam's phone, LTE, 8 Nov 2026. The poll read a successful
+ * answer whose body never arrived whole, the client handed the screen `null`,
+ * and "null is not an object (evaluating 'ze.orgId') Retrying…" stood under
+ * "Thinking…" while the reply that had landed was never drawn.
+ */
+describe('the Chief of Staff\'s conversation through a bad read (note #1069)', () => {
+  type Mode = 'good' | 'null' | 'empty' | 'unreadable' | 'down';
+  let mode: Mode = 'good';
+  let answer: RecapChatAnswer = { ...conversation, working: true, phase: 'Thinking…' };
+  const read = () => {
+    if (mode === 'null') return null;
+    if (mode === 'empty') return '';
+    if (mode === 'unreadable') throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 200, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
+    if (mode === 'down') throw new WorkspaceApiError('Workspace Agent could not be reached.', 503, { error: 'Workspace Agent could not be reached.' });
+    return answer;
+  };
+  const tick = async (ms = 3000) => { await act(async () => { await vi.advanceTimersByTimeAsync(ms); }); };
+  const banner = () => [...document.querySelectorAll('[role=alert]')].find((node) => /Retrying/.test(node.textContent ?? '')) ?? null;
+  beforeEach(() => { mode = 'good'; answer = { ...conversation, working: true, phase: 'Thinking…' }; vi.useFakeTimers({ shouldAdvanceTime: true }); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  for (const bad of ['null', 'empty', 'unreadable'] as const) {
+    it(`keeps drawing through a ${bad} answer, says so only after ${POLL_MISSES_BEFORE_BANNER} misses in a row, and redraws by itself when the read comes back`, async () => {
+      mount(conversation, undefined, { 'GET api/recap/chat': read });
+      await screen.findByText('Ask Theo for an update');
+      mode = bad;
+      for (let miss = 1; miss < POLL_MISSES_BEFORE_BANNER; miss += 1) {
+        await tick();
+        expect(banner()).toBeNull();
+        expect(screen.getByText('Ask Theo for an update')).toBeTruthy();
+      }
+      await tick();
+      expect(banner()?.textContent).toContain(ANSWER_UNREADABLE_SENTENCE);
+      expect(banner()?.textContent).not.toMatch(/is not an object|null/);
+      expect(document.getElementById('recapChatLive')!.hidden).toBe(false);
+      // The reply lands while the reads are failing, and the turn ends.
+      answer = { ...conversation, working: false, messages: [...conversation.messages, { id: 'm7', role: 'assistant', text: 'Handed the loose end to Rosa.', at: now }] };
+      mode = 'good';
+      await tick();
+      expect(banner()).toBeNull();
+      expect(screen.getByText('Handed the loose end to Rosa.')).toBeTruthy();
+      expect(document.getElementById('recapChatLive')!.hidden).toBe(true);
+    });
+  }
+  it('names the HTTP status when the read keeps failing with one, and one good read in between starts the count again', async () => {
+    mount(conversation, undefined, { 'GET api/recap/chat': read });
+    await screen.findByText('Ask Theo for an update');
+    mode = 'down'; await tick(); await tick();
+    mode = 'good'; await tick();
+    mode = 'down'; await tick(); await tick();
+    expect(banner()).toBeNull();
+    await tick();
+    expect(banner()?.textContent).toBe('Workspace Agent could not be reached. (HTTP 503) Retrying…');
+  });
+  it('says signed-out at once rather than waiting for a run of misses', async () => {
+    const refuse = () => { throw new WorkspaceApiError('not a member', 403, { error: 'not a member' }); };
+    mount(conversation, undefined, { 'GET api/recap/chat': refuse });
+    await waitFor(() => expect(banner()?.textContent).toBe('not a member Retrying…'));
+  });
+  it('a send the server accepted whose answer was lost keeps its bubble, never hands the words back, and the poll brings its row', async () => {
+    const lost = () => { throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 202, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE }); };
+    answer = conversation;
+    mount(conversation, lost, { 'GET api/recap/chat': read });
+    await screen.findByText('Ask Theo for an update');
+    const box = document.getElementById('agentChatText') as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: 'Yes let’s fix the loose end' } });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send' })));
+    await tick(10);
+    expect(box.value).toBe('');
+    expect(screen.queryByText(ANSWER_UNREADABLE_SENTENCE)).toBeNull();
+    expect(screen.getAllByText('Yes let’s fix the loose end')).toHaveLength(1);
+    answer = { ...conversation, working: true, phase: 'Thinking…', messages: [...conversation.messages, { id: 'm8', role: 'owner', text: 'Yes let’s fix the loose end', at: new Date().toISOString() }] };
+    await tick();
+    expect(screen.getAllByText('Yes let’s fix the loose end')).toHaveLength(1);
+    expect(document.getElementById('recapChatLive')!.hidden).toBe(false);
+  });
+  it('a stop whose follow-up read misses still stops, with no crash and no error line', async () => {
+    mount(conversation, undefined, {
+      'GET api/recap/chat': read,
+      'POST api/recap/chat/stop': () => { mode = 'null'; return { ok: true, stopped: true, name: 'Chief of Staff' }; },
+    });
+    await screen.findByText('Ask Theo for an update');
+    await act(async () => fireEvent.click(document.getElementById('recapChatStop')!));
+    await tick(10);
+    expect(document.body.textContent).not.toMatch(/is not an object|Cannot read prop/);
+    expect(document.getElementById('recapChatLive')!.hidden).toBe(true);
   });
 });

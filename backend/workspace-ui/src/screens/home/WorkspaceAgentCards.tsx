@@ -106,7 +106,7 @@ export function WorkspaceAgentCards({ orgId, details }: { orgId: string; details
         jsonBody({ clientId: crypto.randomUUID(), text: 'reset chat' }),
         { org: orgId },
       );
-      setData((current) => current ? { ...current, agent: { ...current.agent, working: answer.working } } : current);
+      setData((current) => current ? { ...current, agent: { ...current.agent, working: answer?.working ?? current.agent.working } } : current);
       banner.show('Chief of Staff will reset its chat — the answer lands in its chat.', true);
     } catch (error) {
       setResetAsked(false);

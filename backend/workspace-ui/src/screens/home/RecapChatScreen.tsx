@@ -39,7 +39,7 @@ import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMes
 import { chatFilesBody } from '../chat/chat-upload.js';
 import { TurnRecap } from '../chat/TurnRecap.js';
 import { showsTurnRecap } from '../chat/turn-recap-words.js';
-import { jsonBody, WorkspaceApiError } from '../../api/client.js';
+import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { recapDraftKey } from '../../chrome/draft-memory.js';
 import { useReturnToParent } from '../../chrome/history.js';
 import { recallPaneScroll, rememberPaneScroll } from '../../chrome/scroll-memory.js';
@@ -60,7 +60,7 @@ import { jumpToNewest, readChatJump, scrollToBottom } from '../chat/chat-jump.js
 import { chatDayLabel, TURN_STOPPED } from '../chat/chat-notice.js';
 import { matchSends, type OutgoingMessage, type ReturnedDraft } from '../chat/outbox.js';
 import type { TranscriptRow } from '../chat/transcript.js';
-import { useMessagePoll } from '../messages/useMessagePoll.js';
+import { isAnswerObject, pollFailureLine, useMessagePoll, usePollMisses } from '../messages/useMessagePoll.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
 import {
   forgetRecapChatOf, heldRecapChat, heldRecapChatSettings, holdRecapChat, holdRecapChatSettings,
@@ -74,6 +74,18 @@ import { CHIEF_OF_STAFF } from '../../ui/chief-of-staff.js';
 
 const WORKSPACE_AGENT = CHIEF_OF_STAFF;
 /** How near the newest message counts as following the conversation. */
+/**
+ * The least a conversation answer must be before the screen reads a field off
+ * it (note #1069): an object naming its workplace, with its rows. Anything
+ * else is a missed read, never a crash.
+ */
+export function isRecapChatAnswer(value: unknown): value is RecapChatAnswer {
+  return isAnswerObject(value) && typeof value.orgId === 'string' && Array.isArray(value.messages);
+}
+function recapChatAnswerOf(value: unknown): RecapChatAnswer {
+  if (isRecapChatAnswer(value)) return value;
+  throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
+}
 const FOLLOW_PX = 60;
 const atEnd = (pane: HTMLElement): boolean => pane.scrollHeight - pane.clientHeight - pane.scrollTop < FOLLOW_PX;
 /** The pane's box, both ways: a new width reflows every row as surely as a
@@ -286,10 +298,16 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // draw from the state read, which nothing else would refresh. Throttled:
   // a turn leaves several receipts in a row.
   const grown = useRef({ count: -1, reloadedAt: 0 });
+  // A missed read is quiet until it keeps missing (note #1069): the screen
+  // goes on drawing what it has, and the first read that lands draws
+  // everything since — a reply that came in while the reads were failing
+  // included.
+  const misses = usePollMisses();
   const read = useCallback(async (alive: () => boolean) => {
     try {
-      const next = await api.api<RecapChatAnswer>('api/recap/chat');
+      const next = recapChatAnswerOf(await api.api<unknown>('api/recap/chat'));
       if (alive() && next.orgId === orgId) {
+        misses.hit();
         const id = next.messages.at(-1)?.id ?? '';
         if (latest.current && id !== latest.current && !following.current) {
           news.current = true;
@@ -307,10 +325,14 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
       }
     } catch (err) {
       if (!alive()) return;
-      setError(errorMessage(err));
-      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { forgetRecapChatOf(orgId); setAnswer(null); }
+      // Signed out, or no longer in this workplace: said at once, and the
+      // held copy goes. Anything else waits for a run of misses.
+      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) {
+        setError(errorMessage(err)); forgetRecapChatOf(orgId); setAnswer(null); return;
+      }
+      if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api, orgId, reload]);
+  }, [api, orgId, reload, misses]);
   useMessagePoll(read);
   // Every answer lands in the layout phase, before the frame it is seen in: a
   // conversation returned to is put back on the reader's line the first time
@@ -515,6 +537,13 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
         // that does not carry it never will, so the bubble goes now.
         if (!matchSends([bubble], sendRowsOf(next.messages)).size) settle();
       } catch (err) {
+        // Accepted, and only its answer lost on the way back (note #1069):
+        // the message is on the record, so the bubble stands until the poll
+        // brings its row, and the words are not handed back to be sent twice.
+        if (err instanceof WorkspaceApiError && err.code === ANSWER_UNREADABLE_CODE && err.status >= 200 && err.status < 300) {
+          if (pendingSend.current?.clientId === clientId) pendingSend.current = null;
+          return;
+        }
         settle(); setSendError(errorMessage(err));
         returnDraft.current?.({ text, files });
       } finally { setSending(false); }
@@ -541,10 +570,12 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
     setStopping(true); setSendError('');
     try {
       const result = await api.api<RecapChatStopAnswer>('api/recap/chat/stop', jsonBody({}));
-      if (result.stopped) setStopped(true);
+      if (result?.stopped) setStopped(true);
       else setSendError(`${WORKSPACE_AGENT} had already finished.`);
-      const next = await api.api<RecapChatAnswer>('api/recap/chat');
-      if (next.orgId === orgId) { holdRecapChat(orgId, next); setAnswer(next); if (!next.working) setStopped(false); }
+      // The stop already landed: a read after it that misses is left to the
+      // poll, which draws the stopped turn on its next tick (note #1069).
+      const next = await api.api<unknown>('api/recap/chat').catch(() => null);
+      if (isRecapChatAnswer(next) && next.orgId === orgId) { holdRecapChat(orgId, next); setAnswer(next); if (!next.working) setStopped(false); }
     } catch (err) { setSendError(errorMessage(err)); }
     finally { setStopping(false); }
   }, [api, orgId]);
