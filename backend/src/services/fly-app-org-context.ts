@@ -81,8 +81,13 @@ export class FlyAppOrgContextResolver {
     const org = await this.deps.orgStorage.getOrg(orgId);
     const inPlatformAccount = context.source === 'platform'
       || (Boolean(this.deps.platformOrgSlug) && context.orgSlug === this.deps.platformOrgSlug);
-    const backendPeerIp = org?.fly?.wireguard?.peerIp
-      || (inPlatformAccount ? this.deps.platformBackendPeerIp : await this.siblingPeerIp(orgId, context.orgSlug));
+    // In the platform's own account the backend's own address is the pin,
+    // whatever a workplace record says: a tunnel recorded there is one that
+    // should never have existed (note #1032 stage 4), and pinning to it
+    // locks the machine away from the backend.
+    const backendPeerIp = inPlatformAccount
+      ? this.deps.platformBackendPeerIp
+      : org?.fly?.wireguard?.peerIp || await this.siblingPeerIp(orgId, context.orgSlug);
     return {
       client: this.clientFor(orgId, context.apiToken),
       orgSlug: context.orgSlug,

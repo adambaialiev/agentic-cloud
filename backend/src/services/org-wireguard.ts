@@ -96,6 +96,15 @@ export interface OrgWireGuardDeps {
   >;
   /** WireGuard gateway region for new peers (where the control plane lives). */
   region?: string;
+  /**
+   * The Fly organization the backend itself is a member of (FLY_ORG). A
+   * workplace whose cloud IS that organization never gets a tunnel: the
+   * backend already reaches it natively. On ia-backend the legacy `fly` peer's
+   * route said so; on a Fly machine nothing routes the /48, so without this
+   * the route guard found no conflict and a peer into our own organization
+   * came up (note #1032 stage 4, 7 Nov 2026).
+   */
+  platformOrgSlug?: string;
   confDir?: string;
 }
 
@@ -206,6 +215,14 @@ export class OrgWireGuardService {
       throw new OrgWireGuardError(
         `org ${orgId} has no Fly org of its own connected — a WireGuard peer would point at the platform's network`,
       );
+    }
+
+    if (this.deps.platformOrgSlug && context.orgSlug === this.deps.platformOrgSlug) {
+      return {
+        status: 'route-conflict',
+        network: org.fly?.peerCheck?.network ?? '',
+        detail: `the backend itself is in Fly organization ${context.orgSlug}; no tunnel is needed`,
+      };
     }
 
     let wireguard = org.fly?.wireguard;

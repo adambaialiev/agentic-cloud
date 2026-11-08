@@ -160,6 +160,16 @@ describe('FlyAppOrgContextResolver', () => {
     expect((await resolver.resolve(APP))!.backendPeerIp).toBe('fdaa:99:600e:a7b::4e02');
   });
 
+  it('org #0 with a tunnel recorded into the platform account still pins to the backend itself (note #1032 stage 4)', async () => {
+    // The backend on Fly once opened a peer into its own organization and
+    // recorded it; pinning to that peer locks the machine away from it.
+    const { resolver } = await makeWorld({
+      wireguard: true,
+      context: { source: 'org', orgSlug: 'infinite-agents', apiToken: 'fo1_org0' },
+    });
+    expect((await resolver.resolve(APP))!.backendPeerIp).toBe('fdaa:99:600e:a7b::4e02');
+  });
+
   it('caches the app→org answer and reuses one client per org', async () => {
     const { resolver, userStorage, madeClients } = await makeWorld();
     const spy = vi.spyOn(userStorage, 'getAllUsers');

@@ -956,6 +956,7 @@ const orgWireGuardService = PRIVATE_COPY ? undefined : new OrgWireGuardService({
     child.stdin?.end(opts?.stdin ?? '');
   }),
   region: FLY_REGION,
+  platformOrgSlug: FLY_ORG,
 });
 // The org→git namespace binding (byo-git-design slice 1): members of a
 // stamped org share one git namespace; destruction and CI-secret grants

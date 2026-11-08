@@ -39,6 +39,7 @@ async function makeWorld(args: {
   linkExists?: boolean;
   foreignRoute?: string;
   contextSource?: 'org' | 'platform-env';
+  platformOrgSlug?: string;
 } = {}) {
   const orgStorage = new InMemoryOrgStorage();
   const orgSecrets = new OrgSecretsService(new InMemorySecretStorage());
@@ -63,6 +64,7 @@ async function makeWorld(args: {
     exec,
     makeFlyClient: () => flyClient,
     region: 'ams',
+    ...(args.platformOrgSlug ? { platformOrgSlug: args.platformOrgSlug } : {}),
   });
   return { service, orgStorage, orgSecrets, org, exec, calls, flyClient };
 }
@@ -448,5 +450,26 @@ describe('OrgWireGuardService.removeOrgWireGuard', () => {
 
     const iface = orgWireGuardInterfaceName(org.orgId);
     expect(calls.map((c) => c.argv.join(' '))).toContain(`ip link delete ${iface}`);
+  });
+});
+
+describe('a workplace whose cloud is the backend\'s own Fly organization (note #1032 stage 4)', () => {
+  it('never gets a tunnel, even with nothing routing its network: the backend is already in it', async () => {
+    // On a Fly machine nothing routes the /48, so the route guard alone let a
+    // peer into our own organization come up on 7 Nov 2026.
+    const { service, org, orgStorage, calls, flyClient } = await makeWorld({ platformOrgSlug: 'acme-agents' });
+
+    const result = await service.ensureUpIfMissing(org.orgId);
+
+    expect(result.status).toBe('route-conflict');
+    expect(flyClient.addWireGuardPeer).not.toHaveBeenCalled();
+    expect(calls.some((call) => call.argv[0] === 'wg-quick')).toBe(false);
+    expect((await orgStorage.getOrg(org.orgId))?.fly?.peerCheck?.status).toBe('routed-elsewhere');
+  });
+
+  it('a workplace in another organization still gets its tunnel', async () => {
+    const { service, org, flyClient } = await makeWorld({ platformOrgSlug: 'infinite-agents' });
+    expect((await service.ensureOrgWireGuard(org.orgId)).status).toBe('up');
+    expect(flyClient.addWireGuardPeer).toHaveBeenCalledTimes(1);
   });
 });
