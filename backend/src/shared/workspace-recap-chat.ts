@@ -272,5 +272,32 @@ export interface RecapChatAnswer {
   /** The latest completed request and its recap, for the line under it (note #945). */
   lastTurn?: import('./turn-recap.js').WorkspaceTurnRecap;
 }
+/**
+ * Reading only what is new (note #1071). Every conversation answer carries
+ * `version`, a token for exactly the transcript it holds; a reader that names
+ * it back (`?since=<version>` on GET and POST `api/recap/chat` and POST
+ * `…/files`) may be answered with a `RecapChatDeltaAnswer` instead: the same
+ * fields, minus the transcript, plus the rows that changed or arrived and the
+ * ids that left. A reader that does not name a version, or names one the
+ * server no longer knows, gets the whole conversation — so an older page and
+ * a restarted backend both keep working.
+ */
+export interface RecapChatAnswer {
+  /** The token for this exact transcript; absent from a backend older than note #1071. */
+  version?: string;
+}
+export interface RecapChatDeltaAnswer extends Omit<RecapChatAnswer, 'messages' | 'version'> {
+  version: string;
+  delta: {
+    /** The version this delta applies to: the reader's own. */
+    since: string;
+    /** Rows that changed (replace in place, by id) or arrived (append, in this order). */
+    rows: RecapMessage[];
+    /** Ids of rows that are no longer drawn. */
+    removed: string[];
+  };
+}
+/** What a read of the conversation may answer with. */
+export type RecapChatRead = RecapChatAnswer | RecapChatDeltaAnswer;
 /** POST api/recap/chat/stop — the same answer a room agent's Stop gives. */
 export interface RecapChatStopAnswer { ok: true; stopped: boolean; name: string }

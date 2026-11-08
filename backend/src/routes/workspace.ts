@@ -11,7 +11,8 @@ import type { WorkspaceRecapSettingsAnswer } from '../shared/workspace-recap.js'
 import { WorkspaceRecapCoordinator, appendRecapHistory, buildWorkspaceRecapPrompt, previousRecaps, recapFingerprint, selectRecapSources, RECAP_WINDOW_MS } from '../services/workspace-recap.js';
 import { collectWorkspaceRecapSources } from '../services/workspace-recap-sources.js';
 import type { WorkspaceAgentDetailsAnswer, WorkspaceRecapAnswer } from '../shared/workspace-recap.js';
-import type { RecapChatAnswer, RecapForwardedProposalRef, WorkspaceForwardedProposal } from '../shared/workspace-recap-chat.js';
+import type { RecapChatAnswer, RecapChatDeltaAnswer, RecapChatRead, RecapForwardedProposalRef, WorkspaceForwardedProposal } from '../shared/workspace-recap-chat.js';
+import { RecapChatVersions } from '../services/recap-chat-versions.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
@@ -5676,12 +5677,33 @@ self.addEventListener('activate', (event) => {
   const recapMessages = async (auth: MiniAppAuth, messages: RecapChatAnswer['messages']) => (
     withForwardedProposals(auth, await withMailApprovals(auth.userId, messages))
   );
+  /**
+   * Reading only what is new (note #1071): the transcript's versions as
+   * answered, one store per router. See `services/recap-chat-versions.ts`.
+   */
+  const recapVersions = new RecapChatVersions();
+  /**
+   * A conversation answer, whole or — when the request names the version the
+   * reader holds (`?since=`) and this process still knows it — only the rows
+   * that changed, arrived or left since. The rows are decorated first, so a
+   * card whose proposal merged or a mail decision that was taken counts as a
+   * changed row though its stored record never moved.
+   */
+  const recapChatAnswer = async (auth: MiniAppAuth, req: Request, answer: RecapChatAnswer): Promise<RecapChatRead> => {
+    const rows = await recapMessages(auth, answer.messages);
+    const decor = await recapChatDecor(auth);
+    const since = typeof req.query.since === 'string' && req.query.since.length <= 64 ? req.query.since : undefined;
+    const { version, delta } = recapVersions.answer(`${auth.userId}/${auth.orgId}`, rows, since);
+    const { messages: _whole, ...rest } = answer;
+    if (delta && since) return { ...rest, ...decor, version, delta: { since, rows: delta.rows, removed: delta.removed } } satisfies RecapChatDeltaAnswer;
+    return { ...rest, messages: rows, ...decor, version } satisfies RecapChatAnswer;
+  };
   router.get('/api/recap/chat', async (req, res) => {
     const auth = await authenticate(req, res); if (!auth) return;
     if (!auth.orgId) return res.status(404).json({ error: 'Choose a workplace.' });
     try {
       const answer = await recapChat.read(auth.userId, auth.orgId);
-      return res.json({ ...answer, messages: await recapMessages(auth, answer.messages), ...(await recapChatDecor(auth)) } satisfies RecapChatAnswer);
+      return res.json(await recapChatAnswer(auth, req, answer));
     } catch (error) { return recapChatError(res, error); }
   });
   router.post('/api/recap/chat', async (req, res) => {
@@ -5689,7 +5711,7 @@ self.addEventListener('activate', (event) => {
     if (!auth.orgId) return res.status(404).json({ error: 'Choose a workplace.' });
     try {
       const answer = await recapChat.send(auth.userId, auth.orgId, req.body?.clientId, req.body?.text);
-      return res.status(202).json({ ...answer, messages: await recapMessages(auth, answer.messages), ...(await recapChatDecor(auth)) } satisfies RecapChatAnswer);
+      return res.status(202).json(await recapChatAnswer(auth, req, answer));
     } catch (error) { return recapChatError(res, error); }
   });
   /**
@@ -5778,7 +5800,7 @@ self.addEventListener('activate', (event) => {
       if ('error' in parsed) return res.status(400).json({ error: parsed.error });
       try {
         const sent = await recapChat.send(auth.userId, auth.orgId, String(req.get('x-recap-client-id') ?? ''), parsed.message, parsed.attachments);
-        return res.status(202).json({ ...sent, messages: await recapMessages(auth, sent.messages), ...(await recapChatDecor(auth)) } satisfies RecapChatAnswer);
+        return res.status(202).json(await recapChatAnswer(auth, req, sent));
       } catch (error) { return recapChatError(res, error); }
     },
   );

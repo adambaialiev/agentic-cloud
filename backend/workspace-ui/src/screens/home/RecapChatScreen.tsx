@@ -33,7 +33,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { parseWorkspaceRoute, WORKSPACE_BASE } from '../../../../src/shared/workspace-routes.js';
 import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/workspace-recap.js';
-import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatStopAnswer, type RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
+import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
 import { chatFilesBody } from '../chat/chat-upload.js';
@@ -65,6 +65,7 @@ import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
 import {
   forgetRecapChatOf, heldRecapChat, heldRecapChatSettings, holdRecapChat, holdRecapChatSettings,
 } from './recap-chat-cache.js';
+import { markRecapChatRead, recapChatPath, recapChatWantsWhole, wholeRecapAnswer } from './recap-chat-delta.js';
 import { RecapRuntimePicker } from './RecapRuntimePicker.js';
 import { recalledRuntime } from '../agent/runtime-memory.js';
 import { AttentionLine, DidLine, NoticedLine, RemoveAgentCard, UnfinishedLine, UnfinishedMark } from './RecapRows.js';
@@ -82,8 +83,15 @@ const WORKSPACE_AGENT = CHIEF_OF_STAFF;
 export function isRecapChatAnswer(value: unknown): value is RecapChatAnswer {
   return isAnswerObject(value) && typeof value.orgId === 'string' && Array.isArray(value.messages);
 }
-function recapChatAnswerOf(value: unknown): RecapChatAnswer {
-  if (isRecapChatAnswer(value)) return value;
+/** The same least for a read that may be a delta (note #1071): its rows, the ids that left, and the versions either side. */
+export function isRecapChatRead(value: unknown): value is RecapChatRead {
+  if (isRecapChatAnswer(value)) return true;
+  if (!isAnswerObject(value) || typeof value.orgId !== 'string' || typeof value.version !== 'string' || !isAnswerObject(value.delta)) return false;
+  const { since, rows, removed } = value.delta;
+  return typeof since === 'string' && Array.isArray(rows) && Array.isArray(removed);
+}
+function recapChatReadOf(value: unknown): RecapChatRead {
+  if (isRecapChatRead(value)) return value;
   throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
 }
 const FOLLOW_PX = 60;
@@ -303,11 +311,27 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // everything since — a reply that came in while the reads were failing
   // included.
   const misses = usePollMisses();
+  // Only what is new (note #1071): a read names the version this tab holds
+  // and gets back what changed since. A delta that does not fit what is held
+  // — another read moved the tab on meanwhile — sends the next read whole.
+  const whole = useRef(false);
+  const sincePath = useCallback((base: string) => (
+    recapChatPath(base, heldRecapChat(orgId), whole.current || recapChatWantsWhole(orgId))
+  ), [orgId]);
+  /** A read made whole against what this tab holds; null when it does not fit, and the next read asks whole. */
+  const wholeOf = useCallback((read: RecapChatRead): RecapChatAnswer | null => {
+    const next = wholeRecapAnswer(heldRecapChat(orgId), read);
+    whole.current = !next;
+    if (next) markRecapChatRead(orgId);
+    return next;
+  }, [orgId]);
   const read = useCallback(async (alive: () => boolean) => {
     try {
-      const next = recapChatAnswerOf(await api.api<unknown>('api/recap/chat'));
-      if (alive() && next.orgId === orgId) {
+      const got = recapChatReadOf(await api.api<unknown>(sincePath('api/recap/chat')));
+      if (alive() && got.orgId === orgId) {
         misses.hit();
+        const next = wholeOf(got);
+        if (!next) return;
         const id = next.messages.at(-1)?.id ?? '';
         if (latest.current && id !== latest.current && !following.current) {
           news.current = true;
@@ -332,7 +356,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
       }
       if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api, orgId, reload, misses]);
+  }, [api, orgId, reload, misses, sincePath, wholeOf]);
   useMessagePoll(read);
   // Every answer lands in the layout phase, before the frame it is seen in: a
   // conversation returned to is put back on the reader's line the first time
@@ -524,15 +548,20 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
           const percent = total > 0 ? Math.min(100, Math.floor((sent / total) * 100)) : 0;
           setOutgoing((current) => current.map((item) => (item.id === clientId && item.percent !== percent ? { ...item, percent } : item)));
         };
-        const next = files.length
-          ? await api.api<RecapChatAnswer>('api/recap/chat/files', {
+        const sent = recapChatReadOf(files.length
+          ? await api.api<unknown>(sincePath('api/recap/chat/files'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/vnd.agentbuilt.chat-attachments', 'x-recap-client-id': clientId },
             body: await chatFilesBody(api, WORKSPACE_AGENT_CHAT_ID, text, files, progress),
           })
-          : await api.api<RecapChatAnswer>('api/recap/chat', jsonBody({ clientId, text }));
+          : await api.api<unknown>(sincePath('api/recap/chat'), jsonBody({ clientId, text })));
         if (pendingSend.current?.clientId === clientId) pendingSend.current = null;
-        following.current = true; holdRecapChat(orgId, next); setAnswer(next);
+        following.current = true;
+        // Accepted. A delta that no longer fits what this tab holds is left
+        // to the poll, and the bubble stands until it brings the row.
+        const next = sent.orgId === orgId ? wholeOf(sent) : null;
+        if (!next) return;
+        holdRecapChat(orgId, next); setAnswer(next);
         // Its row in the answer retires the bubble as it lands; an answer
         // that does not carry it never will, so the bubble goes now.
         if (!matchSends([bubble], sendRowsOf(next.messages)).size) settle();
@@ -574,8 +603,9 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
       else setSendError(`${WORKSPACE_AGENT} had already finished.`);
       // The stop already landed: a read after it that misses is left to the
       // poll, which draws the stopped turn on its next tick (note #1069).
-      const next = await api.api<unknown>('api/recap/chat').catch(() => null);
-      if (isRecapChatAnswer(next) && next.orgId === orgId) { holdRecapChat(orgId, next); setAnswer(next); if (!next.working) setStopped(false); }
+      const got = await api.api<unknown>(sincePath('api/recap/chat')).catch(() => null);
+      const next = isRecapChatRead(got) && got.orgId === orgId ? wholeOf(got) : null;
+      if (next) { holdRecapChat(orgId, next); setAnswer(next); if (!next.working) setStopped(false); }
     } catch (err) { setSendError(errorMessage(err)); }
     finally { setStopping(false); }
   }, [api, orgId]);

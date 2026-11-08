@@ -18,6 +18,7 @@
 import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/workspace-recap.js';
 import type { RecapChatAnswer } from '../../../../src/shared/workspace-recap-chat.js';
 import { forgetRuntimesOf, rememberRuntime } from '../agent/runtime-memory.js';
+import { forgetRecapChatReads } from './recap-chat-delta.js';
 
 const answers = new Map<string, RecapChatAnswer>();
 const settings = new Map<string, WorkspaceRecapSettingsAnswer>();
@@ -51,4 +52,5 @@ export function forgetRecapChatOf(orgId: string): void {
 export function forgetRecapChats(): void {
   answers.clear();
   settings.clear();
+  forgetRecapChatReads();
 }
