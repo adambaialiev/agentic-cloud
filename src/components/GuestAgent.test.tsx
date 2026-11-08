@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GUEST_CHIPS, GUEST_HEADING, GUEST_LIFE_LINE, GUEST_STEP_DETAIL, GuestAgentSection, buildWords, jobClock, jobCount, minutesLeft, removedWords, stepTime, whenWords, workingWords } from './GuestAgent';
+import { GUEST_HEADING, GUEST_MAKE, GUEST_STEP_DETAIL, GuestAgentSection, buildWords, jobClock, jobCount, minutesLeft, removedWords, stepTime, whenWords, workingWords } from './GuestAgent';
 import {
   GUEST_CREATING_POLL_MS,
   GUEST_IDLE_POLL_MS,
@@ -110,7 +110,7 @@ describe('GuestAgentSection (note #1039)', () => {
     delete (window as unknown as { turnstile?: unknown }).turnstile;
   });
 
-  it('invites at rest: the heading, the line, two chips, Make my agent, and no Hugo', async () => {
+  it('invites at rest: the heading, the line, Start guest agent alone, and no Hugo', async () => {
     draw();
     await flush();
     expect(h2()).toBe(GUEST_HEADING);
@@ -119,11 +119,13 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(words()).toContain('A real Claude Code agent with our whole code and documentation to read. Ask it anything about the product, get advice on your setup, watch it work. Then delete it.');
     expect(words()).not.toMatch(/Make an agent of your own|computer of its own, reading our open-source code/);
     expect(document.querySelector('#your-agent')!.getAttribute('aria-label')).toBe('Meet your first agent');
-    // Decision 11 (Adam, 17:24 UTC): exactly these two chips.
-    expect([...document.querySelectorAll('[data-guest-chips] li')].map((li) => li.textContent)).toEqual(['2 cores its own', 'Sonnet high effort']);
-    expect(GUEST_CHIPS).toHaveLength(2);
-    expect(screen.getByRole('button', { name: /Make my agent/ })).toBeTruthy();
-    expect(words()).toContain(GUEST_LIFE_LINE);
+    // Note #1084 (Adam, 8 Nov 2026): no chips, no sleep line, and the button
+    // says it is a guest agent. Nothing is drawn under the button.
+    expect(document.querySelector('[data-guest-chips]')).toBeNull();
+    expect(words()).not.toMatch(/2 cores|its own|Sonnet|high effort|sleeps when|quiet minutes|Make my agent/);
+    expect(GUEST_MAKE).toBe('Start guest agent');
+    const button = screen.getByRole('button', { name: /^Start guest agent/ });
+    expect(button.nextElementSibling).toBeNull();
     // Decision 1: no Hugo, no question box. claims-we-never-make: no free, no hosted.
     expect(words()).not.toMatch(/Hugo|Ask about|no sign-up|free|hosted/i);
     expect(calls.map((c) => c.url)).toEqual([GUEST]);
@@ -136,14 +138,14 @@ describe('GuestAgentSection (note #1039)', () => {
     await flush();
     expect(h2()).toMatch(/^Guest agents are resting until \d\d:\d\d\.$/);
     expect(screen.getByRole('link', { name: 'Build your own Agentic Cloud' }).getAttribute('href')).toBe('/#give-your-agent');
-    expect(screen.queryByRole('button', { name: /Make my agent/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Start guest agent/ })).toBeNull();
   });
 
   it('makes the agent through Turnstile with the status’s site key, keeps the key, and ticks the real steps', async () => {
     routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO, step: 'machine', estimateSeconds: 35, steps: buildSteps(0) }) } });
     draw();
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
     await flush();
     await flush();
     expect(turnstileRenders).toHaveLength(1);
@@ -234,7 +236,7 @@ describe('GuestAgentSection (note #1039)', () => {
     routes[`GET ${GUEST}`] = () => ({ body: status({ turnstileSiteKey: null }) });
     draw();
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
     await flush();
     await flush();
     expect(document.querySelector('[data-guest-clock]')!.textContent).toContain('0:00');
@@ -256,7 +258,7 @@ describe('GuestAgentSection (note #1039)', () => {
     routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO }) } });
     draw();
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
     await flush();
     expect(turnstileRenders).toHaveLength(0);
     expect(JSON.parse(String(calls.find((c) => c.init?.method === 'POST')!.init!.body))).toEqual({});
@@ -266,7 +268,7 @@ describe('GuestAgentSection (note #1039)', () => {
     stubTurnstile(false);
     draw();
     await flush();
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
     await flush();
     await flush();
     expect(calls.some((c) => c.init?.method === 'POST')).toBe(false);
@@ -274,7 +276,7 @@ describe('GuestAgentSection (note #1039)', () => {
 
     stubTurnstile(true);
     routes[`POST ${GUEST}`] = () => ({ status: 400, body: { state: 'invalid', error: 'challenge' } });
-    fireEvent.click(screen.getByRole('button', { name: /Make my agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
     await flush();
     await flush();
     expect(document.querySelector('[data-guest-problem]')!.textContent).toMatch(/didn’t go through/);

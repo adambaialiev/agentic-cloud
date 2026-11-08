@@ -37,8 +37,8 @@ import {
    note #1036 (the eight screens on board-desk.png and board-phone.png) is
    the brief, with Adam's decisions of 17:20 and 17:24 UTC on note #1038: no
    Hugo anywhere (when every slot is taken, the line and nothing else), the
-   chips "2 cores its own · Sonnet high effort", one browser only, the
-   invisible Turnstile check on Make my agent, a fixed greeting in the
+   chips "2 cores its own · Sonnet high effort" (off since note #1084), one
+   browser only, the invisible Turnstile check on the button, a fixed greeting in the
    agent's name. It replaced "Ask an agent that reads the code." (note
    #1010). The routes are Rosa's (src/lib/guest-api.ts). The words follow
    claims-we-never-make: nothing says the conversation is deleted (Adam
@@ -50,12 +50,17 @@ import {
    agent is able to help and consult"; he picked option B). Until then
    "Make an agent of your own." and "A real Claude Code agent on a computer
    of its own, reading our open-source code. Ask it anything. Delete it when
-   you're done." (note #1039). The chips, the button and the sleep line stay. */
+   you're done." (note #1039).
+
+   Note #1084 (Adam, 8 Nov 2026, 18:55 UTC: "Stranger should clearly
+   understand that this is guest agent. It's throwaway."): the section at
+   rest is the heading, the line and the button alone. The two chips ("2
+   cores its own", "Sonnet high effort") and the sleep line ("It sleeps when
+   you're quiet, and goes after 30 quiet minutes.") came off with nothing in
+   their place, and the button "Make my agent" became "Start guest agent". */
 export const GUEST_HEADING = 'Meet your first agent. It knows us inside out.';
 export const GUEST_LEAD = 'A real Claude Code agent with our whole code and documentation to read. Ask it anything about the product, get advice on your setup, watch it work. Then delete it.';
-export const GUEST_CHIPS: ReadonlyArray<[string, string]> = [['2 cores', 'its own'], ['Sonnet', 'high effort']];
-export const GUEST_MAKE = 'Make my agent';
-export const GUEST_LIFE_LINE = 'It sleeps when you’re quiet, and goes after 30 quiet minutes.';
+export const GUEST_MAKE = 'Start guest agent';
 /* The build's five real steps (note #1055), in the words of note #1060:
    each is a real event on our side, in this order, every agent built from
    nothing. The running one says what is happening under it. */
@@ -578,18 +583,10 @@ function Invite({ making, problem, onMake }: { making: boolean; problem?: string
     <div className="max-w-[40rem]">
       <h2 className={`[text-wrap:balance] ${H2}`}>{GUEST_HEADING}</h2>
       <p className="mt-4 type-base text-hint sm:mt-5 sm:type-md-sm">{GUEST_LEAD}</p>
-      <ul data-guest-chips className="mt-5 flex flex-wrap gap-2">
-        {GUEST_CHIPS.map(([strong, rest]) => (
-          <li key={strong} className="rounded-full border border-white/15 px-3 py-1 type-sm text-hint">
-            <b className="font-semibold text-white">{strong}</b> {rest}
-          </li>
-        ))}
-      </ul>
       <button type="button" onClick={onMake} disabled={making} data-guest-make className={`mt-7 w-full sm:w-auto ${INK_BUTTON} sm:min-h-12 sm:px-6`}>
         {making ? 'Making your agent…' : GUEST_MAKE}
         {making ? null : <ArrowRight />}
       </button>
-      <p className="mt-3 type-sm text-hint">{GUEST_LIFE_LINE}</p>
       {problem ? <p data-guest-problem role="status" className="mt-3 type-sm text-white">{problem}</p> : null}
     </div>
   );

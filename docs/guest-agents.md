@@ -8,7 +8,7 @@ quiet minutes like every agent's. After 30 quiet minutes, 3 hours, or 40
 messages, the agent is deleted with its machine, volume and app. The owner
 keeps the transcript for 90 days. The design and its screens are note #1036.
 Adam's decisions are note #1038. Since note #1055 (Adam, 7 Nov 2026) there
-are no slots, no waiting line and no spares: every visitor's Make my agent
+are no slots, no waiting line and no spares: every visitor's Start guest agent
 builds that visitor's machine and agent from nothing, and the visitor
 watches the real steps.
 
@@ -157,7 +157,7 @@ a-finished-job-wakes-its-agent), without a platform token:
 
 ## The build, from nothing (note #1055)
 
-Make my agent reserves a sealed guest record (its name) and builds the rest
+Start guest agent reserves a sealed guest record (its name) and builds the rest
 behind the answer. There is no ceiling on how many are alive at once, no
 waiting line and no spare: the 40 a day, 3 per address a day and one live
 per address are what bound the spend. Each step is a real event, written
@@ -213,7 +213,7 @@ deploy. None is ever handed to a visitor.
   5-hour window or week never rests guests (note #1048, 7 Nov 2026, Adam:
   "remove guest limit"); until then they rested at 50% and 70%. The home
   page's guide still rests at 80% and 90% (`docs/sealed-public-agent.md`).
-- **Turnstile:** checked on Make my agent when `TURNSTILE_SECRET_KEY` and
+- **Turnstile:** checked on Start guest agent when `TURNSTILE_SECRET_KEY` and
   `TURNSTILE_SITE_KEY` are set on the backend. The site key reaches the page
   in `turnstileSiteKey`. While they are unset, the check is off and the key
   is null.
@@ -249,7 +249,7 @@ All under `/workspace/api/public/guest`, with 403 from another Origin and the
 key in `X-Guest-Key`:
 
 - `GET /` — the visitor's status.
-- `POST /` — Make my agent.
+- `POST /` — Start guest agent.
 - `POST /messages` — send a message.
 - `GET /turns/:turnId` — the turn, polled every second.
 - `POST /turns/:turnId/stop` — stop the turn.

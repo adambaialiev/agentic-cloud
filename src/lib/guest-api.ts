@@ -174,7 +174,7 @@ export async function deleteGuest(): Promise<GuestStatus | null> {
   }
 }
 
-/* ── The invisible Cloudflare Turnstile check on Make my agent (decision 12) ──
+/* ── The invisible Cloudflare Turnstile check on Start guest agent (decision 12) ──
    The site key comes with the status (turnstileSiteKey); null means the
    check is off and the page sends no token. The backend holds the secret. */
 
