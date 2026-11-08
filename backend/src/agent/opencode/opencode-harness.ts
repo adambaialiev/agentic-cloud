@@ -44,6 +44,8 @@ import {
   startDetachedTurn,
   terminateDetachedTurnBeforeRestart,
   updateActiveDetachedTurn,
+  unreachableDeadline,
+  unreachableGiveUpMinutes,
 } from '../harness-turn-output.js';
 import { isProcessShutdownAbort } from '../abort-reason.js';
 import { resolveUserSecretEnv } from '../../services/user-secrets.js';
@@ -863,6 +865,7 @@ async function attemptOpenCodeTurn(args: {
   const captureInterruptedContinuity = async (): Promise<void> => {
     const continuityOffset = reader.linesConsumed;
     let failures = 0;
+    const giveUpAt = unreachableDeadline();
     while (true) {
       const continuityReader = new TurnOutputReader(
         sandboxClient, sandboxId, outputPath, HARNESS_SSH_USER, continuityOffset,
@@ -875,6 +878,12 @@ async function attemptOpenCodeTurn(args: {
         if (isHarnessShutdownInProgress()) {
           throw new DetachedTurnContinuityError(
             'OpenCode exited, but its session id could not be safely captured.',
+            { cause: error },
+          );
+        }
+        if (Date.now() >= giveUpAt) {
+          throw new DetachedTurnContinuityError(
+            `OpenCode's conversation could not be read back from its machine for ${unreachableGiveUpMinutes()}: ${error instanceof Error ? error.message : String(error)}`,
             { cause: error },
           );
         }

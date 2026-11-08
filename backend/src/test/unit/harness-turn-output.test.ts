@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   DetachedTurnTerminationError,
+  DetachedTurnUnreachableError,
+  DetachedTurnRestartSafetyError,
+  setUnreachableGiveUpMsForTests,
+  inspectDetachedTurnUntilKnown,
   TURN_OUTPUT_DIR,
   TURN_OUTPUT_PREFIX,
   TURN_INPUT_KEEPER_MAX_SECONDS,
@@ -813,5 +817,94 @@ describe('detached turn lifecycle', () => {
     expect(poll.exitCode).toBe(0);
     expect(poll.lines).toEqual(['{"a":3}', '{"a":4}']);
     expect(reader.linesConsumed).toBe(4);
+  });
+});
+
+describe('a machine that does not answer ends the wait (note #1068)', () => {
+  const unreachable = () => Object.assign(
+    new Error('Could not reach machine m1 in app ia-x over SSH (:2222): 3 tries of 15 s each, last: SSH connection failed: Timed out while waiting for handshake. This backend connects from fdaa::b, but the machine admits only fdaa::a.'),
+    { name: 'MachineUnreachableError' },
+  );
+
+  it('the status poll gives the turn up once the machine has been silent for the whole window, with the reason', async () => {
+    vi.useFakeTimers();
+    setUnreachableGiveUpMsForTests(120_000);
+    try {
+      const client = new FakeWorkspaceRuntimeClient();
+      client.execSyncHandler = () => { throw unreachable(); };
+      const reader = new TurnOutputReader(client, 'sb-1', '/tmp/turn.jsonl', 'agent');
+
+      // Silent, but not yet long enough: still "running", as a transient blip always was.
+      expect((await reader.readNewLinesWithStatus()).running).toBe(true);
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect((await reader.readNewLinesWithStatus()).running).toBe(true);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      const error = await reader.readNewLinesWithStatus().catch((caught) => caught);
+      expect(error).toBeInstanceOf(DetachedTurnUnreachableError);
+      // A restart-safety error: the runner fails the run loudly and starts nothing beside the old CLI.
+      expect(error).toBeInstanceOf(DetachedTurnRestartSafetyError);
+      expect(error.message).toContain("The agent's machine has not answered for 2 minutes, so this turn was given up.");
+      expect(error.message).toContain('the machine admits only fdaa::a');
+    } finally {
+      setUnreachableGiveUpMsForTests(120_000);
+      vi.useRealTimers();
+    }
+  });
+
+  it('one good answer resets the window, and an ordinary read failure never starts it', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeWorkspaceRuntimeClient();
+      let mode: 'down' | 'up' | 'flaky' = 'down';
+      client.execSyncHandler = () => {
+        if (mode === 'down') throw unreachable();
+        if (mode === 'flaky') throw new Error('SSH exec failed: channel open failure');
+        return makeExecSyncResult({ stdout: '', stderr: '__RUNNING__' });
+      };
+      const reader = new TurnOutputReader(client, 'sb-1', '/tmp/turn.jsonl', 'agent');
+      await reader.readNewLinesWithStatus();
+      await vi.advanceTimersByTimeAsync(100_000);
+      mode = 'up';
+      expect((await reader.readNewLinesWithStatus()).running).toBe(true);
+      mode = 'down';
+      await reader.readNewLinesWithStatus();
+      await vi.advanceTimersByTimeAsync(100_000);
+      expect((await reader.readNewLinesWithStatus()).running).toBe(true);
+      mode = 'flaky';
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect((await reader.readNewLinesWithStatus()).running).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stopping a turn on a machine that never answers gives up instead of retrying forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeWorkspaceRuntimeClient();
+      client.execSyncHandler = () => { throw unreachable(); };
+      const completion = killDetachedTurnUntilGone(client, 'sb-1', 31337, 'agent').catch((caught) => caught);
+      await vi.advanceTimersByTimeAsync(130_000);
+      const error = await completion;
+      expect(error).toBeInstanceOf(DetachedTurnUnreachableError);
+      expect(error.message).toContain('Could not stop the turn');
+      expect(error.message).toContain('the machine admits only fdaa::a');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('asking a silent machine whether the turn still runs ends with "unknown", never a hang', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeWorkspaceRuntimeClient();
+      client.execSyncHandler = () => { throw unreachable(); };
+      const completion = inspectDetachedTurnUntilKnown(client, 'sb-1', '/tmp/turn.jsonl', 'agent');
+      await vi.advanceTimersByTimeAsync(130_000);
+      expect((await completion).state).toBe('unknown');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

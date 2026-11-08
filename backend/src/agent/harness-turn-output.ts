@@ -78,6 +78,43 @@ export class DetachedTurnContinuityError extends DetachedTurnRestartSafetyError 
   override readonly name = 'DetachedTurnContinuityError';
 }
 
+/**
+ * The turn's machine stopped answering (note #1068). A termination error on
+ * purpose: nobody can prove the CLI there is gone, so the run keeps its
+ * registry entry and the next message first stops the old turn, but the run
+ * itself ends now, loudly, and the agent is idle again.
+ */
+export class DetachedTurnUnreachableError extends DetachedTurnTerminationError {}
+
+/**
+ * How long the backend keeps trying a machine that does not answer before a
+ * turn, a stop or a recovery gives up (note #1068). Before, the retry loops
+ * below had no end but a backend shutdown, so an agent whose machine admitted
+ * another address showed "working" for hours and could not even be stopped.
+ */
+let unreachableGiveUpMs = 2 * 60_000;
+export function setUnreachableGiveUpMsForTests(ms: number): void {
+  unreachableGiveUpMs = ms;
+}
+/** The moment a retry loop starting now gives up on an unanswering machine. */
+export function unreachableDeadline(): number {
+  return Date.now() + unreachableGiveUpMs;
+}
+export function unreachableGiveUpMinutes(): string {
+  const minutes = unreachableGiveUpMs / 60_000;
+  return minutes >= 1 ? `${Math.round(minutes)} minute${Math.round(minutes) === 1 ? '' : 's'}` : `${Math.round(unreachableGiveUpMs / 1000)} s`;
+}
+
+/** The machine did not answer at all, as opposed to a command that failed on it. */
+export function isMachineUnreachable(error: unknown): boolean {
+  const name = error instanceof Error ? error.name : '';
+  return name === 'MachineUnreachableError' || name === 'MachineWakeError';
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function buildTurnOutputPath(): string {
   return `${TURN_OUTPUT_DIR}/${TURN_OUTPUT_PREFIX}${randomUUID()}.jsonl`;
 }
@@ -629,6 +666,7 @@ export async function killDetachedTurnUntilGone(
     );
   }
   let failures = 0;
+  const giveUpAt = Date.now() + unreachableGiveUpMs;
   while (true) {
     try {
       await killDetachedTurn(sandboxClient, sandboxId, pid, sshUser, outputPath);
@@ -637,6 +675,12 @@ export async function killDetachedTurnUntilGone(
       if (!(error instanceof DetachedTurnTerminationError)) throw error;
       failures += 1;
       if (isHarnessShutdownInProgress()) throw error;
+      if (Date.now() >= giveUpAt) {
+        throw new DetachedTurnUnreachableError(
+          `Could not stop the turn's process ${pid} for ${unreachableGiveUpMinutes()}: ${reasonOf(error.cause ?? error)}`,
+          { cause: error },
+        );
+      }
       onRetry?.(failures, error);
       await new Promise<void>((resolve) => {
         setTimeout(resolve, Math.min(failures, 5) * 1_000);
@@ -663,6 +707,7 @@ export async function cancelDetachedLaunchUntilMarked(
 ): Promise<void> {
   const { launchLockPath, cancelPath } = turnSidecarPaths(outputPath);
   let failures = 0;
+  const giveUpAt = Date.now() + unreachableGiveUpMs;
   while (true) {
     try {
       const result = await sandboxClient.execSync(
@@ -678,6 +723,12 @@ export async function cancelDetachedLaunchUntilMarked(
       if (isHarnessShutdownInProgress()) {
         throw new DetachedTurnTerminationError(
           `Could not fence unresolved detached launch ${outputPath}.`,
+          { cause: error },
+        );
+      }
+      if (Date.now() >= giveUpAt) {
+        throw new DetachedTurnUnreachableError(
+          `Could not fence the turn's launch for ${unreachableGiveUpMinutes()}: ${reasonOf(error)}`,
           { cause: error },
         );
       }
@@ -749,6 +800,7 @@ export async function terminateDetachedTurnBeforeRestart(
 
   let continuityFailures = 0;
   let reader: TurnOutputReader;
+  const giveUpAt = unreachableDeadline();
   while (true) {
     // Recreate from the checkpointed offset on every attempt. readNewLines
     // advances before the storage callback runs; if that callback failed, a
@@ -768,6 +820,12 @@ export async function terminateDetachedTurnBeforeRestart(
       if (isHarnessShutdownInProgress()) {
         throw new DetachedTurnContinuityError(
           `Detached ${info.cli} turn exited, but its conversation continuity could not be preserved.`,
+          { cause: error },
+        );
+      }
+      if (Date.now() >= giveUpAt) {
+        throw new DetachedTurnContinuityError(
+          `The ${info.cli} conversation could not be read back from its machine for ${unreachableGiveUpMinutes()}: ${reasonOf(error)}`,
           { cause: error },
         );
       }
@@ -864,9 +922,13 @@ export async function inspectDetachedTurnUntilKnown(
   onRetry?: (failures: number) => void,
 ): Promise<DetachedTurnProbeResult> {
   let failures = 0;
+  const giveUpAt = Date.now() + unreachableGiveUpMs;
   while (true) {
     const outcome = await inspectDetachedTurn(sandboxClient, sandboxId, outputPath, sshUser);
     if (outcome.state !== 'unknown' || signal?.aborted || isHarnessShutdownInProgress()) return outcome;
+    // Unknown is a safe answer for every caller (it never proves the CLI
+    // gone); a machine that will not answer must not hold it forever.
+    if (Date.now() >= giveUpAt) return outcome;
     failures += 1;
     onRetry?.(failures);
     await sleepUnlessAborted(Math.min(failures, 5) * 1_000, signal);
@@ -928,6 +990,8 @@ export function redactHarnessSecrets(text: string, secrets: Array<string | undef
 
 export class TurnOutputReader {
   private consumedLines: number;
+  /** When the machine first stopped answering, during the current run of failed polls (note #1068). */
+  private unreachableSince: number | null = null;
 
   constructor(
     private readonly sandboxClient: WorkspaceRuntimeClient,
@@ -953,6 +1017,7 @@ export class TurnOutputReader {
     const { exitPath } = turnSidecarPaths(this.outputPath);
     let stdout = '';
     let stderr = '';
+    const attemptStartedAt = Date.now();
     try {
       const result = await this.sandboxClient.execSync(
         this.sandboxId,
@@ -968,9 +1033,29 @@ export class TurnOutputReader {
       stdout = result.stdout;
       stderr = result.stderr;
     } catch (error) {
-      console.warn(`[harness-turn-output] Transient status poll failure for ${this.outputPath}:`, error);
+      console.warn(
+        `[harness-turn-output] Transient status poll failure for ${this.outputPath}:`,
+        isMachineUnreachable(error) ? reasonOf(error) : error,
+      );
+      // A machine that does not answer at all is not transient forever: past
+      // the give-up window the turn ends loudly instead of reading "working"
+      // with no step until the 15-minute stall clock (note #1068).
+      if (isMachineUnreachable(error)) {
+        // From the start of the first attempt that got no answer: each one
+        // already spent its connect budget before it failed.
+        this.unreachableSince ??= attemptStartedAt;
+        if (Date.now() - this.unreachableSince >= unreachableGiveUpMs) {
+          throw new DetachedTurnUnreachableError(
+            `The agent's machine has not answered for ${unreachableGiveUpMinutes()}, so this turn was given up. ${reasonOf(error)}`,
+            { cause: error },
+          );
+        }
+      } else {
+        this.unreachableSince = null;
+      }
       return { lines: [], running: true, exitCode: null };
     }
+    this.unreachableSince = null;
     const statusToken = stderr.trim().split('\n').at(-1) ?? '';
     const running = statusToken === '__RUNNING__' || statusToken === '';
     const exitCode = running ? null : Number.parseInt(statusToken, 10);

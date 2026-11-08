@@ -155,6 +155,14 @@ const DEFAULT_FLY_WAKE_READINESS_PROBE_INTERVAL_MS = 1_000;
 // times before surfacing. Genuinely unreachable machines still fail (bounded).
 const DEFAULT_FLY_CONNECT_RETRY_ATTEMPTS = 3;
 const DEFAULT_FLY_CONNECT_RETRY_BACKOFF_MS = 1_000;
+// Note #1068: one SSH connection to a machine (TCP, handshake and auth) gets
+// 15 s. In-region a healthy machine answers in well under a second; a
+// machine whose firewall drops us never answers, and before this each attempt
+// waited ssh-client's 30 s default, three times over.
+const DEFAULT_FLY_CONNECT_TIMEOUT_MS = 15_000;
+// A machine found refusing us because it admits another address is re-pinned
+// at most this often (note #1068).
+const UNREACHABLE_REPIN_INTERVAL_MS = 10 * 60_000;
 
 /** Outcome of provisioning one machine inside a user's shared Fly app. */
 export interface CreatedFlyAgentMachine {
@@ -189,6 +197,8 @@ export interface ResolvedFlySshConnection {
   username: string;
   privateKey: string;
   passphrase?: string;
+  /** One connection's budget, as every other path gets (note #1068). */
+  readyTimeoutMs?: number;
 }
 
 export interface FlySandboxClientOptions {
@@ -250,6 +260,8 @@ export interface FlySandboxClientOptions {
   wakeReadinessProbeIntervalMs?: number;
   /** Bounded retries for transient SSH connect failures on the Fly path (default 3). */
   connectRetryAttempts?: number;
+  /** One SSH connection's whole budget: TCP connect, handshake and auth (default 15 s, note #1068). */
+  connectTimeoutMs?: number;
   /** Base backoff between connect retries, scaled by attempt (default 1s). */
   connectRetryBackoffMs?: number;
   flyClient?: FlyClient;
@@ -302,6 +314,27 @@ export class MachineWakeError extends Error {
   }
 }
 
+/**
+ * A started machine that did not answer SSH within its connect budget, every
+ * try (note #1068). The message names the machine, the address this backend
+ * connects from and the one the machine's firewall admits when they differ,
+ * because that mismatch is what made three agents sit on "working" for hours
+ * on 8 Nov 2026 (note #1066).
+ */
+export class MachineUnreachableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'MachineUnreachableError';
+  }
+}
+
+interface ConnectTarget {
+  appName: string;
+  machineId: string;
+  machine: FlyMachine;
+  host: string;
+}
+
 export class FlySandboxClient {
   private readonly client: FlyClient;
   private readonly resolveAppContext?: (appName: string) => Promise<FlyAppOrgContext | null>;
@@ -330,6 +363,9 @@ export class FlySandboxClient {
   private readonly wakeForceStopAfterMs: number;
   private readonly wakePollIntervalMs: number;
   private readonly wakeReadinessTimeoutMs: number;
+  private readonly connectTimeoutMs: number;
+  /** When each machine was last re-pinned for refusing us (note #1068). */
+  private readonly unreachableRepinAt = new Map<string, number>();
   private readonly wakeReadinessProbeIntervalMs: number;
   private readonly connectRetryAttempts: number;
   private readonly connectRetryBackoffMs: number;
@@ -370,6 +406,7 @@ export class FlySandboxClient {
     this.wakeReadinessTimeoutMs = options.wakeReadinessTimeoutMs ?? DEFAULT_FLY_WAKE_READINESS_TIMEOUT_MS;
     this.wakeReadinessProbeIntervalMs = options.wakeReadinessProbeIntervalMs ?? DEFAULT_FLY_WAKE_READINESS_PROBE_INTERVAL_MS;
     this.connectRetryAttempts = options.connectRetryAttempts ?? DEFAULT_FLY_CONNECT_RETRY_ATTEMPTS;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_FLY_CONNECT_TIMEOUT_MS;
     this.connectRetryBackoffMs = options.connectRetryBackoffMs ?? DEFAULT_FLY_CONNECT_RETRY_BACKOFF_MS;
   }
 
@@ -830,6 +867,7 @@ export class FlySandboxClient {
       username: username?.trim() || this.sshUsername,
       privateKey: this.sshPrivateKey,
       passphrase: this.sshPassphrase,
+      readyTimeoutMs: this.connectTimeoutMs,
     };
   }
 
@@ -840,8 +878,15 @@ export class FlySandboxClient {
    */
   private async resolveConnectableHost(
     sandboxId: string,
-    { wake = true }: Pick<ExecSyncOptions, 'wake'> = {},
+    options: Pick<ExecSyncOptions, 'wake'> = {},
   ): Promise<string> {
+    return (await this.resolveConnectTarget(sandboxId, options)).host;
+  }
+
+  private async resolveConnectTarget(
+    sandboxId: string,
+    { wake = true }: Pick<ExecSyncOptions, 'wake'> = {},
+  ): Promise<ConnectTarget> {
     const { appName, machineId } = FlySandboxClient.parseSandboxId(sandboxId);
     let machine = await (await this.contextFor(appName)).client.getMachine(appName, machineId);
 
@@ -866,9 +911,57 @@ export class FlySandboxClient {
     // still has to bring sshd online. Wait until :2222 actually accepts a TCP
     // connection so the harness never SSHes into a closed port (ECONNREFUSED).
     if (woke) {
-      await this.waitForSshReady(host, appName, machineId);
+      try {
+        await this.waitForSshReady(host, appName, machineId);
+      } catch (error) {
+        throw new MachineWakeError(
+          `${error instanceof Error ? error.message : String(error)}${await this.explainUnreachable({ appName, machineId, machine, host })}`,
+        );
+      }
     }
-    return host;
+    return { appName, machineId, machine, host };
+  }
+
+  /**
+   * The words after "did not answer" (note #1068): which address this backend
+   * comes from and which one the machine admits, when they differ, and the
+   * re-pin that follows. A machine pinned to an address that is not ours can
+   * never answer us, so it is moved to ours (restarting it if it is awake,
+   * which costs nothing that was still working) at most once per interval.
+   * Never throws: it only adds to an error that is already on its way.
+   */
+  private async explainUnreachable(target: Omit<ConnectTarget, 'host'> & { host?: string }): Promise<string> {
+    try {
+      const context = await this.contextFor(target.appName);
+      const ours = context.backendPeerIp?.trim();
+      const machine = await context.client.getMachine(target.appName, target.machineId).catch(() => target.machine);
+      const admits = machine.config?.env?.BACKEND_PEER_IP?.trim();
+      if (!ours || !admits || ours === admits) {
+        return ours ? ` This backend connects from ${ours}.` : '';
+      }
+      let repin = '';
+      const key = `${target.appName}/${target.machineId}`;
+      const last = this.unreachableRepinAt.get(key) ?? 0;
+      if (Date.now() - last >= UNREACHABLE_REPIN_INTERVAL_MS && machine.config?.image) {
+        this.unreachableRepinAt.set(key, Date.now());
+        const awake = machine.state === 'started';
+        try {
+          await context.client.updateMachine(
+            target.appName,
+            target.machineId,
+            { ...machine.config, env: { ...machine.config.env, BACKEND_PEER_IP: ours } },
+            awake ? {} : { skipLaunch: true },
+          );
+          console.warn(`[fly-sandbox] ${key} admitted ${admits}, not this backend's ${ours}: re-pinned${awake ? ' (restarting)' : ''}`);
+          repin = ` It has been re-pinned to ${ours}${awake ? ' and is restarting' : ''}; the next message should reach it.`;
+        } catch (error) {
+          repin = ` Re-pinning it to ${ours} failed: ${error instanceof Error ? error.message : String(error)}.`;
+        }
+      }
+      return ` This backend connects from ${ours}, but the machine admits only ${admits}.${repin}`;
+    } catch {
+      return '';
+    }
   }
 
   /** Resolve once a bare TCP connect to the SSH port succeeds; true on connect. */
@@ -925,20 +1018,26 @@ export class FlySandboxClient {
    * for auth". Non-transient errors surface immediately; the budget is bounded so
    * a genuinely unreachable machine still fails rather than retrying forever.
    */
-  private async withConnectRetry<T>(operation: () => Promise<T>): Promise<T> {
+  private async withConnectRetry<T>(operation: () => Promise<T>, target?: ConnectTarget): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.connectRetryAttempts; attempt += 1) {
       try {
         return await operation();
       } catch (error) {
         lastError = error;
-        if (attempt >= this.connectRetryAttempts || !this.isTransientConnectError(error)) {
-          throw error;
-        }
+        if (!this.isTransientConnectError(error)) throw error;
+        if (attempt >= this.connectRetryAttempts) break;
         await this.sleep(this.connectRetryBackoffMs * attempt);
       }
     }
-    throw lastError;
+    if (!target) throw lastError;
+    const reason = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new MachineUnreachableError(
+      `Could not reach machine ${target.machineId} in app ${target.appName} over SSH (:${this.sshPort}): `
+      + `${this.connectRetryAttempts} tries of ${Math.round(this.connectTimeoutMs / 1000)} s each, last: ${reason}.`
+      + await this.explainUnreachable(target),
+      { cause: lastError },
+    );
   }
 
   private async wakeMachine(appName: string, machineId: string): Promise<FlyMachine> {
@@ -1078,6 +1177,7 @@ export class FlySandboxClient {
       port: this.sshPort,
       username: sshUser?.trim() || this.sshUsername,
       privateKey: this.sshPrivateKey,
+      readyTimeoutMs: this.connectTimeoutMs,
       ...(this.sshPassphrase ? { passphrase: this.sshPassphrase } : {}),
     };
   }
@@ -1179,7 +1279,8 @@ export class FlySandboxClient {
     cwd?: string,
     options: ExecSyncOptions = {},
   ): Promise<ExecSyncResult> {
-    const host = await this.resolveConnectableHost(sandboxId, options);
+    const target = await this.resolveConnectTarget(sandboxId, options);
+    const { host } = target;
     const effectiveCwd = cwd?.trim() ? cwd.trim() : undefined;
     const effectiveCommand = command.trim();
     const wrappedCommand = effectiveCwd
@@ -1189,7 +1290,7 @@ export class FlySandboxClient {
       this.getConnectionConfig(host, options.sshUser),
       `bash -lc ${quoteShellArg(wrappedCommand)}`,
       { timeoutMs: options.timeoutMs },
-    ));
+    ), target);
   }
 
   /**
@@ -1202,11 +1303,11 @@ export class FlySandboxClient {
     files: SshUploadFile[],
     options: { sshUser?: string } = {},
   ): Promise<void> {
-    const host = await this.resolveConnectableHost(sandboxId);
+    const target = await this.resolveConnectTarget(sandboxId);
     return this.withConnectRetry(() => this.sshClient.uploadFiles(
-      this.getConnectionConfig(host, options.sshUser),
+      this.getConnectionConfig(target.host, options.sshUser),
       files,
-    ));
+    ), target);
   }
 
   async execTerminalStart(

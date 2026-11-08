@@ -1,6 +1,6 @@
 import net from 'node:net';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { FlySandboxClient, MachineWakeError } from '../../services/fly-sandbox-client.js';
+import { FlySandboxClient, MachineUnreachableError, MachineWakeError } from '../../services/fly-sandbox-client.js';
 import { FlyApiError, type FlyClient, type FlyMachine } from '../../services/fly-client.js';
 import { parseFlySandboxId } from '../../services/fly-sandbox-id.js';
 import type { SshClient } from '../../services/ssh-client.js';
@@ -860,6 +860,75 @@ describe('FlySandboxClient post-wake sshd readiness', () => {
 
     await expect(client.execSync(sandboxId, 'echo hi')).rejects.toThrow(/ECONNREFUSED/);
     expect(sshClient.execCommand).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('FlySandboxClient: a machine that does not answer (note #1068)', () => {
+  const OURS = 'fdaa:99:600e:a7b:18b:d4ce:fb3c:2';
+  const OLD = 'fdaa:99:600e:a7b:8dd7:52b6:5f88:4e02';
+  const handshakeTimeout = () => new Error('SSH connection failed: Timed out while waiting for handshake');
+  const sandboxId = FlySandboxClient.buildSandboxId('ia-9f0a1b2c3d4e5f60', MACHINE_ID);
+
+  it('gives every connection a 15-second budget', async () => {
+    const sshClient = createFakeSshClient();
+    const client = createClient(createFakeFlyClient(), sshClient, { backendPeerIp: OURS });
+    await client.execSync(sandboxId, 'echo hi');
+    expect((sshClient.execCommand as any).mock.calls[0][0].readyTimeoutMs).toBe(15_000);
+    expect((await client.resolveSshConnection(sandboxId)).readyTimeoutMs).toBe(15_000);
+  });
+
+  it('names both addresses when the machine admits another one, and re-pins it once', async () => {
+    const pinnedElsewhere = startedMachine({
+      config: { image: 'registry.fly.io/ia-machine-images:sha-test', env: { BACKEND_PEER_IP: OLD, KEEP: 'me' } },
+    } as Partial<FlyMachine>);
+    const updateMachine = vi.fn().mockResolvedValue(pinnedElsewhere);
+    const flyClient = createFakeFlyClient({ getMachine: vi.fn().mockResolvedValue(pinnedElsewhere), updateMachine });
+    const sshClient = createFakeSshClient();
+    (sshClient.execCommand as any).mockRejectedValue(handshakeTimeout());
+    const client = createClient(flyClient, sshClient, { backendPeerIp: OURS });
+
+    const error = await client.execSync(sandboxId, 'echo hi').catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(MachineUnreachableError);
+    expect(error.message).toContain(`Could not reach machine ${MACHINE_ID} in app ia-9f0a1b2c3d4e5f60 over SSH (:2222): 3 tries of 15 s each`);
+    expect(error.message).toContain(`This backend connects from ${OURS}, but the machine admits only ${OLD}.`);
+    expect(error.message).toContain(`It has been re-pinned to ${OURS} and is restarting`);
+    expect(updateMachine).toHaveBeenCalledTimes(1);
+    const [, , config, options] = updateMachine.mock.calls[0];
+    expect(config.env).toEqual({ BACKEND_PEER_IP: OURS, KEEP: 'me' });
+    expect(config.image).toBe('registry.fly.io/ia-machine-images:sha-test');
+    expect(options).toEqual({});
+
+    // A second failure inside the interval explains again but does not re-pin again.
+    const again = await client.execSync(sandboxId, 'echo hi').catch((caught) => caught);
+    expect(again.message).toContain(`admits only ${OLD}`);
+    expect(updateMachine).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-pins nothing when the machine already admits this backend, and still says where we came from', async () => {
+    const pinnedToUs = startedMachine({
+      config: { image: 'registry.fly.io/ia-machine-images:sha-test', env: { BACKEND_PEER_IP: OURS } },
+    } as Partial<FlyMachine>);
+    const updateMachine = vi.fn();
+    const flyClient = createFakeFlyClient({ getMachine: vi.fn().mockResolvedValue(pinnedToUs), updateMachine });
+    const sshClient = createFakeSshClient();
+    (sshClient.execCommand as any).mockRejectedValue(handshakeTimeout());
+    const client = createClient(flyClient, sshClient, { backendPeerIp: OURS });
+
+    const error = await client.execSync(sandboxId, 'echo hi').catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(MachineUnreachableError);
+    expect(error.message).toContain(`This backend connects from ${OURS}.`);
+    expect(updateMachine).not.toHaveBeenCalled();
+  });
+
+  it('a command that fails ON the machine is not called unreachable', async () => {
+    const sshClient = createFakeSshClient();
+    (sshClient.execCommand as any).mockRejectedValue(new Error('SSH exec failed: channel open failure'));
+    const client = createClient(createFakeFlyClient(), sshClient, { backendPeerIp: OURS });
+    const error = await client.execSync(sandboxId, 'echo hi').catch((caught) => caught);
+    expect(error).not.toBeInstanceOf(MachineUnreachableError);
+    expect(sshClient.execCommand).toHaveBeenCalledTimes(1);
   });
 });
 

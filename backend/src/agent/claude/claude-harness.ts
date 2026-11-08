@@ -45,6 +45,8 @@ import {
   startDetachedTurn,
   terminateDetachedTurnBeforeRestart,
   updateActiveDetachedTurn,
+  unreachableDeadline,
+  unreachableGiveUpMinutes,
 } from '../harness-turn-output.js';
 import type { HarnessTurnAttachInfo } from '../../types/agent.js';
 import {
@@ -1390,6 +1392,7 @@ async function attemptClaudeTurn(args: {
   const captureInterruptedContinuity = async (): Promise<void> => {
     const continuityOffset = reader.linesConsumed;
     let failures = 0;
+    const giveUpAt = unreachableDeadline();
     while (true) {
       const continuityReader = new TurnOutputReader(
         sandboxClient, sandboxId, outputPath, HARNESS_SSH_USER, continuityOffset,
@@ -1402,6 +1405,12 @@ async function attemptClaudeTurn(args: {
         if (isHarnessShutdownInProgress()) {
           throw new DetachedTurnContinuityError(
             'Claude exited, but its native session id could not be safely captured.',
+            { cause: error },
+          );
+        }
+        if (Date.now() >= giveUpAt) {
+          throw new DetachedTurnContinuityError(
+            `Claude's conversation could not be read back from its machine for ${unreachableGiveUpMinutes()}: ${error instanceof Error ? error.message : String(error)}`,
             { cause: error },
           );
         }
