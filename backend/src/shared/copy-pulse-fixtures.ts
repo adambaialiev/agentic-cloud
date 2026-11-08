@@ -76,3 +76,21 @@ export function fixtureCopies(now: Date): Array<{ pulse: CopyPulse; receivedAt: 
     },
   ];
 }
+
+/**
+ * A fifth copy, brand new: its first and only pulse came an hour ago, so it
+ * holds the "new copy" alert and earns the ops Telegram line (note #1083).
+ * Kept apart from the four above, which the Copies screen's tests draw; the
+ * fixtures script adds it with them.
+ */
+export function fixtureNewCopy(now: Date): { pulse: CopyPulse; receivedAt: string[] } {
+  const at = new Date(now.getTime() - 3_600_000).toISOString();
+  return {
+    pulse: fixturePulse({
+      copyId: 'fixture-tidewater-05', domain: 'agents.tidewater.example', contactName: 'Lena Brooks', contactEmail: 'lena@tidewater.example',
+      sentAt: at, reason: 'boot', release: '2026.11.07.0', people: 3, agentsByCli: { claude: 2, codex: 0, opencode: 0 },
+      turnsLast24hByCli: { claude: 5, codex: 0, opencode: 0 }, machineHours24h: 0.5, sitesLive: 0, lastActivityAt: at,
+    }),
+    receivedAt: [at],
+  };
+}

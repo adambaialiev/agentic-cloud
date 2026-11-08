@@ -9,7 +9,7 @@ import { newCopyIdentity, signPulseBody, COPY_PULSE_KEY_HEADER, COPY_PULSE_SIGNA
 import { InMemoryCopyPulseStore, type CopyPulseStore } from '../../services/copy-pulse-storage.js';
 import { SqliteCopyPulseStore } from '../../services/sqlite/sqlite-copy-pulse-storage.js';
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
-import { fixturePulse } from '../../shared/copy-pulse-fixtures.js';
+import { fixtureCopies, fixtureHistory, fixtureNewCopy, fixturePulse } from '../../shared/copy-pulse-fixtures.js';
 import type { WorkspaceAgentEvent } from '../../shared/workspace-agent-proactive.js';
 
 const OFFERED = ['2026.11.01.1', '2026.11.03.0', '2026.11.05.0', '2026.11.06.0'];
@@ -226,6 +226,24 @@ describe('a new copy in the ops Telegram chat (note #1083)', () => {
     expect(await Promise.all(sweeps)).toEqual([1]);
     expect(h.telegram).toHaveLength(1);
     expect(await store.get('fixture-acme-0001')).not.toBeNull();
+  });
+
+  it('the fixtures script\'s five copies: only the brand-new one is a Telegram line', async () => {
+    const h = harness(undefined, { telegram: 'ok' });
+    const now = new Date('2026-11-07T06:00:00.000Z');
+    for (const { pulse, receivedAt } of [...fixtureCopies(now), fixtureNewCopy(now)]) {
+      for (const day of fixtureHistory(pulse, receivedAt)) await h.store.record(day.pulse, day.receivedAt);
+    }
+    await h.sweep.sweep();
+    expect(h.said().filter((s) => s.startsWith('copy-new'))).toEqual(['copy-new:fixture-tidewater-05']);
+    expect(h.telegram).toEqual([[
+      '🆕 New private copy installed: agents.tidewater.example',
+      'Contact: Lena Brooks <lena@tidewater.example>',
+      'Release 2026.11.07.0 · 3 people · 2 agents',
+      'First pulse: 7 Nov 2026, 05:00 UTC',
+    ].join('\n')]);
+    await h.sweep.sweep();
+    expect(h.telegram).toHaveLength(1);
   });
 
   it('formats the time in UTC and survives a date it cannot read', () => {

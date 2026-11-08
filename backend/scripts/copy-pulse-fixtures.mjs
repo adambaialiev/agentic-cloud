@@ -2,9 +2,12 @@
 /**
  * Put the fixture copies on the Copies screen (note #1058), or take them off.
  * For a live look at the screen before the first real copy sends a pulse:
- * four made-up copies (ids `fixture-…`, domains `….example`), one of each
+ * five made-up copies (ids `fixture-…`, domains `….example`), one of each
  * kind the screen draws — live and well, behind with little disk, silent,
- * opted out — with their daily rows, in the exact shape of note #1057.
+ * opted out — with their daily rows, in the exact shape of note #1057, and
+ * one brand new, whose first pulse came an hour ago (note #1083): without
+ * --quiet the alert sweep says it as a new copy, in the operator's chat and
+ * as one line in the ops Telegram chat.
  *
  *   node /opt/infinite-agents/current/scripts/copy-pulse-fixtures.mjs add [--quiet]
  *   node /opt/infinite-agents/current/scripts/copy-pulse-fixtures.mjs remove
@@ -50,14 +53,14 @@ if (verb === 'remove') {
 }
 
 const shared = (name) => import(pathToFileURL(path.join(backendRoot, 'dist', 'shared', name)).href);
-const { fixtureCopies, fixtureHistory } = await shared('copy-pulse-fixtures.js');
+const { fixtureCopies, fixtureHistory, fixtureNewCopy } = await shared('copy-pulse-fixtures.js');
 const { copyConditions, COPY_ALERT_CONDITIONS } = await shared('copy-pulse.js');
 const now = new Date();
 const quiet = process.argv.includes('--quiet');
 const day = (iso) => iso.slice(0, 10);
 
 db.transaction(() => {
-  for (const { pulse, receivedAt } of fixtureCopies(now)) {
+  for (const { pulse, receivedAt } of [...fixtureCopies(now), fixtureNewCopy(now)]) {
     const history = fixtureHistory(pulse, receivedAt);
     for (const { pulse: one, receivedAt: at } of history) {
       const doc = JSON.stringify({ ...one, receivedAt: at });
