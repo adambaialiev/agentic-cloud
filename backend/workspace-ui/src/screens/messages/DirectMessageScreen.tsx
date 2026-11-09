@@ -6,6 +6,7 @@ import { directDraftKey, recallDraft, rememberDraft } from '../../chrome/draft-m
 import { useReturnToParent } from '../../chrome/history.js';
 import { toFor } from '../../routes.js';
 import { PersonFace } from '../../ui/PersonFace.js';
+import { Markdown } from '../../render/Markdown.js';
 import { Svg } from '../../ui/icons.js';
 import { errorMessage } from '../../ui/format.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
@@ -148,10 +149,14 @@ export function DirectMessageScreen() {
           lastDay = day;
           return <Fragment key={message.id}>
             {divider ? <div className="chatday">{divider}</div> : null}
-            <div className={`chatmsg ${message.senderId === page?.viewerId ? 'owner' : 'agent'}`}
+            {/* Note #1090: a message released from the Chief of Staff's card
+                is agent-written Markdown, drawn as its card drew it —
+                paragraphs, line breaks and lists. A person's own words stay
+                exactly as typed. */}
+            <div className={`chatmsg ${message.senderId === page?.viewerId ? 'owner' : 'agent'}${sentViaChiefOfStaff(message) ? ' rich dmformatted' : ''}`}
               data-message-id={message.id}
               data-time={new Date(message.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-              title={new Date(message.createdAt).toLocaleString()}>{message.text}
+              title={new Date(message.createdAt).toLocaleString()}>{sentViaChiefOfStaff(message) ? <Markdown source={message.text} className="chatmarkdown" /> : message.text}
               {/* Note #1090: released by its sender's tap on their Chief of
                   Staff's card. The mark is the message's own request id. */}
               {sentViaChiefOfStaff(message) ? <span className="dmvia">{message.senderId === page?.viewerId ? 'via your Chief of Staff' : 'via their Chief of Staff'}</span> : null}</div>

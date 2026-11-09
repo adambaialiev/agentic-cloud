@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { DirectMessageApproval, DirectMessageApprovalAnswer } from '../../../../src/shared/direct-messages.js';
 import { jsonBody } from '../../api/client.js';
+import { Markdown } from '../../render/Markdown.js';
 import { toFor } from '../../routes.js';
 import { errorMessage } from '../../ui/format.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
@@ -97,7 +98,9 @@ export function MessageApprovalCard({ id, approval: initial, at, fallback }: {
           <div><dt>To</dt><dd>{approval.to.name}</dd></div>
           <div><dt>From</dt><dd>You, marked “via your Chief of Staff”</dd></div>
         </dl>
-        {approval.text ? <div className="mailapprovaltext">{approval.text}</div> : null}
+        {/* Drawn exactly as the teammate will read it (Adam, 13:25 UTC):
+            the agent's paragraphs, line breaks and lists, never raw markup. */}
+        {approval.text ? <div className="mailapprovaltext dmformatted"><Markdown source={approval.text} className="chatmarkdown" /></div> : null}
         {pending ? (
           <div className="mailapprovalactions">
             <button className="btn primary" type="button" disabled={Boolean(busy)} onClick={() => { void decide('approve'); }}>

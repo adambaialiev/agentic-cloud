@@ -1570,6 +1570,16 @@ button.chatmsg.platform.aside:active {
   content: attr(data-time); float: right; margin: 9px -4px 0 10px;
   font-size: var(--ui-sm); line-height: 1; opacity: .62; font-variant-numeric: tabular-nums;
 }
+/* Note #1090 (Adam, 9 Nov 13:25 UTC): the Chief of Staff's message reads
+   well formatted on its card and in Direct messages alike — the chat's own
+   Markdown, so paragraphs, line breaks and lists survive and no markup shows.
+   On the card the box keeps its frame and drops the typed-text pre-wrap; on
+   the person's own (accent) bubble a link takes the bubble's ink. */
+.mailapprovaltext.dmformatted { white-space: normal; }
+.dmformatted .chatmarkdown p, .dmformatted .chatmarkdown li { white-space: pre-line; }
+.mailapprovaltext.dmformatted .chatmarkdown > :first-child { margin-top: 0; }
+.mailapprovaltext.dmformatted .chatmarkdown > :last-child { margin-bottom: 0; }
+.chatmsg.owner.dmformatted a { color: inherit; text-decoration: underline; }
 /* Note #1090: the decided card's one door, in the app's link colour. */
 .messageapproval .mailapprovalanswer a { color: var(--accent); }
 /* Note #1090: a direct message its sender released from their Chief of
