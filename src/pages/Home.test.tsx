@@ -546,6 +546,22 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     expect([...document.querySelectorAll('footer div')].some(onColumn)).toBe(true);
   });
 
+  // Note #1096 (Adam, 9 Nov 2026, 14:53 UTC): the own-cloud drawing larger,
+  // its type larger and its dashed line's label short. The wide plan's cards
+  // carry 17-unit titles (14 before), and the label is the phone's own
+  // words; the screen-reader sentence keeps the whole of it.
+  it('draws the own cloud at reading size, with the short label on the line to us', () => {
+    answer();
+    draw();
+    const wide = [...document.querySelectorAll('#your-side svg')][0]!;
+    const words = [...wide.querySelectorAll('text')].map((text) => text.textContent);
+    expect(words).toContain('Daily counts, and diagnostics if your admin sends them');
+    expect(words.join(' ')).not.toMatch(/which your admin sees|only if your admin sends it/);
+    const title = [...wide.querySelectorAll('text')].find((text) => text.textContent === 'Workspace')!;
+    expect(Number(title.getAttribute('font-size'))).toBe(17);
+    expect(wide.getAttribute('aria-label')).toMatch(/daily report of counts goes out, which your admin sees and can turn off, and a diagnostics bundle only if your admin sends it/);
+  });
+
   it('shows the poster and play button when the browser refuses to start it', async () => {
     answer();
     screenIs({ phone: true });

@@ -209,12 +209,19 @@ export function Glyph({ name, className = 'h-6 w-6' }: { name: IconName; classNa
 /* ── The pieces a drawing is made of ───────────────────────────────────── */
 
 /* A thing that runs: a card on the page colour, a pictogram, a name and one
-   line of what it is. */
+   line of what it is. Since note #1096 (Adam, 9 Nov 2026: "fonts should be
+   larger") its type is set at the drawing's reading size: a 17-unit title
+   and 14.5-unit lines, which the wide plan renders at about 17 and 15 px on
+   a 1440 desk (13 and 11 px before). */
+const CARD_TITLE = 17;
+const CARD_LINE = 14.5;
+const CARD_H = 70;
+
 function Node({
   x,
   y,
   w,
-  h = 64,
+  h = CARD_H,
   icon,
   title,
   lines = [],
@@ -232,12 +239,12 @@ function Node({
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={14} className="fill-panel stroke-white/12" strokeWidth={1} />
-      <Icon name={icon} x={x + 14} y={y + 15} tone={tone} />
-      <text x={x + 50} y={y + 27} fontSize={14} fontWeight={600} className="fill-white">
+      <Icon name={icon} x={x + 16} y={y + 16} tone={tone} />
+      <text x={x + 54} y={y + 30} fontSize={CARD_TITLE} fontWeight={600} className="fill-white">
         {title}
       </text>
       {lines.map((line, i) => (
-        <text key={line} x={x + 50} y={y + 46 + i * 17} fontSize={12} className="fill-hint">
+        <text key={line} x={x + 54} y={y + 52 + i * 20} fontSize={CARD_LINE} className="fill-hint">
           {line}
         </text>
       ))}
@@ -326,101 +333,158 @@ function Machines({ x, y, width = 300 }: { x: number; y: number; width?: number 
    (note #1059). No data of theirs crosses. */
 
 function SidesWide() {
-  /* Your side: three columns of cards; ours: one. The middle column is the
-     narrowest (its longest line is the shortest), so the gap between the
-     sides holds "Releases, free to download" on one line over its arrow
-     (note #839). */
-  const A = 24;
-  const B = 272;
-  const C = 488;
-  const W = 232;
-  const WB = 200;
-  const WC = 220;
-  const SIDE = C + WC + 24;
-  const OURS = 942;
-  const OW = 192;
-  const R1 = 136;
-  const R2 = 220;
-  const R3 = 304;
-  const MID = (SIDE + OURS - 16) / 2; /* the middle of the gap between the two sides */
+  /* Since note #1096 (Adam, 9 Nov 2026, 14:53 UTC: "drawing should be
+     larger ... fonts should be larger. more optimized") the same things in
+     less room, so the type can grow while the drawing still fits the
+     page's column: your organization's cards in two columns, not three
+     (the registry beside the sites, so the release arrow runs straight from
+     the update service); the gap between the sides only as wide as
+     "Releases," over "free to download"; the dashed line's label the
+     phone's own short words; the pills 30 units under their cards, not 62.
+     At 1440x900 it is 1,067 px wide, the column's width, at 1.02 px a unit
+     (0.93 before). Until #1096: three columns, viewBox 1150 x 540, 14-unit
+     titles. */
+  const PAD = 20;
+  const GAP = 12;
+  const A = PAD;
+  const WA = 292; /* wide enough for the machines' seven pictograms */
+  const B = A + WA + GAP;
+  const WB = 286; /* "a mail receiver of your own," */
+  const SIDE = B + WB + PAD; /* your organization's width */
+  const MIDGAP = 140; /* "free to download" on its own line */
+  const OURS = SIDE + MIDGAP + 16; /* the left edge of our cards */
+  const OW = 252; /* "calls, and what you send" */
+  const WIDTH = OURS + OW + 16;
+  const LINE = 80; /* the dashed line from the Workspace to us */
+  const R1 = 94;
+  const R2 = R1 + CARD_H + GAP;
+  const R3 = R2 + CARD_H + GAP;
+  const R4 = R3 + CARD_H + GAP;
+  const H4 = 124;
+  const BOTTOM = R4 + H4 + PAD;
+  const OURS_BOTTOM = R3 + CARD_H + PAD;
+  const MID = SIDE + MIDGAP / 2;
+  const PILLS = R4 + H4 + 30;
   return (
-    <svg viewBox="0 0 1150 540" className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, files and backups buckets, your own registry, email, and every agent, site and CI machine. With us stay support, the update service and the source code with the releases. Releases come in from the update service, free to download. A daily report of counts goes out, which your admin sees and can turn off, and a diagnostics bundle only if your admin sends it.">
+    <svg viewBox={`0 0 ${WIDTH} ${PILLS + 40}`} className="block h-auto w-full" role="img" aria-label="Your Fly organization holds the Workspace and its database, the code host with CI, previews and sites, your own registry, files and backups buckets, every agent, site and CI machine, and email. With us stay support, the update service and the source code with the releases. Releases come in from the update service, free to download. A daily report of counts goes out, which your admin sees and can turn off, and a diagnostics bundle only if your admin sends it.">
       {/* Your side */}
-      <rect x={0} y={60} width={SIDE} height={388} rx={24} className="fill-panel-soft" />
-      <Label x={24} y={94} tone="ink" size={15} weight={600}>
+      <rect x={0} y={0} width={SIDE} height={BOTTOM} rx={24} className="fill-panel-soft" />
+      <Label x={PAD + 4} y={36} tone="ink" size={19} weight={600}>
         Your Fly organization
       </Label>
-      <Label x={196} y={94} size={13}>
+      <Label x={PAD + 220} y={36} size={15}>
         on agents.yourcompany.com
       </Label>
 
-      <Node x={A} y={R1} w={W} icon="workspace" title="Workspace" lines={['its database, always on']} />
+      <Node x={A} y={R1} w={WA} icon="workspace" title="Workspace" lines={['its database, always on']} />
       <Node x={B} y={R1} w={WB} icon="branch" title="Code host" lines={['with CI in your account']} />
-      <Node x={C} y={R1} w={WC} icon="bucket" title="Backups" lines={['a bucket of yours, daily']} />
-
-      <Node x={A} y={R2} w={W} icon="globe" title="Previews and sites" lines={['on names under your domain']} />
-      <Node x={B} y={R2} w={WB} icon="bucket" title="Files" lines={['a bucket of yours']} />
-      <Node x={C} y={R2} w={WC} icon="layers" title="Your registry" lines={['every image it runs']} tone="accent" />
+      <Node x={A} y={R2} w={WA} icon="globe" title="Previews and sites" lines={['on names under your domain']} />
+      <Node x={B} y={R2} w={WB} icon="layers" title="Your registry" lines={['every image it runs']} tone="accent" />
+      <Node x={A} y={R3} w={WA} icon="bucket" title="Files" lines={['a bucket of yours']} />
+      <Node x={B} y={R3} w={WB} icon="bucket" title="Backups" lines={['a bucket of yours, daily']} />
 
       <g>
-        <rect x={A} y={R3} width={B + WB - A} height={120} rx={14} className="fill-panel stroke-white/12" strokeWidth={1} />
-        <Label x={A + 16} y={R3 + 27} tone="ink" size={14} weight={600}>
+        <rect x={A} y={R4} width={WA} height={H4} rx={14} className="fill-panel stroke-white/12" strokeWidth={1} />
+        <Label x={A + 16} y={R4 + 30} tone="ink" size={CARD_TITLE} weight={600}>
           Agent, site and CI machines
         </Label>
-        <Label x={A + 16} y={R3 + 46} size={12}>
+        <Label x={A + 16} y={R4 + 52} size={CARD_LINE}>
           made by your Workspace, as on ours
         </Label>
-        <Machines x={A + 16} y={R3 + 60} width={B + WB - A - 32} />
+        <WideMachines x={A + 16} y={R4 + 64} width={WA - 32} />
       </g>
-      <Node x={C} y={R3} w={WC} h={120} icon="mail" title="Email" lines={['addresses on your domain,', 'a mail receiver of your own,', 'mail out via your provider']} />
+      <Node x={B} y={R4} w={WB} h={H4} icon="mail" title="Email" lines={['addresses on your domain,', 'a mail receiver of your own,', 'mail out via your provider']} />
 
       {/* Out of your organization, to your own providers, never to us */}
-      <Outside x={A + 120} y={R3 + 120} label="Your people’s own AI subscriptions" width={236} />
-      <Outside x={C + WC / 2} y={R3 + 120} label="Your mail provider" width={140} />
+      <Outside x={A + 66} y={R4 + H4} to={PILLS} label="Your people’s own AI subscriptions" width={290} anchor="start" left={A} />
+      <Outside x={B + WB / 2} y={R4 + H4} to={PILLS} label="Your mail provider" width={170} />
 
       {/* Ours */}
-      <rect x={OURS - 16} y={60} width={OW + 32} height={332} rx={24} fill="none" className="stroke-white/15" strokeWidth={1} />
-      <Label x={OURS} y={94} tone="ink" size={15} weight={600}>
+      <rect x={OURS - 15.5} y={0.5} width={OW + 31} height={OURS_BOTTOM - 1} rx={24} fill="none" className="stroke-white/15" strokeWidth={1} />
+      <Label x={OURS + 4} y={36} tone="ink" size={19} weight={600}>
         With us
       </Label>
       <Node x={OURS} y={R1} w={OW} icon="support" title="Support" lines={['calls, and what you send']} />
       <Node x={OURS} y={R2} w={OW} icon="download" title="Update service" lines={['releases, no sign-in']} />
       <Node x={OURS} y={R3} w={OW} icon="code" title="Our source code" lines={['and the releases']} />
-      <Line d={`M ${OURS + OW / 2} ${R3} V ${R2 + 64 + 2}`} />
-      <Head x={OURS + OW / 2} y={R2 + 64 + 2} angle={-90} tone="hint" />
+      <Line d={`M ${OURS + OW / 2} ${R3} V ${R2 + CARD_H + 2}`} />
+      <Head x={OURS + OW / 2} y={R2 + CARD_H + 2} angle={-90} tone="hint" />
 
       {/* The one download: a release, into your registry */}
-      <Line d={`M ${OURS - 4} ${R2 + 32} H ${C + WC + 6}`} tone="accent" draw width={2} />
+      <Line d={`M ${OURS - 4} ${R2 + CARD_H / 2} H ${B + WB + 6}`} tone="accent" draw width={2} />
       <g className="copy-art-arrive">
-        <Head x={C + WC + 6} y={R2 + 32} angle={180} tone="accent" />
+        <Head x={B + WB + 6} y={R2 + CARD_H / 2} angle={180} tone="accent" />
       </g>
-      <Label x={MID} y={R2 + 22} anchor="middle" tone="accent" size={12}>
-        Releases, free to download
+      <Label x={MID + 8} y={R2 + CARD_H / 2 - 30} anchor="middle" tone="accent" size={CARD_LINE}>
+        Releases,
+      </Label>
+      <Label x={MID + 8} y={R2 + CARD_H / 2 - 11} anchor="middle" tone="accent" size={CARD_LINE}>
+        free to download
       </Label>
 
       {/* What goes the other way: the daily report of counts (note #1059,
           the pulse of note #1057, which the admin sees and can turn off),
-          and a diagnostics bundle only on purpose. No data of theirs. */}
-      <Line d={`M ${A + 114} ${R1} V 116 H ${OURS + OW / 2} V ${R1 - 4}`} dashed />
+          and a diagnostics bundle only on purpose. No data of theirs. Since
+          note #1096 it says it in the phone drawing's own words, on one
+          line ("A daily report of counts, which your admin sees / A
+          diagnostics bundle, only if your admin sends it" until then); the
+          screen-reader sentence keeps the whole of it. */}
+      <Line d={`M ${A + 120} ${R1} V ${LINE} H ${OURS + OW / 2} V ${R1 - 4}`} dashed />
       <Head x={OURS + OW / 2} y={R1 - 4} angle={90} tone="hint" />
-      <Label x={OURS - 28} y={92} anchor="end" size={12}>
-        A daily report of counts, which your admin sees
-      </Label>
-      <Label x={OURS - 28} y={108} anchor="end" size={12}>
-        A diagnostics bundle, only if your admin sends it
+      <Label x={A + 134} y={LINE - 12} size={CARD_LINE}>
+        Daily counts, and diagnostics if your admin sends them
       </Label>
     </svg>
   );
 }
 
-/* Somewhere your machines talk to that is neither yours nor ours. */
-function Outside({ x, y, label, width }: { x: number; y: number; label: string; width: number }) {
+/* The machines in the wide plan (note #1096): the same three kinds as
+   Machines, at the plan's larger type. */
+function WideMachines({ x, y, width }: { x: number; y: number; width: number }) {
+  const kinds: { icon: IconName; label: string; count: number }[] = [
+    { icon: 'machine', label: 'agents', count: 3 },
+    { icon: 'globe', label: 'sites', count: 2 },
+    { icon: 'check', label: 'CI', count: 2 },
+  ];
+  const step = 36;
+  const widths = kinds.map((kind) => kind.count * step - 6);
+  const used = widths.reduce((a, b) => a + b, 0);
+  const gap = (width - used) / (kinds.length - 1);
+  let cx = x;
   return (
     <g>
-      <Line d={`M ${x} ${y} V ${y + 62}`} dashed />
-      <Head x={x} y={y + 62} angle={90} tone="hint" />
-      <rect x={x - width / 2} y={y + 68} width={width} height={32} rx={16} fill="none" className="stroke-white/20" strokeWidth={1} strokeDasharray="3 4" />
-      <Label x={x} y={y + 88.5} anchor="middle" size={12.5}>
+      {kinds.map((kind, k) => {
+        const start = cx;
+        cx += widths[k] + gap;
+        return (
+          <g key={kind.label}>
+            {Array.from({ length: kind.count }, (_, i) => (
+              <g key={i}>
+                <rect x={start + i * step} y={y} width={30} height={30} rx={8} className="fill-panel-soft" />
+                <Icon name={kind.icon} x={start + i * step + 5} y={y + 5} size={20} tone="ink" />
+              </g>
+            ))}
+            <Label x={start + widths[k] / 2} y={y + 49} anchor="middle" size={14}>
+              {kind.label}
+            </Label>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/* Somewhere your machines talk to that is neither yours nor ours: a dashed
+   drop from the card it hangs from to a pill (30 units since note #1096,
+   62 before). */
+function Outside({ x, y, to, label, width, anchor = 'middle', left }: { x: number; y: number; to: number; label: string; width: number; anchor?: 'middle' | 'start'; left?: number }) {
+  const px = anchor === 'start' && left !== undefined ? left : x - width / 2;
+  return (
+    <g>
+      <Line d={`M ${x} ${y} V ${to - 6}`} dashed />
+      <Head x={x} y={to - 6} angle={90} tone="hint" />
+      <rect x={px} y={to} width={width} height={36} rx={18} fill="none" className="stroke-white/20" strokeWidth={1} strokeDasharray="3 4" />
+      <Label x={px + width / 2} y={to + 23.5} anchor="middle" size={CARD_LINE}>
         {label}
       </Label>
     </g>
