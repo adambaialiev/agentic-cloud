@@ -110,6 +110,18 @@ describe('private messages through the real Workspace router', () => {
     expect(await (await request(2, '/unread')).json()).toEqual({ unread: 1 });
     expect((await request(2)).status).toBe(503);
   });
+  it('wakes the workplace\'s machine for Home without reading or sending anything (note #1104)', async () => {
+    const woken: string[] = [];
+    (storage as unknown as { wake: (orgId: string) => Promise<void> }).wake = async (id: string) => { woken.push(id); };
+    const answer = await request(1, '/wake', 'POST', {});
+    expect(answer.status).toBe(202);
+    expect(await answer.json()).toEqual({ ok: true });
+    expect(woken).toEqual([orgId]);
+    // "wake" is not a person: nothing was sent, and nobody has a conversation.
+    expect(await hosts.get(orgId)!.call(orgId, 'count', {})).toEqual({ count: 0 });
+    expect((await request(4, '/wake', 'POST', {})).status).toBe(403);
+    expect((await fetch(`${origin}/workspace/api/messages/wake?org=${orgId}`, { method: 'POST' })).status).toBe(401);
+  });
   it('is offered again (29 Oct 2026) wherever there can be someone to write to, and nowhere else', async () => {
     const offered = async (who: number, org: string) => (await (await fetch(`${origin}/workspace/api/state?org=${org}`, { headers: workspaceTestHeaders(who) })).json()).messagesAvailable;
     // Invites open — a private copy, or a workplace we mark: offered.

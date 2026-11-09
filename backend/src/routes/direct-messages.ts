@@ -65,6 +65,13 @@ export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
   router.get('/api/messages/unread', route(async (_req, res, actor) => {
     return res.json({ unread: await deps.directMessageStorage!.unread(actor.orgId, actor.userId) });
   }));
+  // Note #1104: Home drew the Messages card. Start the machine and answer at
+  // once — no wait, nothing read, a failure is the next read's to meet.
+  // Declared before `/api/messages/:userId`, or "wake" would be a person.
+  router.post('/api/messages/wake', route(async (_req, res, actor) => {
+    void Promise.resolve(deps.directMessageStorage!.wake?.(actor.orgId)).catch(() => {});
+    return res.status(202).json({ ok: true });
+  }));
   router.get('/api/messages/:userId', route(async (req, res, actor) => {
     const peerId = peer(req, actor);
     const before = cursor(req.query.before), after = cursor(req.query.after);

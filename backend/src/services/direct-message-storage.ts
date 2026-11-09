@@ -27,4 +27,10 @@ export interface DirectMessageStorage {
    * machine, in its own cloud account, and is left there with it.
    */
   forgetWorkplace?(orgId: string): Promise<void>;
+  /**
+   * Note #1104: start the workplace's messaging machine in the background,
+   * because Home drew the Messages card. Reads nothing; never waits for the
+   * machine. Absent where there is no machine to wake (development).
+   */
+  wake?(orgId: string): Promise<void>;
 }
