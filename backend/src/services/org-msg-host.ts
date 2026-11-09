@@ -39,13 +39,23 @@ import type { OrgWireGuardService } from './org-wireguard.js';
 export const ORG_MSG_HOST_SECRET_NAME = 'MSG_HOST_SECRET';
 export const ORG_MSG_VOLUME_GB = Number(process.env.ORG_MSG_VOLUME_GB || 1);
 /** How long the server waits without a request before stopping itself. */
-export const ORG_MSG_IDLE_MS = Number(process.env.ORG_MSG_IDLE_MS || 10 * 60_000);
+/**
+ * Thirty quiet minutes since note #1104 (Adam, 9 Nov 2026: "Yes agree with
+ * recommendation"): ten, before, meant almost every return to Messages paid
+ * a wake. A machine built with another value is moved onto this one the
+ * next time it is woken from stopped (see `ensureOrgMsgHost`).
+ */
+export const ORG_MSG_IDLE_MS = Number(process.env.ORG_MSG_IDLE_MS || 30 * 60_000);
+/** What a machine whose own idle cannot be read is assumed to keep: the old ten minutes. */
+const ASSUMED_IDLE_MS = 10 * 60_000;
+/** One background wake from Home per workplace in this window (note #1104). */
+export const ORG_MSG_WAKE_WINDOW_MS = 60_000;
 /**
  * How long after an answer the backend dials straight in without asking Fly
  * whether the machine is up. Well inside {@link ORG_MSG_IDLE_MS}; a machine
  * that stopped anyway just costs the one failed dial that precedes a wake.
  */
-const WARM_FOR_MS = Math.max(0, ORG_MSG_IDLE_MS - 3 * 60_000);
+const warmFor = (idleMs: number) => Math.max(0, idleMs - 3 * 60_000);
 /**
  * The health wait's rhythm (note #1102). A machine that has just started
  * drops packets until its server listens, so a probe of it does not fail —
@@ -98,7 +108,7 @@ export interface OrgMsgHostServiceDeps {
   platformBackendPeerIp?: string;
   makeFlyClient?: (apiToken: string) => Pick<FlyClient,
     'createApp' | 'listVolumes' | 'createVolume' | 'listMachines' | 'createMachine'
-    | 'getMachine' | 'startMachine' | 'waitForMachineState'
+    | 'getMachine' | 'startMachine' | 'waitForMachineState' | 'updateMachine'
     | 'deleteMachine' | 'deleteVolume' | 'deleteApp'>;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
@@ -121,6 +131,41 @@ export class OrgMsgHostService {
   /** One build or wake per workplace at a time; every caller shares it. */
   private readonly opening = new Map<string, Promise<OrgMsgHostPointer>>();
   private readonly warmUntil = new Map<string, number>();
+  /** Each machine's own idle, as its config last said (a machine from before
+   *  note #1104 keeps ten minutes until it is next woken from stopped). */
+  private readonly idleOf = new Map<string, number>();
+  /** When Home last asked for a wake, per workplace (note #1104). */
+  private readonly wokenFromHome = new Map<string, number>();
+  private warm(orgId: string): void {
+    this.warmUntil.set(orgId, this.now() + warmFor(this.idleOf.get(orgId) ?? ASSUMED_IDLE_MS));
+  }
+
+  /**
+   * Note #1104: Home drew the Messages card, so somebody may be about to open
+   * a conversation. Start the machine in the background — nothing is read,
+   * nothing waits, and at most once per workplace per
+   * {@link ORG_MSG_WAKE_WINDOW_MS}. A workplace that never had a machine is
+   * left alone: building one is the first open's job. A failure is logged
+   * and changes nothing anyone sees; the next read wakes it as before.
+   */
+  async wake(orgId: string): Promise<'warm' | 'recent' | 'none' | 'waking'> {
+    if ((this.warmUntil.get(orgId) ?? 0) > this.now()) return 'warm';
+    const last = this.wokenFromHome.get(orgId) ?? -Infinity;
+    if (this.now() - last < ORG_MSG_WAKE_WINDOW_MS) return 'recent';
+    this.wokenFromHome.set(orgId, this.now());
+    const org = await this.deps.orgStorage.getOrg(orgId).catch(() => null);
+    if (!org?.messages?.host) return 'none';
+    if (!this.opening.has(orgId)) {
+      const started = this.now();
+      const opening = this.ensureOrgMsgHost(orgId).finally(() => { this.opening.delete(orgId); });
+      this.opening.set(orgId, opening);
+      opening.then(
+        (pointer) => console.log(`[org-msg-host] ${pointer.app} woken from Home in ${this.now() - started} ms`),
+        (error) => console.warn(`[org-msg-host] ${orgId} wake from Home failed: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }
+    return 'waking';
+  }
 
   constructor(private readonly deps: OrgMsgHostServiceDeps) {}
 
@@ -145,7 +190,13 @@ export class OrgMsgHostService {
         this.warmUntil.delete(orgId);
       }
     }
-    return this.post<T>(orgId, await this.ready(orgId), operation, body);
+    // The measure note #1104 asked for, and nothing of the read: whether a
+    // read that was not known warm had to wait, and how long after Home's wake.
+    const asked = this.now(), home = this.wokenFromHome.get(orgId);
+    const ready = await this.ready(orgId);
+    const since = home === undefined ? 'no wake from Home' : `Home woke it ${Math.round((asked - home) / 100) / 10} s before`;
+    console.log(`[org-msg-host] ${ready.app} ${operation}: waited ${this.now() - asked} ms for the machine (${since})`);
+    return this.post<T>(orgId, ready, operation, body);
   }
 
   /** Wait a moment for the machine; past that the caller is told it is opening. */
@@ -190,15 +241,30 @@ export class OrgMsgHostService {
     const existing = org.messages?.host;
     if (existing) {
       const machine = await client.getMachine(existing.app, existing.machineId);
+      const kept = Number(machine.config?.env?.MSG_HOST_IDLE_MS);
       if (machine.state !== 'started') {
         if (machine.state === 'stopping') {
           await client.waitForMachineState(existing.app, existing.machineId, { state: 'stopped', timeoutSeconds: 30 });
         }
-        await client.startMachine(existing.app, existing.machineId);
+        // A machine built before note #1104 keeps the idle it was built
+        // with. Moved onto the new one here, where it is stopped anyway: a
+        // config update boots it, so the update IS the start — no extra
+        // restart, and one running for somebody is never touched.
+        if (machine.config && kept !== ORG_MSG_IDLE_MS && client.updateMachine) {
+          await client.updateMachine(existing.app, existing.machineId, {
+            ...machine.config, env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
+          });
+          this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
+        } else {
+          await client.startMachine(existing.app, existing.machineId);
+          this.idleOf.set(orgId, Number.isFinite(kept) && kept > 0 ? kept : ASSUMED_IDLE_MS);
+        }
         await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 60 });
+      } else {
+        this.idleOf.set(orgId, Number.isFinite(kept) && kept > 0 ? kept : ASSUMED_IDLE_MS);
       }
       await this.waitHealthy(existing, this.deps.healthTimeoutMs ?? 45_000);
-      this.warmUntil.set(orgId, this.now() + WARM_FOR_MS);
+      this.warm(orgId);
       return existing;
     }
 
@@ -264,7 +330,8 @@ export class OrgMsgHostService {
     await this.waitHealthy(pointer, this.deps.healthTimeoutMs ?? 90_000);
     // Pointer last: a workplace is only ever pointed at a host that answered.
     await this.deps.orgStorage.updateOrg(orgId, { messages: { host: pointer } });
-    this.warmUntil.set(orgId, this.now() + WARM_FOR_MS);
+    this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
+    this.warm(orgId);
     return pointer;
   }
 
@@ -304,7 +371,7 @@ export class OrgMsgHostService {
     });
     const answer = await res.json().catch(() => null) as (T & { error?: string }) | null;
     if (!res.ok || !answer) throw new OrgMsgHostRefusal(res.status, answer?.error ?? 'The messaging machine gave no answer.');
-    this.warmUntil.set(orgId, this.now() + WARM_FOR_MS);
+    this.warm(orgId);
     return answer;
   }
 

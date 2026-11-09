@@ -22,9 +22,13 @@ export interface DirectMessageUnreadStore {
 /** Direct messages stored on the workplace's own messaging machine. */
 export class RemoteDirectMessageStorage implements DirectMessageStorage {
   constructor(
-    private readonly host: Pick<OrgMsgHostService, 'call'>,
+    private readonly host: Pick<OrgMsgHostService, 'call'> & Partial<Pick<OrgMsgHostService, 'wake'>>,
     private readonly unreadStore: DirectMessageUnreadStore,
   ) {}
+
+  async wake(orgId: string): Promise<void> {
+    await this.host.wake?.(orgId);
+  }
 
   async forgetWorkplace(orgId: string): Promise<void> {
     this.unreadStore.forget?.(orgId);

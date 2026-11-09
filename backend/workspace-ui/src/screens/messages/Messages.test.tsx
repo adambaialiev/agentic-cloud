@@ -291,6 +291,21 @@ describe('human messages', () => {
   // The glyph carries no class of its own, so the check is the path it draws.
   const chevronIn = (row: Element) => [...row.querySelectorAll('span.icon > svg > path')]
     .some((drawn) => drawn.getAttribute('d') === 'm9 18 6-6-6-6');
+  it('asks for the messaging machine to wake when Home draws the door, and never waits for it (note #1104)', async () => {
+    const scripted = open('/overview?org=o1', {
+      'GET api/messages/unread': () => ({ unread: 0 }),
+      // A wake that never answers: Home must not care.
+      'POST api/messages/wake': () => new Promise(() => {}),
+    });
+    await flush();
+    expect(screen.getByText('Direct messages')).toBeTruthy();
+    const wakes = scripted.calls.filter(call => call.path === 'api/messages/wake');
+    expect(wakes).toHaveLength(1);
+    expect(wakes[0]!.init?.method).toBe('POST');
+    expect(wakes[0]!.scope).toEqual({ org: 'o1' });
+    // Nothing that reads a conversation went out from Home.
+    expect(scripted.calls.some(call => call.path === 'api/messages' || /^api\/messages\/(?!unread|wake)/.test(call.path))).toBe(false);
+  });
   it('wears the chevron on Home, exactly as the Mail door beside it does', async () => {
     open('/overview?org=o1', { 'GET api/messages/unread': () => ({ unread: 0 }) });
     await flush();

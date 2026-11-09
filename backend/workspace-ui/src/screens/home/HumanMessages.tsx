@@ -1,4 +1,5 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { jsonBody } from '../../api/client.js';
 import { Link } from 'react-router-dom';
 import { toFor } from '../../routes.js';
 import { Icon, TypeIcon } from '../../ui/icons.js';
@@ -15,6 +16,14 @@ export function MessageDoor({ orgId }: { orgId: string }) {
     catch { if (alive()) setUnread(null); }
   }, [api, orgId]);
   useMessagePoll(read, 5000);
+  // Note #1104: drawing this door is the sign somebody may open Messages,
+  // so the workplace's messaging machine is started now, in the background —
+  // by the tap it is usually up. Fire and forget: nothing waits on it, nothing
+  // is read, and a failure changes nothing here. The backend starts it at most
+  // once a minute per workplace, however often this door is drawn.
+  useEffect(() => {
+    void api.api('api/messages/wake', jsonBody({}), { org: orgId }).catch(() => {});
+  }, [api, orgId]);
   // The chevron is the Mail door's beside it (note #540): two rows in one
   // card, one saying it opens onto a screen and the other saying nothing,
   // read as the silent one being a fact rather than a way in. The dot takes
