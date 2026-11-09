@@ -152,6 +152,12 @@ export const PRODUCT_FILM: Film | null = {
   length: 78.97,
   sections: sectionsAt([0, 18.9, 50.6]),
 };
+/* Since note #1092 the phone's film is the twelfth vertical cut, 4:5: the
+   same scenes and timings, so its crossfades settle on the same frames as
+   the eleventh's (read frame by frame: 18.87 and 50.60 s), and the starts
+   stay 0 / 18.9 / 50.6 s. Its box on a phone is (100svh - 211px) x 4/5,
+   capped by the column, so it is as wide as the sections below it on any
+   phone at least about 650 px tall. */
 export const PRODUCT_FILM_TALL: Film | null = {
   src: filmUrl(PRODUCT_FILM_TALL_PATH),
   background: FILM_BACKGROUND,
@@ -208,7 +214,7 @@ function Masthead() {
   return (
     <div
       data-masthead
-      className={`mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*9/16))] items-center gap-2 sm:mb-4 ${HOME_COLUMN}`}
+      className={`mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*4/5))] items-center gap-2 sm:mb-4 ${HOME_COLUMN}`}
     >
       {/* The wave fills the middle 76% of its square file, so the square is
           pulled 3 px left to put the wave's own edge on the film's. */}
@@ -262,7 +268,7 @@ export default function Home() {
           <Masthead />
           <div
             data-film-box
-            className={`mx-auto w-[min(100%,calc((100svh_-_211px)*9/16))] ${HOME_COLUMN}`}
+            className={`mx-auto w-[min(100%,calc((100svh_-_211px)*4/5))] ${HOME_COLUMN}`}
           >
             <HomeFilm
               wide={PRODUCT_FILM}

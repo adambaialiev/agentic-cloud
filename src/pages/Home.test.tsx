@@ -343,7 +343,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     // The frame is the film's own shape: tall under sm, wide from sm up,
     // and never taller than leaves the headline's first line in view.
     const frame = document.querySelector('#film [data-film-frame]')!;
-    expect(frame.className).toMatch(/\baspect-\[9\/16\]/);
+    expect(frame.className).toMatch(/\baspect-\[4\/5\]/);
     expect(frame.className).toMatch(/\bsm:aspect-video\b/);
     // Edge to edge since note #977: the phone's whole width, no cap.
     expect(frame.className).not.toMatch(/max-w-/);
@@ -514,7 +514,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     const box = document.querySelector('#film [data-film-box]')!;
     // Since note #1003 the room left also holds the masthead above the
     // film (211 px on a phone, 300 px from sm up), which takes the same width.
-    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_211px\)\*9\/16\)\)\]/);
+    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_211px\)\*4\/5\)\)\]/);
     expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_300px\)\*16\/9\)\)\]/);
     const masthead = document.querySelector('#film [data-masthead]')!;
     for (const width of box.className.split(' ').filter((c) => c.includes('w-[min('))) expect(masthead.className.split(' ')).toContain(width);

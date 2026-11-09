@@ -25,7 +25,8 @@ import { useEffect, useRef, useState } from 'react';
  * - A phone gets the tall cut (note #973, the owner, 4 Nov 2026, 07:48 UTC:
  *   "Can we make vertical version of the video? For phones"). The rule is
  *   the page's own phone width, TALL_FILM_QUERY (under 640 px, Tailwind's
- *   sm): a phone held upright gets the 9:16 cut, a phone turned sideways, a
+ *   sm): a phone held upright gets the tall cut (9:16 until note #1092,
+ *   4:5 since, to fill the phone's column), a phone turned sideways, a
  *   tablet and a desk get the wide one. The frame's shape follows the same
  *   query in CSS, so the page never jumps when the script arrives; the
  *   placeholder's colour follows it too; and the film's address is set
@@ -193,7 +194,7 @@ export default function HomeFilm({ wide, tall, label }: { wide: Film; tall?: Fil
   const what = label.replace(/^Play /, '');
   const src = shape === 'tall' && tall ? tall.src : shape === 'wide' ? wide.src : undefined;
   /* The tall frame on a phone, the wide one from sm up (TALL_FILM_QUERY). */
-  const frame = tall ? 'aspect-[9/16] w-full sm:aspect-video' : 'aspect-video w-full';
+  const frame = tall ? 'aspect-[4/5] w-full sm:aspect-video' : 'aspect-video w-full';
   /* The timeline of the film being shown (the wide one until the page has
      read the screen). */
   const film = shape === 'tall' && tall ? tall : wide;
