@@ -177,6 +177,14 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(action.querySelector('code')!.textContent).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
     expect(action.querySelector('button')!.getAttribute('aria-label')).toBe('Copy');
     expect(action.querySelectorAll('a')).toHaveLength(0);
+    // Note #1097: the sentence breaks only between its groups, the address
+    // stays whole and may break once, after the host's slash, never in a word.
+    const code = action.querySelector('code')!;
+    expect([...code.querySelectorAll('.whitespace-nowrap')].map((group) => group.textContent)).toEqual(['Set up our own', 'Agentic Cloud', 'by following', 'own-cloud.md']);
+    const address = code.querySelector('.inline-block')!;
+    expect(address.textContent).toBe('https://agenticcloudcomputer.com/own-cloud.md');
+    expect(address.querySelectorAll('wbr')).toHaveLength(1);
+    expect(address.querySelector('wbr')!.previousSibling!.textContent).toMatch(/\/$/);
     const start = document.querySelector('#start')!.textContent ?? '';
     expect(start).not.toMatch(/Send me the line|Write to the founder|sets it up from a laptop/);
   });
