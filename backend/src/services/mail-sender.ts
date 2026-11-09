@@ -34,6 +34,12 @@ export interface OutboundMail {
   cc?: OutboundMailParty[];
   subject: string;
   text: string;
+  /**
+   * The same words as HTML, beside the text (note #1112: Outreach letters
+   * only, so the provider's open pixel has a place). Everything else this
+   * address sends is plain text alone.
+   */
+  html?: string;
   /** In the order the person put them on; the order is part of the payload
    *  the idempotency key names, so it must be the same on every attempt. */
   attachments?: OutboundMailFile[];
@@ -112,6 +118,7 @@ export class ResendMailSender implements MailSender {
         reply_to: [mail.from.address],
         subject: mail.subject,
         text: mail.text,
+        ...(mail.html ? { html: mail.html } : {}),
         ...(files.length
           ? {
             attachments: files.map((file) => ({

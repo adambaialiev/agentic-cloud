@@ -21,6 +21,7 @@ import { ResendMailSender } from './services/mail-sender.js';
 import 'dotenv/config';
 import './lib/ai-provider.js';
 import { outreachLinkRoutes } from './routes/outreach-links.js';
+import { RESEND_WEBHOOK_PATH, outreachMailEventRoutes } from './routes/outreach-mail-events.js';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -1498,8 +1499,11 @@ let mailApprovals = mailOutbox
 // one origin a pass is sent to.
 const OUTREACH_SITE_ORIGIN = process.env.OUTREACH_SITE_ORIGIN?.trim().replace(/\/+$/, '') || OUTREACH_SITE_ORIGIN_DEFAULT;
 const outreachPasses = PRIVATE_COPY ? null : new OutreachPasses(sqliteDb ? new SqliteOutreachPassStore(sqliteDb) : new InMemoryOutreachPassStore());
+// Resend's webhook signing secret for the Outreach letters' delivery facts (note #1112); without it they are off.
+const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET?.trim() || '';
 const outreach = PRIVATE_COPY ? null : new OutreachService({
   store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
+  mailEventsConfigured: Boolean(RESEND_WEBHOOK_SECRET),
   outbox: () => mailOutbox,
   mailboxes: mailboxStorage,
   pulses: async () => (copyPulses ? (await copyPulses.list()).map((record) => record.pulse) : []),
@@ -1508,6 +1512,7 @@ const outreach = PRIVATE_COPY ? null : new OutreachService({
     return [person?.firstName, person?.lastName].filter(Boolean).join(' ').trim();
   },
 });
+console.log(`[config] OUTREACH_MAIL_FACTS=${PRIVATE_COPY ? 'none (a private copy)' : RESEND_WEBHOOK_SECRET ? 'enabled' : 'off (set RESEND_WEBHOOK_SECRET)'}`);
 console.log(`[config] MAIL_REPLIES=${mailOutbox
   ? (RESEND_MAIL_API_KEY ? 'enabled' : `enabled over SMTP ${SMTP_SETTINGS!.host}:${SMTP_SETTINGS!.port}`)
   : PRIVATE_COPY ? 'set up from the Workspace (Mail), note #946' : 'disabled (set RESEND_MAIL_API_KEY or SMTP_HOST)'}`);
@@ -2510,6 +2515,8 @@ app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 app.use('/api/webhooks/mail/inbound', express.raw({ type: () => true, limit: '26mb' }));
 // A copy's pulse is signed over its exact bytes (note #1057): read it raw.
 app.use('/api/copy-pulse', express.raw({ type: () => true, limit: '64kb' }));
+// The mail provider's word on the Outreach letters (note #1112) is signed over its exact bytes: read it raw.
+app.use(RESEND_WEBHOOK_PATH, express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-webhook', express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-result', express.raw({ type: () => true, limit: '256kb' }));
 // The guests' model door (note #1038): the body passes byte for byte, so it is parsed raw, before JSON.
@@ -2614,6 +2621,8 @@ app.use('/workspace', workspaceRouter);
 // The outreach letters' short links, /go/<code> (note #1106): before the
 // root routes, so the word is ours and never a person's address.
 app.use(outreachLinkRoutes(() => outreach));
+// Delivered, bounced, spam, pictures loaded: Resend's signed events on the Outreach letters (note #1112).
+app.use(outreachMailEventRoutes({ outreach: () => outreach, secret: () => RESEND_WEBHOOK_SECRET }));
 // Its addresses live at the root of the domain (public-addresses): the shell
 // is served there, and every old /workspace address redirects to it.
 app.use(workspaceRootRoutes({

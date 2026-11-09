@@ -1,15 +1,20 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import express from 'express';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { RESEND_WEBHOOK_PATH, outreachMailEventRoutes, readResendEvent, verifySvixSignature } from '../../routes/outreach-mail-events.js';
 import { MailboxService } from '../../services/mailbox-service.js';
 import { SqliteMailboxStorage } from '../../services/sqlite/sqlite-mailbox-storage.js';
 import { SqliteMailMessageStorage } from '../../services/sqlite/sqlite-mail-message-storage.js';
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
 import { MAIL_NEW_PER_HOUR, MailOutboxService } from '../../services/mail-outbox.js';
 import type { OutboundMail } from '../../services/mail-sender.js';
-import { OUTREACH_MAIL_ALLOWANCE, OutreachError, OutreachService } from '../../services/outreach.js';
+import { OUTREACH_MAIL_ALLOWANCE, OutreachService, type OutreachMailEventInput } from '../../services/outreach.js';
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
-  addressMatches, hostMatches, outreachLocalTime, outreachPlaceholders, outreachWordCount, parseOutreachWrite, type OutreachWrite,
+  addressMatches, hostMatches, outreachLocalTime, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, type OutreachTouch, type OutreachWrite,
 } from '../../shared/outreach.js';
 import { fixtureOutreachProfile, fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 import type { CopyPulse } from '../../shared/copy-pulse.js';
@@ -103,7 +108,7 @@ describe('Outreach words and places', () => {
   });
 });
 
-async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean } = {}) {
+async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean; mailEvents?: boolean } = {}) {
   const db = openSqliteDb(':memory:');
   const mailboxes = new SqliteMailboxStorage(db);
   const messages = new SqliteMailMessageStorage(db);
@@ -111,12 +116,12 @@ async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sq
   const sent: OutboundMail[] = [];
   let clock = new Date('2026-11-09T13:00:00Z');
   const now = () => clock;
-  const sender = { send: vi.fn(async (mail: OutboundMail) => { sent.push(mail); if (opts.send) await opts.send(mail); return {}; }) };
+  const sender = { send: vi.fn(async (mail: OutboundMail) => { sent.push(mail); if (opts.send) await opts.send(mail); return { providerId: `re-${sent.length}` }; }) };
   const outbox = new MailOutboxService({ mailboxes, messages, sender }, now);
   const store = opts.sqlite ? new SqliteOutreachStore(db) : new InMemoryOutreachStore();
   const pulses: CopyPulse[] = [];
   const service = new OutreachService({
-    store, outbox: () => outbox, mailboxes, now, pulses: async () => pulses, senderName: async () => 'Adam B',
+    store, outbox: () => outbox, mailboxes, now, pulses: async () => pulses, senderName: async () => 'Adam B', mailEventsConfigured: opts.mailEvents === true,
   });
   await service.write('user-adam', ROWAN, batch());
   return { service, outbox, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
@@ -155,16 +160,19 @@ describe('Outreach, the service', () => {
     expect((await service.detail('user-adam', 'bigfirm-inc'))!.noSend).toMatch(/^Not a fit: too big/);
   });
 
-  it('sends the first letter as the owner, plain, and records it: Sent, on the timeline, in the mail Sent', async () => {
+  it('sends the first letter as the owner, the words as text with the same words as HTML beside them, and records it: Sent, on the timeline, in the mail Sent', async () => {
     const { service, sent, messages } = await world();
     const draft = await firstOf(service, 'northwind-health');
     const { touch, mailId } = await service.send('user-adam', 'northwind-health', { step: 'first', subject: draft.subject, text: draft.text });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ from: { address: 'adam@agenticcloudcomputer.com', name: 'Adam B' }, to: [{ address: 'mara@northwind-health.test' }], subject: draft.subject, text: `${draft.text}\n` });
-    expect(sent[0]).not.toHaveProperty('html');
-    expect(touch).toMatchObject({ kind: 'sent', step: 'first', to: 'mara@northwind-health.test', text: draft.text });
+    // Note #1112: an HTML copy of the same words, for the provider's open pixel; nothing of ours added.
+    expect(sent[0]!.html).toBe(outreachMailHtml(`${draft.text}\n`));
+    expect(sent[0]!.html).not.toMatch(/<img|<style|<script/);
+    expect(touch).toMatchObject({ kind: 'sent', step: 'first', to: 'mara@northwind-health.test', text: draft.text, providerId: 're-1', measured: true });
     const stored = await messages.get('user-adam', mailId);
     expect(stored?.direction).toBe('sent');
+    expect(stored?.providerId).toBe('re-1');
     const after = (await service.detail('user-adam', 'northwind-health'))!;
     expect(after.row.state).toBe('sent');
     expect(after.touches.map((one) => one.kind).sort()).toEqual(['sent', 'state', 'written']);
@@ -277,7 +285,6 @@ describe('Outreach, the service', () => {
     const { service } = await world();
     await service.edit('user-adam', 'quarry-software', { city: 'Boston' });
     await service.addNote('user-adam', 'quarry-software', 'Met Bea at a meetup.');
-    await service.setState('user-adam', 'fernhill-labs', 'not-now');
     const next = batch();
     next.targets = next.targets.filter((target) => target.company !== 'Gleam Tools');
     next.targets[0]!.firstEmail!.body = 'New words from Rowan.';
@@ -294,7 +301,6 @@ describe('Outreach, the service', () => {
     const quarry = (await service.detail('user-adam', 'quarry-software'))!;
     expect(quarry.row.city).toBe('Boston');
     expect(quarry.touches.some((one) => one.kind === 'note' && one.text === 'Met Bea at a meetup.')).toBe(true);
-    expect((await service.detail('user-adam', 'fernhill-labs'))!.row.state).toBe('not-now');
     expect((await firstOf(service, 'northwind-health')).text).toBe('New words from Rowan.');
     expect((await service.detail('user-adam', 'gleam-tools'))!.seed.company).toBe('Gleam Tools');
   });
@@ -399,7 +405,6 @@ describe('Outreach, the service', () => {
 
   it('a write never moves a state or the owner\'s own fields, and an agent reads back no reply, note or sent letter', async () => {
     const { service } = await world();
-    await service.setState('user-adam', 'lakeview-data', 'trying');
     await service.edit('user-adam', 'lakeview-data', { person: 'Ines O.' });
     const draft = await firstOf(service, 'harbor-pine');
     await service.send('user-adam', 'harbor-pine', { step: 'first', subject: draft.subject, text: 'The words that went.' });
@@ -409,7 +414,7 @@ describe('Outreach, the service', () => {
     lakeview.person = 'Ines Okafor, CTO and co-founder';
     await service.write('user-adam', ROWAN, { targets: [lakeview], words: null });
     const after = (await service.detail('user-adam', 'lakeview-data'))!;
-    expect(after.row).toMatchObject({ state: 'trying', person: 'Ines O.' });
+    expect(after.row).toMatchObject({ state: 'not-contacted', person: 'Ines O.' });
     const shown = await service.agentShow('user-adam', 'Harbor & Pine');
     expect(shown).toMatchObject({ id: 'harbor-pine', state: 'replied', firstLetterGone: true, ownerEdited: false, writtenBy: 'Rowan' });
     expect(shown!.writes).toEqual([{ at: '2026-11-09T13:00:00.000Z', by: 'Rowan', added: true, fields: expect.any(Array) }]);
@@ -459,13 +464,205 @@ describe('Outreach, the service', () => {
     expect(sent).toHaveLength(85);
   });
 
-  it('lets the owner set Not now and Trying it, and refuses states that did not happen', async () => {
-    const { service } = await world();
-    await expect(service.setState('user-adam', 'northwind-health', 'sent')).rejects.toBeInstanceOf(OutreachError);
-    await expect(service.setState('user-adam', 'bigfirm-inc', 'trying')).rejects.toThrow(/not a fit/);
-    await service.setState('user-adam', 'northwind-health', 'not-now');
+  it('has no door that sets a state (note #1112); a Not now picked by hand before is history and moves nothing', async () => {
+    const { service, store } = await world();
+    expect((service as unknown as Record<string, unknown>).setState).toBeUndefined();
+    const draft = await firstOf(service, 'northwind-health');
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject: draft.subject, text: draft.text });
+    // A record from before: Adam had picked Not now on the screen.
+    const record = (await store.target('user-adam', 'northwind-health'))!;
+    await store.putTarget({ ...record, state: 'not-now', stateAt: '2026-11-09T13:30:00.000Z' });
+    await store.addTouch('user-adam', { id: 'ot_old', targetId: 'northwind-health', at: '2026-11-09T13:30:00.000Z', kind: 'state', from: 'sent', to: 'not-now' });
     const after = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(after.row.state).toBe('sent');
+    expect(after.touches.some((one) => one.kind === 'state' && one.to === 'not-now')).toBe(true);
+    expect((await service.agentShow('user-adam', 'northwind-health'))!.state).toBe('sent');
+  });
+});
+
+describe('What we know about each letter (note #1112)', () => {
+  const resend = (n: number) => `re-${n}`;
+  const event = (over: Partial<OutreachMailEventInput>): OutreachMailEventInput => ({
+    eventId: `msg_${Math.random().toString(36).slice(2)}`, event: 'delivered', providerId: resend(1), at: '2026-11-09T13:00:05.000Z',
+    to: ['mara@northwind-health.test'], subject: 'Your agents need a workplace', ...over,
+  });
+  const sendFirst = async (service: OutreachService, id = 'northwind-health') => {
+    const draft = await firstOf(service, id);
+    return service.send('user-adam', id, { step: 'first', subject: draft.subject, text: draft.text });
+  };
+
+  it('writes delivered and pictures loaded on the letter, each once, with their times; Nothing yet is null, never a bad sign', async () => {
+    const { service } = await world();
+    await sendFirst(service);
+    const before = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(before.known.letters).toEqual([expect.objectContaining({
+      step: 'first', measured: true, traced: true, delivered: null, opened: null, bounced: null, spam: null, delayed: null,
+    })]);
+    expect(before.known).toMatchObject({ followed: null, replied: null, installed: null, checked: 0 });
+    const delivered = event({ event: 'delivered' });
+    expect(await service.noteMailEvent(delivered)).toEqual({ recorded: true, company: 'Northwind Health' });
+    // The provider retries: the same event is one touch, and so is a second "delivered".
+    expect((await service.noteMailEvent(delivered)).recorded).toBe(false);
+    expect((await service.noteMailEvent(event({ event: 'delivered', at: '2026-11-09T13:00:09.000Z' }))).recorded).toBe(false);
+    await service.noteMailEvent(event({ event: 'opened', at: '2026-11-09T13:20:00.000Z' }));
+    // Loaded again within the hour (Apple Mail, a proxy): the same load.
+    expect((await service.noteMailEvent(event({ event: 'opened', at: '2026-11-09T13:50:00.000Z' }))).recorded).toBe(false);
+    await service.noteMailEvent(event({ event: 'opened', at: '2026-11-09T16:00:00.000Z' }));
+    const after = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(after.known.letters[0]).toMatchObject({
+      delivered: '2026-11-09T13:00:05.000Z', opened: { first: '2026-11-09T13:20:00.000Z', last: '2026-11-09T16:00:00.000Z', times: 2 },
+    });
+    expect(after.row.state).toBe('sent');
+    expect(after.row.glance).toMatchObject({ delivered: '2026-11-09T13:00:05.000Z', opened: '2026-11-09T13:20:00.000Z', followed: null });
+    expect(after.touches.filter((one) => one.kind === 'mail')).toHaveLength(3);
+    const list = await service.list('user-adam');
+    expect(list.rows.find((row) => row.id === 'northwind-health')!.glance.opened).toBe('2026-11-09T13:20:00.000Z');
+  });
+
+  it('a permanent bounce ends it: Bounced, no follow-up, the reason shown; a passing one is only a fact', async () => {
+    const { service, at } = await world();
+    await sendFirst(service);
+    await service.noteMailEvent(event({ event: 'bounced', permanent: false, detail: 'Transient, MailboxFull' }));
+    expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('sent');
+    await service.noteMailEvent(event({ event: 'bounced', detail: 'Permanent, General: no such user' }));
+    at('2026-11-13T13:00:01Z');
+    const after = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(after.row.state).toBe('bounced');
+    expect(after.row.next).toBeNull();
     expect(after.draft).toBeNull();
-    expect(after.noSend).toMatch(/not now/);
+    expect(after.noSend).toBe('The letter did not arrive (Permanent, General: no such user). Nothing more goes to this address.');
+    expect(after.touches[0]).toMatchObject({ kind: 'state', from: 'sent', to: 'bounced' });
+    await expect(service.send('user-adam', 'northwind-health', { step: 'day4', text: 'Again' })).rejects.toThrow('Nothing is due');
+  });
+
+  it('marked as spam ends it too; a reply after it still says Replied; an install says Installed', async () => {
+    const { service, pulses } = await world();
+    void pulses;
+    await sendFirst(service);
+    await service.noteMailEvent(event({ event: 'spam' }));
+    expect((await service.detail('user-adam', 'northwind-health'))!).toMatchObject({ row: { state: 'spam' }, draft: null, noSend: 'They marked a letter as spam. Nothing more goes to them.' });
+    await service.noteArrival({ id: 'mm_r', address: 'adam@agenticcloudcomputer.com', from: 'mara@northwind-health.test', subject: 'Re: x', receivedAt: '2026-11-09T15:00:00Z' });
+    const replied = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(replied.row.state).toBe('replied');
+    expect(replied.known.replied).toBe('2026-11-09T15:00:00.000Z');
+    await service.notePulse({ copyId: 'c9', domain: 'northwind-health.test', contactName: 'Mara', contactEmail: 'mara@northwind-health.test' } as CopyPulse);
+    expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('installed');
+  });
+
+  it('finds a letter sent before ids were kept by its address and subject near its send time, and drops everything else', async () => {
+    const { service, store } = await world();
+    await sendFirst(service);
+    const touches = await store.touches('user-adam', 'northwind-health');
+    const sent = touches.find((one) => one.kind === 'sent')!;
+    // As the ten letters of 9 Nov were stored: no provider id, no HTML.
+    const { providerId: _drop, measured: _m, ...old } = sent as Extract<OutreachTouch, { kind: 'sent' }>;
+    const db = store as unknown as { touchesBy?: Map<string, OutreachTouch[]> };
+    db.touchesBy!.set('user-adam', db.touchesBy!.get('user-adam')!.map((one) => (one.id === sent.id ? old as OutreachTouch : one)));
+    expect((await service.detail('user-adam', 'northwind-health'))!.known.letters[0]).toMatchObject({ measured: false, traced: false });
+    // Somebody else's letter, a sign-in link, the right address at another time: dropped.
+    expect((await service.noteMailEvent(event({ providerId: 're-unknown', to: ['someone@else.test'] }))).recorded).toBe(false);
+    expect((await service.noteMailEvent(event({ providerId: 're-unknown', at: '2026-11-09T15:00:00.000Z', event: 'spam' }))).recorded).toBe(false);
+    expect((await service.noteMailEvent(event({ providerId: 're-unknown', subject: 'Something else', event: 'spam' }))).recorded).toBe(false);
+    expect(await service.noteMailEvent(event({ providerId: 're-unknown', to: ['Mara@Northwind-Health.test'], event: 'spam' }))).toEqual({ recorded: true, company: 'Northwind Health' });
+    expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('spam');
+  });
+
+  it('counts a link followed by a browser or an agent, and a mail system\'s check apart', async () => {
+    const { service } = await world();
+    const links = (await service.detail('user-adam', 'northwind-health'))!.links;
+    const code = (url: string) => url.split('/').at(-1)!;
+    await service.visit(code(links.home), { userAgent: 'Mozilla/5.0 (compatible; Proofpoint URL Defense)' });
+    await service.visit(code(links.agents), { userAgent: 'Claude-User/1.0' });
+    const known = (await service.detail('user-adam', 'northwind-health'))!.known;
+    expect(known.checked).toBe(1);
+    expect(known.followed).toMatchObject({ times: 1, latest: { link: 'agents', reader: 'agent', client: 'Claude' } });
+  });
+
+  it('says whether the provider\'s facts reach us: off without the secret, waiting until the first signed event, on after', async () => {
+    const off = await world();
+    expect((await off.service.list('user-adam')).mailFacts).toEqual({ status: 'off', lastEventAt: null });
+    const on = await world({ mailEvents: true });
+    expect((await on.service.list('user-adam')).mailFacts).toEqual({ status: 'waiting', lastEventAt: null });
+    on.service.mailHeard();
+    expect((await on.service.list('user-adam')).mailFacts).toEqual({ status: 'on', lastEventAt: '2026-11-09T13:00:00.000Z' });
+  });
+
+  it('writes the HTML copy from the same words: paragraphs, line breaks, links as links, the quote as a quote, everything escaped', () => {
+    expect(outreachMailHtml('Hi Mara,\n\nOne <b>line</b> & two\nhttps://agenticcloudcomputer.com/go/abc234.\n\nAdam\n\nOn Mon, Adam wrote:\n> First.\n> https://x.test/a?b=1&c=2\n'))
+      .toBe('<p>Hi Mara,</p>\n<p>One &lt;b&gt;line&lt;/b&gt; &amp; two<br>\n<a href="https://agenticcloudcomputer.com/go/abc234">https://agenticcloudcomputer.com/go/abc234</a>.</p>\n'
+        + '<p>Adam</p>\n<p>On Mon, Adam wrote:</p>\n<blockquote><p>First.<br>\n<a href="https://x.test/a?b=1&amp;c=2">https://x.test/a?b=1&amp;c=2</a></p></blockquote>');
+  });
+});
+
+describe('The Resend webhook route (note #1112)', () => {
+  const SECRET = `whsec_${Buffer.from('a test signing secret, 32 bytes!').toString('base64')}`;
+  let server: Server | undefined;
+  afterEach(async () => {
+    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+    server = undefined;
+  });
+  const sign = (secret: string, id: string, ts: string, body: string) => {
+    const key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
+    return `v1,${createHmac('sha256', key).update(`${id}.${ts}.${body}`).digest('base64')}`;
+  };
+  async function serve(secret: string, service: OutreachService | null) {
+    const app = express();
+    app.use(RESEND_WEBHOOK_PATH, express.raw({ type: () => true, limit: '256kb' }));
+    app.use(express.json());
+    app.use(outreachMailEventRoutes({ outreach: () => service, secret: () => secret, now: () => new Date('2026-11-09T13:00:00Z') }));
+    server = createServer(app);
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}${RESEND_WEBHOOK_PATH}`;
+  }
+  const payload = (type: string, emailId: string, extra: Record<string, unknown> = {}) => JSON.stringify({
+    type, created_at: '2026-11-09T13:00:06.000Z',
+    data: { email_id: emailId, created_at: '2026-11-09T13:00:01.000Z', from: 'Adam B <adam@agenticcloudcomputer.com>', to: ['mara@northwind-health.test'], subject: 'Your agents need a workplace', ...extra },
+  });
+  const post = (url: string, body: string, headers: Record<string, string>) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
+  const signed = (body: string, id = 'msg_1', ts = String(Date.parse('2026-11-09T13:00:00Z') / 1000), secret = SECRET) => ({ 'svix-id': id, 'svix-timestamp': ts, 'svix-signature': `v1,bm90IGl0 ${sign(secret, id, ts, body)}` });
+
+  it('verifies the signature over the exact bytes, refuses stale or forged posts, and records an Outreach letter\'s events once', async () => {
+    const { service } = await world({ mailEvents: true });
+    const draft = await firstOf(service, 'northwind-health');
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject: draft.subject, text: draft.text });
+    const url = await serve(SECRET, service);
+    const body = payload('email.bounced', 're-1', { bounce: { type: 'Permanent', subType: 'General', message: 'No such user.' } });
+    expect((await post(url, body, {})).status).toBe(401);
+    expect((await post(url, body, signed(body, 'msg_1', String(Date.parse('2026-11-09T12:50:00Z') / 1000)))).status).toBe(401);
+    expect((await post(url, body, signed(body, 'msg_1', undefined, `whsec_${Buffer.from('another secret').toString('base64')}`))).status).toBe(401);
+    expect((await post(url, `${body} `, signed(body))).status).toBe(401);
+    const ok = await post(url, body, signed(body));
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ recorded: true });
+    expect(await (await post(url, body, signed(body))).json()).toEqual({ recorded: false });
+    const after = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(after.row.state).toBe('bounced');
+    expect(after.known.letters[0]!.bounced).toEqual({ at: '2026-11-09T13:00:06.000Z', detail: 'No such user.', permanent: true });
+    // Somebody else's letter, and an event Outreach does not record (a click): 200, nothing kept.
+    const other = payload('email.delivered', 're-somebody-else', { to: ['x@y.test'], subject: 'Hi' });
+    expect(await (await post(url, other, signed(other, 'msg_2'))).json()).toEqual({ recorded: false });
+    const click = payload('email.clicked', 're-1');
+    expect(await (await post(url, click, signed(click, 'msg_3'))).json()).toEqual({ recorded: false });
+    expect((await service.detail('user-adam', 'northwind-health'))!.touches.filter((one) => one.kind === 'mail')).toHaveLength(1);
+    expect((await service.list('user-adam')).mailFacts.status).toBe('on');
+  });
+
+  it('answers 503 and records nothing without the secret, and 404 where there is no Outreach', async () => {
+    const { service } = await world();
+    const body = payload('email.delivered', 're-1');
+    expect((await post(await serve('', service), body, signed(body))).status).toBe(503);
+    await new Promise<void>((resolve) => server!.close(() => resolve()));
+    expect((await post(await serve(SECRET, null), body, signed(body))).status).toBe(404);
+  });
+
+  it('reads Resend\'s events: the seven it records, a passing bounce, the address out of a display name', () => {
+    expect(readResendEvent(JSON.parse(payload('email.opened', 're-1')), 'msg')).toMatchObject({ event: 'opened', providerId: 're-1', at: '2026-11-09T13:00:06.000Z', to: ['mara@northwind-health.test'] });
+    expect(readResendEvent(JSON.parse(payload('email.complained', 're-1')), 'msg')!.event).toBe('spam');
+    expect(readResendEvent(JSON.parse(payload('email.delivery_delayed', 're-1')), 'msg')!.event).toBe('delayed');
+    expect(readResendEvent(JSON.parse(payload('email.bounced', 're-1', { bounce: { type: 'Transient', subType: 'MailboxFull' } })), 'msg')).toMatchObject({ permanent: false, detail: 'Transient, MailboxFull' });
+    expect(readResendEvent(JSON.parse(payload('email.delivered', 're-1', { to: ['Mara Q <mara@northwind-health.test>'] })), 'msg')!.to).toEqual(['mara@northwind-health.test']);
+    for (const type of ['email.clicked', 'email.sent', 'domain.updated']) expect(readResendEvent(JSON.parse(payload(type, 're-1')), 'msg')).toBeNull();
+    expect(readResendEvent(JSON.parse(payload('email.delivered', '')), 'msg')).toBeNull();
+    expect(verifySvixSignature(SECRET, { id: 'a', timestamp: '1', signature: 'v1,x' }, '{}', new Date(1000))).toBe(false);
   });
 });

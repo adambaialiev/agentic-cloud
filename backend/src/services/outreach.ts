@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
-  OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_STATES, OUTREACH_WORDS_HISTORY, addressMatches,
+  OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_WORDS_HISTORY, addressMatches,
+  outreachGlance, outreachKnown, outreachStateFrom, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
@@ -24,15 +25,19 @@ import type { OutreachStore } from './outreach-storage.js';
  * cannot reach a letter that has gone. The site reads `list()` and
  * `detail()` live.
  *
- * Three things move a company along without the owner touching it, and each
- * only RECORDS what already happened — none of them sends anything:
- *   - a letter he sends from the screen moves it to Sent;
+ * A company's state is never picked (note #1112; Adam, 9 Nov 2026: "I should
+ * not be able to change state manually"). It is read off the timeline by
+ * `outreachStateFrom`, and only these RECORD what already happened — none of
+ * them sends anything:
+ *   - a letter he sends from the screen (Sent);
+ *   - the mail provider's signed word on one of his letters: delivered,
+ *     delayed, bounced, marked as spam, pictures loaded (`noteMailEvent`);
  *   - a letter that arrives at his address from the company's address or
- *     domain lands on its timeline and moves Sent (or Not contacted) to
- *     Replied;
+ *     domain (Replied);
  *   - a private copy's daily report whose contact or domain is the
- *     company's moves it to Installed.
- * Everything else — Not now, Trying it — is his hand.
+ *     company's (Installed).
+ * Not now and Trying it, which he picked by hand before, stay on the
+ * timeline as history and move nothing.
  *
  * Sending goes through the person's own outbox (MailOutboxService), so a
  * letter from here is an ordinary letter of his: it is in Sent, it spends the
@@ -66,7 +71,23 @@ export interface OutreachServiceDeps {
   /** The copies' pulses we already hold, to match at import. */
   pulses?: () => Promise<CopyPulse[]>;
   senderName?: (userId: string) => Promise<string>;
+  /** Whether the backend holds the provider's webhook signing secret, so its delivery facts can arrive (note #1112). */
+  mailEventsConfigured?: boolean;
   now?: () => Date;
+}
+
+/** One event from the mail provider's webhook, already verified and read (routes/outreach-mail-events.ts). */
+export interface OutreachMailEventInput {
+  /** The webhook's own id for this delivery: the same event retried carries the same one. */
+  eventId: string;
+  event: OutreachMailEvent;
+  /** The provider's id for the letter, as it answered the send. */
+  providerId: string;
+  at: string;
+  to: string[];
+  subject: string;
+  detail?: string | null;
+  permanent?: boolean;
 }
 
 /** A touch as its maker gives it: the store adds which company, its id and its time. */
@@ -85,6 +106,10 @@ function changedFields(before: OutreachSeedTarget, after: OutreachSeedTarget): s
 let sequence = 0;
 /** The same reader opening the same link again within this long is one visit (a mail system often fetches twice). */
 const VISIT_REPEAT_MS = 60_000;
+/** Pictures loaded again within this long is the same load (Apple Mail and proxies fetch more than once). */
+const OPEN_REPEAT_MS = 60 * 60_000;
+/** A letter sent before its provider id was kept is matched by recipient and subject within this long of its send. */
+const UNTRACED_MATCH_MS = 10 * 60_000;
 
 const touchId = (at: Date) => `ot_${at.getTime().toString(36).padStart(9, '0')}${(sequence++ % 1296).toString(36).padStart(2, '0')}${randomBytes(4).toString('hex')}`;
 
@@ -92,12 +117,17 @@ export class OutreachService {
   private readonly now: () => Date;
   /** One letter at a time per company: a double press is refused, not sent twice. */
   private readonly sending = new Set<string>();
+  /** When the last signed provider event arrived, ours or not: proof the webhook is wired. */
+  private lastMailEventAt: string | null = null;
 
   constructor(private readonly deps: OutreachServiceDeps) {
     this.now = deps.now ?? (() => new Date());
   }
 
   private row(record: OutreachTargetRecord, touches: OutreachTouch[], now: Date): OutreachRow {
+    const state = outreachStateFrom(touches);
+    // When it came to be in that state: the newest state entry naming it, else when it was settled.
+    const settled = touches.find((touch) => touch.kind === 'state' && touch.to === state)?.at ?? (record.state === state ? record.stateAt : null);
     return {
       id: record.id,
       company: record.seed.company,
@@ -109,8 +139,9 @@ export class OutreachService {
       person: targetPerson(record),
       email: targetEmail(record),
       verification: record.seed.verification,
-      state: record.state,
-      stateAt: record.stateAt,
+      state,
+      stateAt: state === 'not-contacted' ? null : settled,
+      glance: outreachGlance(outreachKnown(touches)),
       lastTouchAt: touches[0]?.at ?? null,
       next: outreachNext(record, touches, now),
       written: Boolean(record.seed.firstEmail),
@@ -133,6 +164,7 @@ export class OutreachService {
     ].sort((a, b) => b.at.localeCompare(a.at));
     return {
       lastWrite: writes[0] ?? null,
+      mailFacts: this.mailFacts(touches),
       rows: sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number]))),
       firstSends: touches.filter((touch) => touch.kind === 'sent' && touch.step === 'first').length,
       reviewAfter: OUTREACH_REVIEW_AFTER,
@@ -146,7 +178,67 @@ export class OutreachService {
     const [kept, touches] = await Promise.all([this.deps.store.words(userId), this.deps.store.touches(userId, targetId)]);
     const row = this.row(record, touches, this.now());
     const draft = outreachDraft(record, kept?.words ?? null, touches, row.next);
-    return { row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row), links: outreachLinks(record.links!) };
+    return {
+      row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row, touches), links: outreachLinks(record.links!),
+      known: outreachKnown(touches), mailFacts: this.mailFacts(await this.deps.store.touches(userId)),
+    };
+  }
+
+  /** Whether the provider's delivery facts reach us: off without the secret, waiting until the first signed event, on after. */
+  private mailFacts(touches: OutreachTouch[]): OutreachMailFacts {
+    if (!this.deps.mailEventsConfigured) return { status: 'off', lastEventAt: null };
+    const recorded = touches.find((touch) => touch.kind === 'mail')?.at ?? null;
+    const last = [recorded, this.lastMailEventAt].filter((at): at is string => Boolean(at)).sort().at(-1) ?? null;
+    return { status: last ? 'on' : 'waiting', lastEventAt: last };
+  }
+
+  /**
+   * The mail provider said something about a letter (note #1112): the route
+   * has checked its signature and read it. It lands on the company's
+   * timeline when the letter is one of his Outreach letters — found by the
+   * provider's id kept at send time, or, for a letter sent before ids were
+   * kept, by its recipient and subject within ten minutes of its send — and
+   * the company's state is settled from the timeline again. The same event
+   * twice is one touch; pictures loaded again within the hour are the same
+   * load. Anything else (another person's mail, a sign-in link) is dropped.
+   */
+  /** A signed provider event arrived, whatever it was about: the webhook is wired. */
+  mailHeard(): void {
+    this.lastMailEventAt = this.now().toISOString();
+  }
+
+  async noteMailEvent(input: OutreachMailEventInput): Promise<{ recorded: boolean; company?: string }> {
+    this.mailHeard();
+    const records = await this.deps.store.allTargets();
+    const users = [...new Set(records.map((record) => record.userId))];
+    const to = new Set(input.to.map((address) => address.trim().toLowerCase()));
+    for (const userId of users) {
+      const touches = await this.deps.store.touches(userId);
+      const sent = touches.filter((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent');
+      const letter = sent.find((touch) => touch.providerId === input.providerId)
+        ?? sent.find((touch) => !touch.providerId && to.has(touch.to.toLowerCase()) && touch.subject.trim() === input.subject.trim()
+          && Math.abs(Date.parse(touch.at) - Date.parse(input.at)) <= UNTRACED_MATCH_MS);
+      if (!letter) continue;
+      const record = records.find((one) => one.userId === userId && one.id === letter.targetId);
+      if (!record) return { recorded: false };
+      const theirs = touches.filter((touch) => touch.targetId === record.id);
+      const events = theirs.filter((touch): touch is Extract<OutreachTouch, { kind: 'mail' }> => touch.kind === 'mail' && touch.mailId === letter.mailId);
+      const repeat = events.some((touch) => touch.eventId === input.eventId)
+        || (input.event === 'opened'
+          ? events.some((touch) => touch.event === 'opened' && Math.abs(Date.parse(input.at) - Date.parse(touch.at)) < OPEN_REPEAT_MS)
+          // A passing bounce and then a final one are two facts; the same kind twice is one.
+          : events.some((touch) => touch.event === input.event && (touch.event !== 'bounced' || (touch.permanent !== false) === (input.permanent !== false))));
+      if (repeat) return { recorded: false, company: record.seed.company };
+      await this.touch(userId, record.id, {
+        kind: 'mail', event: input.event, mailId: letter.mailId, step: letter.step, eventId: input.eventId,
+        ...(input.detail ? { detail: input.detail.slice(0, 300) } : {}),
+        ...(input.event === 'bounced' && input.permanent === false ? { permanent: false } : {}),
+        at: input.at,
+      });
+      await this.settle(userId, record, input.at);
+      return { recorded: true, company: record.seed.company };
+    }
+    return { recorded: false };
   }
 
   /**
@@ -197,14 +289,17 @@ export class OutreachService {
   }
 
   /** Why the profile has no Send, said plainly. */
-  private noSend(record: OutreachTargetRecord, row: OutreachRow): string {
+  private noSend(record: OutreachTargetRecord, row: OutreachRow, touches: OutreachTouch[]): string {
     if (record.seed.fit !== 'fit') return `Not a fit${record.seed.notAFitReason ? `: ${record.seed.notAFitReason}` : ''}. Kept so it is not added again.`;
     if (!targetEmail(record)) return 'No address for this company yet. Add one below to write.';
-    if (record.state === 'not-now') return 'They said not now. That ends it.';
-    if (record.state === 'replied') return 'They replied. Answer from your inbox.';
-    if (record.state === 'trying') return 'They are trying it.';
-    if (record.state === 'installed') return 'They installed it.';
-    if (record.state === 'sent' && !row.next) return 'The first letter and both follow-ups have gone. Note #799 says: then stop.';
+    if (row.state === 'replied') return 'They replied. Answer from your inbox.';
+    if (row.state === 'installed') return 'They installed it.';
+    if (row.state === 'spam') return 'They marked a letter as spam. Nothing more goes to them.';
+    if (row.state === 'bounced') {
+      const bounce = outreachKnown(touches).letters.find((letter) => letter.bounced?.permanent)?.bounced;
+      return `The letter did not arrive${bounce?.detail ? ` (${bounce.detail.replace(/[.\s]+$/, '')})` : ''}. Nothing more goes to this address.`;
+    }
+    if (row.state === 'sent' && !row.next) return 'The first letter and both follow-ups have gone. Note #799 says: then stop.';
     if (row.next?.step === 'first') return 'No letter is written for this company yet. An agent writes it here with agentbuilt outreach set.';
     if (row.next) return `The ${stepWords(row.next.step)} is not written yet. An agent writes it here with agentbuilt outreach set.`;
     return 'Nothing to send.';
@@ -293,7 +388,7 @@ export class OutreachService {
       company: record.seed.company,
       fit: record.seed.fit,
       firstBatchOrder: record.seed.firstBatchOrder,
-      state: record.state,
+      state: outreachStateFrom(touches),
       letter: Boolean(record.seed.firstEmail),
       profile: Boolean(record.seed.profile),
       firstLetterGone: touches.some((touch) => touch.kind === 'sent' && touch.step === 'first'),
@@ -439,25 +534,19 @@ export class OutreachService {
     return this.touch(userId, targetId, { kind: 'note', text: said });
   }
 
-  /** The owner sets a state by hand: Not now and Trying it above all, and any correction. */
-  async setState(userId: string, targetId: string, raw: unknown): Promise<OutreachTargetRecord> {
-    const state = String(raw ?? '') as OutreachState;
-    if (!OUTREACH_STATES.includes(state)) throw new OutreachError(400, 'That is not a state.');
-    const record = await this.mine(userId, targetId);
-    if (record.seed.fit !== 'fit') throw new OutreachError(409, 'This company is not a fit; it has no state to change.');
-    const touches = await this.deps.store.touches(userId, targetId);
-    const wrote = touches.some((touch) => touch.kind === 'sent');
-    if (state === 'not-contacted' && wrote) throw new OutreachError(409, 'A letter has gone: it cannot be Not contacted again.');
-    if (state === 'sent' && !wrote) throw new OutreachError(409, 'Nothing has been sent yet. Send the first letter from here.');
-    return this.move(userId, record, state);
-  }
-
-  private async move(userId: string, record: OutreachTargetRecord, state: OutreachState, at?: string): Promise<OutreachTargetRecord> {
-    if (record.state === state) return record;
+  /**
+   * Settle the stored state from the timeline (`outreachStateFrom`) and, when
+   * it changed, say so on the timeline. Only facts reach here: there is no
+   * door that sets a state (note #1112).
+   */
+  private async settle(userId: string, record: OutreachTargetRecord, at?: string): Promise<OutreachTargetRecord> {
+    const fresh = await this.deps.store.target(userId, record.id) ?? record;
+    const state = outreachStateFrom(await this.deps.store.touches(userId, record.id));
+    if (fresh.state === state) return fresh;
     const stamp = at ?? this.now().toISOString();
-    const next = { ...record, state, stateAt: stamp };
+    const next = { ...fresh, state, stateAt: stamp };
     await this.deps.store.putTarget(next);
-    await this.touch(userId, record.id, { kind: 'state', from: record.state, to: state, at: stamp });
+    await this.touch(userId, record.id, { kind: 'state', from: fresh.state as OutreachPastState, to: state, at: stamp });
     return next;
   }
 
@@ -490,17 +579,18 @@ export class OutreachService {
       let mail;
       if (step === 'first') {
         if (!subject) throw new OutreachError(400, 'Write a subject.');
-        mail = await outbox.send({ userId, to: targetEmail(record), subject, text, allowance: OUTREACH_MAIL_ALLOWANCE, ...(senderName ? { senderName } : {}) });
+        mail = await outbox.send({ userId, to: targetEmail(record), subject, text, allowance: OUTREACH_MAIL_ALLOWANCE, withHtml: true, ...(senderName ? { senderName } : {}) });
       } else {
         // In the thread: under the latest letter of ours to them.
         const last = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent');
-        mail = await outbox.followUp({ userId, messageId: last!.mailId, text, allowance: OUTREACH_MAIL_ALLOWANCE, ...(senderName ? { senderName } : {}) });
+        mail = await outbox.followUp({ userId, messageId: last!.mailId, text, allowance: OUTREACH_MAIL_ALLOWANCE, withHtml: true, ...(senderName ? { senderName } : {}) });
       }
       const touch = await this.touch(userId, targetId, {
         kind: 'sent', step, mailId: mail.id, to: mail.to?.[0]?.address ?? targetEmail(record) ?? '', subject: mail.subject, text: mail.wrote ?? text,
+        ...(mail.providerId ? { providerId: mail.providerId } : {}), measured: true,
         at: mail.receivedAt,
       });
-      if (step === 'first') await this.move(userId, record, 'sent', mail.receivedAt);
+      await this.settle(userId, record, mail.receivedAt);
       return { touch, mailId: mail.id };
     } finally {
       this.sending.delete(key);
@@ -510,7 +600,7 @@ export class OutreachService {
   /**
    * A letter arrived at somebody's address. If it is the Outreach owner's and
    * it came from a company's address or domain, it goes on that company's
-   * timeline, and a company at Sent (or never written to) moves to Replied.
+   * timeline, and the company is Replied (unless it is already Installed).
    * A letter the checks marked as possibly forged is recorded as such and
    * moves nothing: a claim of their address is not their reply.
    */
@@ -529,9 +619,7 @@ export class OutreachService {
         kind: 'reply', mailId: arrival.id, from: arrival.from, subject: arrival.subject.slice(0, 200),
         ...(opts.suspicious ? { suspicious: true } : {}), at: arrival.receivedAt,
       });
-      if (!opts.suspicious && (record.state === 'sent' || record.state === 'not-contacted')) {
-        await this.move(mailbox.userId, record, 'replied', arrival.receivedAt);
-      }
+      if (!opts.suspicious) await this.settle(mailbox.userId, record, arrival.receivedAt);
     }
   }
 
@@ -549,7 +637,7 @@ export class OutreachService {
       const touches = await this.deps.store.touches(record.userId, record.id);
       if (touches.some((touch) => touch.kind === 'installed' && touch.copyId === pulse.copyId)) continue;
       await this.touch(record.userId, record.id, { kind: 'installed', copyId: pulse.copyId, domain: pulse.domain, contact: pulse.contactEmail });
-      await this.move(record.userId, record, 'installed');
+      await this.settle(record.userId, record);
     }
   }
 }

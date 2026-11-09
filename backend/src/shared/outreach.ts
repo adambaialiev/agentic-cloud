@@ -7,8 +7,11 @@
  *
  * What it deliberately is NOT: nothing here sends by itself. A follow-up is
  * DUE on day 4 and day 11, and the site says so; the owner presses. There is
- * no timer that sends, no tracking pixel and no link rewriting — a letter
- * leaves as the plain words in the box.
+ * no timer that sends and no link rewriting — a letter leaves as the words in
+ * the box. Since note #1112 it leaves with an HTML copy of those same words
+ * beside the plain text, so the provider's open pixel has somewhere to go
+ * (`outreachMailHtml`); what that pixel can and cannot say is on
+ * `OutreachLetterFacts.opened`.
  *
  * Where the words live (note #1103): in the platform's own Outreach tables,
  * and nowhere else. The owner's agents write a company — its facts, its
@@ -22,16 +25,30 @@
  * still carries one is refused.
  */
 
-export const OUTREACH_STATES = ['not-contacted', 'sent', 'replied', 'not-now', 'trying', 'installed'] as const;
+/**
+ * A company's state is what HAPPENED, never what somebody picked (note #1112;
+ * Adam, 9 Nov 2026: "I should not be able to change state manually"). It is
+ * read off the timeline by `outreachStateFrom`: Not contacted → Sent → Bounced
+ * or Marked as spam (each ends it) → Replied → Installed.
+ */
+export const OUTREACH_STATES = ['not-contacted', 'sent', 'bounced', 'spam', 'replied', 'installed'] as const;
 export type OutreachState = (typeof OUTREACH_STATES)[number];
+/**
+ * Not now and Trying it were picked by hand until note #1112. Nothing sets
+ * them any more; a stored record or an old timeline entry may still name one,
+ * and the site shows that as history.
+ */
+export type OutreachPastState = OutreachState | 'not-now' | 'trying';
 
-export const OUTREACH_STATE_WORDS: Record<OutreachState, string> = {
+export const OUTREACH_STATE_WORDS: Record<OutreachPastState, string> = {
   'not-contacted': 'Not contacted',
   sent: 'Sent',
+  bounced: 'Bounced',
+  spam: 'Marked as spam',
   replied: 'Replied',
+  installed: 'Installed',
   'not-now': 'Not now',
   trying: 'Trying it',
-  installed: 'Installed',
 };
 
 /** The three letters of a sequence, in order (note #799): the first, then a reply in its thread on day 4 and day 11. */
@@ -473,7 +490,12 @@ export interface OutreachTargetRecord {
   /** What the agents last wrote for this company (see OutreachSeedTarget). */
   seed: OutreachSeedTarget;
   edits: OutreachEdits;
-  state: OutreachState;
+  /**
+   * The state as last settled from the timeline (`outreachStateFrom`). A
+   * record written before note #1112 may still hold Not now or Trying it;
+   * every read derives the state afresh, so that word is history only.
+   */
+  state: OutreachPastState;
   stateAt: string | null;
   /** When the company first came into the store. */
   addedAt?: string;
@@ -568,10 +590,15 @@ export type OutreachTouch = {
   targetId: string;
   at: string;
 } & (
-  | { kind: 'sent'; step: OutreachStep; mailId: string; to: string; subject: string; text: string }
+  /**
+   * A letter he sent. `providerId` is the mail provider's id for it, kept so
+   * its delivery events find it (note #1112; absent on letters sent before);
+   * `measured` says it went with an HTML copy, so an open could be seen.
+   */
+  | { kind: 'sent'; step: OutreachStep; mailId: string; to: string; subject: string; text: string; providerId?: string; measured?: boolean }
   | { kind: 'reply'; mailId: string; from: string; subject: string; suspicious?: boolean }
   | { kind: 'note'; text: string }
-  | { kind: 'state'; from: OutreachState; to: OutreachState }
+  | { kind: 'state'; from: OutreachPastState; to: OutreachPastState }
   | { kind: 'installed'; copyId: string; domain: string; contact: string }
   | { kind: 'edit'; field: keyof OutreachEdits; from: string | null; to: string | null }
   /** An agent wrote the company: which fields changed, and the whole record it replaced (null when it was new). */
@@ -585,7 +612,192 @@ export type OutreachTouch = {
   | { kind: 'letter'; action: 'saved' | 'kept' | 'took'; subject: string; body: string; by: string | null }
   /** Somebody opened one of the company's links (note #1106): which, and what it looked like. */
   | { kind: 'visit'; link: OutreachLink; reader: OutreachReader; client: string | null }
+  /**
+   * What the mail provider said about one of his letters (note #1112), by its
+   * signed webhook: which letter (`mailId`, `step`), and the provider's own
+   * event id so the same event twice is one touch. `detail` is the provider's
+   * reason for a bounce; `permanent` is false for a bounce it calls passing.
+   */
+  | { kind: 'mail'; event: OutreachMailEvent; mailId: string; step: OutreachStep; eventId: string; detail?: string | null; permanent?: boolean }
 );
+
+/**
+ * The provider's word for what happened to a letter (note #1112): delivered to
+ * their server, delayed, bounced, marked as spam by the reader, its pictures
+ * loaded (`opened`), refused before it left (`failed`), or not sent because
+ * the address is on the provider's do-not-send list (`suppressed`).
+ */
+export const OUTREACH_MAIL_EVENTS = ['delivered', 'delayed', 'bounced', 'spam', 'opened', 'failed', 'suppressed'] as const;
+export type OutreachMailEvent = (typeof OUTREACH_MAIL_EVENTS)[number];
+
+/** Resend's event names, as its webhook sends them, for the ones Outreach records. */
+export const RESEND_OUTREACH_EVENTS: Record<string, OutreachMailEvent> = {
+  'email.delivered': 'delivered',
+  'email.delivery_delayed': 'delayed',
+  'email.bounced': 'bounced',
+  'email.complained': 'spam',
+  'email.opened': 'opened',
+  'email.failed': 'failed',
+  'email.suppressed': 'suppressed',
+};
+
+/** A bounce, failure or suppression that means nothing more reaches this address. */
+const endsIt = (touch: OutreachTouch): boolean => touch.kind === 'mail'
+  && ((touch.event === 'bounced' && touch.permanent !== false) || touch.event === 'failed' || touch.event === 'suppressed');
+
+/**
+ * The state, from what happened and nothing else (note #1112). Installed when
+ * the company's own copy reported in; Replied when a letter came back from
+ * their address or domain (a possibly forged one does not count); Marked as
+ * spam, or Bounced, when the provider said so of one of his letters; Sent
+ * once a letter has gone; else Not contacted. A Not now or Trying it picked
+ * by hand before note #1112 is not a fact, so it moves nothing here.
+ */
+export function outreachStateFrom(touches: OutreachTouch[]): OutreachState {
+  if (touches.some((touch) => touch.kind === 'installed')) return 'installed';
+  if (touches.some((touch) => touch.kind === 'reply' && !touch.suspicious)) return 'replied';
+  if (touches.some((touch) => touch.kind === 'mail' && touch.event === 'spam')) return 'spam';
+  if (touches.some(endsIt)) return 'bounced';
+  if (touches.some((touch) => touch.kind === 'sent')) return 'sent';
+  return 'not-contacted';
+}
+
+/**
+ * What we know about one letter, as facts with their times (note #1112). Null
+ * means nothing has been heard, never that something went wrong.
+ */
+export interface OutreachLetterFacts {
+  step: OutreachStep;
+  mailId: string;
+  sentAt: string;
+  to: string;
+  subject: string;
+  /**
+   * Whether an open could be seen at all: the letter went with an HTML copy
+   * for the provider's pixel (from note #1112 on). The ten plain letters sent
+   * before that have no pixel, so for them "opened" is unknowable.
+   */
+  measured: boolean;
+  /** Whether the provider's id was kept at send time, so its events can find it. */
+  traced: boolean;
+  /** Their mail server accepted it. Not that anybody read it. */
+  delivered: string | null;
+  /** The provider is still trying (a passing problem at their end). */
+  delayed: string | null;
+  bounced: { at: string; detail: string | null; permanent: boolean } | null;
+  /** The reader pressed "spam" on it. */
+  spam: string | null;
+  /**
+   * The pictures in it were loaded: the provider's one-pixel image was
+   * fetched. That is NOT "read": Apple Mail fetches every picture of every
+   * letter for privacy, read or not; Gmail fetches through its own proxy;
+   * a reader who blocks pictures, and an agent reading the text, never
+   * fetches it. `times` counts loads at least an hour apart.
+   */
+  opened: { first: string; last: string; times: number } | null;
+}
+
+/** What we know about a company: each letter, then the facts that belong to the company, not to one letter. */
+export interface OutreachKnown {
+  letters: OutreachLetterFacts[];
+  /** One of its two links was opened by something that looked like a browser or an agent (a mail system's check is not counted). */
+  followed: { first: string; last: string; times: number; latest: { link: OutreachLink; reader: OutreachReader; client: string | null } } | null;
+  /** A mail system opened a link to check it before anyone did. */
+  checked: number;
+  replied: string | null;
+  installed: string | null;
+}
+
+/** The facts of a company's letters, oldest letter first, from its timeline (newest first, as the store gives it). */
+export function outreachKnown(touches: OutreachTouch[]): OutreachKnown {
+  const oldestFirst = [...touches].reverse();
+  const letters: OutreachLetterFacts[] = oldestFirst
+    .filter((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent')
+    .map((sent) => {
+      const events = oldestFirst.filter((touch): touch is Extract<OutreachTouch, { kind: 'mail' }> => touch.kind === 'mail' && touch.mailId === sent.mailId);
+      const first = (event: OutreachMailEvent) => events.find((touch) => touch.event === event)?.at ?? null;
+      // The one that ends it, where there is one; else a passing bounce.
+      const bounce = events.find(endsIt) ?? events.find((touch) => touch.event === 'bounced');
+      const opens = events.filter((touch) => touch.event === 'opened');
+      return {
+        step: sent.step,
+        mailId: sent.mailId,
+        sentAt: sent.at,
+        to: sent.to,
+        subject: sent.subject,
+        measured: sent.measured === true,
+        traced: Boolean(sent.providerId),
+        delivered: first('delivered'),
+        delayed: first('delayed'),
+        bounced: bounce ? { at: bounce.at, detail: bounce.detail ?? null, permanent: endsIt(bounce) } : null,
+        spam: first('spam'),
+        opened: opens.length ? { first: opens[0]!.at, last: opens.at(-1)!.at, times: opens.length } : null,
+      };
+    });
+  const visits = oldestFirst.filter((touch): touch is Extract<OutreachTouch, { kind: 'visit' }> => touch.kind === 'visit');
+  const follows = visits.filter((touch) => touch.reader !== 'check');
+  const latest = follows.at(-1);
+  return {
+    letters,
+    followed: latest
+      ? { first: follows[0]!.at, last: latest.at, times: follows.length, latest: { link: latest.link, reader: latest.reader, client: latest.client } }
+      : null,
+    checked: visits.length - follows.length,
+    replied: oldestFirst.find((touch) => touch.kind === 'reply' && !touch.suspicious)?.at ?? null,
+    installed: oldestFirst.find((touch) => touch.kind === 'installed')?.at ?? null,
+  };
+}
+
+/** The list's glance at a company: when each fact was first known, across all its letters. */
+export interface OutreachGlance {
+  delivered: string | null;
+  opened: string | null;
+  followed: string | null;
+  replied: string | null;
+  installed: string | null;
+  bounced: string | null;
+  spam: string | null;
+}
+
+export function outreachGlance(known: OutreachKnown): OutreachGlance {
+  const earliest = (values: Array<string | null | undefined>) => values.filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+  return {
+    delivered: earliest(known.letters.map((letter) => letter.delivered)),
+    opened: earliest(known.letters.map((letter) => letter.opened?.first)),
+    followed: known.followed?.first ?? null,
+    replied: known.replied,
+    installed: known.installed,
+    bounced: earliest(known.letters.map((letter) => letter.bounced?.at)),
+    spam: earliest(known.letters.map((letter) => letter.spam)),
+  };
+}
+
+/**
+ * The letter as HTML, for the provider's open pixel (note #1112): the same
+ * words as the plain text, nothing added — paragraphs, line breaks, links as
+ * links (never rewritten: click tracking stays off, our /go links already do
+ * that), and the quoted letter under a follow-up as a quote. No styles, no
+ * pictures of ours; the pixel is the provider's.
+ */
+export function outreachMailHtml(text: string): string {
+  const escape = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const linked = (line: string) => escape(line).replace(/https?:\/\/[^\s<>"]+[^\s<>".,;:!?)']/g, (url) => `<a href="${url}">${url}</a>`);
+  const blocks: string[] = [];
+  const lines = String(text ?? '').replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
+  let paragraph: string[] = [];
+  let quote: string[] = [];
+  const flushParagraph = () => { if (paragraph.length) blocks.push(`<p>${paragraph.map(linked).join('<br>\n')}</p>`); paragraph = []; };
+  const flushQuote = () => { if (quote.length) blocks.push(`<blockquote>${outreachMailHtml(quote.join('\n'))}</blockquote>`); quote = []; };
+  for (const line of lines) {
+    if (/^>/.test(line)) { flushParagraph(); quote.push(line.replace(/^> ?/, '')); continue; }
+    flushQuote();
+    if (!line.trim()) { flushParagraph(); continue; }
+    paragraph.push(line);
+  }
+  flushParagraph();
+  flushQuote();
+  return blocks.join('\n');
+}
 
 export type OutreachTouchKind = OutreachTouch['kind'];
 
@@ -595,9 +807,6 @@ const edited = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>, field: key
 export const targetEmail = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>): string | null => edited(record, 'email');
 export const targetPerson = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>): string | null => edited(record, 'person');
 export const targetCity = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>): string | null => edited(record, 'city');
-
-/** States the owner may set by hand. Sent, Replied and Installed are what happened. */
-export const OUTREACH_HAND_STATES: OutreachState[] = ['not-now', 'trying'];
 
 export interface OutreachNext {
   step: OutreachStep;
@@ -609,18 +818,21 @@ export interface OutreachNext {
 /**
  * What may be sent next, if anything. A first letter while nothing has gone;
  * then day 4, then day 11, each from the first letter's time, and only while
- * the company is still at Sent — a reply, a "not now", a try or an install
+ * the company is still at Sent — a reply, a bounce, a spam mark or an install
  * ends the sequence. After day 11: nothing, as note #799 says ("then stop").
+ * The state is read from the timeline (`outreachStateFrom`), never from a
+ * word that was picked by hand.
  */
-export function outreachNext(record: Pick<OutreachTargetRecord, 'seed' | 'edits' | 'state'>, touches: OutreachTouch[], now: Date): OutreachNext | null {
+export function outreachNext(record: Pick<OutreachTargetRecord, 'seed' | 'edits'>, touches: OutreachTouch[], now: Date): OutreachNext | null {
+  const state = outreachStateFrom(touches);
   if (record.seed.fit !== 'fit') return null;
   const sent = touches.filter((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent');
   const first = sent.find((touch) => touch.step === 'first');
   if (!first) {
-    if (record.state !== 'not-contacted' || !targetEmail(record)) return null;
+    if (state !== 'not-contacted' || !targetEmail(record)) return null;
     return { step: 'first', dueAt: null, due: true };
   }
-  if (record.state !== 'sent') return null;
+  if (state !== 'sent') return null;
   for (const step of ['day4', 'day11'] as const) {
     if (sent.some((touch) => touch.step === step)) continue;
     const dueAt = new Date(Date.parse(first.at) + FOLLOW_UP_DAYS[step] * 86_400_000);
@@ -654,8 +866,11 @@ export interface OutreachRow {
   person: string | null;
   email: string | null;
   verification: string | null;
+  /** What happened, read off the timeline (note #1112). */
   state: OutreachState;
   stateAt: string | null;
+  /** When each fact was first known, for the list (note #1112). */
+  glance: OutreachGlance;
   lastTouchAt: string | null;
   next: OutreachNext | null;
   /** True when an agent has written a first letter for this company. */
@@ -669,9 +884,17 @@ export interface OutreachRow {
   newerDraft: boolean;
 }
 
+/**
+ * Whether the provider's delivery facts reach us (note #1112): `off` while the
+ * backend holds no webhook signing secret, `waiting` until the first signed
+ * event arrives, `on` after (with when the last one did).
+ */
+export interface OutreachMailFacts { status: 'off' | 'waiting' | 'on'; lastEventAt: string | null }
+
 export interface OutreachListAnswer {
   /** The newest agent write anywhere: what the site says the list is "as of". Null before anything is written. */
   lastWrite: { at: string; by: string } | null;
+  mailFacts: OutreachMailFacts;
   rows: OutreachRow[];
   /** First letters sent so far, for the review reminder. */
   firstSends: number;
@@ -704,6 +927,9 @@ export interface OutreachTargetAnswer {
   noSend: string | null;
   /** The company's two short links for its letters (note #1106). */
   links: OutreachLinks;
+  /** What we know about each letter, and about the company (note #1112). */
+  known: OutreachKnown;
+  mailFacts: OutreachMailFacts;
 }
 
 /** What `agentbuilt outreach set` did, company by company. */

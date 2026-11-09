@@ -76,6 +76,12 @@ export interface MailMessageDocument {
    * them when they wrote it.
    */
   wrote?: string;
+  /**
+   * A letter we sent: the mail provider's own id for it, as it answered the
+   * send. Kept so the provider's later word on it (delivered, bounced, its
+   * pictures loaded) can be matched to it — Outreach reads it (note #1112).
+   */
+  providerId?: string;
   /** Who owns the address it arrived at. The only person who may read it. */
   userId: string;
   /** The envelope recipient — the mailbox, lowercased. */

@@ -4,6 +4,7 @@ import type { MailAttachmentRecord, MailMessageDocument, MailMessageStorage, Mai
 import { MailSendError, type MailSender, type OutboundMailFile } from './mail-sender.js';
 import type { MediaStorage } from './media-storage.js';
 import { MAIL_DOMAIN, MAIL_MAX_CC, mailOutFileRefusal, mailOutFilesRefusal } from '../shared/workspace-mail.js';
+import { outreachMailHtml } from '../shared/outreach.js';
 import { MAIL_REFS_KEPT } from './mail-threads.js';
 import { mailPlaceOf } from './mail-places.js';
 import { mailStoragePrefix } from './mail-ingest.js';
@@ -588,6 +589,8 @@ export class MailOutboxService {
     body: string;
     extras: MailExtras;
     threading?: { inReplyTo?: string; references?: string[] };
+    /** Send an HTML copy of the same words beside the text (Outreach, note #1112). */
+    withHtml?: boolean;
     failure: string;
     row: (sent: Pick<MailMessageDocument, 'from' | 'to' | 'cc' | 'attachments'>) => MailMessageDocument;
   }): Promise<MailMessageDocument> {
@@ -603,6 +606,7 @@ export class MailOutboxService {
       storagePath: file.storagePath,
     }));
     const from = { address: preview.from, ...(args.senderName?.trim() ? { name: args.senderName.trim() } : {}) };
+    let providerId: string | undefined;
     try {
       const attachments: OutboundMailFile[] = [];
       for (const [at, file] of records.entries()) {
@@ -611,12 +615,13 @@ export class MailOutboxService {
           : await this.deps.media!.downloadObject({ storagePath: file.storagePath });
         attachments.push({ fileName: file.fileName, contentType: file.contentType, data });
       }
-      await this.deps.sender.send({
+      const accepted = await this.deps.sender.send({
         from,
         to: [{ address: preview.to.address, ...(preview.to.name ? { name: preview.to.name } : {}) }],
         ...(preview.cc.length ? { cc: preview.cc } : {}),
         subject: preview.subject || '(no subject)',
         text: args.body,
+        ...(args.withHtml ? { html: outreachMailHtml(args.body) } : {}),
         ...(attachments.length ? { attachments } : {}),
         ...(args.threading?.inReplyTo ? { inReplyTo: args.threading.inReplyTo } : {}),
         ...(args.threading?.references?.length ? { references: args.threading.references } : {}),
@@ -625,12 +630,13 @@ export class MailOutboxService {
         // retried approval) is one message at the provider.
         idempotencyKey: args.messageId,
       });
+      providerId = accepted?.providerId;
     } catch (error) {
       if (kept.length) await this.dropStaged(args.userId, args.id);
       if (error instanceof MailOutboxError) throw error;
       throw new MailSendError(error instanceof Error ? error.message : args.failure);
     }
-    const sent = args.row({ from, to: [preview.to], cc: preview.cc, attachments: records });
+    const sent = { ...args.row({ from, to: [preview.to], cc: preview.cc, attachments: records }), ...(providerId ? { providerId } : {}) };
     await this.deps.messages.store(sent);
     return sent;
   }
@@ -664,6 +670,8 @@ export class MailOutboxService {
     outboundId?: string;
     /** A narrower door's own ceilings (Outreach, note #1111); the mail screens never pass one. */
     allowance?: MailAllowance;
+    /** An HTML copy of the same words beside the text: Outreach only (note #1112). */
+    withHtml?: boolean;
   } & MailExtras): Promise<MailMessageDocument> {
     const existing = await this.alreadySent(args.userId, args.outboundId);
     if (existing) return existing;
@@ -675,6 +683,7 @@ export class MailOutboxService {
     return this.deliver({
       userId: args.userId, id, messageId, preview, body, extras: args,
       ...(args.senderName ? { senderName: args.senderName } : {}),
+      ...(args.withHtml ? { withHtml: true } : {}),
       failure: 'The message could not be sent.',
       row: (sent) => ({
         id,
@@ -758,7 +767,7 @@ export class MailOutboxService {
    * in ours.
    */
   async followUp(args: {
-    userId: string; messageId: string; text: string; senderName?: string; allowance?: MailAllowance;
+    userId: string; messageId: string; text: string; senderName?: string; allowance?: MailAllowance; withHtml?: boolean;
   }): Promise<MailMessageDocument> {
     const said = this.words(args.text, 'reply');
     const message = await this.deps.messages.get(args.userId, args.messageId);
@@ -783,6 +792,7 @@ export class MailOutboxService {
       userId: args.userId, id, messageId, preview, body, extras: {},
       ...(args.senderName ? { senderName: args.senderName } : {}),
       threading: { ...(message.messageId ? { inReplyTo: message.messageId } : {}), references },
+      ...(args.withHtml ? { withHtml: true } : {}),
       failure: 'The follow-up could not be sent.',
       row: (sent) => ({
         id,

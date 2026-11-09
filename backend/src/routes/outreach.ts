@@ -16,8 +16,9 @@ import type { RouteDeps } from './deps.js';
  *
  * The pass is the platform operator's alone (`roles.admin`), minted by the
  * pass door below for his live sign-in and only towards the site's origin.
- * No agent can press Send, set a state or read a reply, and no secret
- * anywhere can send a letter as him.
+ * No agent can press Send or read a reply, nobody sets a state (it is read
+ * off what happened, note #1112), and no secret anywhere can send a letter
+ * as him.
  *
  * The words reach the store from his own agents through a separate door
  * (`registerOutreachAgentRoutes`, note #1103) that can write drafts and facts
@@ -87,15 +88,15 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
     }
   });
 
+  /**
+   * There is no door that sets a state any more (note #1112): a state is what
+   * happened. A site tab loaded before that change still knows this address,
+   * so it hears why rather than a bare 404.
+   */
   router.post(`${base}/targets/:id/state`, async (req, res) => {
     const open = await gate(req, res);
     if (!open) return;
-    try {
-      await open.outreach.setState(open.auth.userId, String(req.params.id), req.body?.state);
-      return res.json(await open.outreach.detail(open.auth.userId, String(req.params.id)));
-    } catch (error) {
-      return failed(res, error, 'Changing the state');
-    }
+    return res.status(410).json({ error: 'A state follows what happened now: nothing sets one by hand. Reload the page.' });
   });
 
   router.post(`${base}/targets/:id/notes`, async (req, res) => {
