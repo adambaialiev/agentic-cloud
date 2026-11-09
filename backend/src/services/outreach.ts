@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_STATES, OUTREACH_WORDS_HISTORY, addressMatches,
-  isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
+  fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
   type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch, type OutreachWords,
@@ -334,7 +334,8 @@ export class OutreachService {
       if (!subject || !body) throw new OutreachError(400, 'Write a subject and a letter first.');
       if (body.length > MAX_LETTER) throw new OutreachError(400, `A letter is at most ${MAX_LETTER.toLocaleString('en-US')} characters.`);
       const basedOn = agents ? { subject: agents.subject, body: agents.body } : null;
-      if (agents && subject === agents.subject.trim() && body === agents.body.trim()) {
+      // The Send box shows the agents' words with this company's links filled in (note #1106).
+      if (agents && subject === fillOutreachLinks(agents.subject, record.links).trim() && body === fillOutreachLinks(agents.body, record.links).trim()) {
         // Back to the agents' words, word for word: there is no version of his any more.
         if (!own) return record;
         next = { ...record, ownLetter: null };

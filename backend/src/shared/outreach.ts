@@ -753,7 +753,27 @@ export function followUpSubject(subject: string): string {
 }
 
 /** The letter the Send box opens with, from the owner's own words or the agents' — never the site's. */
+/**
+ * The two link placeholders (note #1106): `{home link}` and `{agents link}`
+ * in any letter, the shared template and follow-ups included, become this
+ * company's own short links in the Send box. So one follow-up text carries
+ * each company's own links, and a letter that goes never holds a brace.
+ */
+export const OUTREACH_LINK_PLACEHOLDERS = { home: '{home link}', agents: '{agents link}' } as const;
+export function fillOutreachLinks(text: string, codes: OutreachLinkCodes | undefined): string {
+  if (!codes) return text;
+  const links = outreachLinks(codes);
+  return text.split(OUTREACH_LINK_PLACEHOLDERS.home).join(links.home).split(OUTREACH_LINK_PLACEHOLDERS.agents).join(links.agents);
+}
+
 export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
+  const draft = draftWords(record, words, touches, next);
+  if (!draft) return null;
+  const fill = (text: string) => fillOutreachLinks(text, record.links);
+  return { ...draft, subject: fill(draft.subject), text: fill(draft.text), newer: draft.newer ? { ...draft.newer, subject: fill(draft.newer.subject), text: fill(draft.newer.text) } : null };
+}
+
+function draftWords(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
   const to = targetEmail(record);
   if (!next || !to) return null;
   const by = record.written?.by.name ?? null;

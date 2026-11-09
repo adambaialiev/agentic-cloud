@@ -133,3 +133,21 @@ describe('The letters\' short links (note #1106)', () => {
     expect(isReservedHandle('go')).toBe(true);
   });
 });
+
+describe('The link placeholders in shared words (note #1106)', () => {
+  it('fills {home link} and {agents link} with the company\'s own links in the Send box, a follow-up included', async () => {
+    const { service } = await world();
+    const parsed = parseOutreachWrite(fixtureOutreachWrite());
+    if (!parsed.ok) throw new Error(parsed.error);
+    const write = parsed.write;
+    write.targets = [{ ...write.targets.find((target) => target.company === 'Fernhill Labs')!, firstEmail: { ...write.targets.find((target) => target.company === 'Fernhill Labs')!.firstEmail!, body: 'Hi Otto,\n\nSee {home link} or have your agent read {agents link}.\n\nAdam' } }];
+    await service.write('user-adam', ROWAN, write);
+    const links = (await service.agentShow('user-adam', 'Fernhill Labs'))!.links;
+    const draft = (await service.detail('user-adam', 'fernhill-labs'))!.draft!;
+    expect(draft.text).toBe(`Hi Otto,\n\nSee ${links.home} or have your agent read ${links.agents}.\n\nAdam`);
+    expect(draft.text).not.toMatch(/[{}]/);
+    // Saving the filled words unchanged is not a version of his own.
+    await service.letter('user-adam', 'fernhill-labs', { action: 'save', subject: draft.subject, text: draft.text });
+    expect((await service.detail('user-adam', 'fernhill-labs'))!.draft!.from).toBe('written');
+  });
+});
