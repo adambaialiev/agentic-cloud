@@ -18,9 +18,13 @@ function seed(): SqliteDb {
   const identity = (userId: string, email: string, doc: Record<string, unknown> = {}) => db
     .prepare('INSERT INTO workspace_email_identities (user_id, email_canonical, doc) VALUES (?, ?, ?)')
     .run(userId, email, serializeDoc({ userId, email, emailCanonical: email, ...doc }));
-  const member = (orgId: string, userId: string, doc: Record<string, unknown> = {}) => db
-    .prepare('INSERT INTO org_members (org_id, user_id, doc) VALUES (?, ?, ?)')
-    .run(orgId, userId, serializeDoc({ orgId, userId, role: 'admin', ...doc }));
+  // The Chief of Staff conversation is stored apart from the membership (note #1098).
+  const member = (orgId: string, userId: string, { workspaceRecapChat, ...doc }: Record<string, unknown> = {}) => {
+    db.prepare('INSERT INTO org_members (org_id, user_id, doc) VALUES (?, ?, ?)')
+      .run(orgId, userId, serializeDoc({ orgId, userId, role: 'admin', ...doc }));
+    if (workspaceRecapChat) db.prepare('INSERT INTO org_member_recap_chats (org_id, user_id, doc) VALUES (?, ?, ?)')
+      .run(orgId, userId, serializeDoc(workspaceRecapChat));
+  };
 
   db.prepare('INSERT INTO orgs (org_id, doc) VALUES (?, ?)')
     .run('org_a', serializeDoc({ orgId: 'org_a', name: 'Acme', createdByUserId: 'u_workplace' }));

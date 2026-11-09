@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openSqliteDb, type SqliteDb } from '../../services/sqlite/sqlite-db.js';
-import { SqliteOrgStorage } from '../../services/sqlite/sqlite-org-storage.js';
+import { moveRecapChatsOutOfMemberships, SqliteOrgStorage } from '../../services/sqlite/sqlite-org-storage.js';
 import { SecretCipher } from '../../services/secret-cipher.js';
 import { InMemoryOrgStorage, mintInviteToken, type OrgStorage } from '../../services/org-storage.js';
 import { WORKSPACE_AGENT_AVATAR_SLUGS } from '../../services/telegram-agent-avatars.js';
@@ -26,6 +26,28 @@ const inFuture = new Date(Date.now() + 60_000).toISOString();
 function storageContract(name: string, make: () => OrgStorage, cleanup?: () => void) {
   describe(name, () => {
     afterEach(() => cleanup?.());
+
+    it('keeps the Chief of Staff conversation apart from the membership (note #1098)', async () => {
+      const storage = make();
+      const org = await storage.createOrg({ name: 'Acme', createdByUserId: 'u1' });
+      await storage.addMember({ orgId: org.orgId, userId: 'u1', role: 'admin' });
+      expect(await storage.getRecapChat(org.orgId, 'u1')).toBeNull();
+      const chat = { messages: [{ id: 'm1', role: 'owner' as const, text: 'Hello', at: '2026-11-09T10:00:00.000Z' }], receipts: ['r1'], pending: [] };
+      expect(await storage.saveRecapChat(org.orgId, 'u1', chat)).toBe(true);
+      expect(await storage.getRecapChat(org.orgId, 'u1')).toEqual(chat);
+      expect(await storage.getMembership(org.orgId, 'u1')).not.toHaveProperty('workspaceRecapChat');
+      // One touch may still carry it beside the membership's own fields.
+      const next = { ...chat, messages: [...chat.messages, { id: 'm2', role: 'assistant' as const, text: 'Hi', at: '2026-11-09T10:00:01.000Z' }] };
+      expect(await storage.touchMember(org.orgId, 'u1', { workspaceRecapChat: next, lastSeenAt: '2026-11-09T10:00:02.000Z' })).toBe(true);
+      expect(await storage.getRecapChat(org.orgId, 'u1')).toEqual(next);
+      expect(await storage.getMembership(org.orgId, 'u1')).toMatchObject({ lastSeenAt: '2026-11-09T10:00:02.000Z' });
+      expect(await storage.getMembership(org.orgId, 'u1')).not.toHaveProperty('workspaceRecapChat');
+      // Not a member: nothing is written, and leaving takes the conversation with it.
+      expect(await storage.saveRecapChat(org.orgId, 'stranger', chat)).toBe(false);
+      expect(await storage.getRecapChat(org.orgId, 'stranger')).toBeNull();
+      await storage.removeMember(org.orgId, 'u1');
+      expect(await storage.getRecapChat(org.orgId, 'u1')).toBeNull();
+    });
 
     it('creates an org and finds a member back through their membership', async () => {
       const storage = make();
@@ -624,5 +646,61 @@ describe('org storage', () => {
       legacyDb.close();
       rmSync(legacyDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('moving the Chief of Staff conversation out of the membership (note #1098)', () => {
+  const legacy = () => {
+    const db = openSqliteDb(':memory:');
+    new SqliteOrgStorage(db);
+    const chat = {
+      messages: [
+        { id: 'g', role: 'assistant', kind: 'greeting', text: 'Hi, I\u2019m your Chief of Staff.', at: '2026-09-13T12:01:10.000Z' },
+        { id: 'o1', role: 'owner', text: 'A waitlist page \ud83d\ude80', at: '2026-09-13T12:03:00.000Z' },
+        { id: 'd', role: 'action', text: '---', kind: 'new-chat-divider', at: '2026-09-14T08:00:00.000Z' },
+        { id: 'h', role: 'action', text: 'Handed to Theo', at: '2026-09-14T08:01:00.000Z', proposals: [{ kind: 'pr', id: 'p1' }] },
+      ],
+      receipts: ['r1'], pending: [{ agentId: 'a1', name: 'Theo', sentAt: '2026-09-14T08:01:00.000Z', status: 'waiting' }], running: 'r1',
+    };
+    const insert = db.prepare('INSERT INTO org_members (org_id, user_id, doc) VALUES (?, ?, ?)');
+    insert.run('o1', 'u1', JSON.stringify({ orgId: 'o1', userId: 'u1', role: 'admin', joinedAt: '2026-09-13T12:00:00.000Z', lastSeenAt: { __ts: '2026-11-01T00:00:00.000Z' }, workspaceRecapChat: chat }));
+    insert.run('o1', 'u2', JSON.stringify({ orgId: 'o1', userId: 'u2', role: 'member', joinedAt: '2026-09-13T12:00:00.000Z' }));
+    insert.run('o2', 'u1', JSON.stringify({ orgId: 'o2', userId: 'u1', role: 'admin', joinedAt: '2026-09-15T12:00:00.000Z', workspaceRecapChat: { messages: [], receipts: [], pending: [] } }));
+    return { db, chat };
+  };
+  const raw = (db: SqliteDb, table: string, org: string, user: string) =>
+    (db.prepare(`SELECT doc FROM ${table} WHERE org_id = ? AND user_id = ?`).get(org, user) as { doc: string } | undefined)?.doc;
+
+  it('moves every conversation byte for byte, leaves the rest of each membership as it was, and a second start finds nothing', async () => {
+    const { db, chat } = legacy();
+    const before = JSON.parse(raw(db, 'org_members', 'o1', 'u1')!) as Record<string, unknown>;
+    const first = moveRecapChatsOutOfMemberships(db);
+    expect(first).toMatchObject({ moved: 2, merged: 0 });
+    expect(raw(db, 'org_member_recap_chats', 'o1', 'u1')).toBe(JSON.stringify(chat));
+    const { workspaceRecapChat: _moved, ...rest } = before;
+    expect(raw(db, 'org_members', 'o1', 'u1')).toBe(JSON.stringify(rest));
+    expect(raw(db, 'org_member_recap_chats', 'o1', 'u2')).toBeUndefined();
+    const storage = new SqliteOrgStorage(db);
+    expect(await storage.getRecapChat('o1', 'u1')).toEqual(chat);
+    expect(await storage.getRecapChat('o2', 'u1')).toEqual({ messages: [], receipts: [], pending: [] });
+    expect((await storage.getMembership('o1', 'u1'))?.lastSeenAt).toBeTruthy();
+    expect(moveRecapChatsOutOfMemberships(db)).toEqual({ moved: 0, merged: 0, bytes: 0 });
+  });
+
+  it('after a rollback wrote a newer copy into the membership, keeps both copies\u2019 rows and the newer state', async () => {
+    const { db, chat } = legacy();
+    moveRecapChatsOutOfMemberships(db);
+    // An older release, rolled back to, starts a blank conversation in the membership.
+    const member = JSON.parse(raw(db, 'org_members', 'o1', 'u1')!) as Record<string, unknown>;
+    const newer = { messages: [{ id: 'o9', role: 'owner', text: 'Still there?', at: '2026-11-09T10:00:00.000Z' }], receipts: ['r9'], pending: [] };
+    db.prepare('UPDATE org_members SET doc = ? WHERE org_id = ? AND user_id = ?').run(JSON.stringify({ ...member, workspaceRecapChat: newer }), 'o1', 'u1');
+    expect(moveRecapChatsOutOfMemberships(db)).toMatchObject({ moved: 1, merged: 1 });
+    const merged = await new SqliteOrgStorage(db).getRecapChat('o1', 'u1');
+    expect(merged?.messages.map((m) => m.id)).toEqual(['g', 'o1', 'd', 'h', 'o9']);
+    expect(merged?.receipts).toEqual(['r1', 'r9']);
+    expect(merged?.pending).toEqual([]);
+    // The state is the newer copy's: no request of the older one still counts as running.
+    expect(merged?.running).toBeUndefined();
+    expect(chat.running).toBe('r1');
   });
 });

@@ -100,7 +100,7 @@ describe('the person’s Chiefs of Staff in two workplaces (note #753)', () => {
     expect(studio.waiting).toEqual([]);
     expect(recapRowViews(studio.messages as never)).toContainEqual({ form: 'did', parts: ['Sent to ', { agent: 'Chief of Staff in Bakery' }], body: 'How many orders came in today?' });
     // Nobody else sees any of it: a teammate's membership holds no conversation.
-    expect((await x.orgStorage.getMembership(x.studio, 'u2'))?.workspaceRecapChat).toBeUndefined();
+    expect(await x.orgStorage.getRecapChat(x.studio, 'u2')).toBeNull();
   });
 
   it('never loops: the turn answering another workplace, and the reaction to its answer, cannot message a workplace', async () => {
@@ -208,8 +208,7 @@ describe('the person’s Chiefs of Staff in two workplaces (note #753)', () => {
     x.turns[x.bakery]!.push(() => new Promise(() => {}));
     await x.ask('Ask Bakery how many orders came in.');
     expect((await x.idle(x.studio)).waiting).toEqual(['Chief of Staff in Bakery']);
-    const member = await x.orgStorage.getMembership(x.studio, 'u1');
-    const chat = member!.workspaceRecapChat!;
+    const chat = (await x.orgStorage.getRecapChat(x.studio, 'u1'))!;
     chat.crossPending = chat.crossPending!.map((wait) => ({ ...wait, sentAt: new Date(Date.now() - CROSS_REPLY_MAX_MS - 1000).toISOString() }));
     await x.orgStorage.touchMember(x.studio, 'u1', { workspaceRecapChat: chat });
     const closed = await x.chat.read('u1', x.studio);

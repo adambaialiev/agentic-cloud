@@ -319,7 +319,8 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
   private async load(user: string, org: string) {
     const member = await this.deps.orgStorage?.getMembership(org, user);
     if (!member) throw new RecapChatError(403, 'You no longer belong to this workplace.');
-    return structuredClone(member.workspaceRecapChat ?? blank());
+    // Its own table since note #1098: the membership no longer carries it.
+    return structuredClone(await this.deps.orgStorage!.getRecapChat(org, user) ?? blank());
   }
   private async save(user: string, org: string, state: RecapConversation) {
     // The native CLI conversation grows until an explicit Reset chat, as a
@@ -327,7 +328,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
     // dropping its beginning would make a lost native session impossible to
     // reseed without forgetting work the person never reset.
     state.receipts = state.receipts.slice(-500);
-    if (!await this.deps.orgStorage?.touchMember(org, user, { workspaceRecapChat: state })) throw new RecapChatError(403, 'Workplace access changed.');
+    if (!await this.deps.orgStorage?.saveRecapChat(org, user, state)) throw new RecapChatError(403, 'Workplace access changed.');
   }
   private add(state: RecapConversation, role: RecapMessage['role'], text: string, extras: Partial<RecapMessage> = {}) {
     state.messages.push({ id: randomUUID(), role, text: text.slice(0, 16000), at: new Date().toISOString(), ...extras });
@@ -345,8 +346,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
   }
   /** The plate on Home: the agent's state as the conversation knows it. */
   async status(user: string, org: string, started: boolean): Promise<WorkspaceAgentState> {
-    const member = await this.deps.orgStorage?.getMembership(org, user);
-    const state = member?.workspaceRecapChat ?? blank();
+    const state = (await this.deps.orgStorage?.getRecapChat(org, user)) ?? blank();
     const working = Boolean(state.running) && this.active.has(this.key(user, org));
     const last = state.messages.filter(m => m.role === 'owner').at(-1)?.at;
     // Its last reply, whole (note #452): the newest row it wrote, wherever
@@ -559,7 +559,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
   async fileAccess(user: string, org: string, fileId: string, preview = false): Promise<{ url: string; fileName: string; expiresAt: string; width?: number; height?: number } | null> {
     const media = this.deps.mediaStorage;
     if (!media) return null;
-    const state = (await this.deps.orgStorage?.getMembership(org, user))?.workspaceRecapChat;
+    const state = await this.deps.orgStorage?.getRecapChat(org, user);
     const file = state?.messages.flatMap(m => m.files ?? []).find(f => f.id === fileId);
     if (!file?.storagePath) return null;
     let size = file.width && file.height ? { width: file.width, height: file.height } : null;
@@ -585,7 +585,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
   async fileText(user: string, org: string, fileId: string): Promise<WorkspaceChatFileTextAnswer | null> {
     const media = this.deps.mediaStorage;
     if (!media) return null;
-    const state = (await this.deps.orgStorage?.getMembership(org, user))?.workspaceRecapChat;
+    const state = await this.deps.orgStorage?.getRecapChat(org, user);
     const file = state?.messages.flatMap(m => m.files ?? []).find(f => f.id === fileId);
     if (!file?.storagePath) return null;
     return readChatFileText(media, { ...file, storagePath: file.storagePath });
@@ -1174,7 +1174,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
     for (const org of orgs) {
       const members = await this.deps.orgStorage!.listMembers(org.orgId).catch(() => []);
       for (const member of members) {
-        if (!member.workspaceRecapChat?.running) continue;
+        if (!(await this.deps.orgStorage!.getRecapChat(org.orgId, member.userId).catch(() => null))?.running) continue;
         await this.read(member.userId, org.orgId).catch((error) => console.warn(`[workspace-agent] ${member.userId}/${org.orgId} could not recover the interrupted request:`, error));
       }
     }

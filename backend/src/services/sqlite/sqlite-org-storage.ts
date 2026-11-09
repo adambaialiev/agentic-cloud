@@ -26,6 +26,76 @@ import { pickWorkspaceAgentAvatarSlug } from '../telegram-agent-avatars.js';
 import type { SecretCipher } from '../secret-cipher.js';
 import { openSeatCredentials, sealSeatCredentials } from '../seat-credential-cipher.js';
 import { deserializeDoc, serializeDoc, type SqliteDb } from './sqlite-db.js';
+import type { RecapConversation } from '../../shared/workspace-recap-chat.js';
+
+type RawRecapChat = { messages?: Array<{ id?: string }>; receipts?: string[] } & Record<string, unknown>;
+
+/**
+ * Note #1098: the Chief of Staff conversation used to ride the membership doc
+ * as `workspaceRecapChat`. Every membership still carrying one has it moved to
+ * `org_member_recap_chats` on start, one membership per transaction, so the
+ * move is resumable at any row and a second run finds nothing to do.
+ *
+ * Inside each transaction the copy is written, read back and compared byte
+ * for byte with what it was made from; only then is the field dropped from
+ * the membership. Raw JSON in and out, so nothing else on either row changes
+ * and the conversation reads back exactly as before.
+ *
+ * Both present means a release from before this one wrote a conversation
+ * into the membership after the move (a rollback): the rows it added are
+ * appended after the moved ones and its state (pending, running, cursors)
+ * is the one kept, so neither copy's messages are lost.
+ */
+export function moveRecapChatsOutOfMemberships(db: SqliteDb): { moved: number; merged: number; bytes: number } {
+  const select = db.prepare(`SELECT org_id, user_id FROM org_members WHERE doc LIKE '%"workspaceRecapChat"%'`);
+  const read = db.prepare('SELECT doc FROM org_members WHERE org_id = ? AND user_id = ?');
+  const existing = db.prepare('SELECT doc FROM org_member_recap_chats WHERE org_id = ? AND user_id = ?');
+  const upsert = db.prepare('INSERT INTO org_member_recap_chats (org_id, user_id, doc) VALUES (?, ?, ?) '
+    + 'ON CONFLICT (org_id, user_id) DO UPDATE SET doc = excluded.doc');
+  const update = db.prepare('UPDATE org_members SET doc = ? WHERE org_id = ? AND user_id = ?');
+  const result = { moved: 0, merged: 0, bytes: 0 };
+  const moveOne = db.transaction((orgId: string, userId: string) => {
+    const row = read.get(orgId, userId) as { doc: string } | undefined;
+    if (!row) return;
+    const member = JSON.parse(row.doc) as Record<string, unknown>;
+    if (!('workspaceRecapChat' in member)) return;
+    const chat = member.workspaceRecapChat as RawRecapChat | null | undefined;
+    delete member.workspaceRecapChat;
+    if (chat && typeof chat === 'object') {
+      const before = existing.get(orgId, userId) as { doc: string } | undefined;
+      let written: string;
+      if (before) {
+        const kept = JSON.parse(before.doc) as RawRecapChat;
+        const ids = new Set((kept.messages ?? []).map((m) => m.id));
+        written = JSON.stringify({
+          ...chat,
+          messages: [...(kept.messages ?? []), ...(chat.messages ?? []).filter((m) => !ids.has(m.id))],
+          receipts: [...new Set([...(kept.receipts ?? []), ...(chat.receipts ?? [])])].slice(-500),
+        });
+        result.merged += 1;
+      } else {
+        written = JSON.stringify(chat);
+      }
+      upsert.run(orgId, userId, written);
+      const back = existing.get(orgId, userId) as { doc: string } | undefined;
+      if (back?.doc !== written) throw new Error(`recap chat copy for ${orgId}/${userId} did not read back identically`);
+      result.bytes += written.length;
+    }
+    update.run(JSON.stringify(member), orgId, userId);
+    result.moved += 1;
+  });
+  for (const { org_id: orgId, user_id: userId } of select.all() as Array<{ org_id: string; user_id: string }>) {
+    moveOne(orgId, userId);
+  }
+  if (result.moved) {
+    const left = (db.prepare(`SELECT count(*) AS n FROM org_members WHERE json_extract(doc, '$.workspaceRecapChat') IS NOT NULL`).get() as { n: number }).n;
+    const rows = (db.prepare('SELECT count(*) AS n FROM org_member_recap_chats').get() as { n: number }).n;
+    console.log(`[recap-chat-table] moved ${result.moved} Chief of Staff conversation(s) out of membership records`
+      + ` (${(result.bytes / 1048576).toFixed(1)} MB${result.merged ? `, ${result.merged} merged with a newer copy` : ''});`
+      + ` ${rows} in org_member_recap_chats, ${left} left on memberships`);
+  }
+  return result;
+}
 
 /**
  * SQLite-backed OrgStorage. Same shapes and rules as the InMemory
@@ -65,6 +135,7 @@ export class SqliteOrgStorage implements OrgStorage {
       }
     });
     migrate();
+    moveRecapChatsOutOfMemberships(this.db);
   }
 
   private membershipRow(orgId: string, userId: string): OrgMembershipDocument | null {
@@ -211,16 +282,34 @@ export class SqliteOrgStorage implements OrgStorage {
   }
 
   async touchMember(orgId: string, userId: string, touch: OrgMemberTouch): Promise<boolean> {
+    const { workspaceRecapChat, ...rest } = touch;
     const tx = this.db.transaction((): boolean => {
       const row = this.db.prepare('SELECT doc FROM org_members WHERE org_id = ? AND user_id = ?')
         .get(orgId, userId) as { doc: string } | undefined;
       if (!row) return false;
-      const membership = { ...deserializeDoc<OrgMembershipDocument>(row.doc), ...touch };
+      if (workspaceRecapChat) this.writeRecapChat(orgId, userId, workspaceRecapChat);
+      if (!Object.keys(rest).length) return true;
+      const membership = { ...deserializeDoc<OrgMembershipDocument>(row.doc), ...rest };
       this.db.prepare('UPDATE org_members SET doc = ? WHERE org_id = ? AND user_id = ?')
         .run(serializeDoc(membership), orgId, userId);
       return true;
     });
     return tx();
+  }
+
+  private writeRecapChat(orgId: string, userId: string, chat: RecapConversation): void {
+    this.db.prepare('INSERT INTO org_member_recap_chats (org_id, user_id, doc) VALUES (?, ?, ?) '
+      + 'ON CONFLICT (org_id, user_id) DO UPDATE SET doc = excluded.doc').run(orgId, userId, serializeDoc(chat));
+  }
+
+  async getRecapChat(orgId: string, userId: string): Promise<RecapConversation | null> {
+    const row = this.db.prepare('SELECT doc FROM org_member_recap_chats WHERE org_id = ? AND user_id = ?')
+      .get(orgId, userId) as { doc: string } | undefined;
+    return row ? deserializeDoc<RecapConversation>(row.doc) : null;
+  }
+
+  async saveRecapChat(orgId: string, userId: string, chat: RecapConversation): Promise<boolean> {
+    return this.touchMember(orgId, userId, { workspaceRecapChat: chat });
   }
 
   async initializeWorkspaceAgentSettings(
@@ -248,6 +337,7 @@ export class SqliteOrgStorage implements OrgStorage {
       const removed = this.db.prepare('DELETE FROM org_members WHERE org_id = ? AND user_id = ?')
         .run(orgId, userId).changes > 0;
       if (removed) {
+        this.db.prepare('DELETE FROM org_member_recap_chats WHERE org_id = ? AND user_id = ?').run(orgId, userId);
         this.db.prepare('DELETE FROM org_seat_assignments WHERE org_id = ? AND user_id = ?').run(orgId, userId);
         if (existing?.active) {
           const row = this.db.prepare('SELECT org_id, doc FROM org_members WHERE user_id = ? ORDER BY rowid LIMIT 1')

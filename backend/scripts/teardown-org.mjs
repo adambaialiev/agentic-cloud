@@ -258,6 +258,7 @@ const removed = db.transaction(() => ({
   secrets: db.prepare('DELETE FROM secrets WHERE user_id = ?').run(owner).changes,
   seats: db.prepare('DELETE FROM org_seats WHERE org_id = ?').run(orgId).changes,
   invites: db.prepare('DELETE FROM org_invites WHERE org_id = ?').run(orgId).changes,
+  recapChats: db.prepare('DELETE FROM org_member_recap_chats WHERE org_id = ?').run(orgId).changes,
   members: db.prepare('DELETE FROM org_members WHERE org_id = ?').run(orgId).changes,
   orgs: db.prepare('DELETE FROM orgs WHERE org_id = ?').run(orgId).changes,
 }))();

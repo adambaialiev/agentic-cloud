@@ -6867,7 +6867,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     const stopped = createMockResponse();
     await stop(mockRequest({ headers: authHeader(42), query: { org: org.orgId }, body: {} }), stopped);
     expect(stopped.body).toEqual({ ok: true, stopped: true, name: 'Workspace Agent' });
-    await vi.waitFor(async () => expect((await orgStorage.getMembership(org.orgId, 'user-1'))?.workspaceRecapChat?.running).toBeUndefined());
+    await vi.waitFor(async () => expect((await orgStorage.getRecapChat(org.orgId, 'user-1'))?.running).toBeUndefined());
     const read = createMockResponse();
     await handler('/api/recap/chat', 'get')(mockRequest({ headers: authHeader(42), query: { org: org.orgId } }), read);
     const texts = (read.body as { messages: Array<{ text: string }> }).messages.map(m => m.text);
@@ -6892,7 +6892,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     const accepted = createMockResponse();
     await post(mockRequest({ headers: authHeader(42), query: { org: org.orgId }, body: { clientId: 'request-399', text: 'Hi' } }), accepted);
     expect(accepted.statusCode).toBe(202);
-    await vi.waitFor(async () => expect((await orgStorage.getMembership(org.orgId, 'user-1'))?.workspaceRecapChat?.running).toBeUndefined());
+    await vi.waitFor(async () => expect((await orgStorage.getRecapChat(org.orgId, 'user-1'))?.running).toBeUndefined());
     const own = createMockResponse();
     await getRouteHandler(deps, '/api/recap/chat', 'get')(mockRequest({ headers: authHeader(42), query: { org: org.orgId } }), own);
     expect(JSON.stringify(own.body)).toContain('Your private answer');
@@ -7526,7 +7526,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     await vi.waitFor(async () => expect((await savedBriefing(orgStorage, org.orgId, 'user-1'))?.recap?.text).toBe('The booking page is ready.'));
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(model).not.toHaveBeenCalled();
-    expect((await orgStorage.getMembership(org.orgId, 'user-1'))?.workspaceRecapChat).toBeUndefined();
+    expect(await orgStorage.getRecapChat(org.orgId, 'user-1')).toBeNull();
   });
 
   /**
