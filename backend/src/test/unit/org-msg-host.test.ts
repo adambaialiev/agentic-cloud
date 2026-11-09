@@ -71,7 +71,11 @@ function harness(options: {
       // As Fly did on production (9 Nov 2026): the update is applied and a
       // stopped machine STAYS stopped.
       updateMachine: async (_app, _id, config) => { log.push(`update idle=${config.env?.MSG_HOST_IDLE_MS}`); machines[0]!.config = config; return machines[0]!; },
-      waitForMachineState: async () => undefined,
+      // As Fly: waiting for "started" on a machine that is not starting times out.
+      waitForMachineState: async (_app, _id, wanted) => {
+        if (wanted?.state === 'started' && machines[0] && machines[0].state !== 'started') throw new Error('Fly API error (408): deadline_exceeded');
+        return undefined;
+      },
       deleteMachine: async (_app, id) => { log.push(`destroy ${id}`); machines.splice(0, machines.length); },
       deleteVolume: async (_app, id) => { log.push(`delete ${id}`); volumes.splice(0, volumes.length); },
       deleteApp: async (app) => { log.push(`delete app ${app}`); },

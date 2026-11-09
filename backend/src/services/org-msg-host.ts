@@ -266,11 +266,20 @@ export class OrgMsgHostService {
           env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
           restart: { policy: RESTART_POLICY },
         });
-        const updated = await client.getMachine(existing.app, existing.machineId);
-        if (updated.state !== 'started' && updated.state !== 'starting') {
-          await client.startMachine(existing.app, existing.machineId);
+        // Production, 9 Nov 2026 19:25 UTC: right after the update Fly is
+        // still REPLACING the machine and refuses a start (412). Let the
+        // update settle — a running machine comes back started by itself —
+        // and start it only if it settled stopped.
+        const settled = await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 20 })
+          .then(() => true, () => false);
+        if (!settled) {
+          const after = await client.getMachine(existing.app, existing.machineId);
+          if (after.state !== 'started') {
+            if (after.state !== 'stopped') await client.waitForMachineState(existing.app, existing.machineId, { state: 'stopped', timeoutSeconds: 30 }).catch(() => {});
+            await client.startMachine(existing.app, existing.machineId);
+          }
+          await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 60 });
         }
-        await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 60 });
         this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
       } else {
         if (machine.state !== 'started') {
