@@ -68,7 +68,9 @@ function harness(options: {
       },
       getMachine: async () => machines[0]!,
       startMachine: async () => { log.push('start'); machines[0]!.state = 'started'; down = false; },
-      updateMachine: async (_app, _id, config) => { log.push(`update idle=${config.env?.MSG_HOST_IDLE_MS}`); machines[0]!.config = config; machines[0]!.state = 'started'; down = false; return machines[0]!; },
+      // As Fly did on production (9 Nov 2026): the update is applied and a
+      // stopped machine STAYS stopped.
+      updateMachine: async (_app, _id, config) => { log.push(`update idle=${config.env?.MSG_HOST_IDLE_MS}`); machines[0]!.config = config; return machines[0]!; },
       waitForMachineState: async () => undefined,
       deleteMachine: async (_app, id) => { log.push(`destroy ${id}`); machines.splice(0, machines.length); },
       deleteVolume: async (_app, id) => { log.push(`delete ${id}`); volumes.splice(0, volumes.length); },
@@ -258,7 +260,12 @@ describe('the workplace messaging machine', () => {
       h.machines[0]!.config!.env = { ...h.machines[0]!.config!.env, MSG_HOST_IDLE_MS: String(10 * 60_000) };
       h.advance(30 * 60_000); h.sleepMachine(); h.log.length = 0;
       await h.service.wake(ORG); await settle();
-      expect(h.log).toEqual(['tunnel', 'update idle=1800000']);
+      // The update does not boot it, so it is started — once, and it answers.
+      expect(h.log).toEqual(['tunnel', 'update idle=1800000', 'start']);
+      expect(h.machines[0]!.state).toBe('started');
+      h.log.length = 0;
+      await h.service.call(ORG, 'unread', { userId: 'a' });
+      expect(h.log).toEqual([]);
       expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_ORG: ORG, MSG_HOST_IDLE_MS: '1800000' });
     });
     it('a running machine with the old idle is not touched, and is trusted warm only for its own ten minutes', async () => {

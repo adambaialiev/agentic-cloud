@@ -254,6 +254,14 @@ export class OrgMsgHostService {
           await client.updateMachine(existing.app, existing.machineId, {
             ...machine.config, env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
           });
+          // Measured on production, 9 Nov 2026 18:36 UTC: Fly applied the
+          // update and left this STOPPED machine stopped ("update stopped"),
+          // whatever the API notes say about updates booting a machine, so the
+          // wait below ran its full minute for nothing. Start it explicitly.
+          const updated = await client.getMachine(existing.app, existing.machineId);
+          if (updated.state !== 'started' && updated.state !== 'starting') {
+            await client.startMachine(existing.app, existing.machineId);
+          }
           this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
         } else {
           await client.startMachine(existing.app, existing.machineId);
