@@ -2495,6 +2495,8 @@ app.use('/api/agent-cli/jobs', express.json({ limit: '1mb' }));
 // by, the agent CLI's and the Workspace's own, get the wider parser; the
 // route's own length check is still the one that refuses, in words.
 app.use('/api/agent-cli/notes', express.json({ limit: '1mb' }));
+// A batch of outreach companies with their profiles (note #1103) is ~100 kB today.
+app.use('/api/agent-cli/outreach', express.json({ limit: '2mb' }));
 app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 // The org-CI webhook and job result are HMAC-verified over the RAW body, so
 // they must reach their routes as bytes. Same trick as the knowledge mount:

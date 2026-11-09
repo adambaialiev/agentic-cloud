@@ -1101,7 +1101,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v190 (note #1090): CLI 1.74.0 — `agentbuilt member list` and `member
 // message`, the Chief of Staff's write-only draft of a direct message to a
 // teammate, released by the person's tap; help agents says so.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 190;
+// v191 (note #1103): CLI 1.75.0 — `agentbuilt outreach list | show | set`,
+// the platform operator's agents writing outreach words straight into his
+// Outreach store. Out of HELP (operator only), like `signups`.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 191;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

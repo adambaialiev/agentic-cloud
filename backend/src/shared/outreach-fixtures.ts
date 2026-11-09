@@ -1,9 +1,11 @@
 /**
- * A made-up seed for Outreach's tests and browser check (note #1089), shaped
- * exactly like the file made from note #799. Every company, person and
- * address here is invented — the real list lives on a note in the workplace,
- * never in this public repository — and the cities are the seven the note
- * asks the local time to be right for.
+ * A made-up batch for Outreach's tests and the site's browser check (notes
+ * #1089, #1103), shaped exactly like the file an agent hands `agentbuilt
+ * outreach set`. Every company, person and address here is invented — the
+ * real list lives in the platform's database, never in this public
+ * repository — and the cities are the seven the note asks the local time to
+ * be right for. The first company carries a profile, with one field the site
+ * does not lay out, to prove a profile travels whole.
  */
 
 const SIGNATURE = 'Adam\nFounder, Agentic Cloud Computer';
@@ -35,10 +37,36 @@ const COMPANIES: FixtureCompany[] = [
   { company: 'Bigfirm Inc', city: null, first: '', person: '', email: null, fit: 'not a fit' },
 ];
 
-export function fixtureOutreachSeed(): Record<string, unknown> {
+/** A profile the way the research writes one: every fact with its source, gaps as gaps. */
+export function fixtureOutreachProfile(): Record<string, unknown> {
+  return {
+    builds: 'Online clinics for small towns, booked and run by a fleet of agents.',
+    buildsSource: 'northwind-health.test/about (read 9 Nov 2026)',
+    team: '12 people, San Francisco; Mara Quill CEO.',
+    teamSource: 'their careers page',
+    agentsAndTools: 'Claude Code and Codex on every engineer\'s machine.',
+    problems: [
+      { quote: 'Our agents step on each other\'s branches every night.', who: 'Mara Quill, CEO', source: 'northwind-health.test/blog/agents', date: '2 Nov 2026' },
+      { quote: 'Nobody can tell which agent changed the booking flow.', who: 'Mara Quill', source: 'a talk, Agents Meetup SF', date: 'Oct 2026' },
+    ],
+    workplaceFixes: 'Each piece of work is a note showing which agent claimed it; one list shows every agent\'s latest work.',
+    match: 'matches',
+    matchNote: 'The strongest of the made-up ten.',
+    people: [
+      { name: 'Mara Quill', role: 'CEO', address: 'mara@northwind-health.test', where: 'their contact page' },
+      { name: 'Teo Brandt', role: 'CTO', address: null, where: 'their about page; no address found' },
+    ],
+    recipientChange: null,
+    gaps: ['Which agent tooling the team runs beyond Claude Code: not stated.'],
+    researchedOn: '2026-11-09',
+    fundingRound: 'Seed, 2025 (a field the site does not lay out)',
+  };
+}
+
+export function fixtureOutreachWrite(): Record<string, unknown> {
   let batch = 0;
   return {
-    source: 'A made-up seed shaped like note #799 (test fixture)',
+    source: 'A made-up batch shaped like outreach-targets.json (test fixture)',
     generatedBy: 'test',
     generatedAt: '2026-11-09',
     rules: { channel: 'email only', maxWords: 120, wordCountIncludes: 'subject line and signature' },
@@ -78,9 +106,13 @@ export function fixtureOutreachSeed(): Record<string, unknown> {
         firstEmail: order && company.line && company.email
           ? (() => {
             const body = letter(company.first, company.line);
-            return { to: company.email, recipient: company.person, wherePrinted: 'their contact page', note: null, subject: 'Your agents need a workplace', body, wordCount: null };
+            return {
+              to: company.email, recipient: company.person, wherePrinted: 'their contact page', note: null, subject: 'Your agents need a workplace', body, wordCount: null,
+              ...(at === 0 ? { opensOn: { quote: 'Our agents step on each other\'s branches every night.', who: 'Mara Quill, CEO', source: 'northwind-health.test/blog/agents', date: '2 Nov 2026' }, painMatch: 'matches' } : {}),
+            };
           })()
           : null,
+        ...(at === 0 ? { profile: fixtureOutreachProfile() } : {}),
       };
     }),
   };

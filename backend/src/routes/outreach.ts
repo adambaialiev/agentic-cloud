@@ -2,7 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response, Router } from 'ex
 import { MailOutboxError } from '../services/mail-outbox.js';
 import { MailSendError } from '../services/mail-sender.js';
 import { OutreachError } from '../services/outreach.js';
-import { parseOutreachSeed, type OutreachImportAnswer, type OutreachSendAnswer } from '../shared/outreach.js';
+import { parseOutreachWrite, type OutreachSendAnswer, type OutreachWriteAnswer } from '../shared/outreach.js';
 import { outreachPassFrom, outreachReturnTo } from '../services/outreach-pass.js';
 import type { RouteDeps } from './deps.js';
 
@@ -16,22 +16,22 @@ import type { RouteDeps } from './deps.js';
  *
  * The pass is the platform operator's alone (`roles.admin`), minted by the
  * pass door below for his live sign-in and only towards the site's origin.
- * There is no agent door at all: no agent can read the targets or press
- * Send, and no secret anywhere can send a letter as him.
+ * No agent can press Send, set a state or read a reply, and no secret
+ * anywhere can send a letter as him.
+ *
+ * The words reach the store from his own agents through a separate door
+ * (`registerOutreachAgentRoutes`, note #1103) that can write drafts and facts
+ * and nothing else. The site reads the store live: there is no import.
  *
  * Nothing here exists in a private copy, and where no store is wired: every
- * door answers 404.
- *
- * The seed is read from a file on a note the owner can open (the import
- * names the note and the file), so the target list — real companies and
- * addresses — lives in the workplace, never in this public repository.
+ * door answers 404. The target list — real companies and addresses — lives
+ * in the platform's database, never in this public repository.
  */
 export interface OutreachAuth { userId: string }
 
 export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router, base: string, deps: RouteDeps,
   authenticate: (req: Request, res: Response) => Promise<Auth | null>,
-  isOperator: (auth: Auth) => Promise<boolean>,
-  readNoteFile: (auth: Auth, req: Request, res: Response, note: string, fileName: string) => Promise<Buffer | null>) {
+  isOperator: (auth: Auth) => Promise<boolean>) {
   const gate = async (req: Request, res: Response) => {
     const auth = await authenticate(req, res);
     if (!auth) return null;
@@ -61,30 +61,6 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
       return res.json(await open.outreach.list(open.auth.userId));
     } catch (error) {
       return failed(res, error, 'Reading Outreach');
-    }
-  });
-
-  /** Bring the companies and the words in from the seed file on a note (once, and again when note #799 changes). */
-  router.post(`${base}/import`, async (req, res) => {
-    const open = await gate(req, res);
-    if (!open) return;
-    const note = String(req.body?.note ?? '').replace(/^#/, '').trim();
-    const fileName = String(req.body?.file ?? '').trim();
-    if (!/^\d{1,9}$/.test(note) || !fileName) return res.status(400).json({ error: 'Name the note and the file on it.' });
-    try {
-      const bytes = await readNoteFile(open.auth, req, res, note, fileName);
-      if (!bytes) return;
-      let json: unknown;
-      try {
-        json = JSON.parse(bytes.toString('utf8'));
-      } catch {
-        return res.status(400).json({ error: `${fileName} is not JSON.` });
-      }
-      const parsed = parseOutreachSeed(json);
-      if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-      return res.json(await open.outreach.import(open.auth.userId, parsed.seed) satisfies OutreachImportAnswer);
-    } catch (error) {
-      return failed(res, error, 'The import');
     }
   });
 
@@ -133,6 +109,18 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
     }
   });
 
+  /** His own first letter: saved as he types (`save`), set aside for the agents' (`take`), kept over an agent's newer draft (`keep`). */
+  router.post(`${base}/targets/:id/letter`, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    try {
+      await open.outreach.letter(open.auth.userId, String(req.params.id), { action: req.body?.action, subject: req.body?.subject, text: req.body?.text });
+      return res.json(await open.outreach.detail(open.auth.userId, String(req.params.id)));
+    } catch (error) {
+      return failed(res, error, 'Saving the letter');
+    }
+  });
+
   /** The owner's press. The one way a letter leaves from here. */
   router.post(`${base}/targets/:id/send`, async (req, res) => {
     const open = await gate(req, res);
@@ -144,6 +132,80 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
       return res.status(201).json(sent satisfies OutreachSendAnswer);
     } catch (error) {
       return failed(res, error, 'Sending');
+    }
+  });
+}
+
+/** An agent, as the agent CLI knows it: whose it is, which it is, and its name. */
+export interface OutreachAgentAuth { userId: string; agentId: string; agents: Record<string, { name?: string }> }
+
+/**
+ * The agents' door (note #1103): `agentbuilt outreach list | show | set`.
+ * Only the platform operator's own agents pass it — the same rule as his
+ * other platform verbs (sign-ups, copies, the radio library) — and they write
+ * into HIS Outreach, the one his site reads. Anybody else's agent, in any
+ * workplace, hears it is not theirs; a private copy has none.
+ *
+ * What it can do is the whole point: write a company's facts, profile and
+ * first letter, and the shared template and follow-ups, signed with the
+ * agent's name and the time. It has no route that sends, sets a state, adds
+ * a note, edits the owner's own fields or letter, or reads a reply, a note
+ * or a sent letter — those exist only behind the owner's pass above.
+ */
+export function registerOutreachAgentRoutes<Auth extends OutreachAgentAuth>(router: Router, base: string, deps: RouteDeps,
+  authenticate: (req: Request, res: Response) => Promise<Auth | null>,
+  isOperator: (auth: Auth) => Promise<boolean>) {
+  const gate = async (req: Request, res: Response) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    if (!deps.outreach || deps.privateCopy) { res.status(404).json({ error: 'There is no Outreach here.' }); return null; }
+    if (!(await isOperator(auth))) {
+      res.status(403).json({ error: "Outreach is the platform operator's own: only his agents can read or write it." });
+      return null;
+    }
+    return { auth, outreach: deps.outreach };
+  };
+  const failed = (res: Response, error: unknown, what: string) => {
+    if (error instanceof OutreachError) return res.status(error.status).json({ error: error.message });
+    console.warn(`[outreach] ${what} failed:`, error instanceof Error ? error.message : error);
+    return res.status(503).json({ error: `${what} failed. Try again.` });
+  };
+
+  router.get(base, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    try {
+      return res.json({ targets: await open.outreach.agentList(open.auth.userId) });
+    } catch (error) {
+      return failed(res, error, 'Reading Outreach');
+    }
+  });
+
+  router.get(`${base}/targets/:id`, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    try {
+      const target = await open.outreach.agentShow(open.auth.userId, String(req.params.id));
+      if (!target) return res.status(404).json({ error: `There is no ${String(req.params.id)} in Outreach. \`agentbuilt outreach list\` names every company.` });
+      return res.json({ target });
+    } catch (error) {
+      return failed(res, error, 'Reading the company');
+    }
+  });
+
+  /** One company, or a batch with the template and follow-ups: the file's JSON is the body. */
+  router.post(base, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    const parsed = parseOutreachWrite(req.body);
+    if (!parsed.ok) return res.status(400).json({ error: `Nothing was written: ${parsed.error}` });
+    const by = { agentId: open.auth.agentId, name: open.auth.agents[open.auth.agentId]?.name?.trim() || 'An agent' };
+    try {
+      const answer = await open.outreach.write(open.auth.userId, by, parsed.write);
+      console.log(`[outreach] ${by.name} (${by.agentId}) wrote: ${answer.added.length} added, ${answer.updated.length} updated, ${answer.unchanged.length} unchanged, ${answer.refused.length} refused, words ${answer.words ?? 'not in it'}`);
+      return res.json(answer satisfies OutreachWriteAnswer);
+    } catch (error) {
+      return failed(res, error, 'The write');
     }
   });
 }
