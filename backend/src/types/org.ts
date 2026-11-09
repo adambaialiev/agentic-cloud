@@ -485,7 +485,10 @@ export interface OrgMembershipDocument {
    * collection (a turn ending, a decision) serves only members who have looked
    * recently, so nobody's activity is re-read for a card nobody opens. */
   workspaceRecapReadAt?: string;
-  workspaceRecapChat?: import('../shared/workspace-recap-chat.js').RecapConversation;
+  // The Chief of Staff conversation is NOT on this record (note #1098): it
+  // lives in its own table, read through `OrgStorage.getRecapChat`, because
+  // every authenticated request reads every membership of its person and a
+  // transcript grows to megabytes.
   /** The Chief of Staff's event turns and standing permissions (note #716).
    * Absent until the person first saves them: event turns are off. */
   workspaceAgentProactive?: import('../shared/workspace-agent-proactive.js').WorkspaceAgentProactive;

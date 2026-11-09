@@ -67,7 +67,7 @@ const HELD_MAIL_MAX = 20;
 export interface LatestChatRow { role: 'owner' | 'agent' | 'platform'; text: string; at: string; seq: number }
 
 export interface WorkspaceAgentEventDeps {
-  orgStorage: Pick<OrgStorage, 'listOrgs' | 'getOrg' | 'listMembers' | 'getMembership' | 'touchMember' | 'listMembershipsByUser'>;
+  orgStorage: Pick<OrgStorage, 'listOrgs' | 'getOrg' | 'listMembers' | 'getMembership' | 'touchMember' | 'listMembershipsByUser' | 'getRecapChat'>;
   userStorage: Pick<UserStorage, 'getProfile'>;
   quickNoteStorage?: Pick<QuickNoteStorage, 'listByUser'>;
   gitPullRequestStorage?: GitPullRequestStorage;
@@ -355,7 +355,7 @@ export class WorkspaceAgentEventSweep {
     const collected = await collectWorkspaceAgentEvents(this.deps, {
       userId, orgId, settings, agents,
       workplaceNamespace: orgKnowledgeShelfNamespace(org), formerNamespaces: org.roomsMerged?.namespaces ?? [],
-      conversation: member.workspaceRecapChat, now,
+      conversation: (await this.deps.orgStorage.getRecapChat(orgId, userId).catch(() => null)) ?? undefined, now,
     });
     const quiet = inQuietHours(settings, now);
     const stored = this.heldMail.get(memberKey(userId, orgId)) ?? [];

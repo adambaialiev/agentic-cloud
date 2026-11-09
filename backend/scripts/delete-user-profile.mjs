@@ -229,6 +229,7 @@ db.transaction(() => {
   del('DELETE FROM secrets WHERE user_id = ?');
   del("DELETE FROM pending_turns WHERE doc LIKE '%' || ? || '%'");
   del('DELETE FROM deployments WHERE user_id = ?');
+  del('DELETE FROM org_member_recap_chats WHERE user_id = ?');
   del('DELETE FROM org_members WHERE user_id = ?');
   del('DELETE FROM usernames WHERE user_id = ?');
   del('DELETE FROM users WHERE user_id = ?');

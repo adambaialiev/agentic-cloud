@@ -554,6 +554,16 @@ CREATE TABLE IF NOT EXISTS org_members (
   PRIMARY KEY (org_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS org_members_by_user ON org_members (user_id);
+-- One member's Chief of Staff conversation (note #1098). It used to ride the
+-- membership doc as workspaceRecapChat, so every request that read a
+-- membership parsed the whole transcript; SqliteOrgStorage moves any it still
+-- finds there on start.
+CREATE TABLE IF NOT EXISTS org_member_recap_chats (
+  org_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  PRIMARY KEY (org_id, user_id)
+);
 -- A seat is one human's private CLI sign-in. org_id remains as its creation
 -- org for backwards-compatible migration; use org_seat_assignments for every
 -- routing decision. Nothing may ever select a credential across owners.

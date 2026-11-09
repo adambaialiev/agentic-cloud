@@ -178,6 +178,11 @@ export function readUserRoster(db: SqliteDb): RosterPerson[] {
   const identities = new Map(all<{ user_id: string; doc: string }>('SELECT user_id, doc FROM workspace_email_identities')
     .map((row) => [row.user_id, deserializeDoc<Doc>(row.doc)]));
   const memberships = byUser<{ user_id: string; org_id: string; doc: string }>('SELECT user_id, org_id, doc FROM org_members');
+  // The Chief of Staff conversations' owner rows alone (note #1098: their own
+  // table now), read in SQL so no transcript is parsed whole.
+  const toldByUser = byUser<{ user_id: string; at: string }>(`SELECT c.user_id AS user_id, json_extract(m.value, '$.at') AS at
+    FROM org_member_recap_chats c JOIN org_members o ON o.org_id = c.org_id AND o.user_id = c.user_id, json_each(c.doc, '$.messages') m
+    WHERE json_extract(m.value, '$.role') = 'owner'`);
   const webSessions = byUser<{ user_id: string; doc: string }>('SELECT user_id, doc FROM workspace_web_sessions');
   const chats = byUser<{ user_id: string; agent_id: string; role: string; n: number; first: string; last: string }>(`SELECT user_id, agent_id, json_extract(doc, '$.role') AS role,
     count(*) AS n, min(json_extract(doc, '$.at')) AS first, max(json_extract(doc, '$.at')) AS last FROM agent_chat_messages GROUP BY 1, 2, 3`);
@@ -252,7 +257,7 @@ export function readUserRoster(db: SqliteDb): RosterPerson[] {
     // Told the Chief of Staff (note #726): an owner row in the private
     // conversation on any membership — the first thing a new account does
     // now, before any plan is signed in.
-    const toldRows = memberDocs.flatMap(({ member }) => ((member.workspaceRecapChat?.messages ?? []) as Array<{ role?: string; at: string }>).filter((row) => row.role === 'owner'));
+    const toldRows = toldByUser.get(userId) ?? [];
     const stage: RosterStage = talked ? 'talked'
       : agents.length + deleted.size > 0 ? 'agent'
         : liveSeats.length > 0 ? 'seat'

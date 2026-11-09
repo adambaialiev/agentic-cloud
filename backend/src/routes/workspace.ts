@@ -12245,7 +12245,7 @@ self.addEventListener('activate', (event) => {
     // then — a sign-in from the Seats screen builds nothing ahead.
     // Not for OpenCode: the Chief of Staff runs on Claude or ChatGPT only.
     const waiting = provider !== 'opencode'
-      && Boolean((await ctx.storage.getMembership(ctx.membership.orgId, auth.userId).catch(() => null))?.workspaceRecapChat?.awaitingSeat);
+      && Boolean((await ctx.storage.getRecapChat(ctx.membership.orgId, auth.userId).catch(() => null))?.awaitingSeat);
     if (waiting) {
       void deps.agentLifecycle?.prepareWorkspaceAgent?.(auth.userId, ctx.membership.orgId, provider).catch((error) => {
         console.warn(`[first-run] ${ctx.membership.orgId}/${auth.userId}: the Chief of Staff's machine could not be prepared:`, error);

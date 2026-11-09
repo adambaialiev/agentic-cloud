@@ -460,7 +460,7 @@ describe('Workspace Agent conversation', () => {
     ]);
     expect((await x.userStorage.getProfile('u1'))?.telegram?.agents?.[agent!.id]?.contextUsage).toBeUndefined();
     expect((await x.userStorage.getProfile('u1'))?.telegram?.agents?.[agent!.id]?.conversation).toEqual({});
-    expect((await x.orgStorage.getMembership(x.org, 'u1'))?.workspaceRecapChat?.nativeCursor).toBeUndefined();
+    expect((await x.orgStorage.getRecapChat(x.org, 'u1'))?.nativeCursor).toBeUndefined();
     x.model.mockResolvedValueOnce({ text: 'Hello again.' });
     await x.chat.send('u1', x.org, 'request-2', 'Anything new?');
     const after = await x.done();
@@ -557,7 +557,7 @@ describe('Workspace Agent conversation', () => {
       const record = (await x.userStorage.getProfile('u1'))?.telegram?.agents?.[own(x)];
       expect(record?.contextUsage).toBeUndefined();
       expect(record?.conversation).toEqual({});
-      const member = (await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!;
+      const member = (await x.orgStorage.getRecapChat(x.org, 'u1'))!;
       expect(member.nativeCursor).toBeUndefined();
       expect(member.freshChat).toBeUndefined();
       // The wait for Theo is the platform's, not the chat's: it survives.
@@ -604,7 +604,7 @@ describe('Workspace Agent conversation', () => {
       expect(replacement).toContain('"text":"One more question"');
       expect(settled.messages.some(m => m.kind === 'new-chat-divider')).toBe(false);
       expect(settled.messages.at(-1)!.text).toBe('Here is the answer.');
-      expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.freshChat).toBeUndefined();
+      expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.freshChat).toBeUndefined();
     });
     it('an agent\'s answer that lands while the handoff is written is the fresh chat\'s, and its reaction runs there', async () => {
       const x = await setup([]);
@@ -692,12 +692,12 @@ describe('Workspace Agent conversation', () => {
         seen.push((await x.chat.read('u1', x.org)).working);
         return { text: HANDOFF };
       });
-      const status = vi.spyOn(x.orgStorage, 'touchMember');
+      const status = vi.spyOn(x.orgStorage, 'saveRecapChat');
       await x.chat.send('u1', x.org, 'request-1', 'Hello');
       await x.done();
       expect(seen).toEqual([true]);
       // Every write between the reply and the divider kept the request running.
-      const states = status.mock.calls.map(c => (c[2] as { workspaceRecapChat?: { running?: string; messages: Array<{ text: string; kind?: string }> } }).workspaceRecapChat).filter(Boolean);
+      const states = status.mock.calls.map(c => c[2] as { running?: string; messages: Array<{ text: string; kind?: string }> }).filter(Boolean);
       const reply = states.findIndex(st => st!.messages.some(m => m.text === 'Done.'));
       const divider = states.findIndex(st => st!.messages.some(m => m.kind === 'new-chat-divider'));
       expect(reply).toBeGreaterThanOrEqual(0);
@@ -760,7 +760,7 @@ describe('Workspace Agent conversation', () => {
     await x.chat.send('u1', x.org, 'request-note', 'Save a note saying First, then archive it.');
     const answer = await x.done();
     expect(answer.messages.map(m => m.role)).toEqual(['owner', 'assistant']);
-    const stored = (await x.orgStorage.getMembership(x.org, 'u1'))?.workspaceRecapChat?.messages ?? [];
+    const stored = (await x.orgStorage.getRecapChat(x.org, 'u1'))?.messages ?? [];
     expect(stored.filter(m => m.role === 'action').map(m => m.text)).toEqual(['Created note: First', 'Archived note: First']);
   });
   it('puts a mail confirmation in this conversation while its agent turn is running', async () => {
@@ -849,15 +849,14 @@ describe('Workspace Agent conversation', () => {
       const x = await setup([]);
       expect(await x.chat.proposalReady({ userId: 'u2', orgId: x.org, proposal: ref, text })).toBe('added');
       expect((await x.chat.read('u1', x.org)).messages).toHaveLength(0);
-      expect((await x.orgStorage.getMembership(x.org, 'u2'))?.workspaceRecapChat?.messages).toHaveLength(1);
+      expect((await x.orgStorage.getRecapChat(x.org, 'u2'))?.messages).toHaveLength(1);
       expect(await x.chat.proposalReady({ userId: 'u9', orgId: x.org, proposal: ref, text })).toBe('none');
       expect((await x.orgStorage.getMembership(x.org, 'u9'))).toBeFalsy();
     });
     it('a fresh chat is a new conversation: a proposal still undecided may be shown in it again', async () => {
       const x = await setup([]);
       await x.chat.proposalReady({ userId: 'u1', orgId: x.org, proposal: ref, text });
-      const member = (await x.orgStorage.getMembership(x.org, 'u1'))!;
-      const state = member.workspaceRecapChat!;
+      const state = (await x.orgStorage.getRecapChat(x.org, 'u1'))!;
       state.messages.push({ id: 'divider', role: 'action', text: '---', at: new Date().toISOString(), kind: 'new-chat-divider' });
       await x.orgStorage.touchMember(x.org, 'u1', { workspaceRecapChat: state });
       expect(await x.chat.proposalReady({ userId: 'u1', orgId: x.org, proposal: ref, text })).toBe('added');
@@ -1114,8 +1113,7 @@ describe('Workspace Agent conversation', () => {
     it('closes an idle, unstamped wait once it has been open long enough — an older backend, or a turn dropped at the restart — without saying it finished (note #734)', async () => {
       const x = await setup([]);
       await asked(x);
-      const member = (await x.orgStorage.getMembership(x.org, 'u1'))!;
-      const state = member.workspaceRecapChat!;
+      const state = (await x.orgStorage.getRecapChat(x.org, 'u1'))!;
       state.pending[0]!.sentAt = new Date(Date.now() - 11 * 60_000).toISOString();
       await x.orgStorage.touchMember(x.org, 'u1', { workspaceRecapChat: state });
       x.scope.agents[0]!.working = false;
@@ -1127,7 +1125,7 @@ describe('Workspace Agent conversation', () => {
       expect(answer.waiting).toEqual([]);
       // Still the one agent an event turn may ask to report, and the
       // no-reply event says the same honest thing.
-      expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.silent).toEqual([{ agentId: 'a1', name: 'Theo', at: expect.any(String), cut: true }]);
+      expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.silent).toEqual([{ agentId: 'a1', name: 'Theo', at: expect.any(String), cut: true }]);
     });
     it('says "finished" only when the turn-end stamp says so, after the send (note #734)', async () => {
       const x = await setup([]);
@@ -1137,7 +1135,7 @@ describe('Workspace Agent conversation', () => {
       const answer = await x.chat.read('u1', x.org);
       expect(answer.messages.at(-1)?.text).toBe('Theo finished without sending a reply here. Its own conversation has the details.');
       expect(recapRowViews(answer.messages).at(-1)).toMatchObject({ form: 'attention', parts: [{ agent: 'Theo' }, ' finished without answering'] });
-      expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.silent).toEqual([{ agentId: 'a1', name: 'Theo', at: expect.any(String) }]);
+      expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.silent).toEqual([{ agentId: 'a1', name: 'Theo', at: expect.any(String) }]);
     });
     it('checks on the wait from the roster alone, not the whole workplace, on every poll (note #1095)', async () => {
       const x = await setup([]);
@@ -1353,7 +1351,7 @@ describe('Workspace Agent conversation', () => {
       expect(settled.messages.map(m => [m.role, m.kind ?? ''])).toEqual([
         ['owner', ''], ['agent', ''], ['assistant', ''], ['action', 'new-chat-divider'],
       ]);
-      expect((await x.orgStorage.getMembership(x.org, 'u1'))?.workspaceRecapChat?.agentReplied).toBeUndefined();
+      expect((await x.orgStorage.getRecapChat(x.org, 'u1'))?.agentReplied).toBeUndefined();
     });
     it('starts nothing when the person has never started their Workspace Agent: the row lands and no machine is provisioned', async () => {
       const x = await setup([]);
@@ -1705,12 +1703,12 @@ describe('Event turns and standing permissions (note #716): the Chief of Staff o
     });
     await events(x, [{ kind: 'no-reply', key: 'no-reply:a1:d', text: 'Theo finished without sending back the answer the Chief of Staff was waiting for.', at: 't' }]);
     await x.done();
-    expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.pending).toEqual([expect.objectContaining({ agentId: 'a1', fromEvent: true })]);
+    expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.pending).toEqual([expect.objectContaining({ agentId: 'a1', fromEvent: true })]);
     // Theo finishes without answering THAT ask: the wait closes, and Theo is not made a door again.
     (x.scope.agents[0]!.record as { lastTurnEndedAt?: string }).lastTurnEndedAt = new Date(Date.now() + 1000).toISOString();
     const settled = await x.chat.read('u1', x.org);
     expect(settled.messages.at(-1)!.text).toBe('Theo finished without sending a reply here. Its own conversation has the details.');
-    expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.silent).toEqual([]);
+    expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.silent).toEqual([]);
   });
 
   it('the answer to an ask made on its own motion is reacted to behind the same fence; one the person asked for is not', async () => {
@@ -2016,7 +2014,7 @@ describe('the first run (note #726): the Chief of Staff runs the first ten minut
     expect(prompt).toContain(FIRST_RUN_ASK);
     expect(settled.messages.at(-1)).toMatchObject({ role: 'assistant', text: expect.stringContaining('Site') });
     // The first run is over with the reply: the flag is gone from the record.
-    expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.firstRun).toBeUndefined();
+    expect((await x.orgStorage.getRecapChat(x.org, 'u1'))!.firstRun).toBeUndefined();
   });
 });
 

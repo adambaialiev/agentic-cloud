@@ -1,3 +1,4 @@
+import type { RecapConversation } from '../shared/workspace-recap-chat.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type {
   OrgDocument,
@@ -90,6 +91,15 @@ export interface OrgStorage {
    * failed stamp is silence, exactly as a failed agent recap is.
    */
   touchMember(orgId: string, userId: string, touch: OrgMemberTouch): Promise<boolean>;
+  /**
+   * The member's Chief of Staff conversation (note #1098), stored apart
+   * from the membership so that reading a membership never parses it.
+   * Null when it was never written. Read only by the code that shows,
+   * appends to or reasons over that conversation.
+   */
+  getRecapChat(orgId: string, userId: string): Promise<RecapConversation | null>;
+  /** Replaces the conversation whole; false when there is no such membership. */
+  saveRecapChat(orgId: string, userId: string, chat: RecapConversation): Promise<boolean>;
   /**
    * Give a pre-split Workspace Agent its own runtime exactly once. The first
    * value wins atomically, so a recap change and an agent pick arriving from
@@ -215,11 +225,17 @@ export function stampSeat(
 }
 
 /** The fields `touchMember` may write; anything absent is left as it was. */
-export type OrgMemberTouch = Partial<Pick<OrgMembershipDocument, 'lastSeenAt' | 'recap' | 'workspaceRecap' | 'workspaceRecapHistory' | 'workspaceRecapSettings' | 'workspaceAgentSettings' | 'workspaceRecapReadAt' | 'workspaceRecapChat' | 'workspaceAgentProactive' | 'workspaceAgentEventLedger' | 'inheritedSeatsAt' | 'autoApprove'>>;
+export type OrgMemberTouch = Partial<Pick<OrgMembershipDocument, 'lastSeenAt' | 'recap' | 'workspaceRecap' | 'workspaceRecapHistory' | 'workspaceRecapSettings' | 'workspaceAgentSettings' | 'workspaceRecapReadAt' | 'workspaceAgentProactive' | 'workspaceAgentEventLedger' | 'inheritedSeatsAt' | 'autoApprove'>> & {
+  /** Written to the conversation's own table, never onto the membership
+   * (note #1098); the same as `saveRecapChat`, kept so one touch can still
+   * carry it. */
+  workspaceRecapChat?: RecapConversation;
+};
 
 export class InMemoryOrgStorage implements OrgStorage {
   private orgs = new Map<string, OrgDocument>();
   private members = new Map<string, OrgMembershipDocument>(); // `${orgId}/${userId}`
+  private recapChats = new Map<string, RecapConversation>(); // `${orgId}/${userId}`, note #1098
   private seats = new Map<string, OrgSeatDocument>();
   private seatAssignments = new Map<string, OrgSeatAssignmentDocument>(); // `${orgId}/${userId}/${seatId}`
   private invites = new Map<string, OrgInviteDocument>();
@@ -332,8 +348,19 @@ export class InMemoryOrgStorage implements OrgStorage {
     const key = `${orgId}/${userId}`;
     const membership = this.members.get(key);
     if (!membership) return false;
-    this.members.set(key, { ...membership, ...touch });
+    const { workspaceRecapChat, ...rest } = touch;
+    this.members.set(key, { ...membership, ...rest });
+    if (workspaceRecapChat) this.recapChats.set(key, structuredClone(workspaceRecapChat));
     return true;
+  }
+
+  async getRecapChat(orgId: string, userId: string): Promise<RecapConversation | null> {
+    const chat = this.recapChats.get(`${orgId}/${userId}`);
+    return chat ? structuredClone(chat) : null;
+  }
+
+  async saveRecapChat(orgId: string, userId: string, chat: RecapConversation): Promise<boolean> {
+    return this.touchMember(orgId, userId, { workspaceRecapChat: chat });
   }
 
   async initializeWorkspaceAgentSettings(
@@ -356,6 +383,7 @@ export class InMemoryOrgStorage implements OrgStorage {
     const wasActive = Boolean(this.members.get(key)?.active);
     const removed = this.members.delete(key);
     if (removed) {
+      this.recapChats.delete(key);
       for (const [assignmentKey, assignment] of this.seatAssignments) {
         if (assignment.orgId === orgId && assignment.userId === userId) {
           this.seatAssignments.delete(assignmentKey);

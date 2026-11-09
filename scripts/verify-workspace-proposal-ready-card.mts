@@ -229,7 +229,7 @@ try {
   await page.screenshot({ path: path.join(OUT, 'n752-ready-card-phone.png') as `${string}.png` });
 
   // What the Chief of Staff reads on its next turn: the pointer row, in words.
-  const stored = (await orgStorage.getMembership(org.orgId, owner.userId))?.workspaceRecapChat?.messages ?? [];
+  const stored = (await orgStorage.getRecapChat(org.orgId, owner.userId))?.messages ?? [];
   const rows = stored.filter((row) => row.proposals?.length);
   check('the conversation holds one pointer row, worded for the agent’s next turn', rows.length === 1
     && rows[0]?.text === `Ada's PR #${pr.number} in infinite-agents — ${pr.title} — is ready for the person's decision; its card is in this conversation.`
@@ -239,7 +239,7 @@ try {
   const again = await ready();
   check('a second `pr ready` is answered as already with the person', again.status === 200 && Boolean(again.body.message?.includes('already with your user')), JSON.stringify(again.body));
   await new Promise((resolve) => setTimeout(resolve, 2_500));
-  const afterRows = ((await orgStorage.getMembership(org.orgId, owner.userId))?.workspaceRecapChat?.messages ?? []).filter((row) => row.proposals?.length);
+  const afterRows = ((await orgStorage.getRecapChat(org.orgId, owner.userId))?.messages ?? []).filter((row) => row.proposals?.length);
   const afterCards = await page.$$eval('#recapChatLog .chatmsg.forwarded', (nodes) => nodes.length);
   check('…and the chat still shows exactly one card', afterRows.length === 1 && afterCards === 1, `${afterRows.length} rows, ${afterCards} cards`);
   check('the agent chat was not asked twice either', chatCards.length === 1, String(chatCards.length));
