@@ -99,6 +99,17 @@ CREATE TABLE IF NOT EXISTS outreach_touches (
   PRIMARY KEY (user_id, touch_id)
 );
 CREATE INDEX IF NOT EXISTS outreach_touches_by_target ON outreach_touches (user_id, target_id, at);
+-- The Outreach site's passes (note #1093): a short-lived key, held only in
+-- the owner's browser, that opens the Outreach routes and nothing else. Kept
+-- as a hash; it dies with the sign-in it was given to, at its hour, or when
+-- the site signs out.
+CREATE TABLE IF NOT EXISTS outreach_passes (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS outreach_words (
   user_id TEXT PRIMARY KEY,
   imported_at TEXT NOT NULL,

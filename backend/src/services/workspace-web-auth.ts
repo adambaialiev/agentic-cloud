@@ -1107,6 +1107,11 @@ export class WorkspaceWebAuthService {
 
   /** Read-only validity check for capabilities tied to a browser session,
    * notably Web Push. It deliberately does not extend the idle lifetime. */
+  /** The session itself, while it is live (note #1093: the Outreach pass dies with it). */
+  async activeSession(userId: string, sessionId: string): Promise<WorkspaceWebSessionDocument | null> {
+    return (await this.isSessionActive(userId, sessionId)) ? this.storage.getSessionById(userId, sessionId) : null;
+  }
+
   async isSessionActive(userId: string, sessionId: string): Promise<boolean> {
     const session = await this.storage.getSessionById(userId, sessionId);
     if (!session || session.revokedAt) return false;

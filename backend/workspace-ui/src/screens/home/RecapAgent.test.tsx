@@ -106,7 +106,9 @@ describe('the Workspace Agent\'s own screen', () => {
     // The first frame, before either read has answered.
     expect(document.getElementById('recapAgentFacts')!.textContent).toContain('1 GB');
     expect(document.getElementById('recapAgentVersion')!.textContent).toContain('2.1.276 · up to date');
-    expect(again.calls.some((call) => call.path === 'api/recap/agent')).toBe(true);
+    // The refresh is asked for underneath; wait for that state rather than
+    // assume it was sent by the time the first frame was drawn.
+    await waitFor(() => expect(again.calls.some((call) => call.path === 'api/recap/agent')).toBe(true));
     cleanup();
     // And Home's header, and its model & effort picker, open on what they
     // last read.

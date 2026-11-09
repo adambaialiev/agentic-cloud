@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_REVIEW_AFTER, OUTREACH_STATES, addressMatches, hostMatches, outreachDraft, outreachNext, outreachPlaceholders,
-  outreachTargetId, sortOutreachRows, targetCity, targetEmail, targetPerson,
+  outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachEdits, type OutreachImportAnswer, type OutreachListAnswer, type OutreachRow, type OutreachSeed,
   type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch,
 } from '../shared/outreach.js';
@@ -72,6 +72,7 @@ export class OutreachService {
       fit: record.seed.fit,
       firstBatchOrder: record.seed.firstBatchOrder,
       city: targetCity(record),
+      zone: outreachZone(targetCity(record)),
       person: targetPerson(record),
       email: targetEmail(record),
       verification: record.seed.verification,

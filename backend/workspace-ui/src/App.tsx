@@ -79,8 +79,6 @@ import { MailSetupScreen } from './screens/mail/MailSetupScreen.js';
 import { CopyReleasesScreen } from './screens/org/CopyReleasesScreen.js';
 import { CopiesScreen } from './screens/copies/CopiesScreen.js';
 import { CopyScreen } from './screens/copies/CopyScreen.js';
-import { OutreachScreen } from './screens/outreach/OutreachScreen.js';
-import { OutreachTargetScreen } from './screens/outreach/OutreachTargetScreen.js';
 import { CopyUpgradeScreen } from './screens/org/CopyUpgradeScreen.js';
 import { MailConversationScreen } from './screens/mail/MailConversationScreen.js';
 import { ProfileScreen } from './screens/profile/ProfileScreen.js';
@@ -257,15 +255,6 @@ function CopiesRoute({ one = false }: { one?: boolean }) {
   return one ? <CopyScreen key={id} /> : <CopiesScreen />;
 }
 
-/** Outreach (note #1089), for the account the state read names it to: the owner's alone. */
-function OutreachRoute({ one = false }: { one?: boolean }) {
-  const { state } = useWorkspace();
-  const { id } = useParams();
-  if (!state) return null;
-  if (!state.outreach) return <UnknownScreen />;
-  return one ? <OutreachTargetScreen key={id} /> : <OutreachScreen />;
-}
-
 /** An address from before a segment was renamed: the same place, at its
  *  current address, without a history entry for the old one. */
 function LegacyPlace() {
@@ -333,9 +322,6 @@ const SCREENS: Record<WorkspaceRouteKind, ReactElement> = {
   // The private copies (note #1058): the operator's alone.
   copies: <CopiesRoute />,
   copy: <CopiesRoute one />,
-  // Outreach (note #1089): the owner's own.
-  outreach: <OutreachRoute />,
-  outreachTarget: <OutreachRoute one />,
   organizations: <OrganizationsScreen />,
   organization: <OrganizationScreen />,
   organizationCloud: <OrgCloudScreen />,

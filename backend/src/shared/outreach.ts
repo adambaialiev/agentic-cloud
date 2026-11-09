@@ -389,6 +389,8 @@ export interface OutreachRow {
   fit: 'fit' | 'not a fit';
   firstBatchOrder: number | null;
   city: string | null;
+  /** The city's time zone (IANA), only where the city is one we know; the site shows their time from it. */
+  zone: string | null;
   person: string | null;
   email: string | null;
   verification: string | null;

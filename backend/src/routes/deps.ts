@@ -324,10 +324,15 @@ export interface RouteDeps {
    */
   copyAlerts?: import('../services/copy-alerts.js').CopyAlertSweep;
   /**
-   * Outreach (note #1089): the platform operator's own target companies,
-   * touches and Send. Never set in a private copy.
+   * Outreach (notes #1089, #1093): the platform operator's own target
+   * companies, touches and Send, reached from the Outreach site with a pass.
+   * Never set in a private copy.
    */
   outreach?: import('../services/outreach.js').OutreachService;
+  /** The Outreach site's passes (note #1093): minted by the pass door, read by every Outreach route. */
+  outreachPasses?: import('../services/outreach-pass.js').OutreachPasses;
+  /** The one origin the pass door sends a pass to; OUTREACH_SITE_ORIGIN, else the default. */
+  outreachSiteOrigin?: string;
   /** The ops Telegram chat's sender (createOpsNotifier); absent without TELEGRAM_OPS_BOT_TOKEN and TELEGRAM_OPS_CHAT_ID. */
   opsNotifier?: (text: string) => Promise<void>;
   /**

@@ -83,6 +83,8 @@ import { SqliteCopyPulseStore } from './services/sqlite/sqlite-copy-pulse-storag
 import { OutreachService } from './services/outreach.js';
 import { InMemoryOutreachStore } from './services/outreach-storage.js';
 import { SqliteOutreachStore } from './services/sqlite/sqlite-outreach-storage.js';
+import { InMemoryOutreachPassStore, OutreachPasses, SqliteOutreachPassStore } from './services/outreach-pass.js';
+import { OUTREACH_SITE_ORIGIN_DEFAULT, outreachSiteCors } from './routes/outreach.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
@@ -1491,6 +1493,10 @@ let mailApprovals = mailOutbox
 // outreach. Never in a private copy. It sends only through the person's own
 // outbox (read through a getter: mail may be set up after boot), and only
 // when the owner presses Send.
+// Its own site (note #1093) reaches it with a pass from the pass door; the
+// one origin a pass is sent to.
+const OUTREACH_SITE_ORIGIN = process.env.OUTREACH_SITE_ORIGIN?.trim().replace(/\/+$/, '') || OUTREACH_SITE_ORIGIN_DEFAULT;
+const outreachPasses = PRIVATE_COPY ? null : new OutreachPasses(sqliteDb ? new SqliteOutreachPassStore(sqliteDb) : new InMemoryOutreachPassStore());
 const outreach = PRIVATE_COPY ? null : new OutreachService({
   store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
   outbox: () => mailOutbox,
@@ -2247,7 +2253,7 @@ const deps: RouteDeps = {
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
   ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
-  ...(outreach ? { outreach } : {}),
+  ...(outreach && outreachPasses ? { outreach, outreachPasses, outreachSiteOrigin: OUTREACH_SITE_ORIGIN } : {}),
   ...(copyPulse ? { copyPulse } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
@@ -2468,6 +2474,9 @@ if (APPS_DOMAIN && deps.deploymentStorage) {
   app.use(siteRedirectHandler(redirectOpts));
 }
 
+// The Outreach site (note #1093), and only it, may call the Outreach routes
+// across origins; answered before the platform's own CORS layer.
+if (outreach) app.use('/workspace/api/outreach', outreachSiteCors(OUTREACH_SITE_ORIGIN));
 app.use(cors(createCorsOptions(CORS_ORIGINS)));
 // A knowledge proposal carries whole HTML pages, which the default 100 KB JSON
 // limit refuses. Mounted BEFORE the global parser and scoped to that one path:

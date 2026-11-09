@@ -143,21 +143,6 @@ function AccountMenu({ anchor, onClose }: {
             </button>
           )
           : null}
-        {/* Outreach (note #1089): the owner's own target companies and their letters. */}
-        {state?.outreach
-          ? (
-            <button
-              className="orgmenurow" id="accountMenuOutreach" type="button" role="menuitem"
-              onClick={() => go(toFor({ kind: 'outreach' })!)}
-            >
-              <span className="orgmenumain">
-                <span className="orgmenuname">Outreach</span>
-                <span className="orgmenufacts">Target companies, every letter and reply</span>
-              </span>
-              <span className="orgmenutick"><Svg name="mail" size={16} /></span>
-            </button>
-          )
-          : null}
       </div>
     </HeaderMenu>
   );

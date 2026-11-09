@@ -17,7 +17,8 @@ import { RecapChatVersions } from '../services/recap-chat-versions.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
-import { registerOutreachRoutes } from './outreach.js';
+import { OUTREACH_SITE_ORIGIN_DEFAULT, registerOutreachPassDoor, registerOutreachRoutes } from './outreach.js';
+import { outreachPassFrom } from '../services/outreach-pass.js';
 import { CopyAlertSweep, type CopyAlertRecipient } from '../services/copy-alerts.js';
 import { Router, raw, type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
@@ -5104,8 +5105,6 @@ self.addEventListener('activate', (event) => {
       ...(deps.radio && isAdminAccount(auth.profile) ? { radioLibrary: true as const } : {}),
       // The Copies screen (note #1058) is the operator's too, and only where pulses are kept.
       ...(deps.copyPulses && !deps.privateCopy && isAdminAccount(auth.profile) ? { copies: true as const } : {}),
-      // Outreach (note #1089) is the owner's own, like Copies.
-      ...(deps.outreach && !deps.privateCopy && isAdminAccount(auth.profile) ? { outreach: true as const } : {}),
       notesArchived,
       // Whether a note can carry files at all. An OPEN note answers this for
       // itself — it arrives with an `attachments` list, or without one on a
@@ -7493,16 +7492,58 @@ self.addEventListener('activate', (event) => {
     return deps.quickNoteStorage;
   };
 
-  // Outreach (note #1089): the owner's own screen, gated like Copies. Its
-  // seed is a file on a note the owner can open, read through the same door
-  // the note's own download uses.
-  registerOutreachRoutes(router, '/api/outreach', deps, authenticate, async (auth) => isAdminAccount(auth.profile),
-    async (auth, req, res, number, fileName) => {
-      if (!workspaceNotes(res)) return null;
+  // Outreach (notes #1089, #1093): the owner's own SITE reaches these routes
+  // with a pass, never with the Workspace session. The pass door below hands
+  // him one for his live sign-in; every other route takes nothing else.
+  const outreachSiteOrigin = deps.outreachSiteOrigin ?? OUTREACH_SITE_ORIGIN_DEFAULT;
+  registerOutreachPassDoor(router, deps, {
+    siteOrigin: outreachSiteOrigin,
+    loginUrl: `${deps.workspaceWebOrigin ?? ''}/login`,
+    signedIn: async (req) => {
+      if (!deps.workspaceWebAuth || !deps.workspaceWebOrigin || !deps.userStorage) return null;
+      const session = await deps.workspaceWebAuth.authenticateSession(workspaceSessionToken(req, deps.workspaceWebOrigin));
+      if (!session) return null;
+      const profile = await deps.userStorage.getProfile(session.userId);
+      if (!profile) return null;
+      return { userId: session.userId, isOperator: isAdminAccount(profile), session };
+    },
+  });
+  const authenticateOutreachPass = async (req: Request, res: Response): Promise<MiniAppAuth | null> => {
+    res.setHeader('Cache-Control', 'no-store');
+    const refused = () => {
+      res.status(401).json({ error: 'Sign in again: this Outreach pass has ended.', code: 'outreach_pass' });
+      return null;
+    };
+    const token = outreachPassFrom(req.get('authorization'));
+    const pass = deps.outreachPasses ? await deps.outreachPasses.read(token) : null;
+    if (!pass || !deps.workspaceWebAuth || !deps.userStorage) return refused();
+    // The pass lives no longer than the sign-in it was given to.
+    const webSession = await deps.workspaceWebAuth.activeSession(pass.userId, pass.sessionId);
+    if (!webSession) { await deps.outreachPasses!.end(token).catch(() => undefined); return refused(); }
+    const profile = await deps.userStorage.getProfile(pass.userId);
+    if (!profile) return refused();
+    const memberships = deps.orgStorage ? await deps.orgStorage.listMembershipsByUser(profile.userId).catch(() => []) : [];
+    const oldest = [...memberships].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.orgId.localeCompare(b.orgId))[0] ?? null;
+    return {
+      userId: profile.userId, profile, orgId: oldest?.orgId ?? null, orgRole: oldest?.role ?? null,
+      legacyOrgId: oldest?.orgId ?? null, webSession, webSessionToken: '',
+    };
+  };
+  // The seed is a file on a note in any workplace the owner belongs to.
+  registerOutreachRoutes(router, '/api/outreach', deps, authenticateOutreachPass, async (auth) => isAdminAccount(auth.profile),
+    async (auth, _req, res, raw, fileName) => {
+      const notes = workspaceNotes(res);
+      if (!notes) return null;
       if (!deps.mediaStorage) { res.status(503).json({ error: 'File storage is not available on this backend yet.' }); return null; }
-      const doc = await workspaceNote(auth, req, number, res);
-      if (!doc) return null;
-      const attachment = (doc.attachments ?? []).find((file) => file.fileName === fileName);
+      const number = Number(raw);
+      const memberships = deps.orgStorage ? await deps.orgStorage.listMembershipsByUser(auth.userId).catch(() => []) : [];
+      const namespaces = new Set<string>();
+      for (const membership of memberships) {
+        for (const namespace of await numberedNamespaces({ ...auth, orgId: membership.orgId, orgRole: membership.role })) namespaces.add(namespace);
+      }
+      const found = pickNumbered(await notes.findByNumber([...namespaces], number), number, null);
+      if (found.kind !== 'one') { res.status(404).json({ error: `There is no note #${number} you can open.` }); return null; }
+      const attachment = (found.doc.attachments ?? []).find((file) => file.fileName === fileName);
       if (!attachment) { res.status(404).json({ error: `Note #${number} has no file named ${fileName}.` }); return null; }
       return deps.mediaStorage.downloadObject({ storagePath: attachment.storagePath });
     });

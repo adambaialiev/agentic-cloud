@@ -1,5 +1,6 @@
 import { OutreachService } from '../../services/outreach.js';
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
+import { InMemoryOutreachPassStore, OutreachPasses } from '../../services/outreach-pass.js';
 import { fixtureOutreachSeed } from '../../shared/outreach-fixtures.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MemoryMediaStorage } from '../../services/memory-media-storage.js';
@@ -9552,7 +9553,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     expect(await pinned()).toBeUndefined();
   });
 
-  it('Outreach (note #1089): the operator imports from a file on a note; a member, a private copy and a missing file are refused', async () => {
+  it('Outreach (notes #1089, #1093): with the owner\'s pass, an import from a file on a note; no pass, a member\'s pass, the session alone or a private copy are refused', async () => {
     const { deps, orgStorage, org, userStorage } = await buildOrgDeps();
     deps.orgGit = new OrgGitService({ orgStorage });
     await orgStorage.updateOrg(org.orgId, { git: { namespaceId: org.orgId } });
@@ -9565,34 +9566,44 @@ describe('the workplace screens (members, seats, invites)', () => {
     const downloadObject = vi.fn(async () => Buffer.from(JSON.stringify(fixtureOutreachSeed())));
     deps.mediaStorage = { downloadObject } as never;
     deps.outreach = new OutreachService({ store: new InMemoryOutreachStore(), outbox: () => undefined });
-    const call = async (who: number, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}) => {
+    const passes = new OutreachPasses(new InMemoryOutreachPassStore());
+    deps.outreachPasses = passes;
+    const ownerPass = (await passes.mint('user-1', { sessionId: 'session-42', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
+    const memberPass = (await passes.mint('user-2', { sessionId: 'session-43', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
+    const call = async (headers: Record<string, string>, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}) => {
       const res = createMockResponse();
-      await getRouteHandler(deps, path, method)(mockRequest({ headers: authHeader(who), body, params }), res);
+      await getRouteHandler(deps, path, method)(mockRequest({ headers, body, params }), res);
       return res;
     };
-    const importIt = (who: number, file = 'outreach-targets.json') => call(who, '/api/outreach/import', 'post', { note: String(note.number), file });
+    const as = (pass: string) => ({ authorization: `Bearer ${pass}` });
+    const importIt = (headers: Record<string, string>, file = 'outreach-targets.json') => call(headers, '/api/outreach/import', 'post', { note: String(note.number), file });
 
-    // Not the operator yet: refused, though they are the workplace's admin.
-    expect((await importIt(42)).statusCode).toBe(403);
+    // The Workspace session alone opens nothing: the routes take a pass.
+    expect((await importIt(authHeader(42))).statusCode).toBe(401);
+    // A pass of somebody who is not the operator: refused.
+    expect((await importIt(as(ownerPass))).statusCode).toBe(403);
     await userStorage.updateProfile('user-1', { roles: { admin: true } } as never);
-    expect((await importIt(42, 'other.json')).statusCode).toBe(404);
-    const imported = await importIt(42);
+    expect((await importIt(as(ownerPass), 'other.json')).statusCode).toBe(404);
+    const imported = await importIt(as(ownerPass));
     expect(imported.statusCode).toBe(200);
     expect(imported.body).toMatchObject({ added: 14, updated: 0, total: 14 });
     expect(downloadObject).toHaveBeenCalledWith({ storagePath: 'n/seed' });
-    const list = await call(42, '/api/outreach', 'get');
+    const list = await call(as(ownerPass), '/api/outreach', 'get');
     expect(list.statusCode).toBe(200);
-    expect((list.body as { rows: unknown[] }).rows).toHaveLength(14);
+    expect((list.body as { rows: Array<{ id: string; zone: string | null }> }).rows.find((row) => row.id === 'northwind-health')?.zone).toBe('America/Los_Angeles');
     // The member of the same workplace sees nothing: no list, no profile, no Send.
-    expect((await call(43, '/api/outreach', 'get')).statusCode).toBe(403);
-    expect((await call(43, '/api/outreach/targets/:id', 'get', {}, { id: 'northwind-health' })).statusCode).toBe(403);
-    expect((await call(43, '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
+    expect((await call(as(memberPass), '/api/outreach', 'get')).statusCode).toBe(403);
+    expect((await call(as(memberPass), '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
+    expect((await call({}, '/api/outreach', 'get')).statusCode).toBe(401);
     // A Send with no mail service is refused, and nothing changes.
-    const send = await call(42, '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' });
-    expect(send.statusCode).toBe(503);
+    expect((await call(as(ownerPass), '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(503);
     // In a private copy there is no Outreach at all.
     deps.privateCopy = true;
-    expect((await call(42, '/api/outreach', 'get')).statusCode).toBe(404);
+    expect((await call(as(ownerPass), '/api/outreach', 'get')).statusCode).toBe(404);
+    deps.privateCopy = false;
+    // The pass dies with the sign-in it was given to.
+    await deps.workspaceWebAuth!.revokeSession('user-1', 'session-42');
+    expect((await call(as(ownerPass), '/api/outreach', 'get')).statusCode).toBe(401);
   });
 
   it('signs a note file to be DRAWN only when the Workspace can draw it', async () => {
