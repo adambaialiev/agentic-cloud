@@ -79,6 +79,9 @@ import { createCopyPulse, InMemoryCopyPulseSettingsStore, pulseUrlFrom, SqliteCo
 import { collectCopyPulseFacts } from './services/copy-pulse-facts.js';
 import { copyPulseHandler } from './routes/copy-pulse.js';
 import { SqliteCopyPulseStore } from './services/sqlite/sqlite-copy-pulse-storage.js';
+import { OutreachService } from './services/outreach.js';
+import { InMemoryOutreachStore } from './services/outreach-storage.js';
+import { SqliteOutreachStore } from './services/sqlite/sqlite-outreach-storage.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
@@ -1476,6 +1479,20 @@ let mailOutbox = RESEND_MAIL_API_KEY || smtpTransport
 let mailApprovals = mailOutbox
   ? new MailApprovalService(mailApprovalStorage, mailOutbox)
   : undefined;
+// Outreach (note #1089): the platform operator's own screen for cold
+// outreach. Never in a private copy. It sends only through the person's own
+// outbox (read through a getter: mail may be set up after boot), and only
+// when the owner presses Send.
+const outreach = PRIVATE_COPY ? null : new OutreachService({
+  store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
+  outbox: () => mailOutbox,
+  mailboxes: mailboxStorage,
+  pulses: async () => (copyPulses ? (await copyPulses.list()).map((record) => record.pulse) : []),
+  senderName: async (userId) => {
+    const person = (await userStorage.getProfile(userId).catch(() => null))?.person;
+    return [person?.firstName, person?.lastName].filter(Boolean).join(' ').trim();
+  },
+});
 console.log(`[config] MAIL_REPLIES=${mailOutbox
   ? (RESEND_MAIL_API_KEY ? 'enabled' : `enabled over SMTP ${SMTP_SETTINGS!.host}:${SMTP_SETTINGS!.port}`)
   : PRIVATE_COPY ? 'set up from the Workspace (Mail), note #946' : 'disabled (set RESEND_MAIL_API_KEY or SMTP_HOST)'}`);
@@ -1767,6 +1784,10 @@ if (mailIngest) {
   mailIngest.watchArrivals({
     noteArrival: (arrival, opts) => {
       mailWake.noteArrival(arrival, opts);
+      // Outreach (note #1089): a reply from a target company lands on its timeline.
+      void outreach?.noteArrival(arrival, opts).catch((error) => {
+        console.warn('[outreach] an arrival could not be matched:', error instanceof Error ? error.message : error);
+      });
       void deps.workspaceAgentEvents?.mailArrived(arrival, opts).catch((error) => {
         console.warn('[workspace-agent-events] a letter could not be handed over:', error);
       });
@@ -2217,6 +2238,7 @@ const deps: RouteDeps = {
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
   ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
+  ...(outreach ? { outreach } : {}),
   ...(copyPulse ? { copyPulse } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
@@ -2520,7 +2542,17 @@ if (previewDomainService) {
 // Where private copies' daily pulses arrive (note #1057): signed, checked,
 // kept as the copy's latest and its day's row for the Copies screen.
 if (copyPulses && copyPulseKeys) {
-  app.post('/api/copy-pulse', copyPulseHandler({ store: copyPulses, keys: copyPulseKeys, onPulse: () => deps.copyAlerts?.nudge() }));
+  app.post('/api/copy-pulse', copyPulseHandler({
+    store: copyPulses,
+    keys: copyPulseKeys,
+    onPulse: (pulse) => {
+      deps.copyAlerts?.nudge();
+      // Outreach (note #1089): a target company's own copy reporting in is an install.
+      void outreach?.notePulse(pulse).catch((error) => {
+        console.warn('[outreach] a pulse could not be matched:', error instanceof Error ? error.message : error);
+      });
+    },
+  }));
 }
 
 app.get('/api/cli-pins', async (_req, res) => {

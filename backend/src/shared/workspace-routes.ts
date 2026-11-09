@@ -107,6 +107,9 @@ export const WORKSPACE_ROUTE_DEFS = {
   // radio library, and the account's: copies belong to no workplace.
   copies: { screen: 'copies', pattern: ['copies'], scope: 'account' },
   copy: { screen: 'copy', pattern: ['copies', ':id'], scope: 'account' },
+  // Outreach (note #1089): the owner's target companies, and one company's profile.
+  outreach: { screen: 'outreach', pattern: ['outreach'], scope: 'account' },
+  outreachTarget: { screen: 'outreachtarget', pattern: ['outreach', ':id'], scope: 'account' },
   organizations: { screen: 'orgpicker', pattern: ['workplaces'], scope: 'account' },
   organization: { screen: 'org', pattern: ['workplace'], scope: 'org' },
   organizationCloud: { screen: 'orgcloud', pattern: ['workplace', 'cloud'], scope: 'org' },

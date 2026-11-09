@@ -1,3 +1,6 @@
+import { OutreachService } from '../../services/outreach.js';
+import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
+import { fixtureOutreachSeed } from '../../shared/outreach-fixtures.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MemoryMediaStorage } from '../../services/memory-media-storage.js';
 import { randomBytes } from 'node:crypto';
@@ -9547,6 +9550,49 @@ describe('the workplace screens (members, seats, invites)', () => {
     );
     expect(deleted.statusCode).toBe(200);
     expect(await pinned()).toBeUndefined();
+  });
+
+  it('Outreach (note #1089): the operator imports from a file on a note; a member, a private copy and a missing file are refused', async () => {
+    const { deps, orgStorage, org, userStorage } = await buildOrgDeps();
+    deps.orgGit = new OrgGitService({ orgStorage });
+    await orgStorage.updateOrg(org.orgId, { git: { namespaceId: org.orgId } });
+    const notes = new InMemoryQuickNoteStorage();
+    deps.quickNoteStorage = notes;
+    const note = await notes.create({
+      userId: org.orgId, html: '<p>Outreach seed</p>', createdByAgentId: 'agent-a', updatedByAgentId: 'agent-a',
+      attachments: [{ id: 'f1', fileName: 'outreach-targets.json', contentType: 'application/json', sizeBytes: 9, storagePath: 'n/seed', addedByAgentId: 'agent-a', addedAt: 't' }],
+    } as never);
+    const downloadObject = vi.fn(async () => Buffer.from(JSON.stringify(fixtureOutreachSeed())));
+    deps.mediaStorage = { downloadObject } as never;
+    deps.outreach = new OutreachService({ store: new InMemoryOutreachStore(), outbox: () => undefined });
+    const call = async (who: number, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}) => {
+      const res = createMockResponse();
+      await getRouteHandler(deps, path, method)(mockRequest({ headers: authHeader(who), body, params }), res);
+      return res;
+    };
+    const importIt = (who: number, file = 'outreach-targets.json') => call(who, '/api/outreach/import', 'post', { note: String(note.number), file });
+
+    // Not the operator yet: refused, though they are the workplace's admin.
+    expect((await importIt(42)).statusCode).toBe(403);
+    await userStorage.updateProfile('user-1', { roles: { admin: true } } as never);
+    expect((await importIt(42, 'other.json')).statusCode).toBe(404);
+    const imported = await importIt(42);
+    expect(imported.statusCode).toBe(200);
+    expect(imported.body).toMatchObject({ added: 14, updated: 0, total: 14 });
+    expect(downloadObject).toHaveBeenCalledWith({ storagePath: 'n/seed' });
+    const list = await call(42, '/api/outreach', 'get');
+    expect(list.statusCode).toBe(200);
+    expect((list.body as { rows: unknown[] }).rows).toHaveLength(14);
+    // The member of the same workplace sees nothing: no list, no profile, no Send.
+    expect((await call(43, '/api/outreach', 'get')).statusCode).toBe(403);
+    expect((await call(43, '/api/outreach/targets/:id', 'get', {}, { id: 'northwind-health' })).statusCode).toBe(403);
+    expect((await call(43, '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
+    // A Send with no mail service is refused, and nothing changes.
+    const send = await call(42, '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' });
+    expect(send.statusCode).toBe(503);
+    // In a private copy there is no Outreach at all.
+    deps.privateCopy = true;
+    expect((await call(42, '/api/outreach', 'get')).statusCode).toBe(404);
   });
 
   it('signs a note file to be DRAWN only when the Workspace can draw it', async () => {

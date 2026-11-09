@@ -320,6 +320,11 @@ export interface RouteDeps {
    * route nudges it when a pulse arrives.
    */
   copyAlerts?: import('../services/copy-alerts.js').CopyAlertSweep;
+  /**
+   * Outreach (note #1089): the platform operator's own target companies,
+   * touches and Send. Never set in a private copy.
+   */
+  outreach?: import('../services/outreach.js').OutreachService;
   /** The ops Telegram chat's sender (createOpsNotifier); absent without TELEGRAM_OPS_BOT_TOKEN and TELEGRAM_OPS_CHAT_ID. */
   opsNotifier?: (text: string) => Promise<void>;
   /**

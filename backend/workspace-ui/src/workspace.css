@@ -7781,3 +7781,49 @@ h2.mailfileshead { margin-top: 16px; }
 #orgVoiceCard .cline .ctext, #orgVoiceModels .cline .ctext { white-space: normal; overflow: visible; text-overflow: clip; }
 #orgVoiceCard .crow .cline, #orgVoiceModels .crow .cline { height: auto; align-items: baseline; }
 .voicenotice > svg { flex: none; margin-top: 2px; }
+
+/* Outreach (note #1089): the owner's target companies, one company's profile,
+   its Send box and its timeline. */
+#screenOutreach .outreachrow .name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.outreachorder {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: var(--r-sm); font-size: var(--ui-sm); font-weight: 500; color: var(--accent); background: var(--accent-soft);
+}
+.outreachbadge {
+  font-size: var(--ui-sm); line-height: var(--ui-sm-leading); font-weight: 500;
+  padding: 1px 6px; border-radius: var(--r-sm);
+  color: var(--hint); background: color-mix(in srgb, var(--hint) 14%, transparent);
+}
+.outreachbadge.sent { color: var(--accent); background: var(--accent-soft); }
+.outreachbadge.replied, .outreachbadge.trying, .outreachbadge.installed { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.outreachbadge.not-now { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.outreachgap { color: var(--warn); }
+.outreachdue { color: var(--accent); font-weight: 500; }
+.outreachlink { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; }
+#screenOutreach #outreachFilter { margin-bottom: 4px; }
+#screenOutreach .card + .hintblock, #screenOutreach #outreachSource { padding-top: 12px; }
+.outreachimport .hintblock { padding-top: 12px; }
+.outreachfact .v { overflow-wrap: anywhere; }
+.outreachsource { color: var(--hint); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); margin-top: 2px; }
+.outreachwarn { color: var(--warn); font-size: var(--ui-sm); line-height: var(--ui-sm-leading); margin-top: 4px; }
+#screenOutreachTarget #outreachOwn .addrow { border-top: 1px solid var(--border); }
+#screenOutreachTarget #outreachState .chiprow { padding: 0 12px; border-bottom: 0; flex-wrap: wrap; gap: 4px 16px; }
+#screenOutreachTarget #outreachState .chip:disabled:not(.here) { opacity: .45; cursor: default; }
+#screenOutreachTarget #outreachState .hintblock { padding-top: 4px; }
+#screenOutreachTarget .outreachsend .hintblock { padding-top: 4px; }
+#screenOutreachTarget #outreachNotYet, #screenOutreachTarget #outreachNoSend { padding-top: 12px; }
+#outreachWordCount.outreachover { color: var(--warn); }
+#outreachTextField { min-height: 12em; overflow: hidden; resize: none; }
+.outreachsend .head { flex-wrap: wrap; gap: 2px 12px; }
+.outreachtouches { border-top: 1px solid var(--border); }
+.outreachtouch { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.outreachtouch:last-child { border-bottom: 0; }
+.outreachtouchhead { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.outreachtouchwhat { font-weight: 500; overflow-wrap: anywhere; }
+.outreachtouchhead time { color: var(--hint); font-size: var(--ui-sm); white-space: nowrap; }
+.outreachtouchbody { margin-top: 4px; color: var(--hint); overflow-wrap: anywhere; }
+.outreachtouchbody.outreachnote { color: var(--text); white-space: pre-wrap; }
+.outreachletter { margin-top: 4px; }
+.outreachletter summary { cursor: pointer; color: var(--hint); }
+.outreachtext { white-space: pre-wrap; font: inherit; margin: 8px 0; overflow-wrap: anywhere; }
+.outreachtouch.reply .outreachtouchwhat { color: var(--ok); }

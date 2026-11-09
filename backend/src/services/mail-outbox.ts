@@ -730,6 +730,65 @@ export class MailOutboxService {
   }
 
   /**
+   * Write again in a thread THIS person started (note #1089, Outreach's day-4
+   * and day-11 follow-ups): a reply to one of their own sent letters, to the
+   * person that letter went to. `reply()` refuses our own outgoing copies on
+   * purpose — answering one from the inbox would write to ourselves — so this
+   * is its own door, and it keeps the same rule that matters: the recipient
+   * is READ OFF the stored letter, never taken from the request. It reaches
+   * nobody new, so it spends the reply allowance, and it carries the
+   * threading headers so it lands under the first letter in their client and
+   * in ours.
+   */
+  async followUp(args: {
+    userId: string; messageId: string; text: string; senderName?: string;
+  }): Promise<MailMessageDocument> {
+    const said = this.words(args.text, 'reply');
+    const message = await this.deps.messages.get(args.userId, args.messageId);
+    if (!message || message.direction !== 'sent') throw new MailOutboxError('no_such_message', 'No such letter of yours.');
+    const recipient = message.to?.[0];
+    if (!recipient?.address?.includes('@')) throw new MailOutboxError('not_replyable', 'That letter has nobody to write to again.');
+    const mailbox = await this.deps.mailboxes.getByUser(args.userId);
+    if (!mailbox) throw new MailOutboxError('no_mailbox', 'This account has no address to send from.');
+    if (recipient.address.toLowerCase() === mailbox.address.toLowerCase()) throw new MailOutboxError('self_recipient', 'That is your own address.');
+    const hourAgo = new Date(this.now().getTime() - 60 * 60_000).toISOString();
+    if (await this.deps.messages.countSentSince(args.userId, hourAgo) >= MAIL_REPLIES_PER_HOUR) {
+      throw new MailOutboxError('too_many', `You can send ${MAIL_REPLIES_PER_HOUR} replies an hour. Try again shortly.`);
+    }
+    const preview: MailSendPreview = {
+      from: mailbox.address, to: { address: recipient.address }, cc: [], subject: replySubject(message.subject), text: said, files: [],
+    };
+    const { id, messageId } = this.mint();
+    const body = replyBody(said, message);
+    const references = replyReferences(message);
+    return this.deliver({
+      userId: args.userId, id, messageId, preview, body, extras: {},
+      ...(args.senderName ? { senderName: args.senderName } : {}),
+      threading: { ...(message.messageId ? { inReplyTo: message.messageId } : {}), references },
+      failure: 'The follow-up could not be sent.',
+      row: (sent) => ({
+        id,
+        direction: 'sent',
+        answers: message.id,
+        userId: args.userId,
+        address: preview.from,
+        envelopeFrom: preview.from,
+        receivedAt: this.now().toISOString(),
+        messageId,
+        ...(message.messageId ? { inReplyTo: message.messageId } : {}),
+        ...(references.length ? { references } : {}),
+        ...sent,
+        replyTo: [],
+        subject: preview.subject,
+        snippet: said.replace(/\s+/g, ' ').slice(0, 200),
+        text: body,
+        wrote: said,
+        raw: { storagePath: '', size: Buffer.byteLength(body, 'utf8') },
+      }),
+    });
+  }
+
+  /**
    * Pass a letter on to somebody (slice 12). A message of its own — it
    * answers nothing, carries no threading headers (its recipient never had
    * the conversation) and spends the NEW allowance — kept in the conversation

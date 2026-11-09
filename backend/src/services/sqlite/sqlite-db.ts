@@ -79,6 +79,32 @@ CREATE TABLE IF NOT EXISTS copy_pulse_alerts (
   PRIMARY KEY (copy_id, condition)
 );
 
+-- Outreach (note #1089): the owner's target companies, one row each, every
+-- touch with each (letters sent from the screen, replies that arrived, notes,
+-- state changes, an install), and the words the last import brought (the
+-- template and the follow-ups from note #799). Per person; only the platform
+-- operator's account ever writes here.
+CREATE TABLE IF NOT EXISTS outreach_targets (
+  user_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  PRIMARY KEY (user_id, target_id)
+);
+CREATE TABLE IF NOT EXISTS outreach_touches (
+  user_id TEXT NOT NULL,
+  touch_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  doc TEXT NOT NULL,
+  PRIMARY KEY (user_id, touch_id)
+);
+CREATE INDEX IF NOT EXISTS outreach_touches_by_target ON outreach_touches (user_id, target_id, at);
+CREATE TABLE IF NOT EXISTS outreach_words (
+  user_id TEXT PRIMARY KEY,
+  imported_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS drive_items (
   org_id TEXT NOT NULL,
   item_id TEXT NOT NULL,

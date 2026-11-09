@@ -16,6 +16,7 @@ import { RecapChatVersions } from '../services/recap-chat-versions.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
+import { registerOutreachRoutes } from './outreach.js';
 import { CopyAlertSweep, type CopyAlertRecipient } from '../services/copy-alerts.js';
 import { Router, raw, type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
@@ -5101,6 +5102,8 @@ self.addEventListener('activate', (event) => {
       ...(deps.radio && isAdminAccount(auth.profile) ? { radioLibrary: true as const } : {}),
       // The Copies screen (note #1058) is the operator's too, and only where pulses are kept.
       ...(deps.copyPulses && !deps.privateCopy && isAdminAccount(auth.profile) ? { copies: true as const } : {}),
+      // Outreach (note #1089) is the owner's own, like Copies.
+      ...(deps.outreach && !deps.privateCopy && isAdminAccount(auth.profile) ? { outreach: true as const } : {}),
       notesArchived,
       // Whether a note can carry files at all. An OPEN note answers this for
       // itself — it arrives with an `attachments` list, or without one on a
@@ -7472,6 +7475,20 @@ self.addEventListener('activate', (event) => {
     }
     return deps.quickNoteStorage;
   };
+
+  // Outreach (note #1089): the owner's own screen, gated like Copies. Its
+  // seed is a file on a note the owner can open, read through the same door
+  // the note's own download uses.
+  registerOutreachRoutes(router, '/api/outreach', deps, authenticate, async (auth) => isAdminAccount(auth.profile),
+    async (auth, req, res, number, fileName) => {
+      if (!workspaceNotes(res)) return null;
+      if (!deps.mediaStorage) { res.status(503).json({ error: 'File storage is not available on this backend yet.' }); return null; }
+      const doc = await workspaceNote(auth, req, number, res);
+      if (!doc) return null;
+      const attachment = (doc.attachments ?? []).find((file) => file.fileName === fileName);
+      if (!attachment) { res.status(404).json({ error: `Note #${number} has no file named ${fileName}.` }); return null; }
+      return deps.mediaStorage.downloadObject({ storagePath: attachment.storagePath });
+    });
 
   /**
    * What the user typed, as the HTML a note is stored in — or a reply and null.

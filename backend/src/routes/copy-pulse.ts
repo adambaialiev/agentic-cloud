@@ -27,7 +27,7 @@ export interface CopyPulseRouteDeps {
   keys: CopyPulseKeyStore;
   now?: () => Date;
   /** Told after a pulse is kept (the Copies alert sweep). */
-  onPulse?: () => void;
+  onPulse?: (pulse: import('../shared/copy-pulse.js').CopyPulse) => void;
 }
 
 export function copyPulseHandler(deps: CopyPulseRouteDeps) {
@@ -60,7 +60,7 @@ export function copyPulseHandler(deps: CopyPulseRouteDeps) {
       console.warn('[copy-pulse] could not keep a pulse:', error);
       return res.status(503).json({ error: 'The pulse could not be kept. The copy tries again later.' });
     }
-    deps.onPulse?.();
+    deps.onPulse?.(parsed.pulse);
     return res.json({ ok: true, receivedAt });
   };
 }
