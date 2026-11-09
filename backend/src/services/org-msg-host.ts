@@ -46,6 +46,17 @@ export const ORG_MSG_IDLE_MS = Number(process.env.ORG_MSG_IDLE_MS || 10 * 60_000
  * that stopped anyway just costs the one failed dial that precedes a wake.
  */
 const WARM_FOR_MS = Math.max(0, ORG_MSG_IDLE_MS - 3 * 60_000);
+/**
+ * The health wait's rhythm (note #1102). A machine that has just started
+ * drops packets until its server listens, so a probe of it does not fail —
+ * it hangs for its whole timeout. Measured on production, 9 Nov 2026: start
+ * call to first healthy answer 2.86 s every time, but the old 3 s probe and
+ * 1 s gap meant the first probe hung 3 s and the second came a second later,
+ * so a wake cost the reader about 5 s. Short probes close together answer
+ * within a quarter second of the machine being ready.
+ */
+const HEALTH_PROBE_MS = 750;
+const HEALTH_PROBE_GAP_MS = 250;
 /** How long a request waits for a wake or a first build before it says "opening". */
 const OPENING_WAIT_MS = 8_000;
 
@@ -304,7 +315,7 @@ export class OrgMsgHostService {
     let lastError = 'no answer';
     for (;;) {
       try {
-        const res = await fetchImpl(`http://[${pointer.privateIp}]:8080/health`, { signal: AbortSignal.timeout(3_000) });
+        const res = await fetchImpl(`http://[${pointer.privateIp}]:8080/health`, { signal: AbortSignal.timeout(HEALTH_PROBE_MS) });
         const body = res.ok ? await res.json().catch(() => null) as { ok?: boolean } | null : null;
         if (body?.ok) return;
         lastError = `health answered ${res.status}`;
@@ -312,7 +323,7 @@ export class OrgMsgHostService {
         lastError = error instanceof Error ? error.message : String(error);
       }
       if (this.now() >= deadline) throw new Error(`the messaging host ${pointer.app} did not become healthy: ${lastError}`);
-      await sleep(1_000);
+      await sleep(HEALTH_PROBE_GAP_MS);
     }
   }
 }

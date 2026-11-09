@@ -5,6 +5,7 @@ import { App } from '../../App.js';
 import { ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError } from '../../api/client.js';
 import { emptyState, scriptedApi, workspaceScript, type Answer } from '../../test/fixtures.js';
 import type { DirectMessage, DirectMessagePage } from '../../../../src/shared/direct-messages.js';
+import { forgetDirectMessages, heldInbox, heldThread, holdInbox, holdThread } from './messages-cache.js';
 const org = { orgId: 'o1', name: 'Studio', role: 'member', members: 2, seats: 0, seatProviders: [] };
 const people = [{ userId: 'alice', name: 'Alice', you: true, role: 'member', agents: 0, joinedAt: 't' }, { userId: 'bob', name: 'Bob', you: false, role: 'member', agents: 0, joinedAt: 't' }];
 const msg = (id: number, text = `Message ${id}`, senderId = 'bob'): DirectMessage => ({ id, text, senderId, clientId: `message-test-${id}`, createdAt: '2026-09-06T12:00:00Z' });
@@ -91,6 +92,71 @@ describe('human messages', () => {
     expect(said[0]!.textContent).not.toContain('**');
     expect(said[2]!.querySelector('.chatmarkdown')).toBeNull();
     expect(said[2]!.firstChild?.textContent).toBe('Typed by Bob');
+  });
+  describe('kept in this browser for this person (note #1102)', () => {
+    const kept = (rows: DirectMessage[]) => holdThread('saddam', 'o1', 'bob', { viewerId: 'alice', orgName: 'Studio', person: page().person, messages: rows, hasMore: false });
+    it('paints a kept conversation at once, then appends what the read behind it brings, never emptying', async () => {
+      kept([msg(1, 'Seen before'), msg(2, 'Also seen', 'alice')]);
+      let answer!: (value: DirectMessagePage) => void;
+      const scripted = open('/messages/bob?org=o1', {
+        'GET api/messages/bob?after=2': () => new Promise<DirectMessagePage>((resolve) => { answer = resolve; }),
+      });
+      await flush();
+      // The read is still out, and the conversation is already there.
+      expect([...document.querySelectorAll('[role=log] .chatmsg')].map(one => one.textContent)).toEqual(['Seen before', 'Also seen']);
+      expect(screen.queryByText('Loading conversation…')).toBeNull();
+      expect(scripted.calls.some(call => call.path === 'api/messages/bob')).toBe(false);
+      await act(async () => { answer(page([msg(3, 'New since')])); });
+      await flush();
+      expect([...document.querySelectorAll('[role=log] .chatmsg')].map(one => one.textContent)).toEqual(['Seen before', 'Also seen', 'New since']);
+      expect(heldThread('saddam', 'o1', 'bob')!.messages.map(one => one.id)).toEqual([1, 2, 3]);
+    });
+    it('paints the kept list at once and replaces it with the fresh one', async () => {
+      holdInbox('saddam', 'o1', { threads: [{ person: page().person, lastMessage: msg(1, 'Old line'), unread: 0 }], unread: 0 });
+      let answer!: (value: unknown) => void;
+      open('/messages?org=o1', { 'GET api/messages': () => new Promise((resolve) => { answer = resolve; }) });
+      await flush();
+      expect(document.querySelector('#screenMessages .ctext')?.textContent).toBe('Old line');
+      expect(screen.queryByText('Loading messages…')).toBeNull();
+      await act(async () => { answer({ threads: [{ person: page().person, lastMessage: msg(2, 'Newer line'), unread: 1 }], unread: 1 }); });
+      await flush();
+      expect(document.querySelector('#screenMessages .ctext')?.textContent).toBe('Newer line');
+      expect(heldInbox('saddam', 'o1')?.threads[0]!.lastMessage.text).toBe('Newer line');
+    });
+    it('never shows one person what was kept for another, and drops it from the browser', async () => {
+      holdThread('someone-else', 'o1', 'bob', { viewerId: 'carol', orgName: 'Studio', person: page().person, messages: [msg(1, 'Carol\'s secret')], hasMore: false });
+      expect(Object.keys(localStorage).some(key => key.includes('someone-else'))).toBe(true);
+      let answer!: (value: DirectMessagePage) => void;
+      open('/messages/bob?org=o1', { 'GET api/messages/bob': () => new Promise<DirectMessagePage>((resolve) => { answer = resolve; }) });
+      await flush();
+      expect(screen.queryByText("Carol's secret")).toBeNull();
+      expect(screen.getByText('Loading conversation…')).toBeTruthy();
+      expect(Object.keys(localStorage).some(key => key.includes('someone-else'))).toBe(false);
+      await act(async () => { answer(page([msg(1, 'Hello')])); });
+    });
+    it('far behind its kept copy, a conversation starts again from the newest page rather than walking forward', async () => {
+      kept([msg(1, 'Long ago')]);
+      open('/messages/bob?org=o1', {
+        'GET api/messages/bob?after=1': () => ({ ...page([msg(2), msg(3)]), hasMore: true }),
+        'GET api/messages/bob': () => ({ ...page([msg(80, 'Newest page start'), msg(81, 'Newest of all')]), hasMore: true }),
+      });
+      await flush(); await flush();
+      expect([...document.querySelectorAll('[role=log] .chatmsg')].map(one => one.textContent)).toEqual(['Newest page start', 'Newest of all']);
+      expect(screen.getByRole('button', { name: 'Earlier messages' })).toBeTruthy();
+    });
+    it('a kept conversation the server no longer gives this reader is forgotten', async () => {
+      kept([msg(1, 'Seen before')]);
+      open('/messages/bob?org=o1', { 'GET api/messages/bob?after=1': () => { throw new WorkspaceApiError('No such conversation.', 404, { error: 'No such conversation.' }); } });
+      await flush();
+      expect(screen.queryByText('Seen before')).toBeNull();
+      expect(heldThread('saddam', 'o1', 'bob')).toBeNull();
+    });
+    it('sign-out empties every kept list and conversation', () => {
+      kept([msg(1)]); holdInbox('saddam', 'o1', { threads: [], unread: 0 });
+      forgetDirectMessages();
+      expect(Object.keys(localStorage).filter(key => key.startsWith('agentbuilt.dm.'))).toEqual([]);
+      expect(heldThread('saddam', 'o1', 'bob')).toBeNull();
+    });
   });
   it('keeps a failed send for retry, reuses its identifier and catches concurrent incoming text', async () => {
     let attempts = 0;
@@ -208,6 +274,8 @@ describe('human messages', () => {
     open('/messages/bob?org=o1', {
       'GET api/messages': () => ({ threads: [{ person: page().person, lastMessage: msg(1), unread: 0 }], unread: 0 }),
       'GET api/messages/bob': () => page([msg(1)]),
+      // Back again, the kept conversation asks only for what is new (note #1102).
+      'GET api/messages/bob?after=1': () => page([]),
     });
     await flush();
     const box = () => screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;

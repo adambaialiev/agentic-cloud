@@ -6,6 +6,7 @@ import { rememberSetupPending } from '../onboarding/setup-hint.js';
 import { forgetDrives } from '../screens/drive/drive-cache.js';
 import { forgetChatFileTexts } from '../screens/chat/chat-file-text.js';
 import { forgetRecapChats } from '../screens/home/recap-chat-cache.js';
+import { forgetDirectMessages } from '../screens/messages/messages-cache.js';
 import { forgetMail } from '../screens/mail/mail-cache.js';
 import { forgetNotes } from '../screens/notes/note-cache.js';
 import { forgetDecided } from '../workspace/decided.js';
@@ -68,6 +69,7 @@ afterEach(() => {
   forgetPeople();
   forgetOrgDetails();
   forgetRecapChats();
+  forgetDirectMessages();
   // Same reasoning for the cloud card: it is held per TAB, and a test file
   // is one tab, so a connected cloud read in one test would open the next
   // test's Home already connected.

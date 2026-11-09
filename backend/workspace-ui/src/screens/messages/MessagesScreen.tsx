@@ -15,6 +15,8 @@ import { PersonRow } from '../org/PersonRow.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
 import { usePeople } from '../org/usePeople.js';
 import { isAnswerObject, isOpening, pollFailureLine, useMessagePoll, usePollMisses } from './useMessagePoll.js';
+import { forgetDirectMessagesOf, heldInbox, holdInbox } from './messages-cache.js';
+import { useSession } from '../../session/useSession.js';
 
 /** The same People plates in a transient picker, with the normal Back. */
 function NewMessagePicker({ people, orgName, orgId, loading, error, close }: {
@@ -41,7 +43,10 @@ function NewMessagePicker({ people, orgName, orgId, loading, error, close }: {
 export function MessagesScreen() {
   const api = useOrgApi(), orgId = useOrgId();
   const { people, org, loading, error: peopleError } = usePeople();
-  const [inbox, setInbox] = useState<DirectMessageInbox | null>(null);
+  // The list as this person last saw it (note #1102), drawn at once; the read replaces it.
+  const { state: session } = useSession();
+  const reader = session.status === 'signed-in' ? session.session.username : undefined;
+  const [inbox, setInbox] = useState<DirectMessageInbox | null>(() => heldInbox(reader, orgId));
   const [error, setError] = useState(''), [choosing, setChoosing] = useState(false), [opening, setOpening] = useState(false);
   const closePicker = useCallback(() => setChoosing(false), []);
   // A missed read is quiet until it keeps missing (note #1069).
@@ -50,15 +55,15 @@ export function MessagesScreen() {
     try {
       const answer = await api.api<unknown>('api/messages');
       if (!isAnswerObject(answer)) throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
-      if (alive()) { misses.hit(); setInbox(answer as unknown as DirectMessageInbox); setError(''); setOpening(false); }
+      if (alive()) { misses.hit(); setInbox(answer as unknown as DirectMessageInbox); holdInbox(reader, orgId, answer as unknown as DirectMessageInbox); setError(''); setOpening(false); }
     } catch (err) {
       if (!alive()) return;
       if (isOpening(err)) { misses.hit(); setError(''); setOpening(true); return; }
       setOpening(false);
-      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { setError(errorMessage(err)); setInbox(null); return; }
+      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { forgetDirectMessagesOf(reader, orgId); setError(errorMessage(err)); setInbox(null); return; }
       if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api, misses]);
+  }, [api, misses, reader, orgId]);
   useMessagePoll(read);
   const address = (id: string) => toFor({ kind: 'directMessage', id, orgId: orgId ?? undefined })!;
   const peers = people.filter(person => !person.you);
@@ -68,6 +73,7 @@ export function MessagesScreen() {
   return <div className="screen" id="screenMessages">
     <ScreenTitle title="Messages" sub={org?.name ?? 'Your workplace'} />
     {error ? <div className="hintblock" role="alert">{error} Retrying…</div> : null}
+    {inbox && opening ? <div className="hintblock" role="status">Opening messages… showing what you last saw.</div> : null}
     <div className="card">
       {inbox?.threads.map(thread => <Link key={thread.person.userId} className="crow open" to={address(thread.person.userId)}>
         <PersonFace photoUrl={thread.person.photoUrl} />

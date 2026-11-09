@@ -28,6 +28,7 @@ import { forgetHeldDecisions } from '../screens/chat/decisions-memory.js';
 import { forgetDecided } from '../workspace/decided.js';
 import { forgetChatFileTexts } from '../screens/chat/chat-file-text.js';
 import { forgetRecapChats } from '../screens/home/recap-chat-cache.js';
+import { forgetDirectMessages } from '../screens/messages/messages-cache.js';
 import { forgetMail } from '../screens/mail/mail-cache.js';
 import { forgetNotes } from '../screens/notes/note-cache.js';
 import { forgetPeople } from '../screens/org/people-cache.js';
@@ -81,6 +82,7 @@ export function SessionProvider({ api, children }: { api?: WorkspaceApi; childre
     forgetPeople();
     forgetOrgDetails();
     forgetRecapChats();
+    forgetDirectMessages();
     forgetClouds();
     forgetDrives();
     forgetHeldDecisions();

@@ -11,6 +11,8 @@ import { Svg } from '../../ui/icons.js';
 import { errorMessage } from '../../ui/format.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
 import { isAnswerObject, isOpening, pollFailureLine, useMessagePoll, usePollMisses } from './useMessagePoll.js';
+import { forgetThread, heldThread, holdThread } from './messages-cache.js';
+import { useSession } from '../../session/useSession.js';
 import { useChatViewport } from '../chat/ChatScreen.js';
 import { chatDayLabel } from '../chat/chat-notice.js';
 import { CHAT_COUNT_FROM, CHAT_TOUCH_QUERY, chatEnterSends } from '../chat/chat-compose.js';
@@ -20,19 +22,28 @@ export function DirectMessageScreen() {
   const api = useOrgApi(), orgId = useOrgId();
   const back = useReturnToParent(toFor({ kind: 'messages', orgId: orgId ?? undefined })!);
   const path = `api/messages/${encodeURIComponent(id)}`;
-  const [page, setPage] = useState<DirectMessagePage | null>(null), [rows, setRows] = useState<DirectMessage[]>([]);
+  // What this person last saw here (note #1102): drawn in the first frame,
+  // with the fresh read landing behind it and only asking for what is new.
+  const { state: session } = useSession();
+  const reader = session.status === 'signed-in' ? session.session.username : undefined;
+  const [held] = useState(() => heldThread(reader, orgId, id));
+  const [page, setPage] = useState<DirectMessagePage | null>(() => (held
+    ? { orgName: held.orgName, person: held.person, viewerId: held.viewerId, messages: [], hasMore: held.hasMore } : null));
+  const [rows, setRows] = useState<DirectMessage[]>(() => held?.messages ?? []);
   const [error, setError] = useState(''), [sendError, setSendError] = useState(''), [opening, setOpening] = useState(false);
   const memory = directDraftKey(orgId, id);
   // Unsent words wait for the reader on another screen, as the agent chat's
   // do (note #515); this composer is the room chat's field written out by
   // hand rather than `ChatComposer`, so it keeps the same memory itself.
   const [draft, setDraft] = useState(() => recallDraft(memory)), [sending, setSending] = useState(false), [olderBusy, setOlderBusy] = useState(false);
-  const [more, setMore] = useState(false), [newMessages, setNewMessages] = useState(false);
+  const [more, setMore] = useState(() => held?.hasMore ?? false), [newMessages, setNewMessages] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
-  const pane = useRef<HTMLDivElement>(null), following = useRef(true), alive = useRef(true);
-  const [fetchedCursor, setFetchedCursor] = useState(0);
+  const pane = useRef<HTMLDivElement>(null), following = useRef(held?.scroll ? held.scroll.following : true), alive = useRef(true);
+  const heldNewest = held?.messages.at(-1)?.id ?? 0;
+  const [fetchedCursor, setFetchedCursor] = useState(heldNewest);
   const renderedThrough = useRef(0);
-  const newestFetched = useRef(0), readThrough = useRef(0), receiptBusy = useRef(false);
+  const newestFetched = useRef(heldNewest), readThrough = useRef(0), receiptBusy = useRef(false);
+  const restoreScroll = useRef(held?.scroll && !held.scroll.following ? held.scroll.top : null);
   const sendLock = useRef(false), pending = useRef<{ text: string; clientId: string } | null>(null);
   // Sent and not answered yet (note #764): standing at the end of the
   // conversation from the tap, as an agent chat's own message does, until
@@ -57,8 +68,26 @@ export function DirectMessageScreen() {
       const after = newestFetched.current;
       const read = await api.api<unknown>(path + (after ? `?after=${after}` : ''));
       if (!isAnswerObject(read) || !Array.isArray(read.messages)) throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
-      const answer = read as unknown as DirectMessagePage;
+      let answer = read as unknown as DirectMessagePage;
       if (!current()) return;
+      const catchingUp = Boolean(held) && heldNewest > 0 && after === heldNewest;
+      // A kept copy is used only while the server still names the same reader.
+      if (catchingUp && answer.viewerId !== held!.viewerId) {
+        forgetThread(reader, orgId, id); newestFetched.current = 0; setFetchedCursor(0); setRows([]); setPage(null); return;
+      }
+      // Far behind (more new than one page): do not walk forward a page per
+      // tick — start again from the newest page, older ones a tap away.
+      if (catchingUp && answer.hasMore) {
+        const fresh = await api.api<unknown>(path);
+        if (!current()) return;
+        if (!isAnswerObject(fresh) || !Array.isArray(fresh.messages)) throw new WorkspaceApiError(ANSWER_UNREADABLE_SENTENCE, 0, { error: ANSWER_UNREADABLE_SENTENCE, code: ANSWER_UNREADABLE_CODE });
+        answer = fresh as unknown as DirectMessagePage;
+        misses.hit(); setPage(answer); setError(''); setOpening(false); setMore(answer.hasMore);
+        newestFetched.current = answer.messages.at(-1)?.id ?? 0; setFetchedCursor(newestFetched.current);
+        following.current = true; setRows(answer.messages);
+        await acknowledge();
+        return;
+      }
       misses.hit(); setPage(answer); setError(''); setOpening(false); if (!after) setMore(answer.hasMore);
       if (answer.messages.length) { newestFetched.current = answer.messages.at(-1)!.id; setFetchedCursor(newestFetched.current); setRows(old => merge(old, answer.messages)); if (!following.current) setNewMessages(true); }
       await acknowledge();
@@ -66,15 +95,35 @@ export function DirectMessageScreen() {
       if (!current()) return;
       if (isOpening(err)) { misses.hit(); setError(''); setOpening(true); return; }
       setOpening(false);
-      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { setError(errorMessage(err)); setPage(null); setRows([]); return; }
+      if (err instanceof WorkspaceApiError && [401, 403, 404].includes(err.status)) { forgetThread(reader, orgId, id); setError(errorMessage(err)); setPage(null); setRows([]); return; }
       // A missed read is quiet until it keeps missing (note #1069).
       if (misses.miss()) setError(pollFailureLine(err));
     }
-  }, [api, path, acknowledge, misses]);
+  }, [api, path, acknowledge, misses, held, heldNewest, reader, orgId, id]);
   useMessagePoll(read);
+  // Keep what is drawn, and on leaving, where the reader stood (note #1102).
+  const latest = useRef({ page, rows, more });
+  latest.current = { page, rows, more };
+  const keep = useCallback((scroll?: { top: number; following: boolean }) => {
+    const { page: shown, rows: drawn, more: older } = latest.current;
+    if (!shown || !drawn.length) return;
+    holdThread(reader, orgId, id, { viewerId: shown.viewerId, orgName: shown.orgName, person: shown.person, messages: drawn, hasMore: older, ...(scroll ? { scroll } : {}) });
+  }, [reader, orgId, id]);
+  useEffect(() => { keep(); }, [page, rows, more, keep]);
+  // Read from the pane as the reader scrolls: at unmount the ref is gone.
+  const stood = useRef<{ top: number; following: boolean } | undefined>(held?.scroll);
+  useEffect(() => () => { keep(stood.current); }, [keep]);
   useLayoutEffect(() => {
     const el = pane.current; if (!el) return;
     if (prepend.current) { el.scrollTop = prepend.current.top + el.scrollHeight - prepend.current.height; prepend.current = null; }
+    else if (restoreScroll.current !== null) {
+      // The pane may not be scrollable in its first frame (the viewport hook
+      // sizes it just after): put the reader back as soon as it is.
+      const target = restoreScroll.current; restoreScroll.current = null;
+      let frames = 0;
+      const put = () => { el.scrollTop = target; if (Math.abs(el.scrollTop - target) > 1 && frames++ < 30) requestAnimationFrame(put); };
+      put();
+    }
     else if (following.current) el.scrollTop = el.scrollHeight;
     renderedThrough.current = fetchedCursor;
     void acknowledge();
@@ -136,11 +185,13 @@ export function DirectMessageScreen() {
     </header>
     <div className="chatpane" ref={pane} onScroll={() => {
       const el = pane.current!; following.current = el.scrollHeight - el.clientHeight - el.scrollTop < 60;
+      stood.current = { top: el.scrollTop, following: following.current };
       if (following.current) { setNewMessages(false); void acknowledge(); }
     }}>
       {more ? <button className="addrow cardtop" disabled={olderBusy} onClick={() => { void loadOlder(); }}>{olderBusy ? 'Loading…' : 'Earlier messages'}</button> : null}
       {error ? <div role="alert" className="hintblock">{error} Retrying…</div> : null}
       {!page && !error ? <div className="empty" role="status">{opening ? 'Opening messages…' : 'Loading conversation…'}</div> : null}
+      {page && opening ? <div className="hintblock dmopening" role="status">Opening messages… showing what you last saw.</div> : null}
       {page && !rows.length ? <div className="chatempty">Say hello to {page.person.name}.</div> : null}
       <div className="chatlog" role="log" aria-label="Conversation" aria-live="polite" aria-relevant="additions">
         {rows.map(message => {
