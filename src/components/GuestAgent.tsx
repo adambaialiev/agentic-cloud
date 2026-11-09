@@ -648,7 +648,10 @@ function Creating({ agent, steps, since, estimate, now, skew }: { agent: Agent |
           );
         })}
       </ol>
-      <p className="mt-7 type-sm text-hint">Keep this page open.</p>
+      {/* No "Keep this page open." under the steps since note #1105 (Adam,
+          9 Nov 2026, 17:36 UTC: "Remove"): the build runs on our side and the
+          key stays in this browser, so a visitor who leaves and comes back
+          finds the same agent, still building or ready. */}
     </div>
   );
 }

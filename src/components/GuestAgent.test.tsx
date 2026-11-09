@@ -178,6 +178,35 @@ describe('GuestAgentSection (note #1039)', () => {
     expect(document.querySelector('[data-guest-left]')!.textContent).toBe('Juno goes after 30 quiet minutes · 30 left');
   });
 
+  // Note #1105: the build runs on our side, so "Keep this page open." is gone.
+  // A visitor who taps, leaves mid-build and comes back finds the same agent,
+  // further along, by the key this browser kept; then it is ready.
+  it('leaving mid-build and coming back finds the same agent, and asks nobody to keep the page open', async () => {
+    routes[`POST ${GUEST}`] = () => ({ status: 201, body: { key: KEY, status: status({ state: 'creating', agent: JUNO, step: 'machine', estimateSeconds: 35, steps: buildSteps(0) }) } });
+    const first = draw();
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /Start guest agent/ }));
+    await flush();
+    await flush();
+    expect(h2()).toBe('Juno is getting ready.');
+    expect(words()).not.toMatch(/keep this page open/i);
+    first.unmount();
+
+    routes[`GET ${GUEST}`] = () => ({ body: status({ state: 'creating', agent: JUNO, step: 'code', estimateSeconds: 35, steps: buildSteps(2) }) });
+    calls.length = 0;
+    draw();
+    await flush();
+    expect(keyOf(calls[0])).toBe(KEY);
+    expect(h2()).toBe('Juno is getting ready.');
+    expect(document.querySelector('[data-step-id="code"]')!.getAttribute('data-step')).toBe('doing');
+    expect(words()).not.toMatch(/keep this page open/i);
+    expect(calls.some((c) => c.init?.method === 'POST')).toBe(false);
+
+    routes[`GET ${GUEST}`] = () => ({ body: readyStatus() });
+    await flush(GUEST_CREATING_POLL_MS);
+    expect(document.querySelector('[data-guest-name]')!.textContent).toBe('Juno');
+  });
+
   // Note #1060: the five steps, each with its own clock, the long first one
   // alive while it runs.
   it('draws the long first step alive: its clock ticks, it says what is happening, and the heading keeps time', async () => {
