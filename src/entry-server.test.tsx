@@ -266,7 +266,10 @@ describe('prerendered routes', () => {
 
     // The line for an agent, in How to start (the address every door uses).
     expect(html).toContain('id="give-your-agent"');
-    expect(html).toContain('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
+    // Since note #1097 the line is set in groups so it wraps well on a
+    // phone; its text, tags aside, is still the one line that is copied.
+    const line = html.match(/<code id="agent-line"[^>]*>([\s\S]*?)<\/code>/)?.[1] ?? '';
+    expect(line.replace(/<[^>]*>/g, '')).toBe('Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md');
     expect(html).not.toContain('t.me/');
     expect(html).not.toContain('t.me/AgenticCloudComputerBot');
   });

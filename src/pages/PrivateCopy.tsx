@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { H2, Screen, SecondaryLink } from '../components/landing-kit';
 import { NEW_TAB, useNewTab } from '../lib/new-tab';
 import { SidesArt } from '../components/CopyArt';
@@ -55,6 +55,19 @@ export const BUILD_YOURS = 'Build your own Agentic Cloud';
 export const AGENT_GUIDE_PATH = '/own-cloud.md';
 export const AGENT_LINE = `Set up our own Agentic Cloud by following https://agenticcloudcomputer.com${AGENT_GUIDE_PATH}`;
 
+/* How the line is SHOWN (note #1097, Adam, 9 Nov 2026, 14:57 UTC, with a
+   phone screenshot: "Optimize text wrapping to look good"). The copied text is
+   AGENT_LINE, one line, unchanged; only the wrapping is set. The sentence
+   breaks only between these groups, so no line holds "following" alone and
+   "Agentic Cloud" stays together; the address moves to its own line whole
+   (inline-block), and where even a whole line is too narrow for it (a phone:
+   it needs about 390 px at 14 px) it breaks once, after the host's slash,
+   never inside a word. A smaller phone size would have to drop to about
+   11 px to fit 375 px, and a sideways scroll would hide "own-cloud.md", so
+   the one break after the slash reads best. */
+const AGENT_SENTENCE = ['Set up our own', 'Agentic Cloud', 'by following'];
+const AGENT_GUIDE_HOST = 'https://agenticcloudcomputer.com';
+
 /* The line, set as code, with its Copy button. Copying is the page's main
    action, so the button says what it did for a moment, and a screen reader
    hears it too. Without clipboard access the line is still plain text to
@@ -80,9 +93,21 @@ export function AgentLine() {
     }
   };
   return (
-    <div className="flex items-start gap-2.5 rounded-2xl bg-panel-soft p-3 sm:items-center sm:gap-4 sm:p-3 sm:pl-5">
-      <code id="agent-line" className="min-w-0 flex-1 break-words font-mono type-sm leading-relaxed text-white sm:type-base">
-        {AGENT_LINE}
+    <div className="relative rounded-2xl bg-panel-soft p-3 sm:flex sm:items-center sm:gap-4 sm:p-3 sm:pl-5">
+      <code id="agent-line" className="block min-w-0 break-words font-mono type-sm leading-relaxed text-white sm:flex-1 sm:type-base">
+        {/* The button's room on a phone, beside the sentence's two lines only,
+            so the address below it gets the box's full width. */}
+        <span aria-hidden="true" className="float-right ml-2.5 h-10 w-10 sm:contents" />
+        {AGENT_SENTENCE.map((group, i) => (
+          <Fragment key={group}>
+            {i > 0 && ' '}
+            <span className="whitespace-nowrap">{group}</span>
+          </Fragment>
+        ))}{' '}
+        <span className="inline-block max-w-full">
+          {AGENT_GUIDE_HOST}/<wbr />
+          <span className="whitespace-nowrap">{AGENT_GUIDE_PATH.slice(1)}</span>
+        </span>
       </code>
       <button
         type="button"
@@ -90,7 +115,7 @@ export function AgentLine() {
         aria-label="Copy"
         aria-describedby="agent-line"
         data-copied={copied ? '' : undefined}
-        className="group relative -m-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
+        className="group absolute right-2.5 top-2.5 grid h-11 w-11 shrink-0 sm:relative sm:right-auto sm:top-auto sm:-m-0.5 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent"
       >
         <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-panel transition-colors group-hover:bg-white/85" aria-hidden="true">
           <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
