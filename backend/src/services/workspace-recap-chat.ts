@@ -287,7 +287,14 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
   private readonly runs = new Map<string, { controller: AbortController; intent?: 'steer' | 'stop' }>();
   constructor(
     private deps: RouteDeps,
-    private scope: (userId: string, orgId: string) => Promise<RecapScope | null>,
+    /**
+     * `'roster'` asks for `agents` alone (note #1095): `read` only checks
+     * whether the agents it waits on have finished, and it runs on every
+     * open tab's 3-second poll. The whole scope re-reads the workplace's
+     * notes, proposals and knowledge, which kept production's backend at
+     * about 30 percent of a core for as long as a wait was open.
+     */
+    private scope: (userId: string, orgId: string, need?: 'roster') => Promise<RecapScope | null>,
     private changed?: (orgId: string) => void,
     /**
      * The first run (note #726). `seated`: whether this person has a live
@@ -373,7 +380,7 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
         if (greeting) { this.add(state, 'assistant', greeting, { kind: 'greeting' }); state.greeted = true; }
         else if (welcome) { this.add(state, 'assistant', welcome, { kind: 'welcome' }); state.greeted = true; }
       }
-      const scope = state.pending.length ? await this.scope(user, org) : null;
+      const scope = state.pending.length ? await this.scope(user, org, 'roster') : null;
       for (const pending of [...state.pending]) {
         const target = scope?.agents.find(a => a.record.id === pending.agentId && a.own);
         if (!target || pending.status === 'sending') {

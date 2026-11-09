@@ -1139,6 +1139,15 @@ describe('Workspace Agent conversation', () => {
       expect(recapRowViews(answer.messages).at(-1)).toMatchObject({ form: 'attention', parts: [{ agent: 'Theo' }, ' finished without answering'] });
       expect((await x.orgStorage.getMembership(x.org, 'u1'))!.workspaceRecapChat!.silent).toEqual([{ agentId: 'a1', name: 'Theo', at: expect.any(String) }]);
     });
+    it('checks on the wait from the roster alone, not the whole workplace, on every poll (note #1095)', async () => {
+      const x = await setup([]);
+      await asked(x);
+      const seen: Array<string | undefined> = [];
+      const chat = new WorkspaceRecapChat(x.deps, async (u, o, need) => { seen.push(need); return x.resolve(u, o); });
+      x.scope.agents[0]!.working = true;
+      expect((await chat.read('u1', x.org)).waiting).toEqual(['Theo']);
+      expect(seen).toEqual(['roster']);
+    });
     it('does not take a stamp from a turn that ended before the message was sent', async () => {
       const x = await setup([]);
       (x.scope.agents[0]!.record as { lastTurnEndedAt?: string }).lastTurnEndedAt = new Date(Date.now() - 60_000).toISOString();

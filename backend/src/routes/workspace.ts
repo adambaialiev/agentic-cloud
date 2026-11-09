@@ -5423,7 +5423,7 @@ self.addEventListener('activate', (event) => {
     })().catch((error) => console.warn(`[recap] Refresh after ${event.kind} on agent ${event.agentId} failed:`, error));
   });
 
-  const recapChat = new WorkspaceRecapChat(deps, async (userId, orgId) => {
+  const recapChat = new WorkspaceRecapChat(deps, async (userId, orgId, need) => {
     const reader = await recapReaderFor(userId, orgId);
     if (!reader) return null;
     const [member, namespaces, members] = await Promise.all([
@@ -5439,6 +5439,8 @@ self.addEventListener('activate', (event) => {
         agents.push({ record, own: person.userId === userId, owner: profile ? personDisplayName(profile) : undefined, working: Boolean(deps.agentLifecycle?.isAgentWorking?.(person.userId, record.id)) });
       }
     }
+    // A poll checking on the agents it waits for needs nothing else (note #1095).
+    if (need === 'roster') return { activity: [], settings: null, agents };
     const ownAgents = agents.filter(a => a.own).map(a => a.record);
     const providers = await recapProviders(userId, orgId);
     // The conversation may be entered through a direct link before any of
