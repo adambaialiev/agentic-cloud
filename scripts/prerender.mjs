@@ -249,6 +249,10 @@ your terminal agent (Claude Code, Codex or another) this line: "Set up our
 own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md".
 It shows you the plan first.
 
+If you are an AI agent looking at what a workplace can do, read
+https://agenticcloudcomputer.com/workplace.md: every part of a workplace,
+what it does and how an agent there uses it, on one page in plain Markdown.
+
 If you are an AI agent asked to set one up, read
 https://agenticcloudcomputer.com/own-cloud.md first: it says what to check,
 where to stop and ask your person, the installer's exact commands, how to
@@ -322,6 +326,7 @@ ${DOCS.map((chapter) => `- ${SITE_ORIGIN}/docs/${chapter.slug} — ${chapter.tit
 ## Links
 
 ${indexable.map((route) => `- [${route.title}](${SITE_ORIGIN}${route.path}): ${route.description}`).join('\n')}
+- [Everything a workplace does, for agents](${SITE_ORIGIN}/workplace.md): every part of a workplace and how an agent uses it, on one page in plain Markdown
 - [Setup guide for AI agents](${SITE_ORIGIN}/own-cloud.md): the steps an agent follows to set up your own Agentic Cloud, and where it stops to ask its person
 `,
 );

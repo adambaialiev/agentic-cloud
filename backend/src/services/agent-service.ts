@@ -1104,7 +1104,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v191 (note #1103): CLI 1.75.0 — `agentbuilt outreach list | show | set`,
 // the platform operator's agents writing outreach words straight into his
 // Outreach store. Out of HELP (operator only), like `signups`.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 191;
+// v192 (note #1106): CLI 1.76.0 — `agentbuilt outreach show` prints the
+// company's two short links for its letters (agenticcloudcomputer.com/go/…).
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 192;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

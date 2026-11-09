@@ -15,6 +15,7 @@ const PLACES = [
   'src/pages/WhyFly.tsx',
   'src/lib/product-copy.ts',
   'public/own-cloud.md',
+  'public/workplace.md',
   'scripts/prerender.mjs',
   'infra/copy-installer/README.md',
   'src/components/CopyArt.tsx',
@@ -43,7 +44,7 @@ describe('the own-cloud promise says what copies send (note #1059)', () => {
   });
 
   it('says the admin sees it and can turn it off wherever the page promises it', () => {
-    for (const file of ['src/pages/Landing.tsx', 'src/pages/WhyFly.tsx', 'src/lib/product-copy.ts', 'public/own-cloud.md', 'scripts/prerender.mjs']) {
+    for (const file of ['src/pages/Landing.tsx', 'src/pages/WhyFly.tsx', 'src/lib/product-copy.ts', 'public/own-cloud.md', 'public/workplace.md', 'scripts/prerender.mjs']) {
       expect(read(file).replace(/\s+/g, ' ')).toMatch(/admin sees[^.]*turn (it )?off/i);
     }
     expect(read('infra/copy-installer/README.md')).toMatch(/Workplace › What we tell Agentic Cloud/);

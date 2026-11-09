@@ -20,3 +20,9 @@
 /own-cloud.md
   Content-Type: text/markdown; charset=utf-8
   Cache-Control: public, max-age=300
+
+# The page for agents that read a letter's link (note #1106): every part of a
+# workplace, in Markdown, read whole in one fetch.
+/workplace.md
+  Content-Type: text/markdown; charset=utf-8
+  Cache-Control: public, max-age=300
