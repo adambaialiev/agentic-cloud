@@ -152,6 +152,8 @@ function rowOf(message: RecapMessage, seq: number, arriving: boolean, faceOf: (n
     ...(href ? { href } : {}),
     ...(message.mailApprovalId ? { mailApprovalId: message.mailApprovalId } : {}),
     ...(message.mailApproval ? { mailApproval: message.mailApproval } : {}),
+    ...(message.messageApprovalId ? { messageApprovalId: message.messageApprovalId } : {}),
+    ...(message.messageApproval ? { messageApproval: message.messageApproval } : {}),
     ...(message.forwarded?.length ? { forwarded: message.forwarded } : {}),
   };
 }

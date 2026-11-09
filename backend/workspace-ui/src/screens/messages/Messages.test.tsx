@@ -69,6 +69,17 @@ describe('human messages', () => {
     expect(said.map(one => one.className)).toEqual(['chatmsg agent', 'chatmsg owner']);
     expect(said.some(one => one.classList.contains('flat'))).toBe(false);
   });
+  it('marks a message its sender released from their Chief of Staff\'s card, on both sides (note #1090)', async () => {
+    open('/messages/bob?org=o1', { 'GET api/messages/bob': () => page([
+      { ...msg(1, 'From Bob, via his agent'), clientId: 'via-cos-0123456789abcdef01234567' },
+      { ...msg(2, 'From me, via mine', 'alice'), clientId: 'via-cos-89abcdef0123456789abcdef' },
+      msg(3, 'Typed by Bob'),
+    ]) });
+    await flush();
+    const said = [...document.querySelectorAll('[role=log] .chatmsg')];
+    expect(said.map(one => one.querySelector('.dmvia')?.textContent ?? null)).toEqual(['via their Chief of Staff', 'via your Chief of Staff', null]);
+    expect(said[0]!.firstChild?.textContent).toBe('From Bob, via his agent');
+  });
   it('keeps a failed send for retry, reuses its identifier and catches concurrent incoming text', async () => {
     let attempts = 0;
     const scripted = open('/messages/bob?org=o1', {

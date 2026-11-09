@@ -1,5 +1,6 @@
 import type { Request, Response, Router } from 'express';
-import { DIRECT_MESSAGE_MAX_LENGTH, DIRECT_MESSAGE_PAGE_SIZE, type DirectMessageInbox, type DirectMessagePage, type DirectMessagePerson } from '../shared/direct-messages.js';
+import { DIRECT_MESSAGE_MAX_LENGTH, DIRECT_MESSAGE_PAGE_SIZE, DIRECT_MESSAGE_VIA_PREFIX, type DirectMessageApprovalAnswer, type DirectMessageInbox, type DirectMessagePage, type DirectMessagePerson } from '../shared/direct-messages.js';
+import { visibleDirectMessageApproval } from '../services/direct-message-approval.js';
 import { DirectMessageConflict } from '../services/direct-message-storage.js';
 import { OrgMsgHostOpening, OrgMsgHostUnavailable } from '../services/org-msg-host.js';
 import { RateLimiter } from '../services/rate-limiter.js';
@@ -9,7 +10,9 @@ import type { RouteDeps } from './deps.js';
 interface Actor { userId: string; orgId: string }
 class MessageError extends Error { constructor(readonly status: number, text: string) { super(text); } }
 
-/** Browser sessions only. No agent/CLI door and no admin override. */
+/** Browser sessions only. No agent/CLI door and no admin override — the
+ * Chief of Staff's draft (note #1090) is RELEASED here, by the person's own
+ * tap on its card, and the agent never reads anything back. */
 export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
   authenticate: (req: Request, res: Response) => Promise<Actor | null>,
   pictureUrl: (path: string | undefined) => Promise<string | undefined>,
@@ -80,6 +83,8 @@ export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
     const clientId = req.body?.clientId;
     if (!text || text.length > DIRECT_MESSAGE_MAX_LENGTH) throw new MessageError(400, `Write a message of up to ${DIRECT_MESSAGE_MAX_LENGTH.toLocaleString('en-US')} characters.`);
     if (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(clientId)) throw new MessageError(400, 'This send needs a valid message identifier.');
+    // The Chief of Staff's mark (note #1090) is written by its card's tap alone.
+    if (clientId.startsWith(DIRECT_MESSAGE_VIA_PREFIX)) throw new MessageError(400, 'This send needs a valid message identifier.');
     if (!limiter.check(`${actor.orgId}:${actor.userId}`)) { res.setHeader('Retry-After', '60'); throw new MessageError(429, 'You are sending quickly. Wait a minute and try again.'); }
     const result = await deps.directMessageStorage!.send(actor.orgId, actor.userId, peerId, text, clientId);
     return res.status(result.created ? 201 : 200).json({ message: result.message });
@@ -90,5 +95,26 @@ export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
     if (!through) throw new MessageError(400, 'Choose the last message you read.');
     await deps.directMessageStorage!.readThrough(actor.orgId, actor.userId, peerId, through);
     return res.json({ ok: true });
+  }));
+  /**
+   * Note #1090: the card in the person's Chief of Staff conversation. A data
+   * endpoint for that card, not a screen — and keyed on the person and the
+   * workplace the tap comes from, so nobody else's card answers.
+   */
+  const approvals = () => {
+    if (!deps.directMessageApprovals) throw new MessageError(503, 'Messages are not available right now.');
+    return deps.directMessageApprovals;
+  };
+  router.get('/api/message-approvals/:id', route(async (req, res, actor) => {
+    const doc = await approvals().get(actor.userId, String(req.params.id ?? ''));
+    if (!doc || doc.orgId !== actor.orgId) throw new MessageError(404, 'No such message to approve.');
+    return res.json({ approval: visibleDirectMessageApproval(doc) } satisfies DirectMessageApprovalAnswer);
+  }));
+  router.post('/api/message-approvals/:id/decision', route(async (req, res, actor) => {
+    const decision = String((req.body as { decision?: unknown } | undefined)?.decision ?? '');
+    if (decision !== 'approve' && decision !== 'reject') throw new MessageError(400, 'Choose Send message or Don’t send.');
+    const approval = await approvals().decide({ userId: actor.userId, orgId: actor.orgId, id: String(req.params.id ?? ''), decision });
+    if (!approval) throw new MessageError(404, 'No such message to approve.');
+    return res.json({ approval } satisfies DirectMessageApprovalAnswer);
   }));
 }

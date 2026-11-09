@@ -16,6 +16,7 @@
 
 import type { LeaderboardAllTime, LeaderboardDay, LeaderboardWeekNumbers } from './leaderboard.js';
 import type { WorkspaceMailApproval, WorkspaceMailboxSummary } from './workspace-mail.js';
+import type { DirectMessageApproval } from './direct-messages.js';
 
 /** Source text of the Workspace username rule; the same pattern the browser
  *  form uses and the server enforces. Anchored by whoever compiles it. */
@@ -1020,6 +1021,9 @@ export interface WorkspaceChatMessage {
    *  there is intentionally no route or detail screen behind it. */
   mailApprovalId?: string;
   mailApproval?: WorkspaceMailApproval;
+  /** Note #1090: the Chief of Staff's draft to a teammate, decided in chat. */
+  messageApprovalId?: string;
+  messageApproval?: DirectMessageApproval;
   /** A peer agent's picture, when the pool really has one for that name. */
   fromAvatarUrl?: string;
   /** The fresh-chat marker: punctuation, not a platform event. */

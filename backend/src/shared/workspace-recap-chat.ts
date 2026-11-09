@@ -1,5 +1,6 @@
 import type { WorkspaceAgentContext, WorkspaceChatFile, WorkspaceKnowledgeProposalRow, WorkspaceProposalRow } from './workspace-api.js';
 import type { WorkspaceMailApproval } from './workspace-mail.js';
+import type { DirectMessageApproval } from './direct-messages.js';
 
 /** The longest message an agent sends to or receives from the Workspace Agent — `agentbuilt agent message`'s own cap. */
 export const RECAP_MESSAGE_MAX = 4000;
@@ -45,6 +46,8 @@ export type RecapMessageKind = 'new-chat-divider' | 'briefing' | 'reaction' | 'e
  */
 export interface RecapMessage {
   id: string; role: 'owner' | 'assistant' | 'agent' | 'action'; text: string; at: string; name?: string; href?: string; kind?: RecapMessageKind; files?: RecapMessageFile[]; mailApprovalId?: string; mailApproval?: WorkspaceMailApproval;
+  /** Note #1090: the Chief of Staff's draft to a teammate, and its current answer. */
+  messageApprovalId?: string; messageApproval?: DirectMessageApproval;
   /** Not drawn in the chat (note #716). */
   hidden?: true;
   /** An event turn's answer (note #716), quiet or told — what "Noticed lately" reads the outcome from. */
@@ -100,7 +103,7 @@ export interface RecapMessage {
  */
 const NOTE_RECEIPT = /^(?:Created|Updated|Commented on|Archived|Restored) note: /;
 export function isNoteReceipt(message: RecapMessage): boolean {
-  return message.role === 'action' && !message.kind && !message.mailApprovalId
+  return message.role === 'action' && !message.kind && !message.mailApprovalId && !message.messageApprovalId
     && NOTE_RECEIPT.test(message.text) && Boolean(message.href?.includes('/notes/'));
 }
 /**

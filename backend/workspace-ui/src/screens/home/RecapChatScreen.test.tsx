@@ -147,6 +147,37 @@ describe('the Chief of Staff\'s conversation, drawn with the room chat\'s parts'
     // The request itself has no door: this screen is where it is decided.
     expect(document.querySelector('[data-mail-approval="ma_workspace"] a')).toBeNull();
   });
+  it('decides the Chief of Staff\'s direct message to a teammate here, over the exact words, and keeps none once sent (note #1090)', async () => {
+    const approval = {
+      id: 'dma_1', to: { userId: 'u2', name: 'Aigerim' }, text: 'The board meets at 3.\nBring the deck.',
+      status: 'pending' as const, createdAt: now,
+    };
+    const { calls } = mount({
+      ...conversation,
+      messages: [...conversation.messages, {
+        id: 'dm', role: 'action', text: 'Workspace Agent wants to send Aigerim a direct message.', at: now,
+        messageApprovalId: approval.id, messageApproval: approval,
+      }],
+    }, undefined, {
+      'POST api/message-approvals/dma_1/decision': () => ({ approval: { id: 'dma_1', to: approval.to, status: 'sent', createdAt: now, decidedAt: now } }),
+    });
+    await screen.findByText('Chief of Staff wants to send this to Aigerim');
+    const card = document.querySelector('[data-message-approval="dma_1"]')!;
+    expect(card.querySelector('.chatnoticelabel')?.textContent).toBe('Direct message');
+    expect(card.querySelector('.mailapprovaltext')?.textContent).toBe('The board meets at 3.\nBring the deck.');
+    expect(card.textContent).toContain('via your Chief of Staff');
+    // Undecided, it has no door: this card is where it is decided.
+    expect(card.querySelector('a')).toBeNull();
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Send message' }));
+    await within(card as HTMLElement).findByText(/Sent to Aigerim\./);
+    const posted = calls.find((call) => call.path === 'api/message-approvals/dma_1/decision')!;
+    expect(JSON.parse(String(posted.init?.body))).toEqual({ decision: 'approve' });
+    expect(posted.scope).toEqual({ org: 'o1' });
+    // Decided, the words are gone from the card; the conversation holds them.
+    expect(card.querySelector('.mailapprovaltext')).toBeNull();
+    expect(within(card as HTMLElement).queryByRole('button', { name: 'Send message' })).toBeNull();
+    expect(within(card as HTMLElement).getByRole('link', { name: 'Open the conversation' }).getAttribute('href')).toBe('/messages/u2?org=o1');
+  });
   it('shows the typing bubble with the phase and a Stop while a request runs, and keeps the composer open with its paperclip (note #423)', async () => {
     mount({ ...conversation, working: true, phase: 'Thinking…', waiting: ['Theo'] });
     await screen.findByText('Ask Theo for an update');

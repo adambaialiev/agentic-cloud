@@ -1570,6 +1570,12 @@ button.chatmsg.platform.aside:active {
   content: attr(data-time); float: right; margin: 9px -4px 0 10px;
   font-size: var(--ui-sm); line-height: 1; opacity: .62; font-variant-numeric: tabular-nums;
 }
+/* Note #1090: the decided card's one door, in the app's link colour. */
+.messageapproval .mailapprovalanswer a { color: var(--accent); }
+/* Note #1090: a direct message its sender released from their Chief of
+   Staff's card says so, on its own quiet line in the clock's voice; the
+   clock floats into that line, as it does into any last line. */
+.chatmsg .dmvia { display: block; margin-top: 2px; font-size: var(--ui-sm); line-height: var(--ui-sm-leading); opacity: .62; }
 /* A file message with no words keeps its clock on the row, which is a
    column now: floating is meaningless there, so it lands as its own quiet
    line under the attachments on the side the message is spoken from. */

@@ -6,6 +6,7 @@ import { applyWorkspaceAgentProactiveChange, inQuietHours, resolveWorkspaceAgent
 import { WORKSPACE_AGENT_CHAT_ID, type RecapChatStopAnswer } from '../shared/workspace-recap-chat.js';
 import { cleanFirstVisit } from '../shared/first-visit.js';
 import { registerDirectMessageRoutes } from './direct-messages.js';
+import { DIRECT_MESSAGES_OFFERED, type DirectMessageApproval } from '../shared/direct-messages.js';
 import { availableRecapModels, recapCandidates, resolveRecapSettings, validRecapSettings } from '../services/workspace-recap-settings.js';
 import type { WorkspaceRecapSettingsAnswer } from '../shared/workspace-recap.js';
 import { WorkspaceRecapCoordinator, appendRecapHistory, buildWorkspaceRecapPrompt, previousRecaps, recapFingerprint, selectRecapSources, RECAP_WINDOW_MS } from '../services/workspace-recap.js';
@@ -799,7 +800,8 @@ function mailReply(doc: MailMessageDocument): WorkspaceMailReply {
  * one that nobody can join gets no Direct messages row and no Message button.
  * False again hides every door; the screens and `api/messages` stay.
  */
-const DIRECT_MESSAGES_OFFERED = true;
+// The value lives in shared/direct-messages.ts since note #1090, so the
+// Chief of Staff's `member message` follows the same switch.
 
 /** What a closed invite door says (RouteDeps.invitesClosed), on every route
  *  that would have opened it. The same sentence the screens show. */
@@ -5679,8 +5681,21 @@ self.addEventListener('activate', (event) => {
     });
   };
   /** Everything a conversation answer resolves onto its stored rows. */
+  /** Note #1090: the Chief of Staff's drafts to a teammate, resolved the same way. */
+  const withMessageApprovals = async <T extends { messageApprovalId?: string }>(
+    userId: string,
+    messages: T[],
+  ): Promise<Array<T & { messageApproval?: DirectMessageApproval }>> => {
+    const ids = messages.flatMap((message) => message.messageApprovalId ? [message.messageApprovalId] : []);
+    if (!ids.length || !deps.directMessageApprovals) return messages;
+    const approvals = await deps.directMessageApprovals.getMany(userId, ids).catch(() => new Map<string, DirectMessageApproval>());
+    return messages.map((message) => {
+      const approval = message.messageApprovalId ? approvals.get(message.messageApprovalId) : undefined;
+      return approval ? { ...message, messageApproval: approval } : message;
+    });
+  };
   const recapMessages = async (auth: MiniAppAuth, messages: RecapChatAnswer['messages']) => (
-    withForwardedProposals(auth, await withMailApprovals(auth.userId, messages))
+    withForwardedProposals(auth, await withMessageApprovals(auth.userId, await withMailApprovals(auth.userId, messages)))
   );
   /**
    * Reading only what is new (note #1071): the transcript's versions as

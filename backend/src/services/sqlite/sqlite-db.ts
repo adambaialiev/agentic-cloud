@@ -215,6 +215,18 @@ CREATE TABLE IF NOT EXISTS workspace_mail_approvals (
 );
 CREATE INDEX IF NOT EXISTS workspace_mail_approvals_by_user
   ON workspace_mail_approvals (user_id, created_at DESC);
+-- Note #1090: the Chief of Staff's draft of a direct message to a teammate,
+-- waiting on the person's tap. The words sit in doc ONLY while it waits:
+-- every decision (sent, not sent, expired) rewrites doc without them, so a
+-- decided row holds a status, the teammate's id and name, and two times.
+-- The message itself lives on the workplace's messaging machine (note #608).
+CREATE TABLE IF NOT EXISTS workspace_message_approvals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);
 -- Senders whose pictures a person has asked to have loaded (note #509, slice
 -- 10). A row is one person's decision about one address and holds nothing
 -- else: no letter, no words, nothing a stranger wrote. Per sender and never

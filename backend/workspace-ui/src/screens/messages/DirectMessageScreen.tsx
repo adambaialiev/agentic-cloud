@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { DIRECT_MESSAGE_MAX_LENGTH, type DirectMessage, type DirectMessagePage } from '../../../../src/shared/direct-messages.js';
+import { DIRECT_MESSAGE_MAX_LENGTH, sentViaChiefOfStaff, type DirectMessage, type DirectMessagePage } from '../../../../src/shared/direct-messages.js';
 import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { directDraftKey, recallDraft, rememberDraft } from '../../chrome/draft-memory.js';
 import { useReturnToParent } from '../../chrome/history.js';
@@ -151,7 +151,10 @@ export function DirectMessageScreen() {
             <div className={`chatmsg ${message.senderId === page?.viewerId ? 'owner' : 'agent'}`}
               data-message-id={message.id}
               data-time={new Date(message.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-              title={new Date(message.createdAt).toLocaleString()}>{message.text}</div>
+              title={new Date(message.createdAt).toLocaleString()}>{message.text}
+              {/* Note #1090: released by its sender's tap on their Chief of
+                  Staff's card. The mark is the message's own request id. */}
+              {sentViaChiefOfStaff(message) ? <span className="dmvia">{message.senderId === page?.viewerId ? 'via your Chief of Staff' : 'via their Chief of Staff'}</span> : null}</div>
           </Fragment>;
         })}
         {sendingNow ? <div className="chatmsg owner sending arriving" data-time="Sending…" aria-busy="true">{sendingNow.text}</div> : null}

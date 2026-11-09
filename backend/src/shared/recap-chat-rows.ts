@@ -144,7 +144,7 @@ function factOf(message: RecapMessage): Fact {
     }
     return row;
   }
-  if (message.role !== 'action' || message.mailApprovalId || message.proposals?.length || message.forwarded?.length) return row;
+  if (message.role !== 'action' || message.mailApprovalId || message.messageApprovalId || message.proposals?.length || message.forwarded?.length) return row;
   if (message.kind === 'new-chat-divider') return row;
   // A fresh chat it started by itself (note #738): one line, and the
   // handoff it carried over behind a tap.

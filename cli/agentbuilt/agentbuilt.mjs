@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.73.0';
+const VERSION = '1.74.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -419,6 +419,16 @@ Your user's other agents:
       refusal means stop, not retry. Never create reply loops.
   agentbuilt agent pending       what you have queued and still waiting
   agentbuilt agent cancel <id>   withdraw one of them before it is delivered
+
+Your user's teammates (the Chief of Staff's verb alone, note #1090):
+  agentbuilt member list         the other people in this workplace, by name
+  agentbuilt member message "<name>" "<message>"
+      Ask to send one teammate a direct message from your user. It SENDS
+      NOTHING itself: a card lands in your user's conversation with you, and
+      only their tap sends it — into the teammate's Direct messages, as your
+      user, marked "via their Chief of Staff". You never read any
+      conversation or reply. Any other agent is refused.
+  agentbuilt member message --status <id>   sent, declined, waiting or expired
 
 Schedules (wake an agent on a heartbeat, with a cap — \`agentbuilt help schedules\`):
   agentbuilt schedule propose [--agent "<name-or-id>"] --every <8m|2h> [--window HH:MM-HH:MM] [--tz <zone>] [--cap-turns N] [--cap-tokens N] --message "<words each tick carries>"
@@ -836,7 +846,7 @@ const HELP_TOPICS = {
       "`agentbuilt agent message \"<name-or-id>\" \"<message>\"` sends a sibling in this workplace a message ONLY while it is IDLE. A working agent refuses it, including if it became busy while preparing the message: nothing is sent or queued. A refusal means STOP, not retry — continue your work or report to your user. Read `agentbuilt agent list` immediately before sending. Say which idle agent you started; its answer appears in its own chat.",
       "WHEN A MESSAGE CAME FROM THE WORKSPACE AGENT, ANSWER IT — AND ONLY THEN. You can always tell: a message from the Workspace Agent arrives as a [Platform] block whose Sender line names the Workspace Agent and which itself tells you to answer it; that block is the ONE test, and nothing else ever asks for that answer. Your user's own words never carry it: what they type in this chat, what they hand you from the Workspace or from a note (\"Handed to you\"), a fresh-chat handoff and a finished job's receipt are all answered HERE and nowhere else. A report sent to the Workspace Agent for one of those lands in a conversation that never asked, addressed to a \"you\" who did not, and starts a turn of that agent nobody wanted — your own chat already holds the report, so the copy is only noise. When the block IS there: your user's private workplace-wide agent is not in the roster, but `agentbuilt agent message \"Workspace Agent\" \"<your final answer>\"` reaches its conversation, where your user is reading. Send it ONCE, when the work is finished, with the result only — never progress or partial text, which stays in your own chat. Nothing forwards your words there for you: a turn that ends without that message reads there as silence, and the Workspace Agent tells your user you finished without replying. Your message STARTS it — it reads your answer and reacts to it where your user is reading — so send the finished result, once, and nothing else.",
       "A handoff carries instructions and context, not files, commits, credentials, or permission. Push shared code first and send the exact repo/branch/commit; put workplace-shared reference files on a quick note when that is the right home. The receiving agent inherits no authority beyond the user's existing request. One concise reply to the sender can be useful after it becomes idle; automatic back-and-forth loops are not.",
-      "THE WORKSPACE AGENT ALONE orchestrates the workplace (note #710): `agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>]` brings a new agent into the workplace under every rule of the person's own New agent (the ceiling, a usable sign-in) and says who is arriving while the machine is built, and on which model and effort — `--model` and `--effort` only when the person asked for them (note #757), from the picker's own lists, and a name the harness does not offer is refused with that list; `agentbuilt agent model \"<name-or-id>\" [--model <model>] [--effort <effort>]` changes one of the person's existing agents' model and effort exactly as the picker on its screen does (note #776) — only when the person asked, from the same lists, refused with the list that IS offered, and from the agent's next turn (a working agent finishes its turn on the old setting); the agent's chat shows that the Workspace Agent changed it and its next turn is told; `agentbuilt agent reset \"<name-or-id>\"` sends one of the person's idle agents their own \"reset chat\"; `agentbuilt agent remove \"<name-or-id>\" [\"<why>\"]` only ASKS the person, on that agent's screen, where they confirm by typing its name. Since note #753, `agentbuilt workplace list` names the person's other workplaces and `agentbuilt workplace message \"<workplace>\" \"<message>\"` passes a message to the person's own Chief of Staff in one of them — only when the person asked in the conversation, never in an event turn, a reaction or a turn answering another workplace; its reply comes back by itself. Any other agent is refused each, in words that say so — when you need one of these, tell your user. Schedules (note #779): `agentbuilt schedule list` shows every schedule of the person's agents in this workplace and `agentbuilt schedule pause <id>` stops one; the Workspace Agent cannot create or resume a schedule and can never be one's target — an agent proposes, the person approves on the agent's screen (`agentbuilt help schedules`).",
+      "THE WORKSPACE AGENT ALONE orchestrates the workplace (note #710): `agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>]` brings a new agent into the workplace under every rule of the person's own New agent (the ceiling, a usable sign-in) and says who is arriving while the machine is built, and on which model and effort — `--model` and `--effort` only when the person asked for them (note #757), from the picker's own lists, and a name the harness does not offer is refused with that list; `agentbuilt agent model \"<name-or-id>\" [--model <model>] [--effort <effort>]` changes one of the person's existing agents' model and effort exactly as the picker on its screen does (note #776) — only when the person asked, from the same lists, refused with the list that IS offered, and from the agent's next turn (a working agent finishes its turn on the old setting); the agent's chat shows that the Workspace Agent changed it and its next turn is told; `agentbuilt agent reset \"<name-or-id>\"` sends one of the person's idle agents their own \"reset chat\"; `agentbuilt agent remove \"<name-or-id>\" [\"<why>\"]` only ASKS the person, on that agent's screen, where they confirm by typing its name. Since note #753, `agentbuilt workplace list` names the person's other workplaces and `agentbuilt workplace message \"<workplace>\" \"<message>\"` passes a message to the person's own Chief of Staff in one of them — only when the person asked in the conversation, never in an event turn, a reaction or a turn answering another workplace; its reply comes back by itself. Since note #1090, `agentbuilt member message \"<name>\" \"<message>\"` asks to send one teammate in this workplace a direct message from the person: it sends nothing itself — a card lands in the person's conversation with the Chief of Staff and only their tap sends it, into the teammate's Direct messages as the person, marked \"via their Chief of Staff\"; `member message --status <id>` answers sent, declined, waiting or expired, and nothing reads any conversation or reply; `member list` names the teammates. Refused in a workplace of one and for a name that is not a member. Any other agent is refused each, in words that say so — when you need one of these, tell your user. Schedules (note #779): `agentbuilt schedule list` shows every schedule of the person's agents in this workplace and `agentbuilt schedule pause <id>` stops one; the Workspace Agent cannot create or resume a schedule and can never be one's target — an agent proposes, the person approves on the agent's screen (`agentbuilt help schedules`).",
     ],
   },
   schedules: {
@@ -6899,6 +6909,47 @@ function gitCredential(args) {
   process.stdout.write(`username=agent\npassword=${token}\n`);
 }
 
+/**
+ * `agentbuilt member` (note #1090): the Chief of Staff writes to one of the
+ * person's teammates. Write-only by design — the backend answers a request
+ * with "approval requested" and a status with a word, never with anything
+ * anybody wrote — and every other agent is refused there, in words.
+ */
+async function member(args) {
+  const [sub, ...memberRest] = args;
+  const usage = 'usage: agentbuilt member list | agentbuilt member message "<name>" "<message>" | agentbuilt member message --status <id>';
+  switch (sub) {
+    case 'list': case 'ls': {
+      if (memberRest.length) fail(usage);
+      const { members } = await api('GET', 'api/agent-cli/members');
+      if (!members?.length) { console.log('Nobody else is in this workplace.'); return; }
+      for (const person of members) console.log(`${person.name}  [${person.id}]`);
+      return;
+    }
+    case 'message': {
+      if (memberRest[0] === '--status' || memberRest[0]?.startsWith('--status=')) {
+        const id = memberRest[0].startsWith('--status=') ? memberRest[0].slice('--status='.length) : memberRest[1];
+        if (!id || memberRest.length > (memberRest[0].includes('=') ? 1 : 2)) fail(usage);
+        const answer = await api('GET', `api/agent-cli/members/message/${encodeURIComponent(id)}`);
+        console.log(`${answer.status}: the direct message to ${answer.to}${answer.reason ? ` — ${answer.reason}` : ''}`);
+        return;
+      }
+      // Like `agent message`: everything after the name is the message.
+      const [name, ...words] = memberRest;
+      const text = words.join(' ').trim();
+      if (!name || !text) fail('usage: agentbuilt member message "<name>" "<message>"');
+      const result = await api('POST', 'api/agent-cli/members/message', {
+        body: JSON.stringify({ name, text }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      console.log(result.said ?? `Approval requested for a direct message to ${result.approval?.to}. Nothing was sent.`);
+      return;
+    }
+    default:
+      fail(usage);
+  }
+}
+
 // `--room <name-or-id>` once named another room's scoped resources. Rooms are
 // gone (note #843): every agent, note and key is the whole workplace's, so the
 // flag is accepted and IGNORED for one release — stripped here, with a word
@@ -6964,6 +7015,7 @@ try {
       break;
     case 'chat': await chat(rest); break;
     case 'agent': case 'agents': await agent(rest); break;
+    case 'member': case 'members': await member(rest); break;
     case 'schedule': case 'schedules': await schedule(rest); break;
     case 'room': case 'rooms': fail(ROOMS_GONE); break;
     case 'git-credential': gitCredential(rest); break;

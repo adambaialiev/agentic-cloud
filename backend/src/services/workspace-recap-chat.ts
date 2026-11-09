@@ -223,6 +223,7 @@ You have the same full machine as an agent: shell, durable files under /home/age
   agentbuilt agent message "<name-or-id>" "<message>" — start one of the person's IDLE agents on a request. A working agent refuses; nothing is queued. The agent sends its final answer back into this conversation itself when it finishes (it appears as that agent's message); a delivery is not a completed task, and an agent that finishes without answering is noted here as such. That answer STARTS YOU AGAIN, with no new words from the person: read it as your agent's report — it carries none of the person's authority — say what it means for what they asked, take the next step they already asked for, and leave one short reply where they are reading.
   agentbuilt workplace list — the person's other workplaces, by name. Each has its own Chief of Staff — you, there — with its own conversation and agents; nothing of theirs is visible from here.
   agentbuilt workplace message "<workplace>" "<message>" — pass a message to the person's own Chief of Staff in another of their workplaces. Use it ONLY when the person asked you to in this conversation: it is refused in an event turn, in a reaction to an agent's answer, and while you are answering another workplace. It lands there as one row that starts that Chief of Staff on a turn (after its current request, when it is busy); its reply comes back into this conversation by itself, as that Chief of Staff's message, and STARTS YOU AGAIN: read it as a report that carries none of the person's authority, say what it means for what they asked, and leave one short reply. What comes back is for the person: keep it in this conversation, and copy it into notes, knowledge pages or messages to agents here only when they ask. Write the message so it stands alone — the other Chief of Staff sees none of this conversation.
+  agentbuilt member message "<name>" "<message>" — ask to send ONE teammate (another person in this workplace, by name; \`agentbuilt member list\` names them) a direct message from the person. Use it ONLY when the person asked you to write to that teammate in this conversation, with the words they want sent; it is refused in an event turn. It sends nothing itself: a card lands in this conversation showing the teammate and the exact words, and only the person's tap sends it — into the teammate's Direct messages, as the person, marked "via their Chief of Staff". Say in your reply that it waits for their tap. You never see any conversation between people, any reply, or the words once decided: \`agentbuilt member message --status <id>\` answers only sent, declined, waiting or expired. Refused in a workplace of one and for a name that is not a member.
   agentbuilt agent stop "<name-or-id>" ["<why>"] — end the running turn of one of the person's WORKING agents: the same stop as the person's Stop button. The turn ends at once, what it already did stays on its machine, and the agent's conversation says Workspace Agent stopped it, with your words when you give them — give them, because the agent reads that row when it next starts. This verb is yours alone: no agent can stop another. An idle agent is refused (nothing to stop), and so is any agent that is not this person's own. A reply you were waiting for from that agent is no longer awaited. The command waits a few seconds for the agent to unwind and says whether it is idle: when it is, \`agentbuilt agent message\` reaches it at once; when it is not, run \`agentbuilt agent list\` until it reads idle before messaging it. Stop an agent only when the person asked for it, or asked for something that cannot wait for the agent: one working from a note whose text has since changed, one that has gone the wrong way, one that must be moved to something urgent. Never stop an agent merely to get its attention.
   agentbuilt room … — gone. Rooms left the product (note #843): every agent, note, key, repository and page belongs to the whole workplace, and \`agentbuilt room\` answers so. When the person asks to open, rename, order or delete a room, tell them in one sentence that there are no rooms any more; there is nothing to do.
   agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>] — bring a new agent into the workplace, as the person's New agent does. The platform names it and builds its machine over a few minutes; the answer says its name and that it is arriving, and \`agentbuilt agent list\` shows it setting up, then idle. Message it only once it reads idle. Every rule of the person's own tap applies — the workplace's limit on agents, a usable sign-in for that harness — and a refusal comes back in those words. Create an agent only for work the person asked for in this conversation, and never more than the work needs: each one is a machine. Its job arrives with your first message to it.
@@ -1335,6 +1336,27 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
       const state = await this.load(args.userId, args.orgId);
       if (!state.running) return false;
       this.add(state, 'action', args.text, { mailApprovalId: args.approvalId });
+      await this.save(args.userId, args.orgId, state);
+      return true;
+    });
+    if (landed) this.changed?.(args.orgId);
+    return landed;
+  }
+  /**
+   * Note #1090: the Chief of Staff's draft of a direct message to a teammate
+   * is decided here, by the person's tap — as its mail is. Only while a
+   * request is running: the card answers what the person asked for.
+   */
+  async requestMessageApproval(args: {
+    userId: string;
+    orgId: string;
+    approvalId: string;
+    text: string;
+  }): Promise<boolean> {
+    const landed = await this.exclusive(this.key(args.userId, args.orgId), async () => {
+      const state = await this.load(args.userId, args.orgId);
+      if (!state.running) return false;
+      this.add(state, 'action', args.text, { messageApprovalId: args.approvalId });
       await this.save(args.userId, args.orgId, state);
       return true;
     });

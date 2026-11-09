@@ -9,6 +9,7 @@ import { SqliteMailMessageStorage } from './services/sqlite/sqlite-mail-message-
 import { SqliteMailApprovalStorage } from './services/sqlite/sqlite-mail-approval-storage.js';
 import { InMemoryMailApprovalStorage } from './services/mail-approval-storage.js';
 import { MailApprovalService } from './services/mail-approval.js';
+import { DirectMessageApprovalService, InMemoryDirectMessageApprovalStorage, SqliteDirectMessageApprovalStorage } from './services/direct-message-approval.js';
 import { MailboxService } from './services/mailbox-service.js';
 import { OrgHandleService } from './services/org-handles.js';
 import { DEFAULT_BRAND_FILES_DIR, workspaceRootRoutes } from './routes/workspace-root.js';
@@ -1012,6 +1013,13 @@ const orgMsgHostService = new OrgMsgHostService({
 const directMessageStorage: DirectMessageStorage = sqliteDb
   ? new RemoteDirectMessageStorage(orgMsgHostService, new SqliteDirectMessageUnreadStore(sqliteDb))
   : new SqliteDirectMessageStorage(openSqliteDb(':memory:'));
+// Note #1090: the Chief of Staff's drafts to a teammate wait here for the
+// person's tap; the tap sends through the same storage their own Send uses.
+const directMessageApprovals = new DirectMessageApprovalService(
+  sqliteDb ? new SqliteDirectMessageApprovalStorage(sqliteDb) : new InMemoryDirectMessageApprovalStorage(),
+  () => directMessageStorage,
+  async (orgId, userId) => Boolean(await orgStorage.getMembership(orgId, userId)),
+);
 console.log(`[config] ORG_MSG_HOSTS=${!sqliteDb ? 'in-memory (development)' : FLY_MSG_HOST_IMAGE ? `provisionable (${FLY_MSG_HOST_IMAGE})` : 'resolve-only (set FLY_MSG_HOST_IMAGE to provision)'}`);
 // Backups that live with the code (byo-git slice 4): the sweep is the CLOCK
 // for org git hosts — they sleep between pushes and fire no timers of their
@@ -2226,6 +2234,7 @@ const deps: RouteDeps = {
   driveStorage,
   ...(radioStation ? { radio: radioStation } : {}),
   directMessageStorage,
+  directMessageApprovals,
   // Owner, 2026-10-11: workplaces are for one person for now; nobody from
   // outside had invited anyone, and every untested door is a risk. The flag
   // is documented on RouteDeps; deleting this line reopens invites. A

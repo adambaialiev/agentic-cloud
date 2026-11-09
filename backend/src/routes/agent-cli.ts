@@ -7,7 +7,9 @@ import { agentBroughtInReceipt } from '../shared/first-run.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
-import { WORKSPACE_AGENT_NAME, workspaceAssistantId } from '../types/user.js';
+import { WORKSPACE_AGENT_NAME, personDisplayName, workspaceAssistantId } from '../types/user.js';
+import { DIRECT_MESSAGES_OFFERED } from '../shared/direct-messages.js';
+import { DirectMessageApprovalError, resolveTeammate } from '../services/direct-message-approval.js';
 import { checkCreationRuntime, resolveEffectiveEffort, resolveEffectiveModel } from '../agent/harness-models.js';
 import { Router, raw } from 'express';
 import type { Request, Response } from 'express';
@@ -7105,6 +7107,92 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     } catch (error) {
       return mailApprovalFailure(error, res);
     }
+  });
+
+  /**
+   * Note #1090 (Adam, 9 Nov 2026: "Chief of Staff should be able to send
+   * message through agentbuilt cli"). The Workspace Agent drafts a direct
+   * message to one teammate; it lands as a card in the person's own
+   * conversation with it, and ONLY their tap sends it — into the teammate's
+   * Direct messages, as the person, marked "via their Chief of Staff". The
+   * verb is write-only: no route here reads a conversation, a reply or the
+   * words of a decided draft. What comes back is a status.
+   */
+  const MEMBER_MESSAGE_USAGE = '`agentbuilt member message "<name>" "<message>"`';
+  const teammatesOf = async (auth: AgentAuth & { orgId: string }) => {
+    const members = await deps.orgStorage!.listMembers(auth.orgId);
+    return Promise.all(members.filter((member) => member.userId !== auth.userId).map(async (member) => ({
+      userId: member.userId,
+      name: personDisplayName(await deps.userStorage!.getProfile(member.userId).catch(() => null)),
+    })));
+  };
+  /** Who may: the Chief of Staff, in a workplace with someone else in it. */
+  const memberMessageAuth = async (req: Request, res: Response) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return null;
+    if (!auth.purpose) {
+      res.status(403).json({ error: 'Writing to a teammate is the Chief of Staff\'s verb alone. Tell your user, and they can message them from Direct messages.' });
+      return null;
+    }
+    if (!auth.orgId || !DIRECT_MESSAGES_OFFERED || !deps.orgStorage || !deps.userStorage || !deps.directMessageStorage || !deps.directMessageApprovals) {
+      res.status(503).json({ error: 'Direct messages are not available here. Nothing was sent.' });
+      return null;
+    }
+    return auth as AgentAuth & { orgId: string };
+  };
+
+  router.get('/members', async (req, res) => {
+    const auth = await memberMessageAuth(req, res);
+    if (!auth) return;
+    const people = await teammatesOf(auth);
+    return res.json({ members: people.map((person) => ({ id: person.userId, name: person.name })) });
+  });
+
+  router.post('/members/message', async (req, res) => {
+    const auth = await memberMessageAuth(req, res);
+    if (!auth) return;
+    const body = (req.body ?? {}) as { name?: unknown; text?: unknown };
+    if (typeof body.name !== 'string' || typeof body.text !== 'string') {
+      return res.status(400).json({ error: `usage: ${MEMBER_MESSAGE_USAGE}` });
+    }
+    const people = await teammatesOf(auth);
+    if (!people.length) {
+      return res.status(409).json({ error: 'Your user is the only person in this workplace, so there is nobody to write to. Nothing was sent.' });
+    }
+    const to = resolveTeammate(people, body.name);
+    if ('error' in to) return res.status(404).json({ error: `${to.error} Nothing was sent.` });
+    let approval;
+    try {
+      approval = await deps.directMessageApprovals!.request({ userId: auth.userId, orgId: auth.orgId, agentId: auth.agentId, to, text: body.text });
+    } catch (error) {
+      if (error instanceof DirectMessageApprovalError) return res.status(400).json({ error: `${error.message} Nothing was sent.` });
+      console.error('[agent-cli] message approval request failed');
+      return res.status(500).json({ error: 'The approval could not be created. Nothing was sent.' });
+    }
+    const landed = await deps.workspaceAgent?.requestMessageApproval?.({
+      userId: auth.userId, orgId: auth.orgId, approvalId: approval.id,
+      text: `${WORKSPACE_AGENT_NAME} wants to send ${to.name} a direct message. Nothing will be sent until you approve it here.`,
+    }).catch(() => false);
+    if (!landed) {
+      await deps.directMessageApprovals!.withdraw(auth.userId, approval.id);
+      return res.status(503).json({ error: 'The approval could not be placed in your conversation. Nothing was sent.' });
+    }
+    return res.status(202).json({
+      approval: { id: approval.id, to: to.name },
+      said: `Approval requested in your chat for a direct message to ${to.name}. Nothing was sent. \`agentbuilt member message --status ${approval.id}\` says whether they sent it.`,
+    });
+  });
+
+  /** The outcome, and nothing of the words or the conversation. */
+  router.get('/members/message/:id', async (req, res) => {
+    const auth = await memberMessageAuth(req, res);
+    if (!auth) return;
+    const doc = await deps.directMessageApprovals!.get(auth.userId, String(req.params.id ?? ''));
+    if (!doc || doc.orgId !== auth.orgId) return res.status(404).json({ error: 'No such message request.' });
+    const status = doc.status === 'sent' ? 'sent'
+      : doc.status === 'rejected' ? (doc.error ? 'not sent' : 'declined')
+        : doc.status === 'expired' ? 'expired' : 'waiting';
+    return res.json({ id: doc.id, to: doc.toName, status, ...(doc.status === 'rejected' && doc.error ? { reason: doc.error } : {}) });
   });
 
   return router;

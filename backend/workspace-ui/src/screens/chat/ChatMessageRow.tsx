@@ -55,6 +55,7 @@ import { heldChatFileText, readChatFileText } from './chat-file-text.js';
 import { filesOf, type TranscriptRow } from './transcript.js';
 import { foldsReport, reportPreview } from './report-fold.js';
 import { MailApprovalCard } from './MailApprovalCard.js';
+import { MessageApprovalCard } from './MessageApprovalCard.js';
 import { ForwardedProposals } from './ForwardedProposals.js';
 import type { OutgoingMessage } from './outbox.js';
 
@@ -735,6 +736,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpe
 
   if (row.mailApprovalId) {
     return <MailApprovalCard id={row.mailApprovalId} approval={row.mailApproval} at={row.at} fallback={row.text} />;
+  }
+
+  if (row.messageApprovalId) {
+    return <MessageApprovalCard id={row.messageApprovalId} approval={row.messageApproval} at={row.at} fallback={row.text} />;
   }
 
   // Proposals the Chief of Staff forwarded (note #724): the cards, as they

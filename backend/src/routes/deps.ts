@@ -13,6 +13,7 @@ import type { MailboxService } from '../services/mailbox-service.js';
 import type { MailIngestService } from '../services/mail-ingest.js';
 import type { MailOutboxService } from '../services/mail-outbox.js';
 import type { MailApprovalService } from '../services/mail-approval.js';
+import type { DirectMessageApprovalService } from '../services/direct-message-approval.js';
 import type { MailMessageStorage } from '../services/mail-message-storage.js';
 import type { MailRemoteImageOutcome } from '../services/mail-remote-image.js';
 import type { OpsBotService } from '../services/ops-bot-service.js';
@@ -249,6 +250,8 @@ export interface RouteDeps {
    *  shows no play button. */
   radio?: RadioStation;
   directMessageStorage?: DirectMessageStorage;
+  /** Note #1090: the Chief of Staff's drafts to a teammate, waiting on the person's tap. */
+  directMessageApprovals?: DirectMessageApprovalService;
   /**
    * Inviting people to a workplace is switched off for now (owner,
    * 2026-10-11). True closes the door: the state says `invitesClosed`, so the
@@ -901,6 +904,13 @@ export interface WorkspaceAgentHooks {
   seatSignedIn?(userId: string, orgId: string, provider: 'claude' | 'codex'): Promise<void>;
   /** Put the Workspace Agent's email request in this same conversation. */
   requestMailApproval?(args: {
+    userId: string;
+    orgId: string;
+    approvalId: string;
+    text: string;
+  }): Promise<boolean>;
+  /** Note #1090: put the Workspace Agent's draft to a teammate in this same conversation. */
+  requestMessageApproval?(args: {
     userId: string;
     orgId: string;
     approvalId: string;
