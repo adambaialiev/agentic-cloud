@@ -3,9 +3,9 @@ import { MailboxService } from '../../services/mailbox-service.js';
 import { SqliteMailboxStorage } from '../../services/sqlite/sqlite-mailbox-storage.js';
 import { SqliteMailMessageStorage } from '../../services/sqlite/sqlite-mail-message-storage.js';
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
-import { MailOutboxService } from '../../services/mail-outbox.js';
+import { MAIL_NEW_PER_HOUR, MailOutboxService } from '../../services/mail-outbox.js';
 import type { OutboundMail } from '../../services/mail-sender.js';
-import { OutreachError, OutreachService } from '../../services/outreach.js';
+import { OUTREACH_MAIL_ALLOWANCE, OutreachError, OutreachService } from '../../services/outreach.js';
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
@@ -119,7 +119,7 @@ async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sq
     store, outbox: () => outbox, mailboxes, now, pulses: async () => pulses, senderName: async () => 'Adam B',
   });
   await service.write('user-adam', ROWAN, batch());
-  return { service, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
+  return { service, outbox, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
 }
 
 const firstOf = async (service: OutreachService, id: string) => (await service.detail('user-adam', id))!.draft!;
@@ -429,6 +429,35 @@ describe('Outreach, the service', () => {
       expect(await firstOf(service, 'northwind-health')).toMatchObject({ from: 'yours', subject: 'Mine', text: 'My words.' });
     });
   }
+
+  it('sends the whole list in one sitting (note #1111): 50 first letters an hour and 60 a day, 50 follow-ups an hour; the inbox keeps its 10', async () => {
+    const { service, outbox, sent, at } = await world();
+    expect(OUTREACH_MAIL_ALLOWANCE).toEqual({ newPerHour: 50, newPerDay: 60, repliesPerHour: 50 });
+    const many = Array.from({ length: 61 }, (_, n) => ({
+      ...company('Fernhill Labs'), company: `Made Up ${n}`, email: `founder@made-up-${n}.test`, firstBatchOrder: null,
+      firstEmail: { ...company('Fernhill Labs').firstEmail!, to: `founder@made-up-${n}.test`, body: `Hi,\n\nLetter ${n}.\n\nAdam` },
+    }));
+    await service.write('user-adam', ROWAN, { targets: many, words: null });
+    const press = (n: number) => service.send('user-adam', `made-up-${n}`, { step: 'first', subject: 'Hello', text: `Hi,\n\nLetter ${n}.\n\nAdam` });
+    for (let n = 0; n < 50; n += 1) await press(n);
+    expect(sent).toHaveLength(50);
+    await expect(press(50)).rejects.toThrow('You can start 50 new messages an hour. Try again shortly.');
+    // The inbox's own door keeps its ceiling, and counts the letters Outreach sent.
+    await expect(outbox.send({ userId: 'user-adam', to: 'someone@else.test', subject: 'Hi', text: 'Hello' }))
+      .rejects.toThrow(`You can start ${MAIL_NEW_PER_HOUR} new messages an hour.`);
+    // An hour on: ten more today, then the day's 60.
+    at('2026-11-09T14:00:01Z');
+    for (let n = 50; n < 60; n += 1) await press(n);
+    await expect(press(60)).rejects.toThrow('You can start 60 new messages a day. Replies are not counted.');
+    expect(sent).toHaveLength(60);
+    // Day 4: the follow-ups of the whole list fall due together; more than the inbox's 20 replies an hour go.
+    at('2026-11-13T14:00:02Z');
+    for (let n = 0; n < 25; n += 1) {
+      const draft = (await service.detail('user-adam', `made-up-${n}`))!.draft!;
+      await service.send('user-adam', `made-up-${n}`, { step: 'day4', text: draft.text });
+    }
+    expect(sent).toHaveLength(85);
+  });
 
   it('lets the owner set Not now and Trying it, and refuses states that did not happen', async () => {
     const { service } = await world();

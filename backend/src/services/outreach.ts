@@ -9,7 +9,7 @@ import {
 } from '../shared/outreach.js';
 import type { CopyPulse } from '../shared/copy-pulse.js';
 import type { MailArrival } from '../types/mail-arrival.js';
-import type { MailOutboxService } from './mail-outbox.js';
+import type { MailAllowance, MailOutboxService } from './mail-outbox.js';
 import type { MailboxStorage } from './mailbox-storage.js';
 import type { OutreachStore } from './outreach-storage.js';
 
@@ -38,6 +38,19 @@ import type { OutreachStore } from './outreach-storage.js';
  * letter from here is an ordinary letter of his: it is in Sent, it spends the
  * same allowance as one written in the inbox, and it carries nothing else.
  */
+/**
+ * Outreach's own ceilings (note #1111). Adam, 9 Nov 2026, sending the list:
+ * "You can start 10 new messages an hour … Can we increase the limit?". The
+ * mail screens' 10 an hour / 30 a day guard a free address on our domain
+ * against strangers; Outreach is a narrower door — only the platform
+ * operator, only on his own press, one letter per company — so it gets 50 an
+ * hour (the whole list in one sitting), 60 a day (well under the provider's
+ * free-plan ceiling of 100 a day for the whole account, sign-ins included),
+ * and 50 follow-ups an hour (day 4 and day 11 fall due for the whole list on
+ * the same day). Everything he sent still counts towards them.
+ */
+export const OUTREACH_MAIL_ALLOWANCE: MailAllowance = { newPerHour: 50, newPerDay: 60, repliesPerHour: 50 };
+
 export class OutreachError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
@@ -477,11 +490,11 @@ export class OutreachService {
       let mail;
       if (step === 'first') {
         if (!subject) throw new OutreachError(400, 'Write a subject.');
-        mail = await outbox.send({ userId, to: targetEmail(record), subject, text, ...(senderName ? { senderName } : {}) });
+        mail = await outbox.send({ userId, to: targetEmail(record), subject, text, allowance: OUTREACH_MAIL_ALLOWANCE, ...(senderName ? { senderName } : {}) });
       } else {
         // In the thread: under the latest letter of ours to them.
         const last = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent');
-        mail = await outbox.followUp({ userId, messageId: last!.mailId, text, ...(senderName ? { senderName } : {}) });
+        mail = await outbox.followUp({ userId, messageId: last!.mailId, text, allowance: OUTREACH_MAIL_ALLOWANCE, ...(senderName ? { senderName } : {}) });
       }
       const touch = await this.touch(userId, targetId, {
         kind: 'sent', step, mailId: mail.id, to: mail.to?.[0]?.address ?? targetEmail(record) ?? '', subject: mail.subject, text: mail.wrote ?? text,

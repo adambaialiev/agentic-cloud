@@ -64,6 +64,21 @@ export const MAIL_REPLIES_PER_HOUR = 20;
  */
 export const MAIL_NEW_PER_HOUR = 10;
 export const MAIL_NEW_PER_DAY = 30;
+
+/**
+ * The ceilings one send is held to. Every door of the mail screens and the
+ * agents' mail verbs uses `MAIL_ALLOWANCE`; a caller that is itself a narrower
+ * door may pass a wider one — today only Outreach (note #1111), whose sends
+ * leave only on the platform operator's own press on his own site. The count
+ * is always everything the person sent: a wider allowance raises the
+ * ceiling, it never stops the cold letters being counted.
+ */
+export interface MailAllowance {
+  newPerHour: number;
+  newPerDay: number;
+  repliesPerHour: number;
+}
+export const MAIL_ALLOWANCE: MailAllowance = { newPerHour: MAIL_NEW_PER_HOUR, newPerDay: MAIL_NEW_PER_DAY, repliesPerHour: MAIL_REPLIES_PER_HOUR };
 /** The longest message we will send. The words; files are counted apart. */
 export const MAIL_REPLY_MAX_CHARS = 20_000;
 /** The longest subject we will send. Longer than any mail client shows. */
@@ -385,23 +400,23 @@ export class MailOutboxService {
     return files;
   }
 
-  /** The NEW allowance: `MAIL_NEW_PER_HOUR` and `MAIL_NEW_PER_DAY`, off the
-   *  stored rows. */
-  private async checkNewCeilings(userId: string): Promise<void> {
+  /** The NEW allowance: `MAIL_NEW_PER_HOUR` and `MAIL_NEW_PER_DAY` (or a
+   *  narrower door's own, see `MailAllowance`), off the stored rows. */
+  private async checkNewCeilings(userId: string, allowance: MailAllowance = MAIL_ALLOWANCE): Promise<void> {
     const now = this.now().getTime();
     const hourAgo = new Date(now - 60 * 60_000).toISOString();
-    if (await this.deps.messages.countNewSince(userId, hourAgo) >= MAIL_NEW_PER_HOUR) {
-      throw new MailOutboxError('too_many', `You can start ${MAIL_NEW_PER_HOUR} new messages an hour. Try again shortly.`);
+    if (await this.deps.messages.countNewSince(userId, hourAgo) >= allowance.newPerHour) {
+      throw new MailOutboxError('too_many', `You can start ${allowance.newPerHour} new messages an hour. Try again shortly.`);
     }
     const dayAgo = new Date(now - 24 * 60 * 60_000).toISOString();
-    if (await this.deps.messages.countNewSince(userId, dayAgo) >= MAIL_NEW_PER_DAY) {
-      throw new MailOutboxError('too_many', `You can start ${MAIL_NEW_PER_DAY} new messages a day. Replies are not counted.`);
+    if (await this.deps.messages.countNewSince(userId, dayAgo) >= allowance.newPerDay) {
+      throw new MailOutboxError('too_many', `You can start ${allowance.newPerDay} new messages a day. Replies are not counted.`);
     }
   }
 
   /** Validate a new message exactly as send() will, without contacting the provider. */
   async previewSend(args: {
-    userId: string; to: unknown; subject: unknown; text: string;
+    userId: string; to: unknown; subject: unknown; text: string; allowance?: MailAllowance;
   } & MailExtras): Promise<MailSendPreview> {
     const said = this.words(args.text, 'message');
     const recipient = readOneRecipient(args.to);
@@ -413,7 +428,7 @@ export class MailOutboxService {
     }
     const cc = this.readCc(args.cc, mailbox.address, [recipient]);
     const files = this.readFiles(args);
-    await this.checkNewCeilings(args.userId);
+    await this.checkNewCeilings(args.userId, args.allowance);
     return {
       from: mailbox.address,
       to: { address: recipient },
@@ -647,6 +662,8 @@ export class MailOutboxService {
     userId: string; to: unknown; subject: unknown; text: string; senderName?: string; sentBy?: SentByAgent;
     /** Stable provider/message id supplied by an approval request. */
     outboundId?: string;
+    /** A narrower door's own ceilings (Outreach, note #1111); the mail screens never pass one. */
+    allowance?: MailAllowance;
   } & MailExtras): Promise<MailMessageDocument> {
     const existing = await this.alreadySent(args.userId, args.outboundId);
     if (existing) return existing;
@@ -741,7 +758,7 @@ export class MailOutboxService {
    * in ours.
    */
   async followUp(args: {
-    userId: string; messageId: string; text: string; senderName?: string;
+    userId: string; messageId: string; text: string; senderName?: string; allowance?: MailAllowance;
   }): Promise<MailMessageDocument> {
     const said = this.words(args.text, 'reply');
     const message = await this.deps.messages.get(args.userId, args.messageId);
@@ -752,8 +769,9 @@ export class MailOutboxService {
     if (!mailbox) throw new MailOutboxError('no_mailbox', 'This account has no address to send from.');
     if (recipient.address.toLowerCase() === mailbox.address.toLowerCase()) throw new MailOutboxError('self_recipient', 'That is your own address.');
     const hourAgo = new Date(this.now().getTime() - 60 * 60_000).toISOString();
-    if (await this.deps.messages.countSentSince(args.userId, hourAgo) >= MAIL_REPLIES_PER_HOUR) {
-      throw new MailOutboxError('too_many', `You can send ${MAIL_REPLIES_PER_HOUR} replies an hour. Try again shortly.`);
+    const repliesPerHour = (args.allowance ?? MAIL_ALLOWANCE).repliesPerHour;
+    if (await this.deps.messages.countSentSince(args.userId, hourAgo) >= repliesPerHour) {
+      throw new MailOutboxError('too_many', `You can send ${repliesPerHour} replies an hour. Try again shortly.`);
     }
     const preview: MailSendPreview = {
       from: mailbox.address, to: { address: recipient.address }, cc: [], subject: replySubject(message.subject), text: said, files: [],
