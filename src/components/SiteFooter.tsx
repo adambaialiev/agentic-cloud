@@ -1,3 +1,4 @@
+import { HOME_COLUMN } from './landing-kit';
 import { NEW_TAB, useNewTab } from '../lib/new-tab';
 import BrandMark from './BrandMark';
 
@@ -73,6 +74,9 @@ export default function SiteFooter({ pitch, tone = 'light', wide = false, mark =
   return (
     <footer className={tone === 'dark' ? 'border-t border-hint/16 bg-panel' : 'border-t border-black/[0.08] bg-white'}>
       <div className={wide ? 'mx-auto w-full max-w-[calc(1280px+6rem)] px-5 py-12 sm:px-8 lg:px-12' : 'mx-auto w-full max-w-6xl px-5 py-12 sm:px-8'}>
+        {/* On the home page its content sits on the page's one column
+            (HOME_COLUMN, note #1088), the film's width. */}
+        <div className={wide ? `mx-auto w-full ${HOME_COLUMN}` : undefined}>
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3">
           <div className="lg:pr-6">
             <p data-footer-name className={`type-base font-semibold ${mark ? 'flex items-center gap-2.5 tracking-[-0.01em]' : ''} ${tone === 'dark' ? 'text-white' : 'text-ink'}`}>
@@ -129,6 +133,7 @@ export default function SiteFooter({ pitch, tone = 'light', wide = false, mark =
           of Anthropic; ChatGPT and Codex are products of OpenAI. We are not affiliated with those
           companies.
         </p>
+        </div>
       </div>
     </footer>
   );

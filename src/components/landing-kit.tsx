@@ -39,6 +39,21 @@ export const HOME_SECTION = 'w-full px-5 sm:px-8 lg:px-12';
    laptop's composition. The height cap sizes what can be sized (the film);
    a screen whose words and panels genuinely need more than the window
    grows, never clips. No scroll snapping. */
+/* One column for the whole home page (note #1088; Adam, 9 Nov 2026, 08:50
+   UTC: keep the film's width and put every section below it, the footer
+   too, on that same column). From sm up the column is the film's own width
+   rule: as wide as the content box allows, unless that makes the 16:9 film
+   taller than min(screen, 900 px) leaves after the 300 px kept for the
+   masthead, the timeline and its link. It follows the window's height, so
+   it is a rule and never a number: 1,067 px at 1440x900, 889 px at
+   1440x800. The film, the masthead, every Screen's content and the home
+   footer read this one class; a phone keeps the full width (the film has
+   its own tall rule there). */
+export const HOME_COLUMN = 'sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]';
+/* The same width as a CSS value, for a drawing that is placed by it rather
+   than sized to it (WorkplaceArt, note #1088). 100% is the content box. */
+export const HOME_COLUMN_WIDTH = 'min(100%, calc((min(100svh, 900px) - 300px) * 16 / 9))';
+
 export const SCREEN_MAX_WIDTH = 1280;
 export const SCREEN_MAX_HEIGHT = 900;
 export function Screen({
@@ -46,6 +61,7 @@ export function Screen({
   label,
   first = false,
   pad = 'py-12 sm:py-16',
+  column = true,
   className = '',
   children,
 }: {
@@ -54,6 +70,10 @@ export function Screen({
   /** The page's first screen draws no hairline above it. */
   first?: boolean;
   pad?: string;
+  /** Content on the page's one column (HOME_COLUMN, note #1088). Off only
+      for a screen that places its own content by the column, the
+      workplace drawing. */
+  column?: boolean;
   /** Classes for the content box (a grid, its gaps). */
   className?: string;
   children: ReactNode;
@@ -65,7 +85,7 @@ export function Screen({
       data-screen
       className={`flex min-h-[100svh] w-full flex-col justify-center px-5 sm:px-8 lg:px-12 ${pad} ${first ? '' : 'border-t border-hint/16'}`}
     >
-      <div data-screen-content className={`mx-auto w-full max-w-[1280px] ${className}`}>{children}</div>
+      <div data-screen-content className={`mx-auto w-full max-w-[1280px] ${column ? HOME_COLUMN : ''} ${className}`}>{children}</div>
     </section>
   );
 }

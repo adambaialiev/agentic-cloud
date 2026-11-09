@@ -6,7 +6,7 @@ import { fireEvent } from '@testing-library/react';
 import Home, { BOOKFACE_LINK, BOOKFACE_URL, FILM_BACKGROUND, FILM_SECTION_NAMES, FILM_SECTION_SHORT_NAMES, HOME_HEADLINE, PRODUCT_FILM, PRODUCT_FILM_TALL } from './Home';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
 import { TALL_FILM_QUERY } from '../components/HomeFilm';
-import { SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
+import { HOME_COLUMN, SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 import { GUEST_HEADING } from '../components/GuestAgent';
 import { VALUE_FACTS, VALUE_HEADING, VALUE_LEAD } from '../lib/value-copy';
@@ -135,8 +135,8 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(plan.querySelectorAll('img')).toHaveLength(0);
     const drawings = [...plan.querySelectorAll('svg[role="img"]')];
     expect(drawings).toHaveLength(2);
-    expect(drawings[0]!.closest('div')!.className).toMatch(/\bhidden\b.*\blg:block\b/);
-    expect(drawings[1]!.closest('div')!.className).toMatch(/\blg:hidden\b/);
+    expect(drawings[0]!.closest('[data-plan-wide]')!.parentElement!.className).toMatch(/\bhidden\b.*\blg:block\b/);
+    expect(drawings[1]!.closest('div.lg\\:hidden')).toBeTruthy();
     for (const drawing of drawings) {
       expect((drawing.getAttribute('aria-label') ?? '').length).toBeGreaterThan(200);
       const words = drawing.textContent ?? '';
@@ -520,6 +520,30 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     for (const width of box.className.split(' ').filter((c) => c.includes('w-[min('))) expect(masthead.className.split(' ')).toContain(width);
     expect(box.querySelector('[data-film-timeline]')).toBeTruthy();
     expect(box.querySelector('#film-site a')).toBeTruthy();
+  });
+
+  // Note #1088 (Adam, 9 Nov 2026, 08:50 UTC): one column for the whole page,
+  // the film's own width. The film, the masthead, every screen below it and
+  // the footer read the one rule (HOME_COLUMN), never a number; the
+  // workplace drawing is placed by the same rule, its building's walls on
+  // the column and "You" outside them to the left. The real edges are
+  // measured in a browser (simulations/onboarding.mjs).
+  it('puts the film, every screen below it and the footer on one column', () => {
+    answer();
+    draw();
+    expect(HOME_COLUMN).toBe('sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]');
+    const onColumn = (node: Element) => node.className.split(/\s+/).includes(HOME_COLUMN);
+    expect(onColumn(document.querySelector('#film [data-film-box]')!)).toBe(true);
+    expect(onColumn(document.querySelector('#film [data-masthead]')!)).toBe(true);
+    for (const section of document.querySelectorAll('main > section')) {
+      const content = section.querySelector(':scope > [data-screen-content]')!;
+      // The workplace screen places its drawing by the column instead.
+      expect(onColumn(content), section.id).toBe(section.id !== 'workplace');
+    }
+    // jsdom drops the drawing's max()/min() placement, so its edges are
+    // measured in a real browser (simulations/onboarding.mjs).
+    expect(document.querySelector('#workplace [data-plan-wide]')).toBeTruthy();
+    expect([...document.querySelectorAll('footer div')].some(onColumn)).toBe(true);
   });
 
   it('shows the poster and play button when the browser refuses to start it', async () => {

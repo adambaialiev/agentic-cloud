@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react';
 import { FACES } from './live/fixture';
+import { HOME_COLUMN, HOME_COLUMN_WIDTH } from './landing-kit';
 import { Icon, type IconName } from './CopyArt';
 
 /**
@@ -267,13 +269,41 @@ function Clip({ id }: { id: string }) {
 
 /* ── Wide, for a desk ──────────────────────────────────────────────────── */
 
+/* The wide plan's frame, in its own units: the viewBox, and the building's
+   outer walls (4 units wide, so their outer edges are 2 outside L and R). */
+const WIDE_VIEW = 1088;
+const WIDE_L = 112;
+const WIDE_R = 1084;
+const WIDE_EDGE_LEFT = WIDE_L - 2;
+const WIDE_EDGE_RIGHT = WIDE_R + 2;
+
+/* The wide plan on the page's one column (note #1088; Adam, 9 Nov 2026: the
+   big rectangle's edges on the column, "You" outside it to the left). The
+   drawing is scaled so the building's outer walls span the column exactly,
+   and pulled left by the part of the drawing outside them, so "You" stands
+   in the margin. Where the margin is too narrow for that (a desk window
+   whose column fills nearly its whole width, like 1280x900 or an iPad held
+   sideways), the drawing never starts more than 40 px left of the content
+   box (the screen keeps 48 px from lg up): the walls' right edge stays on
+   the column and the building is a little narrower than it. Placed by the
+   column's own rule (HOME_COLUMN_WIDTH), never by a number. */
+function wideOnColumn(): CSSProperties {
+  const c = `(${HOME_COLUMN_WIDTH})`;
+  const left = `max(calc((100% - ${c}) / 2 - ${c} * ${WIDE_EDGE_LEFT} / ${WIDE_EDGE_RIGHT - WIDE_EDGE_LEFT}), -40px)`;
+  return {
+    marginLeft: left,
+    width: `calc(((100% + ${c}) / 2 - ${left}) * ${WIDE_VIEW} / ${WIDE_EDGE_RIGHT})`,
+    maxWidth: 'none',
+  };
+}
+
 function PlanWide() {
   const id = 'wp-wide';
   /* The building: the lobby on the left, open onto the floor of desks; the
      shared shelves along the bottom wall. Set closer than it was (note
      #924: the lobby was about 40 percent of the plan and mostly empty). */
-  const L = 112; /* outer left wall */
-  const R = 1084; /* outer right wall */
+  const L = WIDE_L; /* outer left wall */
+  const R = WIDE_R; /* outer right wall */
   const T = 8;
   const B = 452;
   const FLOOR = 340; /* the left edge of the floor and of the shelves */
@@ -432,10 +462,15 @@ export default function WorkplaceArt() {
   return (
     <figure className="workplace-art m-0">
       <div className="hidden lg:block">
-        <PlanWide />
+        <div data-plan-wide style={wideOnColumn()}>
+          <PlanWide />
+        </div>
       </div>
-      <div className="max-w-[460px] lg:hidden">
-        <PlanTall />
+      {/* The tall plan between sm and lg stands on the column too. */}
+      <div className={`mx-auto w-full lg:hidden ${HOME_COLUMN}`}>
+        <div className="max-w-[460px]">
+          <PlanTall />
+        </div>
       </div>
     </figure>
   );

@@ -1,7 +1,7 @@
 import { GuestAgentSection } from '../components/GuestAgent';
 import SiteFooter from '../components/SiteFooter';
 import { FOOTER_PITCH } from '../lib/product-copy';
-import { Screen } from '../components/landing-kit';
+import { HOME_COLUMN, Screen } from '../components/landing-kit';
 import WorkplaceArt from '../components/WorkplaceArt';
 import HomeFilm, { type Film, type Section } from '../components/HomeFilm';
 import { filmUrl, PRODUCT_FILM_PATH, PRODUCT_FILM_TALL_PATH } from '../lib/films';
@@ -208,7 +208,7 @@ function Masthead() {
   return (
     <div
       data-masthead
-      className="mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*9/16))] items-center gap-2 sm:mb-4 sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]"
+      className={`mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*9/16))] items-center gap-2 sm:mb-4 ${HOME_COLUMN}`}
     >
       {/* The wave fills the middle 76% of its square file, so the square is
           pulled 3 px left to put the wave's own edge on the film's. */}
@@ -262,7 +262,7 @@ export default function Home() {
           <Masthead />
           <div
             data-film-box
-            className="mx-auto w-[min(100%,calc((100svh_-_211px)*9/16))] sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]"
+            className={`mx-auto w-[min(100%,calc((100svh_-_211px)*9/16))] ${HOME_COLUMN}`}
           >
             <HomeFilm
               wide={PRODUCT_FILM}
@@ -299,7 +299,7 @@ export default function Home() {
           that illustrated the workplace around agents." Since note #984 the
           drawing stands alone in its screen: "Here's the workplace." came
           off; the plan's own labels carry it. */}
-      <Screen id="workplace">
+      <Screen id="workplace" column={false}>
         <div className="min-w-0">
           <WorkplaceArt />
         </div>
