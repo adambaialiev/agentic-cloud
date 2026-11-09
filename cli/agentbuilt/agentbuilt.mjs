@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.74.0';
+const VERSION = '1.75.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -5030,6 +5030,79 @@ async function briefing(args) {
 }
 
 /**
+ * `agentbuilt outreach` (note #1103): the platform operator's own agents put
+ * the outreach words — a company's facts, its profile, its first letter, and
+ * the shared template and follow-ups — straight into his Outreach, which his
+ * site reads live. Drafts and facts only: nothing here sends, sets a state
+ * or reads a reply. Out of HELP like `signups`: every other agent would only
+ * hear "not yours". The knowledge page outreach-app is where agents learn it.
+ */
+const OUTREACH_USAGE = `usage:
+  agentbuilt outreach list [--json]
+  agentbuilt outreach show <company> [--json]
+  agentbuilt outreach set --file <file.json>
+
+set takes ONE company (an object with "company", "fit", and any of the facts,
+"profile" and "firstEmail") or a batch in the shape of outreach-targets.json
+("targets", and/or "template", and/or "followUps"). Every write is signed with
+your name and the time, and the words it replaces stay on the company's
+timeline. The owner's own letter is never replaced: your new one waits beside
+his until he picks. A letter that has gone cannot be rewritten. Nothing here
+sends: a letter leaves only when the owner presses Send on his site.`;
+
+async function outreach(args) {
+  const [sub, ...rest] = args;
+  if (!sub || sub === '--help' || sub === 'help' || rest.includes('--help')) { console.log(OUTREACH_USAGE); return; }
+  const when = (iso) => (iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '-');
+  switch (sub) {
+    case 'list': case 'ls': {
+      if (positionals(rest, []).length) fail(OUTREACH_USAGE);
+      const { targets } = await api('GET', 'api/agent-cli/outreach');
+      if (rest.includes('--json')) { console.log(JSON.stringify(targets, null, 2)); return; }
+      if (!targets.length) { console.log('Outreach holds no company yet. Write one with `agentbuilt outreach set --file <file.json>`.'); return; }
+      const rows = targets.map((t) => [t.firstBatchOrder ?? '', t.company, t.fit === 'fit' ? t.state : 'not a fit', t.letter ? 'yes' : '-', t.profile ? 'yes' : '-',
+        t.firstLetterGone ? 'gone' : t.ownerEdited ? 'his own' : '', t.writtenBy ? `${t.writtenBy}, ${when(t.writtenAt)}` : '-']);
+      const heads = ['#', 'COMPANY', 'STATE', 'LETTER', 'PROFILE', 'FIRST LETTER', 'LAST WRITTEN'];
+      const widths = heads.map((head, i) => Math.max(head.length, ...rows.map((row) => String(row[i]).length)));
+      const line = (cells) => cells.map((cell, i) => String(cell).padEnd(widths[i])).join('  ').trimEnd();
+      console.log([line(heads), ...rows.map(line)].join('\n'));
+      console.log(`\n${targets.length} companies. "his own" = the owner edited the first letter: a new one from you waits beside his. "gone" = sent; its words, address and fit are fixed.`);
+      return;
+    }
+    case 'show': {
+      const [which] = positionals(rest, []);
+      if (!which) fail(OUTREACH_USAGE);
+      const { target } = await api('GET', `api/agent-cli/outreach/targets/${encodeURIComponent(which)}`);
+      if (rest.includes('--json')) { console.log(JSON.stringify(target, null, 2)); return; }
+      console.log(`${target.company} (${target.id}) · ${target.fit === 'fit' ? target.state : 'not a fit'}${target.firstLetterGone ? ' · first letter gone' : ''}${target.ownerEdited ? ' · the owner has his own first letter' : ''}`);
+      console.log('\nWhat the agents last wrote (as JSON — edit it and hand it back to `outreach set --file`):');
+      console.log(JSON.stringify(target.written, null, 2));
+      console.log('\nWrites, newest first:');
+      for (const write of target.writes) console.log(`  ${when(write.at)}  ${write.by}  ${write.added ? 'added it' : `changed ${write.fields.join(', ')}`}`);
+      return;
+    }
+    case 'set': case 'write': {
+      const file = argValue(rest, '--file');
+      if (!file || positionals(rest, ['--file']).length) fail(OUTREACH_USAGE);
+      let body;
+      try { body = JSON.parse(readSourceFile(file)); } catch (error) { fail(`${file} is not JSON: ${error.message}`); }
+      const answer = await api('POST', 'api/agent-cli/outreach', { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } });
+      const names = (list) => list.join(', ');
+      if (answer.added.length) console.log(`Added ${answer.added.length}: ${names(answer.added)}`);
+      if (answer.updated.length) console.log(`Updated ${answer.updated.length}: ${answer.updated.map((u) => `${u.company} (${u.fields.join(', ')})`).join('; ')}`);
+      if (answer.unchanged.length) console.log(`Unchanged ${answer.unchanged.length}: ${names(answer.unchanged)}`);
+      if (answer.words) console.log(`Template and follow-ups: ${answer.words}`);
+      for (const refused of answer.refused) console.log(`REFUSED ${refused.company}: ${refused.reason}`);
+      console.log('The owner\'s site shows this the next time it is opened or refreshed. Nothing was sent.');
+      if (answer.refused.length) process.exitCode = 1;
+      return;
+    }
+    default:
+      fail(`unknown outreach command "${sub}"\n${OUTREACH_USAGE}`);
+  }
+}
+
+/**
  * Sign-ups from outside, by stage, by week and by account — the platform
  * operator's own numbers, so the backend answers only the platform admin's
  * agents, and the verb stays out of HELP: every other agent would only ever
@@ -7000,6 +7073,7 @@ try {
     case 'briefing': case 'briefings': await briefing(rest); break;
     case 'forward': await forward(rest); break;
     case 'signups': await signups(rest); break;
+    case 'outreach': await outreach(rest); break;
     case 'knowledge': await knowledge(rest); break;
     case 'drive': await drive(rest); break;
     case 'mail': case 'email': await mail(rest); break;

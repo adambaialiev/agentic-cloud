@@ -7529,24 +7529,7 @@ self.addEventListener('activate', (event) => {
       legacyOrgId: oldest?.orgId ?? null, webSession, webSessionToken: '',
     };
   };
-  // The seed is a file on a note in any workplace the owner belongs to.
-  registerOutreachRoutes(router, '/api/outreach', deps, authenticateOutreachPass, async (auth) => isAdminAccount(auth.profile),
-    async (auth, _req, res, raw, fileName) => {
-      const notes = workspaceNotes(res);
-      if (!notes) return null;
-      if (!deps.mediaStorage) { res.status(503).json({ error: 'File storage is not available on this backend yet.' }); return null; }
-      const number = Number(raw);
-      const memberships = deps.orgStorage ? await deps.orgStorage.listMembershipsByUser(auth.userId).catch(() => []) : [];
-      const namespaces = new Set<string>();
-      for (const membership of memberships) {
-        for (const namespace of await numberedNamespaces({ ...auth, orgId: membership.orgId, orgRole: membership.role })) namespaces.add(namespace);
-      }
-      const found = pickNumbered(await notes.findByNumber([...namespaces], number), number, null);
-      if (found.kind !== 'one') { res.status(404).json({ error: `There is no note #${number} you can open.` }); return null; }
-      const attachment = (found.doc.attachments ?? []).find((file) => file.fileName === fileName);
-      if (!attachment) { res.status(404).json({ error: `Note #${number} has no file named ${fileName}.` }); return null; }
-      return deps.mediaStorage.downloadObject({ storagePath: attachment.storagePath });
-    });
+  registerOutreachRoutes(router, '/api/outreach', deps, authenticateOutreachPass, async (auth) => isAdminAccount(auth.profile));
 
   /**
    * What the user typed, as the HTML a note is stored in — or a reply and null.

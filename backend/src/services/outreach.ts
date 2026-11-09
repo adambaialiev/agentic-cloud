@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import {
-  OUTREACH_REVIEW_AFTER, OUTREACH_STATES, addressMatches, hostMatches, outreachDraft, outreachNext, outreachPlaceholders,
-  outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
-  type OutreachEdits, type OutreachImportAnswer, type OutreachListAnswer, type OutreachRow, type OutreachSeed,
-  type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch,
+  OUTREACH_REVIEW_AFTER, OUTREACH_STATES, OUTREACH_WORDS_HISTORY, addressMatches, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
+  outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
+  type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
+  type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch, type OutreachWords,
+  type OutreachWrite, type OutreachWriteAnswer, type OutreachWriter,
 } from '../shared/outreach.js';
 import type { CopyPulse } from '../shared/copy-pulse.js';
 import type { MailArrival } from '../types/mail-arrival.js';
@@ -12,7 +13,15 @@ import type { MailboxStorage } from './mailbox-storage.js';
 import type { OutreachStore } from './outreach-storage.js';
 
 /**
- * Outreach (note #1089), the service behind the owner's screen.
+ * Outreach (notes #1089, #1103), the service behind the owner's site.
+ *
+ * Its tables are the one place the words live. The owner's agents write a
+ * company — facts, profile, first letter — and the shared template and
+ * follow-ups with `write()` (`agentbuilt outreach set`); each write is signed
+ * and the record it replaced stays on the company's timeline. A write never
+ * changes a state, a touch, the owner's own fields or his own letter, and it
+ * cannot reach a letter that has gone. The site reads `list()` and
+ * `detail()` live.
  *
  * Three things move a company along without the owner touching it, and each
  * only RECORDS what already happened — none of them sends anything:
@@ -51,6 +60,13 @@ type TouchBody = OutreachTouch extends infer T ? T extends OutreachTouch ? Omit<
 
 const MAX_NOTE = 4000;
 const MAX_FIELD = 300;
+const MAX_LETTER = 20_000;
+
+/** Which of a company's fields a write changes, by name. */
+function changedFields(before: OutreachSeedTarget, after: OutreachSeedTarget): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)] as Array<keyof OutreachSeedTarget>);
+  return [...keys].filter((key) => JSON.stringify(before[key] ?? null) !== JSON.stringify(after[key] ?? null));
+}
 
 let sequence = 0;
 const touchId = (at: Date) => `ot_${at.getTime().toString(36).padStart(9, '0')}${(sequence++ % 1296).toString(36).padStart(2, '0')}${randomBytes(4).toString('hex')}`;
@@ -81,7 +97,10 @@ export class OutreachService {
       lastTouchAt: touches[0]?.at ?? null,
       next: outreachNext(record, touches, now),
       written: Boolean(record.seed.firstEmail),
-      inLatestImport: record.inLatestImport,
+      writtenBy: record.written?.by.name ?? null,
+      writtenAt: record.written?.at ?? null,
+      yours: Boolean(record.ownLetter),
+      newerDraft: Boolean(outreachNewerDraft(record)),
     };
   }
 
@@ -91,8 +110,12 @@ export class OutreachService {
     const byTarget = new Map<string, OutreachTouch[]>();
     for (const touch of touches) byTarget.set(touch.targetId, [...(byTarget.get(touch.targetId) ?? []), touch]);
     const rows = records.map((record) => this.row(record, byTarget.get(record.id) ?? [], now));
+    const writes = [
+      ...records.flatMap((record) => (record.written ? [{ at: record.written.at, by: record.written.by.name }] : [])),
+      ...(kept?.words.writtenBy ? [{ at: kept.importedAt, by: kept.words.writtenBy.name }] : []),
+    ].sort((a, b) => b.at.localeCompare(a.at));
     return {
-      imported: kept ? { at: kept.importedAt, source: kept.words.source, generatedBy: kept.words.generatedBy, generatedAt: kept.words.generatedAt } : null,
+      lastWrite: writes[0] ?? null,
       rows: sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number]))),
       firstSends: touches.filter((touch) => touch.kind === 'sent' && touch.step === 'first').length,
       reviewAfter: OUTREACH_REVIEW_AFTER,
@@ -104,65 +127,187 @@ export class OutreachService {
     if (!record) return null;
     const [kept, touches] = await Promise.all([this.deps.store.words(userId), this.deps.store.touches(userId, targetId)]);
     const row = this.row(record, touches, this.now());
-    const draft = kept ? outreachDraft(record, kept.words, touches, row.next) : null;
+    const draft = outreachDraft(record, kept?.words ?? null, touches, row.next);
     return { row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row) };
   }
 
   /** Why the profile has no Send, said plainly. */
   private noSend(record: OutreachTargetRecord, row: OutreachRow): string {
     if (record.seed.fit !== 'fit') return `Not a fit${record.seed.notAFitReason ? `: ${record.seed.notAFitReason}` : ''}. Kept so it is not added again.`;
-    if (!targetEmail(record)) return 'Note #799 has no address for this company. Add one above to write.';
+    if (!targetEmail(record)) return 'No address for this company yet. Add one below to write.';
     if (record.state === 'not-now') return 'They said not now. That ends it.';
     if (record.state === 'replied') return 'They replied. Answer from your inbox.';
     if (record.state === 'trying') return 'They are trying it.';
     if (record.state === 'installed') return 'They installed it.';
     if (record.state === 'sent' && !row.next) return 'The first letter and both follow-ups have gone. Note #799 says: then stop.';
+    if (row.next?.step === 'first') return 'No letter is written for this company yet. An agent writes it here with agentbuilt outreach set.';
+    if (row.next) return `The ${stepWords(row.next.step)} is not written yet. An agent writes it here with agentbuilt outreach set.`;
     return 'Nothing to send.';
   }
 
   /**
-   * Bring the words and the companies in from the seed file. A company is the
-   * same company across imports (its id is its name), so a re-import updates
-   * what note #799 says — the facts and the ready letter — and leaves the
-   * owner's edits, the state and every touch alone. A company the new file no
-   * longer has is kept, marked, never deleted with its history.
+   * An agent writes (note #1103): companies, and the shared template and
+   * follow-ups, straight into the store. A company is the same company across
+   * writes (its id is its name). What changes is only what the agents own —
+   * the facts, the profile, the first letter — and each change is signed and
+   * keeps the record it replaced on the timeline. The owner's fields, his own
+   * letter, the state and every touch stay as they are; where he has his own
+   * letter, the new one waits beside it (`outreachNewerDraft`). Once a first
+   * letter has gone, its words, its address and the company's fit are what
+   * went: a write that would change them is refused for that company, and the
+   * rest of the batch still goes in. Nothing is ever deleted.
    */
-  async import(userId: string, seed: OutreachSeed): Promise<OutreachImportAnswer> {
+  async write(userId: string, by: OutreachWriter, write: OutreachWrite): Promise<OutreachWriteAnswer> {
     const at = this.now().toISOString();
-    const existing = new Map((await this.deps.store.targets(userId)).map((record) => [record.id, record]));
-    let added = 0;
-    let updated = 0;
-    const present = new Set<string>();
-    for (const target of seed.targets) {
+    const answer: OutreachWriteAnswer = { added: [], updated: [], unchanged: [], refused: [], words: null };
+    for (const target of write.targets) {
       const id = outreachTargetId(target.company);
-      present.add(id);
-      const before = existing.get(id);
-      if (before) updated += 1;
-      else added += 1;
-      await this.deps.store.putTarget({
-        id,
-        userId,
-        seed: target,
-        edits: before?.edits ?? {},
-        state: before?.state ?? 'not-contacted',
-        stateAt: before?.stateAt ?? null,
-        importedAt: at,
-        inLatestImport: true,
-      });
+      const before = await this.deps.store.target(userId, id);
+      if (!before) {
+        await this.deps.store.putTarget({ id, userId, seed: target, edits: {}, state: 'not-contacted', stateAt: null, addedAt: at, written: { at, by }, ownLetter: null });
+        await this.touch(userId, id, { kind: 'written', by, added: true, fields: Object.keys(target), previous: null, at });
+        answer.added.push(target.company);
+        continue;
+      }
+      const fields = changedFields(before.seed, target);
+      if (!fields.length) { answer.unchanged.push(target.company); continue; }
+      const touches = await this.deps.store.touches(userId, id);
+      const gone = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent' && touch.step === 'first');
+      if (gone) {
+        const fixed = [
+          before.seed.firstEmail?.subject !== target.firstEmail?.subject || before.seed.firstEmail?.body !== target.firstEmail?.body ? 'its first letter' : null,
+          (before.seed.email ?? '').toLowerCase() !== (target.email ?? '').toLowerCase() ? 'its address' : null,
+          before.seed.fit !== target.fit ? 'whether it is a fit' : null,
+        ].filter(Boolean);
+        if (fixed.length) {
+          answer.refused.push({ company: target.company, reason: `Its first letter went on ${gone.at.slice(0, 10)}: ${fixed.join(', ')} stays as it went. Write it again without changing that.` });
+          continue;
+        }
+      }
+      await this.deps.store.putTarget({ ...before, seed: target, written: { at, by } });
+      await this.touch(userId, id, { kind: 'written', by, added: false, fields, previous: before.seed, at });
+      answer.updated.push({ company: target.company, fields });
     }
-    let kept = 0;
-    for (const [id, record] of existing) {
-      if (present.has(id)) continue;
-      kept += 1;
-      if (record.inLatestImport) await this.deps.store.putTarget({ ...record, inLatestImport: false });
-    }
-    const { targets: _targets, ...words } = seed;
-    await this.deps.store.setWords(userId, at, words);
-    // A company that already runs its own copy is Installed from the start.
-    if (this.deps.pulses) {
+    if (write.words) answer.words = await this.writeWords(userId, by, write.words, at);
+    // A company that already runs its own copy is Installed from the start:
+    // that records what happened, as a report arriving later would.
+    if (answer.added.length && this.deps.pulses) {
       for (const pulse of await this.deps.pulses().catch(() => [] as CopyPulse[])) await this.notePulse(pulse, userId);
     }
-    return { added, updated, kept, total: seed.targets.length + kept };
+    return answer;
+  }
+
+  private async writeWords(userId: string, by: OutreachWriter, write: NonNullable<OutreachWrite['words']>, at: string): Promise<'written' | 'unchanged'> {
+    const kept = await this.deps.store.words(userId);
+    const before = kept?.words ?? null;
+    const template = write.template ?? before?.template ?? null;
+    const followUps = {
+      day4: write.followUps?.day4 ?? before?.followUps.day4 ?? null,
+      day11: write.followUps?.day11 ?? before?.followUps.day11 ?? null,
+    };
+    if (before && JSON.stringify(template) === JSON.stringify(before.template) && JSON.stringify(followUps) === JSON.stringify(before.followUps)) return 'unchanged';
+    const next: OutreachWords = {
+      source: write.source ?? before?.source ?? 'written by the agents',
+      generatedBy: write.generatedBy ?? before?.generatedBy ?? null,
+      generatedAt: write.generatedAt ?? before?.generatedAt ?? null,
+      template,
+      followUps,
+      writtenBy: by,
+      previous: before
+        ? [{ at: kept!.importedAt, by: before.writtenBy ?? null, template: before.template, followUps: before.followUps }, ...(before.previous ?? [])].slice(0, OUTREACH_WORDS_HISTORY)
+        : [],
+    };
+    await this.deps.store.setWords(userId, at, next);
+    return 'written';
+  }
+
+  /** What an agent reads back: no reply, no note, no sent letter — the words it may write and the state as a word. */
+  private agentRow(record: OutreachTargetRecord, touches: OutreachTouch[]): OutreachAgentRow {
+    return {
+      id: record.id,
+      company: record.seed.company,
+      fit: record.seed.fit,
+      firstBatchOrder: record.seed.firstBatchOrder,
+      state: record.state,
+      letter: Boolean(record.seed.firstEmail),
+      profile: Boolean(record.seed.profile),
+      firstLetterGone: touches.some((touch) => touch.kind === 'sent' && touch.step === 'first'),
+      ownerEdited: Boolean(record.ownLetter),
+      writtenBy: record.written?.by.name ?? null,
+      writtenAt: record.written?.at ?? null,
+    };
+  }
+
+  async agentList(userId: string): Promise<OutreachAgentRow[]> {
+    const [records, touches] = await Promise.all([this.deps.store.targets(userId), this.deps.store.touches(userId)]);
+    const rows = records.map((record) => this.agentRow(record, touches.filter((touch) => touch.targetId === record.id)));
+    return sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number])));
+  }
+
+  /** One company for an agent, by its id or its name. */
+  async agentShow(userId: string, which: string): Promise<OutreachAgentTarget | null> {
+    const record = await this.deps.store.target(userId, which) ?? await this.deps.store.target(userId, outreachTargetId(which));
+    if (!record) return null;
+    const touches = await this.deps.store.touches(userId, record.id);
+    return {
+      ...this.agentRow(record, touches),
+      written: record.seed,
+      writes: touches.flatMap((touch) => (touch.kind === 'written' ? [{ at: touch.at, by: touch.by.name, added: touch.added, fields: touch.fields }] : [])),
+    };
+  }
+
+  /**
+   * The owner and his own first letter, from the site. `save` keeps what he
+   * typed as his version (the site saves as he types); `take` sets his aside
+   * for the agents' letter; `keep` keeps his over an agent's newer draft. Not
+   * once the first letter has gone: then its words are what went.
+   */
+  async letter(userId: string, targetId: string, args: { action: unknown; subject?: unknown; text?: unknown }): Promise<OutreachTargetRecord> {
+    const record = await this.mine(userId, targetId);
+    if (record.seed.fit !== 'fit') throw new OutreachError(409, 'This company is not a fit; there is no letter to write.');
+    const touches = await this.deps.store.touches(userId, targetId);
+    if (touches.some((touch) => touch.kind === 'sent' && touch.step === 'first')) throw new OutreachError(409, 'The first letter has gone: its words stay as they went.');
+    const agents = record.seed.firstEmail;
+    const own = record.ownLetter ?? null;
+    const by = record.written?.by.name ?? null;
+    const action = String(args.action ?? '');
+    let next: OutreachTargetRecord | null = null;
+    if (action === 'save') {
+      const subject = String(args.subject ?? '').trim().slice(0, 200);
+      const body = String(args.text ?? '').replace(/\r\n/g, '\n').trim();
+      if (!subject || !body) throw new OutreachError(400, 'Write a subject and a letter first.');
+      if (body.length > MAX_LETTER) throw new OutreachError(400, `A letter is at most ${MAX_LETTER.toLocaleString('en-US')} characters.`);
+      const basedOn = agents ? { subject: agents.subject, body: agents.body } : null;
+      if (agents && subject === agents.subject.trim() && body === agents.body.trim()) {
+        // Back to the agents' words, word for word: there is no version of his any more.
+        if (!own) return record;
+        next = { ...record, ownLetter: null };
+        await this.deps.store.putTarget(next);
+        await this.touch(userId, targetId, { kind: 'letter', action: 'took', subject: own.subject, body: own.body, by });
+        return next;
+      }
+      next = { ...record, ownLetter: { subject, body, at: this.now().toISOString(), basedOn } };
+      await this.deps.store.putTarget(next);
+      // The timeline says once that he made it his, with the words he started from.
+      if (!own) await this.touch(userId, targetId, { kind: 'letter', action: 'saved', subject: agents?.subject ?? subject, body: agents?.body ?? '', by });
+      return next;
+    }
+    if (action === 'take') {
+      if (!own) return record;
+      next = { ...record, ownLetter: null };
+      await this.deps.store.putTarget(next);
+      await this.touch(userId, targetId, { kind: 'letter', action: 'took', subject: own.subject, body: own.body, by });
+      return next;
+    }
+    if (action === 'keep') {
+      const newer = outreachNewerDraft(record);
+      if (!own || !newer) return record;
+      next = { ...record, ownLetter: { ...own, basedOn: { subject: newer.subject, body: newer.body } } };
+      await this.deps.store.putTarget(next);
+      await this.touch(userId, targetId, { kind: 'letter', action: 'kept', subject: newer.subject, body: newer.body, by });
+      return next;
+    }
+    throw new OutreachError(400, 'Say save, take or keep.');
   }
 
   private async mine(userId: string, targetId: string): Promise<OutreachTargetRecord> {

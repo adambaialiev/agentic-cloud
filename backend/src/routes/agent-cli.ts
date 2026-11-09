@@ -7,6 +7,7 @@ import { agentBroughtInReceipt } from '../shared/first-run.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
+import { registerOutreachAgentRoutes } from './outreach.js';
 import { WORKSPACE_AGENT_NAME, personDisplayName, workspaceAssistantId } from '../types/user.js';
 import { DIRECT_MESSAGES_OFFERED } from '../shared/direct-messages.js';
 import { DirectMessageApprovalError, resolveTeammate } from '../services/direct-message-approval.js';
@@ -459,6 +460,11 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   // The private copies (note #1058), for the platform admin's agents alone:
   // the Chief of Staff reads the copy an alert names.
   registerCopiesRoutes(router, '/platform/copies', deps, authenticate,
+    async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
+  // Outreach (note #1103): the platform admin's own agents write the words —
+  // companies, profiles, letters, the template and follow-ups — straight
+  // into his Outreach, which his site reads live. Drafts and facts only.
+  registerOutreachAgentRoutes(router, '/outreach', deps, authenticate,
     async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
 
   const requireDeployments = (res: Response) => {

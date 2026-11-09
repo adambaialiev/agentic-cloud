@@ -1,20 +1,25 @@
 /**
- * Outreach (note #1089): the owner's own screen for cold outreach — every
- * target company as a profile, every touch on a timeline, and a Send button
- * that mails as the owner from his address here. Shared by the backend and
- * the Workspace so the two never count words, read a seed or decide what is
- * due differently.
+ * Outreach (notes #1089, #1093, #1103): the owner's own site for cold
+ * outreach — every target company as a profile, every touch on a timeline,
+ * and a Send button that mails as the owner from his address here. Shared by
+ * the backend and its tests so the two never count words, read a write or
+ * decide what is due differently.
  *
  * What it deliberately is NOT: nothing here sends by itself. A follow-up is
- * DUE on day 4 and day 11, and the screen says so; the owner presses. There
- * is no timer that sends, no tracking pixel and no link rewriting — a letter
+ * DUE on day 4 and day 11, and the site says so; the owner presses. There is
+ * no timer that sends, no tracking pixel and no link rewriting — a letter
  * leaves as the plain words in the box.
  *
- * The words a prospect reads live on note #799 and arrive here only through
- * an import of the seed file made from it (`parseOutreachSeed`). Nothing on
- * this side writes a sentence for a prospect: a template's placeholders are
- * left showing until the owner fills them, and a letter that still carries
- * one is refused.
+ * Where the words live (note #1103): in the platform's own Outreach tables,
+ * and nowhere else. The owner's agents write a company — its facts, its
+ * profile, its first letter — and the template and follow-ups straight into
+ * them with `agentbuilt outreach set --file <file.json>` (`parseOutreachWrite`
+ * reads that file); every write is signed with the agent and the time, and the
+ * words it replaced stay on the company's timeline. The site reads the tables
+ * live on every open. There is no import, no seed file and no note number.
+ * Nothing on this side writes a sentence for a prospect: a template's
+ * placeholders are left showing until the owner fills them, and a letter that
+ * still carries one is refused.
  */
 
 export const OUTREACH_STATES = ['not-contacted', 'sent', 'replied', 'not-now', 'trying', 'installed'] as const;
@@ -153,7 +158,11 @@ export function hostMatches(target: string | null | undefined, host: string | nu
 }
 
 // ---------------------------------------------------------------------------
-// The seed: Rowan's file made from note #799 (outreach-targets.json).
+// What an agent writes (note #1103): one company, or a batch with the
+// template and the follow-ups, in the shape Rowan's outreach-targets.json
+// already has. `seed` keeps its name on the stored record (the rows written
+// by the old import carry it), but nothing is seeded any more: it is simply
+// what the agents last wrote for that company.
 
 export interface OutreachLetter {
   to: string | null;
@@ -163,9 +172,43 @@ export interface OutreachLetter {
   subject: string;
   body: string;
   wordCount: number | null;
+  /** The company's own words the letter opens on, with where they said them. */
+  opensOn: OutreachQuote | null;
+  /** Whether a stated problem of theirs matches what the workplace removes, as the research says it. */
+  painMatch: string | null;
 }
 
-/** One company as note #799 has it. Every field is the note's, never ours. */
+export interface OutreachQuote {
+  quote: string;
+  who: string | null;
+  source: string | null;
+  date: string | null;
+}
+
+/**
+ * A company's profile as the agent wrote it, kept WHOLE: the fields below are
+ * the ones the site lays out, and any other field the agent adds travels with
+ * the record and is shown too — the old import dropped what it did not know,
+ * and that is how the profiles went missing.
+ */
+export interface OutreachProfile {
+  builds?: string;
+  buildsSource?: string;
+  team?: string;
+  teamSource?: string;
+  agentsAndTools?: string;
+  problems?: Array<Partial<OutreachQuote>>;
+  workplaceFixes?: string;
+  match?: string;
+  matchNote?: string;
+  people?: Array<{ name?: string; role?: string; address?: string | null; where?: string }>;
+  recipientChange?: string | null;
+  gaps?: string[];
+  researchedOn?: string;
+  [field: string]: unknown;
+}
+
+/** One company as the agents have it. Every field is theirs, never the site's. */
 export interface OutreachSeedTarget {
   number: number | null;
   company: string;
@@ -180,6 +223,7 @@ export interface OutreachSeedTarget {
   agentSignal: string | null;
   agentSignalSource: string | null;
   person: string | null;
+  personRole: string | null;
   email: string | null;
   emailWhose: string | null;
   emailWherePrinted: string | null;
@@ -187,85 +231,132 @@ export interface OutreachSeedTarget {
   verification: string | null;
   checkedOn: string | null;
   firstEmail: OutreachLetter | null;
+  profile: OutreachProfile | null;
 }
 
+/** Who wrote: the agent's id and its name at the time. */
+export interface OutreachWriter {
+  agentId: string;
+  name: string;
+}
+
+/** The words every company shares: the template and the two follow-ups. */
 export interface OutreachWords {
-  /** Where the words came from, as the seed says it. */
+  /** Where the words came from, as the writer says it. */
   source: string;
   generatedBy: string | null;
   generatedAt: string | null;
-  template: { subject: string; body: string };
-  followUps: Record<'day4' | 'day11', { text: string; wordCount: number | null }>;
+  template: { subject: string; body: string } | null;
+  followUps: Record<'day4' | 'day11', { text: string; wordCount: number | null } | null>;
+  /** The agent that last changed the template or a follow-up. */
+  writtenBy?: OutreachWriter | null;
+  /** The words they replaced, newest first, at most OUTREACH_WORDS_HISTORY. */
+  previous?: Array<{ at: string; by: OutreachWriter | null; template: OutreachWords['template']; followUps: OutreachWords['followUps'] }>;
 }
 
-export interface OutreachSeed extends OutreachWords {
+export const OUTREACH_WORDS_HISTORY = 10;
+
+/** What one `agentbuilt outreach set` carries, read strictly. */
+export interface OutreachWrite {
   targets: OutreachSeedTarget[];
+  /** Present only when the file carries a template or a follow-up. */
+  words: {
+    source: string | null;
+    generatedBy: string | null;
+    generatedAt: string | null;
+    template?: { subject: string; body: string };
+    followUps?: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>>;
+  } | null;
 }
 
 const MAX_TARGETS = 500;
 const MAX_TEXT = 4000;
+const MAX_PROFILE_CHARS = 40_000;
 
-/** A stable id for a company across imports: its name, folded. */
+/** A stable id for a company across writes: its name, folded. */
 export function outreachTargetId(company: string): string {
   return company.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'company';
 }
 
-/** Read the seed file, strictly: anything not of its shape is refused with what was wrong. */
-export function parseOutreachSeed(json: unknown): { ok: true; seed: OutreachSeed } | { ok: false; error: string } {
-  if (!json || typeof json !== 'object' || Array.isArray(json)) return { ok: false, error: 'The file is not a JSON object.' };
-  const doc = json as Record<string, unknown>;
-  const text = (value: unknown, max = MAX_TEXT): string | null => {
-    if (value === null || value === undefined) return null;
-    if (typeof value !== 'string') return null;
-    const trimmed = value.trim();
-    return trimmed ? trimmed.slice(0, max) : null;
-  };
-  const words = (value: unknown, max = MAX_TEXT): string | null => (typeof value === 'string' && value.trim() ? value.replace(/\r\n/g, '\n').slice(0, max) : null);
-  const count = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
-
-  const template = doc.template as Record<string, unknown> | undefined;
-  const templateSubject = text(template?.subject, 200);
-  const templateBody = words(template?.body);
-  if (!templateSubject || !templateBody) return { ok: false, error: 'template.subject and template.body are missing.' };
-  const followUps = doc.followUps as Record<string, Record<string, unknown>> | undefined;
-  const day4 = words(followUps?.day4?.text);
-  const day11 = words(followUps?.day11?.text);
-  if (!day4 || !day11) return { ok: false, error: 'followUps.day4.text and followUps.day11.text are missing.' };
-  if (!Array.isArray(doc.targets) || doc.targets.length === 0) return { ok: false, error: 'targets is missing or empty.' };
-  if (doc.targets.length > MAX_TARGETS) return { ok: false, error: `At most ${MAX_TARGETS} targets.` };
-
-  const targets: OutreachSeedTarget[] = [];
-  const seen = new Set<string>();
-  for (const [at, raw] of doc.targets.entries()) {
-    if (!raw || typeof raw !== 'object') return { ok: false, error: `targets[${at}] is not an object.` };
-    const row = raw as Record<string, unknown>;
-    const company = text(row.company, 120);
-    if (!company) return { ok: false, error: `targets[${at}] has no company.` };
-    const id = outreachTargetId(company);
-    if (seen.has(id)) return { ok: false, error: `${company} appears twice.` };
-    seen.add(id);
-    const fit = row.fit === 'not a fit' ? 'not a fit' : row.fit === 'fit' ? 'fit' : null;
-    if (!fit) return { ok: false, error: `${company}: fit is neither "fit" nor "not a fit".` };
-    const email = text(row.email, 254);
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: `${company}: ${email} is not one address.` };
-    let firstEmail: OutreachLetter | null = null;
-    if (row.firstEmail && typeof row.firstEmail === 'object') {
-      const letter = row.firstEmail as Record<string, unknown>;
-      const subject = text(letter.subject, 200);
-      const body = words(letter.body);
-      if (!subject || !body) return { ok: false, error: `${company}: firstEmail needs a subject and a body.` };
-      firstEmail = {
-        to: text(letter.to, 254),
-        recipient: text(letter.recipient, 200),
-        wherePrinted: text(letter.wherePrinted),
-        note: text(letter.note),
-        subject,
-        body,
-        wordCount: count(letter.wordCount),
-      };
+/**
+ * Plain JSON only — words, numbers, yes/no, lists and fields — so a profile
+ * is kept as written and can never carry anything the site would run. Null
+ * when it is not that, or is far bigger than any profile.
+ */
+function plainJson(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') return value.replace(/\r\n/g, '\n').slice(0, MAX_TEXT);
+  if (depth >= 5) return undefined;
+  if (Array.isArray(value)) return value.slice(0, 60).map((item) => plainJson(item, depth + 1)).filter((item) => item !== undefined);
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>).slice(0, 60)) {
+      if (!key || key.length > 60 || key === '__proto__') continue;
+      const kept = plainJson(item, depth + 1);
+      if (kept !== undefined) out[key] = kept;
     }
-    targets.push({
+    return out;
+  }
+  return undefined;
+}
+
+type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+
+const text = (value: unknown, max = MAX_TEXT): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+};
+const words = (value: unknown, max = MAX_TEXT): string | null => (typeof value === 'string' && value.trim() ? value.replace(/\r\n/g, '\n').slice(0, max) : null);
+const count = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+function parseQuote(value: unknown): OutreachQuote | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const quote = value as Record<string, unknown>;
+  const said = text(quote.quote);
+  return said ? { quote: said, who: text(quote.who, 300), source: text(quote.source, 600), date: text(quote.date, 80) } : null;
+}
+
+/** One company, strictly: anything not of its shape is refused with what was wrong. */
+function parseTarget(raw: unknown, at: string): Parsed<OutreachSeedTarget> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: `${at} is not an object.` };
+  const row = raw as Record<string, unknown>;
+  const company = text(row.company, 120);
+  if (!company) return { ok: false, error: `${at} has no company.` };
+  const fit = row.fit === 'not a fit' ? 'not a fit' : row.fit === 'fit' ? 'fit' : null;
+  if (!fit) return { ok: false, error: `${company}: fit is neither "fit" nor "not a fit".` };
+  const email = text(row.email, 254);
+  if (email && !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) return { ok: false, error: `${company}: ${email} is not one address.` };
+  let firstEmail: OutreachLetter | null = null;
+  if (row.firstEmail !== undefined && row.firstEmail !== null) {
+    if (typeof row.firstEmail !== 'object' || Array.isArray(row.firstEmail)) return { ok: false, error: `${company}: firstEmail is not an object.` };
+    const letter = row.firstEmail as Record<string, unknown>;
+    const subject = text(letter.subject, 200);
+    const body = words(letter.body);
+    if (!subject || !body) return { ok: false, error: `${company}: firstEmail needs a subject and a body.` };
+    firstEmail = {
+      to: text(letter.to, 254),
+      recipient: text(letter.recipient, 200),
+      wherePrinted: text(letter.wherePrinted),
+      note: text(letter.note),
+      subject,
+      body,
+      wordCount: count(letter.wordCount),
+      opensOn: parseQuote(letter.opensOn),
+      painMatch: text(letter.painMatch, 200),
+    };
+  }
+  let profile: OutreachProfile | null = null;
+  if (row.profile !== undefined && row.profile !== null) {
+    if (typeof row.profile !== 'object' || Array.isArray(row.profile)) return { ok: false, error: `${company}: profile is not an object.` };
+    profile = plainJson(row.profile) as OutreachProfile;
+    if (JSON.stringify(profile).length > MAX_PROFILE_CHARS) return { ok: false, error: `${company}: the profile is longer than ${MAX_PROFILE_CHARS.toLocaleString('en-US')} characters.` };
+  }
+  return {
+    ok: true,
+    value: {
       number: count(row.number),
       company,
       city: text(row.city, 80),
@@ -279,6 +370,7 @@ export function parseOutreachSeed(json: unknown): { ok: true; seed: OutreachSeed
       agentSignal: text(row.agentSignal),
       agentSignalSource: text(row.agentSignalSource),
       person: text(row.person, 300),
+      personRole: text(row.personRole, 300),
       email,
       emailWhose: text(row.emailWhose, 300),
       emailWherePrinted: text(row.emailWherePrinted),
@@ -286,44 +378,108 @@ export function parseOutreachSeed(json: unknown): { ok: true; seed: OutreachSeed
       verification: text(row.verification, 120),
       checkedOn: text(row.checkedOn, 40),
       firstEmail,
-    });
+      profile,
+    },
+  };
+}
+
+/**
+ * Read what an agent hands `agentbuilt outreach set`: ONE company (an object
+ * with `company`), or a batch — `targets`, and/or `template`, and/or
+ * `followUps` — in the shape of outreach-targets.json. Strict: anything not
+ * of its shape is refused whole, with what was wrong, and nothing is written.
+ */
+export function parseOutreachWrite(json: unknown): { ok: true; write: OutreachWrite } | { ok: false; error: string } {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return { ok: false, error: 'The file is not a JSON object.' };
+  const doc = json as Record<string, unknown>;
+  if (typeof doc.company === 'string') {
+    const one = parseTarget(doc, 'The company');
+    return one.ok ? { ok: true, write: { targets: [one.value], words: null } } : one;
+  }
+  const targets: OutreachSeedTarget[] = [];
+  if (doc.targets !== undefined) {
+    if (!Array.isArray(doc.targets) || doc.targets.length === 0) return { ok: false, error: 'targets is not a list of companies.' };
+    if (doc.targets.length > MAX_TARGETS) return { ok: false, error: `At most ${MAX_TARGETS} companies at once.` };
+    const seen = new Set<string>();
+    for (const [at, raw] of doc.targets.entries()) {
+      const one = parseTarget(raw, `targets[${at}]`);
+      if (!one.ok) return one;
+      const id = outreachTargetId(one.value.company);
+      if (seen.has(id)) return { ok: false, error: `${one.value.company} appears twice.` };
+      seen.add(id);
+      targets.push(one.value);
+    }
+  }
+  let template: { subject: string; body: string } | undefined;
+  if (doc.template !== undefined) {
+    const raw = doc.template as Record<string, unknown> | null;
+    const subject = text(raw?.subject, 200);
+    const body = words(raw?.body);
+    if (!subject || !body) return { ok: false, error: 'template needs a subject and a body.' };
+    template = { subject, body };
+  }
+  let followUps: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>> | undefined;
+  if (doc.followUps !== undefined) {
+    const raw = doc.followUps as Record<string, Record<string, unknown> | undefined> | null;
+    followUps = {};
+    for (const step of ['day4', 'day11'] as const) {
+      if (raw?.[step] === undefined) continue;
+      const said = words(raw[step]?.text);
+      if (!said) return { ok: false, error: `followUps.${step}.text is missing.` };
+      followUps[step] = { text: said, wordCount: count(raw[step]?.wordCount) };
+    }
+    if (!followUps.day4 && !followUps.day11) return { ok: false, error: 'followUps has neither day4 nor day11.' };
+  }
+  if (!targets.length && !template && !followUps) {
+    return { ok: false, error: 'Nothing to write: give one company (an object with "company"), or "targets", "template" or "followUps".' };
   }
   return {
     ok: true,
-    seed: {
-      source: text(doc.source, 600) ?? 'note #799',
-      generatedBy: text(doc.generatedBy, 200),
-      generatedAt: text(doc.generatedAt, 40),
-      template: { subject: templateSubject, body: templateBody },
-      followUps: {
-        day4: { text: day4, wordCount: count(followUps?.day4?.wordCount) },
-        day11: { text: day11, wordCount: count(followUps?.day11?.wordCount) },
-      },
+    write: {
       targets,
+      words: template || followUps
+        ? { source: text(doc.source, 600), generatedBy: text(doc.generatedBy, 200), generatedAt: text(doc.generatedAt, 40), ...(template ? { template } : {}), ...(followUps ? { followUps } : {}) }
+        : null,
     },
   };
 }
 
 // ---------------------------------------------------------------------------
-// What is kept, and what the screen is told.
+// What is kept, and what the site is told.
 
-/** What the owner changed on the screen. Absent means the note's own. */
+/** What the owner changed on the site. Absent means the agents' own. */
 export interface OutreachEdits {
   person?: string;
   email?: string;
   city?: string;
 }
 
+/**
+ * The owner's own first letter (note #1103): saved as he edits it on the
+ * site, and from then on what the Send box opens with. `basedOn` is the
+ * agents' letter he last saw; when an agent writes a different one after it,
+ * the site shows that draft BESIDE his and he picks — it never replaces his.
+ */
+export interface OutreachOwnLetter {
+  subject: string;
+  body: string;
+  at: string;
+  basedOn: { subject: string; body: string } | null;
+}
+
 export interface OutreachTargetRecord {
   id: string;
   userId: string;
+  /** What the agents last wrote for this company (see OutreachSeedTarget). */
   seed: OutreachSeedTarget;
   edits: OutreachEdits;
   state: OutreachState;
   stateAt: string | null;
-  importedAt: string;
-  /** False when the latest import no longer had this company: kept, with its touches. */
-  inLatestImport: boolean;
+  /** When the company first came into the store. */
+  addedAt?: string;
+  /** The last agent write: who and when. Absent on rows the old import made. */
+  written?: { at: string; by: OutreachWriter } | null;
+  ownLetter?: OutreachOwnLetter | null;
 }
 
 export type OutreachTouch = {
@@ -337,11 +493,20 @@ export type OutreachTouch = {
   | { kind: 'state'; from: OutreachState; to: OutreachState }
   | { kind: 'installed'; copyId: string; domain: string; contact: string }
   | { kind: 'edit'; field: keyof OutreachEdits; from: string | null; to: string | null }
+  /** An agent wrote the company: which fields changed, and the whole record it replaced (null when it was new). */
+  | { kind: 'written'; by: OutreachWriter; added: boolean; fields: string[]; previous: OutreachSeedTarget | null }
+  /**
+   * The owner and his own letter: `saved` (his first edit; the words are the
+   * agents' he started from), `kept` (he kept his over an agent's newer
+   * draft; the words are that draft), `took` (he took the agents' letter; the
+   * words are his own, set aside).
+   */
+  | { kind: 'letter'; action: 'saved' | 'kept' | 'took'; subject: string; body: string; by: string | null }
 );
 
 export type OutreachTouchKind = OutreachTouch['kind'];
 
-/** The owner's own address for a company: what he set, else the note's. */
+/** The owner's own address for a company: what he set, else the agents'. */
 const edited = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>, field: keyof OutreachEdits): string | null =>
   (field in record.edits ? record.edits[field] || null : record.seed[field]);
 export const targetEmail = (record: Pick<OutreachTargetRecord, 'seed' | 'edits'>): string | null => edited(record, 'email');
@@ -381,6 +546,18 @@ export function outreachNext(record: Pick<OutreachTargetRecord, 'seed' | 'edits'
   return null;
 }
 
+const sameLetter = (a: { subject: string; body: string } | null | undefined, b: { subject: string; body: string } | null | undefined) =>
+  Boolean(a && b) && a!.subject.trim() === b!.subject.trim() && a!.body.trim() === b!.body.trim();
+
+/** An agent's first letter written after the owner saved his own: it waits beside his. */
+export function outreachNewerDraft(record: Pick<OutreachTargetRecord, 'seed' | 'ownLetter'>): OutreachLetter | null {
+  const own = record.ownLetter;
+  const agents = record.seed.firstEmail;
+  if (!own || !agents) return null;
+  if (sameLetter(agents, own) || sameLetter(agents, own.basedOn)) return null;
+  return agents;
+}
+
 /** One company in the list. */
 export interface OutreachRow {
   id: string;
@@ -398,13 +575,20 @@ export interface OutreachRow {
   stateAt: string | null;
   lastTouchAt: string | null;
   next: OutreachNext | null;
-  /** True when the note has a ready first email for this company. */
+  /** True when an agent has written a first letter for this company. */
   written: boolean;
-  inLatestImport: boolean;
+  /** The last agent write. */
+  writtenBy: string | null;
+  writtenAt: string | null;
+  /** The owner has his own version of the first letter. */
+  yours: boolean;
+  /** An agent wrote a new first letter after his: it waits beside his for him to pick. */
+  newerDraft: boolean;
 }
 
 export interface OutreachListAnswer {
-  imported: { at: string; source: string; generatedBy: string | null; generatedAt: string | null } | null;
+  /** The newest agent write anywhere: what the site says the list is "as of". Null before anything is written. */
+  lastWrite: { at: string; by: string } | null;
   rows: OutreachRow[];
   /** First letters sent so far, for the review reminder. */
   firstSends: number;
@@ -417,10 +601,14 @@ export interface OutreachDraft {
   to: string;
   subject: string;
   text: string;
-  /** Where the words came from: the company's own email on note #799, the template, or a follow-up. */
-  from: 'written' | 'template' | 'follow-up';
-  /** Note #799's own count, where it gives one. */
+  /** Where the words came from: the owner's own version, the letter an agent wrote for this company, the template, or a follow-up. */
+  from: 'yours' | 'written' | 'template' | 'follow-up';
+  /** The agent that wrote these words, where an agent did. */
+  by: string | null;
+  /** The writer's own count, where it gives one. */
   noteWordCount: number | null;
+  /** An agent's first letter newer than his own, shown beside it for him to pick. */
+  newer: { subject: string; text: string; by: string | null; at: string | null; noteWordCount: number | null } | null;
 }
 
 export interface OutreachTargetAnswer {
@@ -433,11 +621,37 @@ export interface OutreachTargetAnswer {
   noSend: string | null;
 }
 
-export interface OutreachImportAnswer {
-  added: number;
-  updated: number;
-  kept: number;
-  total: number;
+/** What `agentbuilt outreach set` did, company by company. */
+export interface OutreachWriteAnswer {
+  added: string[];
+  updated: Array<{ company: string; fields: string[] }>;
+  unchanged: string[];
+  refused: Array<{ company: string; reason: string }>;
+  /** The template and follow-ups: written, unchanged, or not in this write. */
+  words: 'written' | 'unchanged' | null;
+}
+
+/** What an agent may read back: the words and facts it wrote, the state as a word, never a reply, a note or a sent letter. */
+export interface OutreachAgentRow {
+  id: string;
+  company: string;
+  fit: 'fit' | 'not a fit';
+  firstBatchOrder: number | null;
+  state: OutreachState;
+  letter: boolean;
+  profile: boolean;
+  /** A first letter has gone: its words, its address and its fit are fixed now. */
+  firstLetterGone: boolean;
+  /** The owner has his own version of the first letter; a new one from an agent waits beside it. */
+  ownerEdited: boolean;
+  writtenBy: string | null;
+  writtenAt: string | null;
+}
+
+export interface OutreachAgentTarget extends OutreachAgentRow {
+  written: OutreachSeedTarget;
+  /** Every agent write, newest first: who, when, which fields. */
+  writes: Array<{ at: string; by: string; added: boolean; fields: string[] }>;
 }
 
 export interface OutreachSendAnswer {
@@ -451,29 +665,43 @@ export function followUpSubject(subject: string): string {
   return /^re\s*:/i.test(trimmed) ? trimmed : `Re: ${trimmed}`;
 }
 
-/** The letter the Send box opens with, from the note's words only. */
-export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
+/** The letter the Send box opens with, from the owner's own words or the agents' — never the site's. */
+export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
   const to = targetEmail(record);
   if (!next || !to) return null;
+  const by = record.written?.by.name ?? null;
   if (next.step === 'first') {
     const written = record.seed.firstEmail;
-    if (written) return { step: 'first', to, subject: written.subject, text: written.body, from: 'written', noteWordCount: written.wordCount };
-    return { step: 'first', to, subject: words.template.subject, text: words.template.body, from: 'template', noteWordCount: null };
+    const own = record.ownLetter;
+    if (own) {
+      const newer = outreachNewerDraft(record);
+      return {
+        step: 'first', to, subject: own.subject, text: own.body, from: 'yours', by: null, noteWordCount: null,
+        newer: newer ? { subject: newer.subject, text: newer.body, by, at: record.written?.at ?? null, noteWordCount: newer.wordCount } : null,
+      };
+    }
+    if (written) return { step: 'first', to, subject: written.subject, text: written.body, from: 'written', by, noteWordCount: written.wordCount, newer: null };
+    if (!words?.template) return null;
+    return { step: 'first', to, subject: words.template.subject, text: words.template.body, from: 'template', by: words.writtenBy?.name ?? null, noteWordCount: null, newer: null };
   }
+  const followUp = words?.followUps[next.step];
+  if (!followUp) return null;
   const first = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent' && touch.step === 'first');
   return {
     step: next.step,
     to: first?.to ?? to,
-    subject: followUpSubject(first?.subject ?? words.template.subject),
-    text: words.followUps[next.step].text,
+    subject: followUpSubject(first?.subject ?? words?.template?.subject ?? ''),
+    text: followUp.text,
     from: 'follow-up',
-    noteWordCount: words.followUps[next.step].wordCount,
+    by: words?.writtenBy?.name ?? null,
+    noteWordCount: followUp.wordCount,
+    newer: null,
   };
 }
 
-/** The list's order: the first batch in the note's order, then the rest by group and number, the dropped last. */
-export function sortOutreachRows(rows: OutreachRow[], numbers: Map<string, number | null>): OutreachRow[] {
-  const rank = (row: OutreachRow) => (row.fit !== 'fit' ? 3 : row.firstBatchOrder !== null ? 0 : 1);
+/** The list's order: the first batch in its order, then the rest by group and number, the dropped last. */
+export function sortOutreachRows<Row extends Pick<OutreachRow, 'id' | 'fit' | 'firstBatchOrder' | 'company'>>(rows: Row[], numbers: Map<string, number | null>): Row[] {
+  const rank = (row: Row) => (row.fit !== 'fit' ? 3 : row.firstBatchOrder !== null ? 0 : 1);
   return [...rows].sort((a, b) => rank(a) - rank(b)
     || (a.firstBatchOrder ?? 0) - (b.firstBatchOrder ?? 0)
     || (numbers.get(a.id) ?? 9999) - (numbers.get(b.id) ?? 9999)
