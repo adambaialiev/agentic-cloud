@@ -295,6 +295,25 @@ const lastLines = (text, n = 6) => String(text ?? '').trim().split('\n').slice(-
 const ORG_NEEDED = '--org is the Fly organization your own Agentic Cloud goes into (its slug, as `fly orgs list` shows). Its bill pays for every machine, so the person who owns it chooses.';
 const DOMAIN_NEEDED = '--domain is the name your own Agentic Cloud lives on, like agents.theirco.com: a name of its own, not the company\'s main domain.';
 const PREFIX_NEEDED = '--name is a short lowercase prefix for its app names, like theirco.';
+/**
+ * Whether the backend gets a Fly token of its own (note #1086). An
+ * organization token (a Fly macaroon, "FlyV1 …") cannot make another, so the
+ * backend keeps the very token the install runs with, and revoking it stops
+ * every agent; a person's sign-in makes the backend an organization token of
+ * its own. The plan and the install ask this one question, so the plan lists
+ * exactly what the install makes.
+ */
+export function backendTokenPath(token) {
+  return String(token ?? '').trim().startsWith('FlyV1 ') ? 'kept' : 'made';
+}
+
+/** What the plan says it keeps, on the organization-token path. */
+export const KEPT_TOKEN = {
+  kind: 'token',
+  name: 'the organization token this install runs with',
+  what: 'kept, not created: an organization token cannot make another, so the backend starts agent machines with this one, and revoking it stops every agent. Use one made for this Agentic Cloud alone, and keep it',
+};
+
 const NO_TOKEN = 'No Fly token: set FLY_API_TOKEN, or sign in with `fly auth login`.';
 const keyForAnotherDomain = (updateKey, domain) => `This update key was issued for ${updateKey.domain}, not ${domain}. Ask us for a key for ${domain}, or use that domain.`;
 
@@ -942,11 +961,17 @@ export async function install(options, deps = {}) {
   await step('keys', 'Making the keys', async () => {
     const ssh = sshKeyPair(`${names.backend}@${domain}`);
     let backendToken = null;
-    try {
-      const minted = (await fly(['tokens', 'create', 'org', '-o', org, '-n', `${names.backend} (your own Agentic Cloud)`, '-x', '87600h'], { quiet: true })).trim();
-      backendToken = minted.split('\n').find((line) => line.startsWith('FlyV1 ')) ?? null;
-    } catch { /* an organization token cannot make another: the backend keeps this one */ }
-    if (!backendToken) log('        The backend keeps the organization token this install runs with (it cannot make a second one).');
+    // The plan said which (backendTokenPath): an organization token is kept
+    // without asking Fly for a second one it would refuse.
+    if (backendTokenPath(token) === 'made') {
+      try {
+        const minted = (await fly(['tokens', 'create', 'org', '-o', org, '-n', `${names.backend} (your own Agentic Cloud)`, '-x', '87600h'], { quiet: true })).trim();
+        backendToken = minted.split('\n').find((line) => line.startsWith('FlyV1 ')) ?? null;
+      } catch { /* Fly refused: the backend keeps the token this install runs with, and says so */ }
+      if (!backendToken) log('        Fly would not make the backend a token of its own, so it keeps the one this install runs with. Revoking that token stops every agent.');
+    } else {
+      log('        The backend keeps the organization token this install runs with (it cannot make a second one). Revoking that token stops every agent.');
+    }
     state.pending = {
       ...state.pending,
       FLY_API_TOKEN: backendToken ?? token,
@@ -2016,6 +2041,9 @@ export async function plan(options, deps = {}) {
     });
   }
 
+  // Unknown until there is a token: then the plan lists no backend token at all.
+  const tokenPath = token ? backendTokenPath(token) : null;
+  const keeps = names && tokenPath === 'kept' ? [KEPT_TOKEN] : [];
   const disk = (gb) => cents(gb * PRICE.diskGb);
   const creates = names ? [
     { kind: 'app', name: names.images, what: 'your own image registry, holding the release', monthlyUsd: 0 },
@@ -2028,7 +2056,8 @@ export async function plan(options, deps = {}) {
     { kind: 'bucket', name: names.backups, what: 'database backups', monthlyUsd: null },
     { kind: 'address', name: `shared IPv4 and IPv6 on ${names.backend}, ${names.git} and ${names.router}`, what: 'no charge', monthlyUsd: 0 },
     { kind: 'certificate', name: domainOk ? `${domain}, git.${domain} and *.${domain}` : 'the domain, git. and *.', what: 'from Let\'s Encrypt, through Fly', monthlyUsd: 0 },
-    { kind: 'token', name: `${names.backend} (your own Agentic Cloud)`, what: 'an organization token the backend starts agent machines with', monthlyUsd: 0 },
+    // Only on the sign-in path: an organization token is kept, not made (note #1086).
+    ...(tokenPath === 'made' ? [{ kind: 'token', name: `${names.backend} (your own Agentic Cloud)`, what: 'a new organization token the backend starts agent machines with', monthlyUsd: 0 }] : []),
     { kind: 'secrets', name: `Fly secrets on ${names.backend} and ${names.git}`, what: 'keys made on this computer: an SSH key, the master key, shared secrets, the first-admin code', monthlyUsd: 0 },
   ].map((item) => ({ ...item, exists: existing.includes(item.name) })) : [];
   const monthlyUsd = cents(creates.reduce((sum, item) => sum + (item.exists ? 0 : item.monthlyUsd ?? 0), 0));
@@ -2064,13 +2093,17 @@ export async function plan(options, deps = {}) {
     log(`  Each agent machine: about $${PRICE.agentHour.toFixed(2)} an hour while it is awake, plus its disk. Fly's dashboard has the real bill.`);
     log(`  Email is not in this: ${MAIL_LATER} About $${mailMonthlyUsd.toFixed(2)} a month more once it is on.`);
   }
+  if (keeps.length) {
+    log('\nIt would keep, and not create:');
+    for (const item of keeps) log(`  ${item.name}: ${item.what}.`);
+  }
   if (records.length) log(`\nThe DNS records it will ask for:\n${formatRecords(records)}`);
   if (state) log(`\nAn earlier run is recorded in ${stateFile}: ${INSTALL_STEPS.filter((key) => state.steps?.[key]).join(', ') || 'nothing'} done.`);
   log(`\n${outcome === 'ready' ? 'Ready: run the same command without --plan.' : outcome === 'needs-person' ? 'A person is needed first (PERSON above).' : 'Fix the FIX lines above, then plan again.'}`);
 
   const result = {
     event: 'result', outcome, exitCode, command: 'plan', reason: forPerson[0]?.reason ?? null, domain: domainOk ? domain : null, org: org || null,
-    release: release?.version ?? null, checks, creates, monthlyUsd, agentHourlyUsd: PRICE.agentHour, records,
+    release: release?.version ?? null, checks, creates, keeps, backendToken: tokenPath, monthlyUsd, agentHourlyUsd: PRICE.agentHour, records,
     mail: { included: false, laterMonthlyUsd: mailMonthlyUsd, how: MAIL_LATER },
     stepsDone: state ? INSTALL_STEPS.filter((key) => state.steps?.[key]) : [], person,
   };

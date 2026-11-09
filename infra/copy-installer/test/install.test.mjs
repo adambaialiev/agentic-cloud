@@ -549,6 +549,49 @@ const writes = (calls) => calls.map((args) => args.slice(0, 2).join(' ')).filter
 const stopped = (promise) => promise.then(() => { throw new Error('expected it to stop'); }, (error) => error);
 
 describe('driven by an agent: a plan, JSON, and when a person is needed', () => {
+  // Note #1086 (claim 35 of the acceptance pass, note #1080): the plan lists
+  // exactly what each path makes. An organization token is kept, never made
+  // again; a person's sign-in makes the backend a token of its own.
+  it('on the organization-token path, lists no backend token and says the given one is kept, as the install does', async () => {
+    const h = harness();
+    const result = await installer.plan(h.options, h.deps);
+    expect(result.backendToken).toBe('kept');
+    expect(result.creates.filter((item) => item.kind === 'token')).toEqual([]);
+    expect(result.keeps).toEqual([installer.KEPT_TOKEN]);
+    expect(h.lines.join('\n')).toContain('It would keep, and not create:');
+
+    const install = harness();
+    await installer.install(install.options, install.deps);
+    expect(install.fly.calls.some((args) => args[0] === 'tokens')).toBe(false);
+    expect(install.fly.secrets['theirco-backend'][0].values.FLY_API_TOKEN).toBe('FlyV1 their-org-token');
+  });
+
+  it('on the sign-in path, lists the new backend token the install then makes', async () => {
+    const signedIn = (h) => {
+      const fly = h.deps.fly;
+      h.deps.token = 'fo1_a-person-signed-in';
+      h.deps.fly = async (args, opts) => (args[0] === 'tokens' ? (h.fly.calls.push(args), 'FlyV1 fm2_made-for-the-backend\n') : fly(args, opts));
+      return h;
+    };
+    const h = signedIn(harness());
+    const result = await installer.plan(h.options, h.deps);
+    expect(result.backendToken).toBe('made');
+    expect(result.creates.filter((item) => item.kind === 'token').map((item) => item.name)).toEqual(['theirco-backend (your own Agentic Cloud)']);
+    expect(result.keeps).toEqual([]);
+    expect(h.fly.calls.some((args) => args[0] === 'tokens')).toBe(false);
+
+    const install = signedIn(harness());
+    await installer.install(install.options, install.deps);
+    expect(install.fly.calls.filter((args) => args[0] === 'tokens').length).toBe(1);
+    expect(install.fly.secrets['theirco-backend'][0].values.FLY_API_TOKEN).toBe('FlyV1 fm2_made-for-the-backend');
+  });
+
+  it('tells the two paths apart by the token alone', () => {
+    expect(installer.backendTokenPath('FlyV1 fm2_abc')).toBe('kept');
+    expect(installer.backendTokenPath('  FlyV1 fm2_abc\n')).toBe('kept');
+    expect(installer.backendTokenPath('fo1_abc')).toBe('made');
+  });
+
   it('plans without changing anything, and says what it would create and what it costs', async () => {
     const h = harness();
     const events = [];
