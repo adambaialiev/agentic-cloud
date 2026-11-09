@@ -141,7 +141,7 @@ describe('same-domain Workspace proxy', () => {
   it('keeps every landing page and static file off the function, so the asset server answers them first', () => {
     const routes = JSON.parse(readFileSync(path.join(ROOT, 'public/_routes.json'), 'utf8')) as { include: string[]; exclude: string[] };
     expect(routes.include).toEqual(['/*']);
-    for (const word of ['docs', 'terms', 'privacy', 'teams', 'og-preview', 'claude-code-in-the-cloud', 'codex-in-the-cloud', 'ai-agents-for-your-team', 'four-phases', 'why-fly', 'own-cloud', 'own-cloud.md', 'private-copy']) {
+    for (const word of ['docs', 'terms', 'privacy', 'teams', 'og-preview', 'claude-code-in-the-cloud', 'codex-in-the-cloud', 'ai-agents-for-your-team', 'four-phases', 'why-fly', 'own-cloud', 'own-cloud.md', 'workplace.md', 'private-copy']) {
       expect(routes.exclude, word).toContain(`/${word}`);
     }
     for (const word of ['workspace', 'api', 'login', 'notes', 'adam']) expect(routes.exclude).not.toContain(`/${word}`);

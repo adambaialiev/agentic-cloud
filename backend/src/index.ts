@@ -20,6 +20,7 @@ import { MailOutboxService } from './services/mail-outbox.js';
 import { ResendMailSender } from './services/mail-sender.js';
 import 'dotenv/config';
 import './lib/ai-provider.js';
+import { outreachLinkRoutes } from './routes/outreach-links.js';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -2610,6 +2611,9 @@ app.use('/api/agent-cli', agentCliRoutes(deps));
 // The browser Workspace.
 const workspaceRouter = workspaceRoutes(deps);
 app.use('/workspace', workspaceRouter);
+// The outreach letters' short links, /go/<code> (note #1106): before the
+// root routes, so the word is ours and never a person's address.
+app.use(outreachLinkRoutes(() => outreach));
 // Its addresses live at the root of the domain (public-addresses): the shell
 // is served there, and every old /workspace address redirects to it.
 app.use(workspaceRootRoutes({

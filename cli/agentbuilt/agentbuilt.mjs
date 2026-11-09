@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.75.0';
+const VERSION = '1.76.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -5039,7 +5039,7 @@ async function briefing(args) {
  */
 const OUTREACH_USAGE = `usage:
   agentbuilt outreach list [--json]
-  agentbuilt outreach show <company> [--json]
+  agentbuilt outreach show <company> [--json]   (also its two short links for letters)
   agentbuilt outreach set --file <file.json>
 
 set takes ONE company (an object with "company", "fit", and any of the facts,
@@ -5075,6 +5075,10 @@ async function outreach(args) {
       const { target } = await api('GET', `api/agent-cli/outreach/targets/${encodeURIComponent(which)}`);
       if (rest.includes('--json')) { console.log(JSON.stringify(target, null, 2)); return; }
       console.log(`${target.company} (${target.id}) · ${target.fit === 'fit' ? target.state : 'not a fit'}${target.firstLetterGone ? ' · first letter gone' : ''}${target.ownerEdited ? ' · the owner has his own first letter' : ''}`);
+      if (target.links) {
+        // Note #1106: this company's own two short links, for its letters. A visit is a touch on its timeline.
+        console.log(`\nLinks for its letters (each visit shows on its timeline):\n  home page:      ${target.links.home}\n  page for agents: ${target.links.agents}`);
+      }
       console.log('\nWhat the agents last wrote (as JSON — edit it and hand it back to `outreach set --file`):');
       console.log(JSON.stringify(target.written, null, 2));
       console.log('\nWrites, newest first:');

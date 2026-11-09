@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
-  OUTREACH_REVIEW_AFTER, OUTREACH_STATES, OUTREACH_WORDS_HISTORY, addressMatches, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
+  OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_STATES, OUTREACH_WORDS_HISTORY, addressMatches,
+  fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
   type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch, type OutreachWords,
@@ -69,6 +70,9 @@ function changedFields(before: OutreachSeedTarget, after: OutreachSeedTarget): s
 }
 
 let sequence = 0;
+/** The same reader opening the same link again within this long is one visit (a mail system often fetches twice). */
+const VISIT_REPEAT_MS = 60_000;
+
 const touchId = (at: Date) => `ot_${at.getTime().toString(36).padStart(9, '0')}${(sequence++ % 1296).toString(36).padStart(2, '0')}${randomBytes(4).toString('hex')}`;
 
 export class OutreachService {
@@ -123,12 +127,60 @@ export class OutreachService {
   }
 
   async detail(userId: string, targetId: string): Promise<OutreachTargetAnswer | null> {
-    const record = await this.deps.store.target(userId, targetId);
-    if (!record) return null;
+    const found = await this.deps.store.target(userId, targetId);
+    if (!found) return null;
+    const record = await this.withLinks(found);
     const [kept, touches] = await Promise.all([this.deps.store.words(userId), this.deps.store.touches(userId, targetId)]);
     const row = this.row(record, touches, this.now());
     const draft = outreachDraft(record, kept?.words ?? null, touches, row.next);
-    return { row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row) };
+    return { row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row), links: outreachLinks(record.links!) };
+  }
+
+  /**
+   * A company's two short codes (note #1106), given the first time it is
+   * read or written and never changed after: a letter that has gone carries
+   * them. Unique across every company in the store.
+   */
+  private async withLinks(record: OutreachTargetRecord): Promise<OutreachTargetRecord & { links: OutreachLinkCodes }> {
+    if (record.links && isOutreachCode(record.links.home) && isOutreachCode(record.links.agents)) return record as OutreachTargetRecord & { links: OutreachLinkCodes };
+    const taken = new Set((await this.deps.store.allTargets()).flatMap((other) => (other.links ? [other.links.home, other.links.agents] : [])));
+    const fresh = () => {
+      for (;;) {
+        const bytes = randomBytes(OUTREACH_CODE_LENGTH);
+        const code = [...bytes].map((byte) => OUTREACH_CODE_ALPHABET[byte % OUTREACH_CODE_ALPHABET.length]).join('');
+        if (!taken.has(code)) { taken.add(code); return code; }
+      }
+    };
+    const next = { ...record, links: { home: fresh(), agents: fresh() } };
+    await this.deps.store.putTarget(next);
+    return next;
+  }
+
+  /**
+   * Somebody opened /go/<code> (note #1106). Whatever the code, the answer
+   * is a redirect: a mistyped or unknown code still lands on the home page,
+   * and records nothing. A known one lands on its page with the UTM data and
+   * leaves a visit on the company's timeline: which link, and whether the
+   * reader looked like a browser, an agent or a mail system checking it.
+   * The same reader on the same link within a minute is one visit. Nothing
+   * else about the reader is kept.
+   */
+  async visit(code: string, reader: { userAgent?: string | null; method?: string }): Promise<{ location: string; recorded: boolean }> {
+    const home = `${OUTREACH_LINK_ORIGIN}/`;
+    const wanted = String(code ?? '').toLowerCase();
+    if (!isOutreachCode(wanted)) return { location: home, recorded: false };
+    const record = (await this.deps.store.allTargets()).find((one) => one.links?.home === wanted || one.links?.agents === wanted);
+    if (!record) return { location: home, recorded: false };
+    const link: OutreachLink = record.links!.home === wanted ? 'home' : 'agents';
+    const location = outreachLinkTarget(link, record.id);
+    const who = outreachReader(reader.userAgent, reader.method);
+    const now = this.now();
+    const recent = (await this.deps.store.touches(record.userId, record.id)).find((touch) =>
+      touch.kind === 'visit' && touch.link === link && touch.reader === who.reader && touch.client === who.client
+      && now.getTime() - Date.parse(touch.at) < VISIT_REPEAT_MS);
+    if (recent) return { location, recorded: false };
+    await this.touch(record.userId, record.id, { kind: 'visit', link, reader: who.reader, client: who.client });
+    return { location, recorded: true };
   }
 
   /** Why the profile has no Send, said plainly. */
@@ -164,7 +216,7 @@ export class OutreachService {
       const id = outreachTargetId(target.company);
       const before = await this.deps.store.target(userId, id);
       if (!before) {
-        await this.deps.store.putTarget({ id, userId, seed: target, edits: {}, state: 'not-contacted', stateAt: null, addedAt: at, written: { at, by }, ownLetter: null });
+        await this.withLinks({ id, userId, seed: target, edits: {}, state: 'not-contacted', stateAt: null, addedAt: at, written: { at, by }, ownLetter: null });
         await this.touch(userId, id, { kind: 'written', by, added: true, fields: Object.keys(target), previous: null, at });
         answer.added.push(target.company);
         continue;
@@ -235,19 +287,23 @@ export class OutreachService {
       ownerEdited: Boolean(record.ownLetter),
       writtenBy: record.written?.by.name ?? null,
       writtenAt: record.written?.at ?? null,
+      links: outreachLinks(record.links!),
     };
   }
 
   async agentList(userId: string): Promise<OutreachAgentRow[]> {
-    const [records, touches] = await Promise.all([this.deps.store.targets(userId), this.deps.store.touches(userId)]);
+    const [found, touches] = await Promise.all([this.deps.store.targets(userId), this.deps.store.touches(userId)]);
+    const records = [];
+    for (const record of found) records.push(await this.withLinks(record));
     const rows = records.map((record) => this.agentRow(record, touches.filter((touch) => touch.targetId === record.id)));
     return sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number])));
   }
 
   /** One company for an agent, by its id or its name. */
   async agentShow(userId: string, which: string): Promise<OutreachAgentTarget | null> {
-    const record = await this.deps.store.target(userId, which) ?? await this.deps.store.target(userId, outreachTargetId(which));
-    if (!record) return null;
+    const found = await this.deps.store.target(userId, which) ?? await this.deps.store.target(userId, outreachTargetId(which));
+    if (!found) return null;
+    const record = await this.withLinks(found);
     const touches = await this.deps.store.touches(userId, record.id);
     return {
       ...this.agentRow(record, touches),
@@ -278,7 +334,8 @@ export class OutreachService {
       if (!subject || !body) throw new OutreachError(400, 'Write a subject and a letter first.');
       if (body.length > MAX_LETTER) throw new OutreachError(400, `A letter is at most ${MAX_LETTER.toLocaleString('en-US')} characters.`);
       const basedOn = agents ? { subject: agents.subject, body: agents.body } : null;
-      if (agents && subject === agents.subject.trim() && body === agents.body.trim()) {
+      // The Send box shows the agents' words with this company's links filled in (note #1106).
+      if (agents && subject === fillOutreachLinks(agents.subject, record.links).trim() && body === fillOutreachLinks(agents.body, record.links).trim()) {
         // Back to the agents' words, word for word: there is no version of his any more.
         if (!own) return record;
         next = { ...record, ownLetter: null };

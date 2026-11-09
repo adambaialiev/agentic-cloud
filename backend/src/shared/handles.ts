@@ -51,6 +51,8 @@ export const PLATFORM_FIRST_SEGMENTS: readonly string[] = [
   'explore', 'search', 'orgs', 'organizations', 'organization', 'users', 'user', 'people',
   'repositories', 'repos', 'sites', 'site', 'apps', 'app', 'dashboard', 'home', 'index',
   'sitemap', 'robots', 'favicon', 'manifest', 'well-known',
+  // The outreach letters' short links, /go/<code> (note #1106).
+  'go',
 ];
 
 /** The first word of every registered Workspace destination and entry door,

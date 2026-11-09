@@ -480,6 +480,87 @@ export interface OutreachTargetRecord {
   /** The last agent write: who and when. Absent on rows the old import made. */
   written?: { at: string; by: OutreachWriter } | null;
   ownLetter?: OutreachOwnLetter | null;
+  /** The company's two short codes (note #1106): see OutreachLinks. Given at its first read or write. */
+  links?: OutreachLinkCodes;
+}
+
+/* ── The links in a letter (note #1106) ─────────────────────────────────
+   Adam, 9 Nov 2026, 17:48 UTC: the letters "lack a shortened link with utm
+   data they lead to our landing page for agents and humans. also we should
+   provide link optimized for agent to see all functionality of our
+   workplace." Every company has two short codes of its own, on our own
+   domain: agenticcloudcomputer.com/go/<code>. One opens the home page, the
+   other the page written for agents (/workplace.md); each answers with a
+   redirect carrying the same UTM data, and each visit is a touch on that
+   company's timeline: when, which link, and whether the reader looked like
+   a browser, an agent (a program reading it) or a mail system checking the
+   link before anyone opened it. Nothing personal: no address, no IP, only
+   the client's own product word ("Chrome", "curl", "Claude-User"). */
+export type OutreachLink = 'home' | 'agents';
+export interface OutreachLinkCodes { home: string; agents: string }
+export type OutreachReader = 'browser' | 'agent' | 'check';
+
+/** Where the letters' links live: the public front door, whatever host serves the routes. */
+export const OUTREACH_LINK_ORIGIN = 'https://agenticcloudcomputer.com';
+export const OUTREACH_LINK_PATH = '/go/';
+/** Where each link leads. */
+export const OUTREACH_LINK_TARGETS: Record<OutreachLink, string> = { home: '/', agents: '/workplace.md' };
+/** The UTM data every link carries; utm_content is the company's id. Kept stable: analytics group by them. */
+export const OUTREACH_UTM = { source: 'outreach', medium: 'email', campaign: 'cold-email' } as const;
+/** A short code: six letters and digits with no look-alikes (no 0/o, 1/l/i), lower case. */
+export const OUTREACH_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
+export const OUTREACH_CODE_LENGTH = 6;
+export const isOutreachCode = (code: string): boolean => new RegExp(`^[${OUTREACH_CODE_ALPHABET}]{${OUTREACH_CODE_LENGTH}}$`).test(code);
+
+export interface OutreachLinks { home: string; agents: string }
+/** The two short links of a company, as they go into a letter. */
+export function outreachLinks(codes: OutreachLinkCodes, origin = OUTREACH_LINK_ORIGIN): OutreachLinks {
+  return { home: `${origin}${OUTREACH_LINK_PATH}${codes.home}`, agents: `${origin}${OUTREACH_LINK_PATH}${codes.agents}` };
+}
+
+/** Where a visit is sent: the link's page with the UTM data. */
+export function outreachLinkTarget(link: OutreachLink, targetId: string, origin = OUTREACH_LINK_ORIGIN): string {
+  const url = new URL(OUTREACH_LINK_TARGETS[link], origin);
+  url.searchParams.set('utm_source', OUTREACH_UTM.source);
+  url.searchParams.set('utm_medium', OUTREACH_UTM.medium);
+  url.searchParams.set('utm_campaign', OUTREACH_UTM.campaign);
+  url.searchParams.set('utm_content', targetId);
+  return url.toString();
+}
+
+/* A mail system that opens links to check them before the person does: its
+   own words in the User-Agent. Microsoft's Safe Links and some others look
+   like an ordinary browser; those are counted as a browser, which is why the
+   site says "looked like". */
+const CHECKERS: Array<[RegExp, string]> = [
+  [/proofpoint/i, 'Proofpoint'], [/mimecast/i, 'Mimecast'], [/barracuda/i, 'Barracuda'], [/symantec|broadcom/i, 'Symantec'],
+  [/googleimageproxy|google-safety|feedfetcher/i, 'Google'], [/cisco|ironport/i, 'Cisco'], [/fortinet|fortiguard/i, 'Fortinet'],
+  [/trendmicro/i, 'Trend Micro'], [/sophos/i, 'Sophos'], [/forcepoint/i, 'Forcepoint'], [/slackbot|linkexpanding|discordbot|telegrambot|whatsapp|facebookexternalhit|twitterbot|linkedinbot|skypeuripreview|microsoftpreview/i, 'link preview'],
+];
+/* A program reading the page: an AI agent's fetcher, a coding agent's HTTP
+   client, a library. Named by its own product word. */
+const AGENTS: Array<[RegExp, string]> = [
+  [/claude-user|claude-web|claudebot|anthropic/i, 'Claude'], [/chatgpt-user|oai-searchbot|gptbot|openai/i, 'ChatGPT'], [/perplexity/i, 'Perplexity'],
+  [/gemini|google-extended|googleother/i, 'Gemini'], [/mistral/i, 'Mistral'], [/cohere/i, 'Cohere'], [/\bcodex\b/i, 'Codex'], [/opencode/i, 'OpenCode'],
+  [/^curl\//i, 'curl'], [/^wget\//i, 'wget'], [/python-requests|python-urllib|aiohttp|httpx|python\//i, 'Python'], [/node-fetch|undici|axios|^node\b|got \(/i, 'Node'],
+  [/go-http-client/i, 'Go'], [/okhttp|java\//i, 'Java'], [/^ruby|faraday/i, 'Ruby'], [/postman|insomnia|httpie/i, 'HTTP client'],
+];
+const BROWSERS: Array<[RegExp, string]> = [
+  [/edg\//i, 'Edge'], [/opr\/|opera/i, 'Opera'], [/firefox\//i, 'Firefox'], [/chrome\/|crios\//i, 'Chrome'], [/safari\//i, 'Safari'],
+];
+
+/** Who opened a link, as far as its User-Agent and method say. */
+export function outreachReader(userAgent: string | null | undefined, method = 'GET'): { reader: OutreachReader; client: string | null } {
+  const ua = (userAgent ?? '').trim();
+  for (const [pattern, name] of CHECKERS) if (pattern.test(ua)) return { reader: 'check', client: name };
+  for (const [pattern, name] of AGENTS) if (pattern.test(ua)) return { reader: 'agent', client: name };
+  if (method === 'HEAD') return { reader: 'check', client: null };
+  if (/^mozilla\//i.test(ua) && !/bot|crawler|spider|headless/i.test(ua)) {
+    for (const [pattern, name] of BROWSERS) if (pattern.test(ua)) return { reader: 'browser', client: name };
+    return { reader: 'browser', client: null };
+  }
+  if (/bot|crawler|spider|headless/i.test(ua)) return { reader: 'agent', client: ua.split(/[\s/;(]/)[0]?.slice(0, 40) || null };
+  return { reader: 'agent', client: ua ? ua.split(/[\s/;(]/)[0]!.slice(0, 40) : null };
 }
 
 export type OutreachTouch = {
@@ -502,6 +583,8 @@ export type OutreachTouch = {
    * words are his own, set aside).
    */
   | { kind: 'letter'; action: 'saved' | 'kept' | 'took'; subject: string; body: string; by: string | null }
+  /** Somebody opened one of the company's links (note #1106): which, and what it looked like. */
+  | { kind: 'visit'; link: OutreachLink; reader: OutreachReader; client: string | null }
 );
 
 export type OutreachTouchKind = OutreachTouch['kind'];
@@ -619,6 +702,8 @@ export interface OutreachTargetAnswer {
   draft: OutreachDraft | null;
   /** Why there is no Send, in words, when there is none. */
   noSend: string | null;
+  /** The company's two short links for its letters (note #1106). */
+  links: OutreachLinks;
 }
 
 /** What `agentbuilt outreach set` did, company by company. */
@@ -646,6 +731,8 @@ export interface OutreachAgentRow {
   ownerEdited: boolean;
   writtenBy: string | null;
   writtenAt: string | null;
+  /** The two short links to put in this company's letters (note #1106). */
+  links: OutreachLinks;
 }
 
 export interface OutreachAgentTarget extends OutreachAgentRow {
@@ -666,7 +753,27 @@ export function followUpSubject(subject: string): string {
 }
 
 /** The letter the Send box opens with, from the owner's own words or the agents' — never the site's. */
+/**
+ * The two link placeholders (note #1106): `{home link}` and `{agents link}`
+ * in any letter, the shared template and follow-ups included, become this
+ * company's own short links in the Send box. So one follow-up text carries
+ * each company's own links, and a letter that goes never holds a brace.
+ */
+export const OUTREACH_LINK_PLACEHOLDERS = { home: '{home link}', agents: '{agents link}' } as const;
+export function fillOutreachLinks(text: string, codes: OutreachLinkCodes | undefined): string {
+  if (!codes) return text;
+  const links = outreachLinks(codes);
+  return text.split(OUTREACH_LINK_PLACEHOLDERS.home).join(links.home).split(OUTREACH_LINK_PLACEHOLDERS.agents).join(links.agents);
+}
+
 export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
+  const draft = draftWords(record, words, touches, next);
+  if (!draft) return null;
+  const fill = (text: string) => fillOutreachLinks(text, record.links);
+  return { ...draft, subject: fill(draft.subject), text: fill(draft.text), newer: draft.newer ? { ...draft.newer, subject: fill(draft.newer.subject), text: fill(draft.newer.text) } : null };
+}
+
+function draftWords(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
   const to = targetEmail(record);
   if (!next || !to) return null;
   const by = record.written?.by.name ?? null;
