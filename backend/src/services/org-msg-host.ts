@@ -40,12 +40,16 @@ export const ORG_MSG_HOST_SECRET_NAME = 'MSG_HOST_SECRET';
 export const ORG_MSG_VOLUME_GB = Number(process.env.ORG_MSG_VOLUME_GB || 1);
 /** How long the server waits without a request before stopping itself. */
 /**
- * Thirty quiet minutes since note #1104 (Adam, 9 Nov 2026: "Yes agree with
+ * ZERO since note #1109 (Adam, 9 Nov 2026 18:40 UTC: "yes let's make it
+ * always on"): the server never stops itself (msg-host.mjs skips its idle
+ * timer at 0), and the machine's restart policy is `always`, so a crash or a
+ * host event brings it back by itself. A read that still finds it down wakes
+ * it as before. Thirty quiet minutes from note #1104 (Adam, 9 Nov 2026: "Yes agree with
  * recommendation"): ten, before, meant almost every return to Messages paid
  * a wake. A machine built with another value is moved onto this one the
  * next time it is woken from stopped (see `ensureOrgMsgHost`).
  */
-export const ORG_MSG_IDLE_MS = Number(process.env.ORG_MSG_IDLE_MS || 30 * 60_000);
+export const ORG_MSG_IDLE_MS = Number(process.env.ORG_MSG_IDLE_MS ?? 0);
 /** What a machine whose own idle cannot be read is assumed to keep: the old ten minutes. */
 const ASSUMED_IDLE_MS = 10 * 60_000;
 /** One background wake from Home per workplace in this window (note #1104). */
@@ -55,7 +59,11 @@ export const ORG_MSG_WAKE_WINDOW_MS = 60_000;
  * whether the machine is up. Well inside {@link ORG_MSG_IDLE_MS}; a machine
  * that stopped anyway just costs the one failed dial that precedes a wake.
  */
-const warmFor = (idleMs: number) => Math.max(0, idleMs - 3 * 60_000);
+// An always-on machine (idle 0) is trusted for ten minutes past each answer;
+// past that a read asks Fly once (~55 ms) rather than dialling blind.
+const warmFor = (idleMs: number) => (idleMs <= 0 ? 10 * 60_000 : Math.max(0, idleMs - 3 * 60_000));
+/** The restart policy every messaging machine carries since note #1109. */
+const RESTART_POLICY = 'always';
 /**
  * The health wait's rhythm (note #1102). A machine that has just started
  * drops packets until its server listens, so a probe of it does not fail —
@@ -242,34 +250,34 @@ export class OrgMsgHostService {
     if (existing) {
       const machine = await client.getMachine(existing.app, existing.machineId);
       const kept = Number(machine.config?.env?.MSG_HOST_IDLE_MS);
-      if (machine.state !== 'started') {
-        if (machine.state === 'stopping') {
-          await client.waitForMachineState(existing.app, existing.machineId, { state: 'stopped', timeoutSeconds: 30 });
-        }
-        // A machine built before note #1104 keeps the idle it was built
-        // with. Moved onto the new one here, where it is stopped anyway: a
-        // config update boots it, so the update IS the start — no extra
-        // restart, and one running for somebody is never touched.
-        if (machine.config && kept !== ORG_MSG_IDLE_MS && client.updateMachine) {
-          await client.updateMachine(existing.app, existing.machineId, {
-            ...machine.config, env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
-          });
-          // Measured on production, 9 Nov 2026 18:36 UTC: Fly applied the
-          // update and left this STOPPED machine stopped ("update stopped"),
-          // whatever the API notes say about updates booting a machine, so the
-          // wait below ran its full minute for nothing. Start it explicitly.
-          const updated = await client.getMachine(existing.app, existing.machineId);
-          if (updated.state !== 'started' && updated.state !== 'starting') {
-            await client.startMachine(existing.app, existing.machineId);
-          }
-          this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
-        } else {
+      const keptIdle = Number.isFinite(kept) && machine.config?.env?.MSG_HOST_IDLE_MS !== undefined ? kept : ASSUMED_IDLE_MS;
+      // A machine built under an older rule (an idle stop, restart "no") is
+      // moved onto the current one: always on since note #1109. A config
+      // update reboots a running machine (a few seconds, once) and, measured
+      // on production 9 Nov 2026 18:36 UTC, leaves a STOPPED one stopped —
+      // so it is started explicitly afterwards (PR #140).
+      const current = machine.config && keptIdle === ORG_MSG_IDLE_MS && (machine.config.restart as { policy?: string } | undefined)?.policy === RESTART_POLICY;
+      if (machine.state === 'stopping') {
+        await client.waitForMachineState(existing.app, existing.machineId, { state: 'stopped', timeoutSeconds: 30 });
+      }
+      if (machine.config && !current && client.updateMachine) {
+        await client.updateMachine(existing.app, existing.machineId, {
+          ...machine.config,
+          env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
+          restart: { policy: RESTART_POLICY },
+        });
+        const updated = await client.getMachine(existing.app, existing.machineId);
+        if (updated.state !== 'started' && updated.state !== 'starting') {
           await client.startMachine(existing.app, existing.machineId);
-          this.idleOf.set(orgId, Number.isFinite(kept) && kept > 0 ? kept : ASSUMED_IDLE_MS);
         }
         await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 60 });
+        this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
       } else {
-        this.idleOf.set(orgId, Number.isFinite(kept) && kept > 0 ? kept : ASSUMED_IDLE_MS);
+        if (machine.state !== 'started') {
+          await client.startMachine(existing.app, existing.machineId);
+          await client.waitForMachineState(existing.app, existing.machineId, { state: 'started', timeoutSeconds: 60 });
+        }
+        this.idleOf.set(orgId, keptIdle);
       }
       await this.waitHealthy(existing, this.deps.healthTimeoutMs ?? 45_000);
       this.warm(orgId);
@@ -323,7 +331,7 @@ export class OrgMsgHostService {
         // NO services: nothing is published, not even privately (see the
         // module doc). And `no` restart: the server's clean exit after an
         // idle spell is how this machine sleeps.
-        restart: { policy: 'no' },
+        restart: { policy: RESTART_POLICY },
       });
     } else if (machine.state !== 'started') {
       await client.startMachine(appName, machine.id);
@@ -341,6 +349,26 @@ export class OrgMsgHostService {
     this.idleOf.set(orgId, ORG_MSG_IDLE_MS);
     this.warm(orgId);
     return pointer;
+  }
+
+  /**
+   * Note #1109, at the backend's start: every workplace that has a messaging
+   * machine is brought onto the current rule — always on — and started if it
+   * is down. One workplace at a time; a failure is logged and the next read
+   * or wake from Home tries again.
+   */
+  async convergeAll(orgIds: string[]): Promise<void> {
+    for (const orgId of orgIds) {
+      const org = await this.deps.orgStorage.getOrg(orgId).catch(() => null);
+      if (!org?.messages?.host) continue;
+      if (this.opening.has(orgId)) continue;
+      const opening = this.ensureOrgMsgHost(orgId).finally(() => { this.opening.delete(orgId); });
+      this.opening.set(orgId, opening);
+      await opening.then(
+        (pointer) => console.log(`[org-msg-host] ${pointer.app} kept on (always on, note #1109)`),
+        (error) => console.warn(`[org-msg-host] ${orgId} could not be kept on: ${error instanceof Error ? error.message : String(error)}`),
+      );
+    }
   }
 
   /**

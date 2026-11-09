@@ -2664,6 +2664,15 @@ process.on('uncaughtException', (error) => {
 // The Workspace Agent's conversations, after the room agents' turns (note
 // #455): a request its restart cut short is named and picked up again now,
 // not when its owner next opens the screen.
+// Note #1109: every messaging machine always on — moved onto the rule and
+// started if down, half a minute after boot so it never slows the start.
+if (sqliteDb) {
+  setTimeout(() => {
+    void orgStorage.listOrgs()
+      .then((orgs) => orgMsgHostService.convergeAll(orgs.filter((org) => org.messages?.host).map((org) => org.orgId)))
+      .catch((error) => console.warn('[org-msg-host] keep-on sweep failed:', error instanceof Error ? error.message : error));
+  }, 30_000).unref();
+}
 void agentRecoveryReady.then(() => deps.workspaceAgent?.resumeInterrupted?.()).catch((error) => {
   console.error('[workspace-agent] Recovering interrupted requests failed:', error);
 });

@@ -107,8 +107,9 @@ describe('the workplace messaging machine', () => {
     const config = h.machines[0]!.config!;
     // Nothing published — not publicly and not on the private network's proxy.
     expect(config.services).toBeUndefined();
-    // Its own clean exit is how it sleeps.
-    expect(config.restart).toEqual({ policy: 'no' });
+    // Always on since note #1109: it never sleeps, and comes back by itself.
+    expect(config.restart).toEqual({ policy: 'always' });
+    expect(config.env).toMatchObject({ MSG_HOST_IDLE_MS: '0' });
     expect(config.env).toMatchObject({ MSG_HOST_ORG: ORG, BACKEND_PEER_IP: PEER, MSG_HOST_SECRET: h.secrets.get('MSG_HOST_SECRET') });
     expect(h.org()!.messages!.host).toEqual({ app: 'iamsg-ec4c119f94f4', machineId: 'm1', privateIp: 'fdaa:9:1:a7b:2::2', volumeId: 'vol_1', secretName: 'MSG_HOST_SECRET' });
     // The pointer never holds the secret.
@@ -217,11 +218,12 @@ describe('the workplace messaging machine', () => {
 
   describe('woken from Home, and asleep after thirty minutes (note #1104)', () => {
     const settle = () => new Promise((r) => { setTimeout(r, 20); });
-    it('builds new machines to sleep after thirty quiet minutes', async () => {
+    it('builds new machines always on (note #1109): no idle stop, restart always', async () => {
       const h = harness();
       await h.service.call(ORG, 'unread', { userId: 'a' });
-      expect(ORG_MSG_IDLE_MS).toBe(30 * 60_000);
-      expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_IDLE_MS: '1800000' });
+      expect(ORG_MSG_IDLE_MS).toBe(0);
+      expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_IDLE_MS: '0' });
+      expect(h.machines[0]!.config!.restart).toEqual({ policy: 'always' });
     });
     it('starts a sleeping machine in the background, reading nothing, at most once a minute', async () => {
       const h = harness();
@@ -254,32 +256,32 @@ describe('the workplace messaging machine', () => {
       expect(await h.service.wake(ORG)).toBe('warm');
       expect(h.log).toEqual([]);
     });
-    it('a machine built with the old ten minutes is moved onto thirty when next woken from stopped — the update is its start', async () => {
+    it('a machine built with an idle stop is moved onto always-on when next woken from stopped, and started after the update', async () => {
       const h = harness();
       await h.service.call(ORG, 'unread', { userId: 'a' });
-      h.machines[0]!.config!.env = { ...h.machines[0]!.config!.env, MSG_HOST_IDLE_MS: String(10 * 60_000) };
+      h.machines[0]!.config = { ...h.machines[0]!.config!, env: { ...h.machines[0]!.config!.env, MSG_HOST_IDLE_MS: String(10 * 60_000) }, restart: { policy: 'no' } } as never;
       h.advance(30 * 60_000); h.sleepMachine(); h.log.length = 0;
       await h.service.wake(ORG); await settle();
       // The update does not boot it, so it is started — once, and it answers.
-      expect(h.log).toEqual(['tunnel', 'update idle=1800000', 'start']);
+      expect(h.log).toEqual(['tunnel', 'update idle=0', 'start']);
+      expect(h.machines[0]!.config!.restart).toEqual({ policy: 'always' });
       expect(h.machines[0]!.state).toBe('started');
       h.log.length = 0;
       await h.service.call(ORG, 'unread', { userId: 'a' });
       expect(h.log).toEqual([]);
-      expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_ORG: ORG, MSG_HOST_IDLE_MS: '1800000' });
+      expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_ORG: ORG, MSG_HOST_IDLE_MS: '0' });
     });
-    it('a running machine with the old idle is not touched, and is trusted warm only for its own ten minutes', async () => {
+    it('a running machine under the old rule is moved too (one reboot), and the backend start sweeps every workplace', async () => {
       const h = harness();
       await h.service.call(ORG, 'unread', { userId: 'a' });
-      h.machines[0]!.config!.env = { ...h.machines[0]!.config!.env, MSG_HOST_IDLE_MS: String(10 * 60_000) };
-      // A restarted backend knows nothing warm: it asks Fly, which says started.
-      const fresh = h.service as unknown as { warmUntil: Map<string, number>; idleOf: Map<string, number> };
-      fresh.warmUntil.clear(); fresh.idleOf.clear(); h.log.length = 0;
-      await h.service.call(ORG, 'unread', { userId: 'a' });
-      expect(h.log).toEqual(['tunnel']);
-      // Eight minutes on, past its own seven-minute warm window: Fly is asked again.
-      h.advance(8 * 60_000); h.log.length = 0;
-      await h.service.call(ORG, 'unread', { userId: 'a' });
+      h.machines[0]!.config = { ...h.machines[0]!.config!, env: { ...h.machines[0]!.config!.env, MSG_HOST_IDLE_MS: String(30 * 60_000) }, restart: { policy: 'no' } } as never;
+      h.log.length = 0;
+      await h.service.convergeAll([ORG]);
+      expect(h.log).toEqual(['tunnel', 'update idle=0']);
+      expect(h.machines[0]!.state).toBe('started');
+      // Already current: the next sweep changes nothing.
+      h.log.length = 0;
+      await h.service.convergeAll([ORG]);
       expect(h.log).toEqual(['tunnel']);
     });
   });

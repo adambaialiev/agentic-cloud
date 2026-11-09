@@ -65,6 +65,10 @@ Measured 9 Nov 2026: an open after a quiet spell waited ~5 s for the messaging m
 
 Adam, 9 Nov 2026 ("Yes agree with recommendation"). Home's Messages door (`MessageDoor`, in the Workplace window), when drawn, POSTs `api/messages/wake` and never waits: the route answers 202 at once and calls `OrgMsgHostService.wake`, which reads nothing, leaves a warm machine and a workplace with no machine alone, starts a stopped one in the background, and does so at most once a minute per workplace (`ORG_MSG_WAKE_WINDOW_MS`). The machine now stops itself after 30 quiet minutes (`ORG_MSG_IDLE_MS`); one built with ten is moved onto thirty the next time it is woken from stopped — the config update is its start — and until then the backend trusts it warm only for its own idle minus three minutes. Every read that was not known warm logs how long it waited for the machine and how long after Home's wake: that is the production measure of how often it was already up. Timings: `scripts/measure-direct-messages-wake.mts`.
 
+## Always on (note #1109)
+
+Adam, 9 Nov 2026 18:40 UTC: "yes let's make it always on". `ORG_MSG_IDLE_MS` is 0 (msg-host.mjs skips its idle timer at 0) and the machine's restart policy is `always`, so it never stops for idleness and comes back by itself after a crash or host event; a read that still finds it down wakes it as before. Machines built under an older rule are moved onto this one by `ensureOrgMsgHost` (a config update — one reboot of a running machine — then an explicit start, because Fly leaves a stopped machine stopped after an update) and, half a minute after every backend start, by `convergeAll` over every workplace with a machine. The backend trusts an always-on machine warm for ten minutes past each answer, then asks Fly once. Home's wake (note #1104) stays as a safety net: against a warm machine it does nothing. Cost: about $1.94 a month per machine (256 MB shared).
+
 ## Code and verification
 
 - Shared payloads: `backend/src/shared/direct-messages.ts`; both routes are in the existing Workspace route registry.
