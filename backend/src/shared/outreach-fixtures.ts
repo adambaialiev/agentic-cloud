@@ -69,7 +69,7 @@ export function fixtureOutreachWrite(): Record<string, unknown> {
     source: 'A made-up batch shaped like outreach-targets.json (test fixture)',
     generatedBy: 'test',
     generatedAt: '2026-11-09',
-    rules: { channel: 'email only', maxWords: 120, wordCountIncludes: 'subject line and signature' },
+    rules: { channel: 'email only', maxWords: 200, wordCountIncludes: 'subject line and signature' },
     template: {
       subject: 'Your agents need a workplace',
       body: `Hi {first name},\n\n{their line}. Coding agents are great engineers with no workplace around them.\n\nStart a guest agent, no account: agenticcloudcomputer.com/#your-agent\n\n${SIGNATURE}`,

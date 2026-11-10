@@ -58,8 +58,13 @@ export const FOLLOW_UP_DAYS: Record<Exclude<OutreachStep, 'first'>, number> = { 
 
 /** Note #799 / #788: after about fifteen first sends, look at what is working before sending more. */
 export const OUTREACH_REVIEW_AFTER = 15;
-/** Note #799's ceiling for a first email, subject line and signature included. */
-export const OUTREACH_MAX_WORDS = 120;
+/**
+ * The ceiling for a first letter, subject line and signature included, counted
+ * as written (a {placeholder} is two words, the link it becomes one). 120 from
+ * note #799; 200 since Adam's word of 10 Nov 2026 (note #1128). The store
+ * refuses a longer first letter and Send refuses to post one.
+ */
+export const OUTREACH_MAX_WORDS = 200;
 
 /**
  * Words, the way note #799 counts them: the subject line and the body

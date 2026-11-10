@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
-  OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_WORDS_HISTORY, addressMatches,
+  OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_MAX_WORDS, OUTREACH_REVIEW_AFTER, outreachWordCount, OUTREACH_WORDS_HISTORY, addressMatches,
   outreachAudience, outreachGraph, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
@@ -355,6 +355,12 @@ export class OutreachService {
     const answer: OutreachWriteAnswer = { added: [], updated: [], unchanged: [], refused: [], words: null };
     for (const target of write.targets) {
       const id = outreachTargetId(target.company);
+      // A first letter above the ceiling never enters the store (note #1128): the company is refused, the rest go in.
+      const length = target.firstEmail ? outreachWordCount(target.firstEmail.subject, target.firstEmail.body) : 0;
+      if (length > OUTREACH_MAX_WORDS) {
+        answer.refused.push({ company: target.company, reason: `Its first letter is ${length} words, subject in; at most ${OUTREACH_MAX_WORDS}. Nothing of it was written.` });
+        continue;
+      }
       const before = await this.deps.store.target(userId, id);
       if (!before) {
         await this.withLinks({ id, userId, seed: target, edits: {}, state: 'not-contacted', stateAt: null, addedAt: at, written: { at, by }, ownLetter: null });
@@ -654,6 +660,8 @@ export class OutreachService {
       let mail;
       if (step === 'first') {
         if (!subject) throw new OutreachError(400, 'Write a subject.');
+        const length = outreachWordCount(subject, text);
+        if (length > OUTREACH_MAX_WORDS) throw new OutreachError(400, `This letter is ${length} words, subject in; a first letter is at most ${OUTREACH_MAX_WORDS}.`);
         mail = await outbox.send({ userId, to: targetEmail(record), subject, text, allowance: OUTREACH_MAIL_ALLOWANCE, withHtml: true, ...(senderName ? { senderName } : {}) });
       } else {
         // In the thread: under the latest letter of ours to them.

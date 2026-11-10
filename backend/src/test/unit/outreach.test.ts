@@ -401,6 +401,26 @@ describe('Outreach, the service', () => {
     expect(await firstOf(service, 'fernhill-labs')).toMatchObject({ from: 'written', text: 'Fresh words.', newer: null });
   });
 
+  it('holds a first letter to 200 words, subject in (note #1128): 200 goes in and sends, 201 is refused at the write and at Send', async () => {
+    const { service, sent } = await world();
+    const subject = 'Two hundred words';
+    const body = (n: number) => `Hi Mara,\n\n${Array.from({ length: n - 6 }, (_, i) => `word${i}`).join(' ')}\n\nAdam`;
+    expect(outreachWordCount(subject, body(200))).toBe(200);
+    const fits = company('Northwind Health');
+    fits.firstEmail = { ...fits.firstEmail!, subject, body: body(200) };
+    const long = company('Fernhill Labs');
+    long.firstEmail = { ...long.firstEmail!, subject, body: body(201) };
+    const answer = await service.write('user-adam', ROWAN, { targets: [fits, long], words: null });
+    expect(answer.updated.map((u) => u.company)).toEqual(['Northwind Health']);
+    expect(answer.refused).toEqual([{ company: 'Fernhill Labs', reason: 'Its first letter is 201 words, subject in; at most 200. Nothing of it was written.' }]);
+    expect((await firstOf(service, 'fernhill-labs')).text).not.toBe(body(201));
+    await expect(service.send('user-adam', 'fernhill-labs', { step: 'first', subject, text: body(201) }))
+      .rejects.toThrow('This letter is 201 words, subject in; a first letter is at most 200.');
+    expect(sent).toHaveLength(0);
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject, text: body(200) });
+    expect(sent).toHaveLength(1);
+  });
+
   it('refuses a write that would change a letter, an address or a fit that has gone; the rest of the batch and the profile still go in', async () => {
     const { service } = await world();
     const draft = await firstOf(service, 'northwind-health');
