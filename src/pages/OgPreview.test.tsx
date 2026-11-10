@@ -3,7 +3,7 @@ import path from 'node:path';
 import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import OgPreview from './OgPreview';
+import OgPreview, { SQUARE_SAFE } from './OgPreview';
 import { HOME_TITLE, SHARE_DESCRIPTION, SHARE_HEADLINE, SHARE_IMAGE_ALT, SHARE_IMAGE_VERSION, SHARE_LINE, SHARE_TITLE } from '../lib/share-card';
 
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -18,12 +18,25 @@ describe('The share card (note #1004)', () => {
     const { container } = render(<OgPreview />);
     const card = container.querySelector('#og-canvas')!;
     expect(card.querySelector('[data-og-masthead]')?.textContent?.trim()).toBe('Agentic Cloud Computer');
-    // Two lines, broken after "Your agents."
-    expect(card.querySelector('h1')!.innerHTML).toBe(SHARE_HEADLINE.replace('agents. ', 'agents.<br>'));
+    // One sentence a line (note #1137), so the headline fits the centre square.
+    expect(card.querySelector('h1')!.textContent).toBe(SHARE_HEADLINE.replace(/\. /g, '.'));
+    expect(card.querySelectorAll('h1 br')).toHaveLength(3);
     expect(card.querySelector('p')?.textContent?.replace(/\u00a0/g, ' ')).toBe(SHARE_LINE);
     // No screenshots, no live panels, no avatars: nothing that is
     // unreadable at the size a preview is drawn.
     expect(card.querySelectorAll('img, .ws-live')).toHaveLength(0);
+  });
+
+  // Note #1137: WhatsApp and iMessage may draw only the centre square
+  // (x 285..915). The words stand in one column narrower than that square,
+  // centred; scripts/shoot-og-image.mjs measures the real render.
+  it('keeps every word inside the centre square', () => {
+    const { container } = render(<OgPreview />);
+    const canvas = container.querySelector('#og-canvas')!;
+    expect(canvas.className).toContain('justify-center');
+    const column = canvas.querySelector('[data-og-column]') as HTMLElement;
+    expect(column.style.width).toBe(`${SQUARE_SAFE.column}px`);
+    expect(SQUARE_SAFE.column).toBeLessThanOrEqual(SQUARE_SAFE.right - SQUARE_SAFE.left - 60);
   });
 
   it('keeps the card inside its own 1200x630 frame', () => {

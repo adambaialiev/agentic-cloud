@@ -55,7 +55,10 @@ describe('prerendered routes', () => {
     // and names what is built in.
     expect(home?.title).toBe('One workplace for Claude Code, Codex and OpenCode agents — Agentic Cloud Computer');
     expect(home?.shareTitle).toBe('One workplace for Claude Code, Codex and OpenCode agents');
-    expect(home?.description).toBe('Your team. Your agents. Your cloud. Your rules. One workplace for Claude Code, Codex and OpenCode agents, with git, hosting and email built in.');
+    // Since note #1137 (10 Nov 2026) the description says what the title
+    // does not, and never names the three agents again.
+    expect(home?.description).toBe('Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.');
+    expect(home?.description).not.toMatch(/Claude Code|Codex|OpenCode|daily report/);
     expect(home?.description).not.toMatch(/second brain/);
     expect(home?.description).not.toMatch(/cloud computer|laptop|a cloud to work in/i);
     for (const route of ROUTES) expect(route.description, route.path).not.toMatch(/\bfree\b|at no charge|\bour cloud/i);
