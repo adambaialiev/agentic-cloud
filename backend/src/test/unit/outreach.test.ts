@@ -678,3 +678,94 @@ describe('The Resend webhook route (note #1112)', () => {
     expect(verifySvixSignature(SECRET, { id: 'a', timestamp: '1', signature: 'v1,x' }, '{}', new Date(1000))).toBe(false);
   });
 });
+
+describe('Investors, a second audience (note #1115)', () => {
+  const investor = (name: string, fit: string, extra: Record<string, unknown> = {}) => ({
+    company: name, fit, city: 'London', person: 'Pat Partner, partner', email: `pat@${name.toLowerCase().replace(/[^a-z]+/g, '')}.test`,
+    profile: { builds: 'Backs developer tools at pre-seed.', buildsSource: 'their site, 2026' }, ...extra,
+  });
+  const investorWrite = (over: Record<string, unknown> = {}) => {
+    const parsed = parseOutreachWrite({
+      audience: 'investor',
+      targets: [investor('Made Up Ventures', 'thesis match'), investor('Example Angels', 'partly'), investor('Quiet Capital', 'no public thesis', { notAFitReason: 'no public thesis found' })],
+      ...over,
+    });
+    if (!parsed.ok) throw new Error(parsed.error);
+    return parsed.write;
+  };
+
+  it('reads the audience strictly: a file without one is a customer, an investor\'s fit is its own words', () => {
+    expect(batch().targets.every((target) => !('audience' in target))).toBe(true);
+    const write = investorWrite();
+    expect(write.targets.map((t) => [t.audience, t.thesis, t.fit])).toEqual([
+      ['investor', 'thesis match', 'fit'], ['investor', 'partly', 'fit'], ['investor', 'no public thesis', 'not a fit']]);
+    expect(parseOutreachWrite({ company: 'One Angel', audience: 'investor', fit: 'fit' })).toEqual({ ok: false, error: 'One Angel: an investor\'s fit is "thesis match", "partly" or "no public thesis".' });
+    expect(parseOutreachWrite({ company: 'Shop', fit: 'thesis match' }).ok).toBe(false);
+    expect(parseOutreachWrite({ company: 'Shop', fit: 'fit', audience: 'press' }).ok).toBe(false);
+    expect(parseOutreachWrite({ audience: 'press', targets: [{ company: 'X', fit: 'fit' }] }).ok).toBe(false);
+    // One company in a batch may say it is a customer.
+    const mixed = parseOutreachWrite({ audience: 'investor', targets: [{ company: 'Plain Shop', fit: 'fit', audience: 'customer' }] });
+    expect(mixed.ok && mixed.write.targets[0]!.audience).toBeUndefined();
+    const words = parseOutreachWrite({ audience: 'investor', template: { subject: 'Your thesis', body: 'Hi {first name},\n\n{their thesis}' } });
+    expect(words.ok && words.write.words).toMatchObject({ audience: 'investor', template: { subject: 'Your thesis' } });
+  });
+
+  it('keeps investors apart: their own rows, the customers untouched, no letter until an agent writes one — never the customers\' template', async () => {
+    const { service } = await world();
+    const before = await service.list('user-adam');
+    expect(await service.write('user-adam', ADA, investorWrite())).toMatchObject({ added: ['Made Up Ventures', 'Example Angels', 'Quiet Capital'], refused: [] });
+    const after = await service.list('user-adam');
+    expect(after.rows.filter((row) => row.audience === 'customer')).toEqual(before.rows.map((row) => ({ ...row, audience: 'customer', thesis: null })));
+    expect(after.rows.filter((row) => row.audience === 'investor').map((row) => [row.company, row.thesis, row.fit])).toEqual([
+      ['Example Angels', 'partly', 'fit'], ['Made Up Ventures', 'thesis match', 'fit'], ['Quiet Capital', 'no public thesis', 'not a fit']]);
+    const made = (await service.detail('user-adam', 'made-up-ventures'))!;
+    expect(made.draft).toBeNull();
+    expect(made.noSend).toBe('No letter is written for this investor yet, and there is no investor template. An agent writes it here with agentbuilt outreach set.');
+    expect((await service.detail('user-adam', 'quiet-capital'))!.noSend).toBe('No public thesis we match: no public thesis found. Kept so it is not added again.');
+    // The customers' template still serves the customers.
+    expect((await firstOf(service, 'kestrel-systems')).from).toBe('template');
+    const shown = (await service.agentList('user-adam')).find((row) => row.id === 'made-up-ventures');
+    expect(shown).toMatchObject({ audience: 'investor', thesis: 'thesis match' });
+  });
+
+  it('writes the investors\' own template and follow-ups beside the customers\', signed, and draws an investor\'s letters only from them', async () => {
+    const { service, at } = await world();
+    const customersBefore = (await service.list('user-adam')).lastWrite;
+    at('2026-11-09T14:00:00Z');
+    await service.write('user-adam', ADA, investorWrite({
+      template: { subject: 'Your thesis, our workplace', body: 'Hi {first name},\n\n{their thesis}\n\n{home link}' },
+      followUps: { day4: { text: 'Investor day 4.', wordCount: 3 }, day11: { text: 'Investor day 11.', wordCount: 3 } },
+    }));
+    const list = await service.list('user-adam');
+    expect(list.lastWrite).toEqual({ at: '2026-11-09T14:00:00.000Z', by: 'Ada' });
+    expect(customersBefore!.by).toBe('Rowan');
+    const draft = await firstOf(service, 'made-up-ventures');
+    expect(draft).toMatchObject({ from: 'template', by: 'Ada', subject: 'Your thesis, our workplace' });
+    expect(outreachPlaceholders(draft.text)).toEqual(['{first name}', '{their thesis}']);
+    expect(draft.text).toMatch(/agenticcloudcomputer\.com\/go\/[a-z2-9]{6}$/);
+    await expect(service.send('user-adam', 'made-up-ventures', { step: 'first', subject: draft.subject, text: draft.text })).rejects.toThrow('Fill in {first name} and {their thesis} first.');
+    // A finished investor letter goes, and its follow-up is the investors' day 4, the customers' stays theirs.
+    await service.send('user-adam', 'made-up-ventures', { step: 'first', subject: draft.subject, text: 'Hi Pat,\n\nYour thesis.' });
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject: 'Hello', text: 'Hi Mara.' });
+    at('2026-11-13T14:00:01Z');
+    expect((await firstOf(service, 'made-up-ventures')).text).toBe('Investor day 4.');
+    expect((await firstOf(service, 'northwind-health')).text).toBe(batch().words!.followUps!.day4!.text);
+    // Note #799's review counts customers only.
+    expect((await service.list('user-adam')).firstSends).toBe(1);
+    // A second write of the investors' words keeps the one it replaced.
+    await service.write('user-adam', ADA, { targets: [], words: { audience: 'investor', source: null, generatedBy: null, generatedAt: null, template: { subject: 'New', body: 'New {first name}' } } });
+    await service.write('user-adam', ADA, { targets: [], words: { audience: 'investor', source: null, generatedBy: null, generatedAt: null, template: { subject: 'New', body: 'New {first name}' } } });
+    const customerFirst = await firstOf(service, 'kestrel-systems');
+    expect(customerFirst.subject).toBe(batch().words!.template!.subject);
+  });
+
+  it('never turns a customer into an investor or back: the same name is refused, the rest of the batch goes in', async () => {
+    const { service } = await world();
+    const answer = await service.write('user-adam', ADA, investorWrite({ targets: [investor('Northwind Health', 'thesis match'), investor('Made Up Ventures', 'thesis match')] }));
+    expect(answer.added).toEqual(['Made Up Ventures']);
+    expect(answer.refused).toEqual([{ company: 'Northwind Health', reason: 'Northwind Health is already a customer in Outreach. Give the investor a name of its own (for example the fund\'s full name).' }]);
+    expect((await service.detail('user-adam', 'northwind-health'))!.row.audience).toBe('customer');
+    const back = await service.write('user-adam', ADA, { targets: [{ ...company('Fernhill Labs'), company: 'Made Up Ventures' }], words: null });
+    expect(back.refused[0]!.reason).toMatch(/already an investor/);
+  });
+});

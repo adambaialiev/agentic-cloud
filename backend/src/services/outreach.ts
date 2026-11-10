@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_WORDS_HISTORY, addressMatches,
-  outreachGlance, outreachKnown, outreachStateFrom, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
+  outreachAudience, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
@@ -130,6 +130,8 @@ export class OutreachService {
     const settled = touches.find((touch) => touch.kind === 'state' && touch.to === state)?.at ?? (record.state === state ? record.stateAt : null);
     return {
       id: record.id,
+      audience: outreachAudience(record.seed),
+      thesis: record.seed.thesis ?? null,
       company: record.seed.company,
       group: record.seed.group,
       fit: record.seed.fit,
@@ -161,12 +163,15 @@ export class OutreachService {
     const writes = [
       ...records.flatMap((record) => (record.written ? [{ at: record.written.at, by: record.written.by.name }] : [])),
       ...(kept?.words.writtenBy ? [{ at: kept.importedAt, by: kept.words.writtenBy.name }] : []),
+      ...(kept?.words.investors?.writtenBy && kept.words.investors.writtenAt ? [{ at: kept.words.investors.writtenAt, by: kept.words.investors.writtenBy.name }] : []),
     ].sort((a, b) => b.at.localeCompare(a.at));
+    // Note #799's review after about fifteen first letters is about the customers; investors are counted apart (note #1115).
+    const investors = new Set(records.filter((record) => outreachAudience(record.seed) === 'investor').map((record) => record.id));
     return {
       lastWrite: writes[0] ?? null,
       mailFacts: this.mailFacts(touches),
       rows: sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number]))),
-      firstSends: touches.filter((touch) => touch.kind === 'sent' && touch.step === 'first').length,
+      firstSends: touches.filter((touch) => touch.kind === 'sent' && touch.step === 'first' && !investors.has(touch.targetId)).length,
       reviewAfter: OUTREACH_REVIEW_AFTER,
     };
   }
@@ -290,7 +295,11 @@ export class OutreachService {
 
   /** Why the profile has no Send, said plainly. */
   private noSend(record: OutreachTargetRecord, row: OutreachRow, touches: OutreachTouch[]): string {
-    if (record.seed.fit !== 'fit') return `Not a fit${record.seed.notAFitReason ? `: ${record.seed.notAFitReason}` : ''}. Kept so it is not added again.`;
+    if (record.seed.fit !== 'fit') {
+      return outreachAudience(record.seed) === 'investor'
+        ? `No public thesis we match${record.seed.notAFitReason ? `: ${record.seed.notAFitReason}` : ''}. Kept so it is not added again.`
+        : `Not a fit${record.seed.notAFitReason ? `: ${record.seed.notAFitReason}` : ''}. Kept so it is not added again.`;
+    }
     if (!targetEmail(record)) return 'No address for this company yet. Add one below to write.';
     if (row.state === 'replied') return 'They replied. Answer from your inbox.';
     if (row.state === 'installed') return 'They installed it.';
@@ -300,7 +309,11 @@ export class OutreachService {
       return `The letter did not arrive${bounce?.detail ? ` (${bounce.detail.replace(/[.\s]+$/, '')})` : ''}. Nothing more goes to this address.`;
     }
     if (row.state === 'sent' && !row.next) return 'The first letter and both follow-ups have gone. Note #799 says: then stop.';
-    if (row.next?.step === 'first') return 'No letter is written for this company yet. An agent writes it here with agentbuilt outreach set.';
+    if (row.next?.step === 'first') {
+      return outreachAudience(record.seed) === 'investor'
+        ? 'No letter is written for this investor yet, and there is no investor template. An agent writes it here with agentbuilt outreach set.'
+        : 'No letter is written for this company yet. An agent writes it here with agentbuilt outreach set.';
+    }
     if (row.next) return `The ${stepWords(row.next.step)} is not written yet. An agent writes it here with agentbuilt outreach set.`;
     return 'Nothing to send.';
   }
@@ -327,6 +340,11 @@ export class OutreachService {
         await this.withLinks({ id, userId, seed: target, edits: {}, state: 'not-contacted', stateAt: null, addedAt: at, written: { at, by }, ownLetter: null });
         await this.touch(userId, id, { kind: 'written', by, added: true, fields: Object.keys(target), previous: null, at });
         answer.added.push(target.company);
+        continue;
+      }
+      // A customer never becomes an investor by a write, nor the other way (note #1115): the same name is another record's.
+      if (outreachAudience(before.seed) !== outreachAudience(target)) {
+        answer.refused.push({ company: target.company, reason: `${target.company} is already ${outreachAudience(before.seed) === 'investor' ? 'an investor' : 'a customer'} in Outreach. Give the ${outreachAudience(target)} a name of its own (for example the fund's full name).` });
         continue;
       }
       const fields = changedFields(before.seed, target);
@@ -358,6 +376,7 @@ export class OutreachService {
   }
 
   private async writeWords(userId: string, by: OutreachWriter, write: NonNullable<OutreachWrite['words']>, at: string): Promise<'written' | 'unchanged'> {
+    if (write.audience === 'investor') return this.writeInvestorWords(userId, by, write, at);
     const kept = await this.deps.store.words(userId);
     const before = kept?.words ?? null;
     const template = write.template ?? before?.template ?? null;
@@ -376,8 +395,40 @@ export class OutreachService {
       previous: before
         ? [{ at: kept!.importedAt, by: before.writtenBy ?? null, template: before.template, followUps: before.followUps }, ...(before.previous ?? [])].slice(0, OUTREACH_WORDS_HISTORY)
         : [],
+      ...(before?.investors ? { investors: before.investors } : {}),
     };
     await this.deps.store.setWords(userId, at, next);
+    return 'written';
+  }
+
+  /**
+   * The investors' template and follow-ups (note #1115): kept beside the
+   * customers' in the same record, signed and with their last ten versions,
+   * and without touching the customers' words or their time.
+   */
+  private async writeInvestorWords(userId: string, by: OutreachWriter, write: NonNullable<OutreachWrite['words']>, at: string): Promise<'written' | 'unchanged'> {
+    const kept = await this.deps.store.words(userId);
+    const base: OutreachWords = kept?.words ?? { source: 'written by the agents', generatedBy: null, generatedAt: null, template: null, followUps: { day4: null, day11: null }, writtenBy: null, previous: [] };
+    const before = base.investors ?? null;
+    const template = write.template ?? before?.template ?? null;
+    const followUps = {
+      day4: write.followUps?.day4 ?? before?.followUps.day4 ?? null,
+      day11: write.followUps?.day11 ?? before?.followUps.day11 ?? null,
+    };
+    if (before && JSON.stringify(template) === JSON.stringify(before.template) && JSON.stringify(followUps) === JSON.stringify(before.followUps)) return 'unchanged';
+    const investors: OutreachAudienceWords = {
+      source: write.source ?? before?.source ?? 'written by the agents',
+      generatedBy: write.generatedBy ?? before?.generatedBy ?? null,
+      generatedAt: write.generatedAt ?? before?.generatedAt ?? null,
+      template,
+      followUps,
+      writtenBy: by,
+      writtenAt: at,
+      previous: before
+        ? [{ at: before.writtenAt ?? at, by: before.writtenBy ?? null, template: before.template, followUps: before.followUps }, ...(before.previous ?? [])].slice(0, OUTREACH_WORDS_HISTORY)
+        : [],
+    };
+    await this.deps.store.setWords(userId, kept?.importedAt ?? at, { ...base, investors });
     return 'written';
   }
 
@@ -385,6 +436,8 @@ export class OutreachService {
   private agentRow(record: OutreachTargetRecord, touches: OutreachTouch[]): OutreachAgentRow {
     return {
       id: record.id,
+      audience: outreachAudience(record.seed),
+      thesis: record.seed.thesis ?? null,
       company: record.seed.company,
       fit: record.seed.fit,
       firstBatchOrder: record.seed.firstBatchOrder,

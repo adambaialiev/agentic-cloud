@@ -393,13 +393,41 @@ export interface OutreachProfile {
   [field: string]: unknown;
 }
 
-/** One company as the agents have it. Every field is theirs, never the site's. */
+/**
+ * Who a record is (note #1115; Adam, 10 Nov 2026: "we should also outreach
+ * not only customers, but investors also. We should aim for early stage
+ * pre-seed round."). A company to sell to, or an investor (an angel, a fund)
+ * to raise from. A record with no audience is a customer: every record
+ * written before note #1115 is one, unchanged.
+ */
+export const OUTREACH_AUDIENCES = ['customer', 'investor'] as const;
+export type OutreachAudience = (typeof OUTREACH_AUDIENCES)[number];
+
+/**
+ * An investor's fit, in the words the research uses (note #1115): their
+ * public thesis matches (they back developer tools, AI infrastructure or
+ * agent tooling at pre-seed), partly, or no public thesis. "No public
+ * thesis" is kept so it is not added again, and has no Send, like a
+ * customer that is not a fit.
+ */
+export const OUTREACH_THESIS = ['thesis match', 'partly', 'no public thesis'] as const;
+export type OutreachThesis = (typeof OUTREACH_THESIS)[number];
+
+/** A record's audience: absent means customer. */
+export const outreachAudience = (seed: Pick<OutreachSeedTarget, 'audience'> | null | undefined): OutreachAudience => (seed?.audience === 'investor' ? 'investor' : 'customer');
+
+/** One company (or investor) as the agents have it. Every field is theirs, never the site's. */
 export interface OutreachSeedTarget {
   number: number | null;
+  /** The company's name; for an investor, the fund's or the angel's name. */
   company: string;
   city: string | null;
   size: string | null;
   group: string | null;
+  /** Present only on an investor (note #1115); absent is a customer. */
+  audience?: 'investor';
+  /** An investor's fit in its own words; `fit` follows it ("no public thesis" is not a fit). */
+  thesis?: OutreachThesis;
   fit: 'fit' | 'not a fit';
   notAFitReason: string | null;
   newOn2Nov: boolean;
@@ -437,15 +465,43 @@ export interface OutreachWords {
   writtenBy?: OutreachWriter | null;
   /** The words they replaced, newest first, at most OUTREACH_WORDS_HISTORY. */
   previous?: Array<{ at: string; by: OutreachWriter | null; template: OutreachWords['template']; followUps: OutreachWords['followUps'] }>;
+  /** The investors' own template and follow-ups (note #1115). */
+  investors?: OutreachAudienceWords | null;
 }
 
 export const OUTREACH_WORDS_HISTORY = 10;
+
+/**
+ * The investors' own template and follow-ups (note #1115), kept beside the
+ * customers' in the same outreach_words record. Written by agents the same
+ * way (`agentbuilt outreach set` with "audience": "investor"); an investor's
+ * letter never falls back to the customers' words.
+ */
+export interface OutreachAudienceWords {
+  source: string;
+  generatedBy: string | null;
+  generatedAt: string | null;
+  template: { subject: string; body: string } | null;
+  followUps: OutreachWords['followUps'];
+  writtenBy?: OutreachWriter | null;
+  writtenAt?: string | null;
+  previous?: Array<{ at: string; by: OutreachWriter | null; template: OutreachWords['template']; followUps: OutreachWords['followUps'] }>;
+}
+
+/** The words an audience's letters are drawn from: the customers' are the record itself, the investors' its `investors`. */
+export function outreachWordsFor(words: OutreachWords | null | undefined, audience: OutreachAudience): Pick<OutreachAudienceWords, 'template' | 'followUps' | 'writtenBy'> | null {
+  if (!words) return null;
+  if (audience === 'investor') return words.investors ?? null;
+  return words;
+}
 
 /** What one `agentbuilt outreach set` carries, read strictly. */
 export interface OutreachWrite {
   targets: OutreachSeedTarget[];
   /** Present only when the file carries a template or a follow-up. */
   words: {
+    /** Whose template and follow-ups these are: the file's "audience", customer when absent. */
+    audience: OutreachAudience;
     source: string | null;
     generatedBy: string | null;
     generatedAt: string | null;
@@ -505,12 +561,29 @@ function parseQuote(value: unknown): OutreachQuote | null {
 }
 
 /** One company, strictly: anything not of its shape is refused with what was wrong. */
-function parseTarget(raw: unknown, at: string): Parsed<OutreachSeedTarget> {
+/** A file's or a record's "audience": absent is the default, anything but the two words is refused. */
+function parseAudience(value: unknown, fallback: OutreachAudience): OutreachAudience | null {
+  if (value === undefined || value === null) return fallback;
+  return value === 'investor' || value === 'customer' ? value : null;
+}
+
+function parseTarget(raw: unknown, at: string, audienceDefault: OutreachAudience = 'customer'): Parsed<OutreachSeedTarget> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: `${at} is not an object.` };
   const row = raw as Record<string, unknown>;
   const company = text(row.company, 120);
   if (!company) return { ok: false, error: `${at} has no company.` };
-  const fit = row.fit === 'not a fit' ? 'not a fit' : row.fit === 'fit' ? 'fit' : null;
+  const audience = parseAudience(row.audience, audienceDefault);
+  if (!audience) return { ok: false, error: `${company}: audience is neither "customer" nor "investor".` };
+  let fit: 'fit' | 'not a fit' | null;
+  let thesis: OutreachThesis | null = null;
+  if (audience === 'investor') {
+    thesis = (OUTREACH_THESIS as readonly unknown[]).includes(row.fit) ? row.fit as OutreachThesis : null;
+    if (!thesis) return { ok: false, error: `${company}: an investor's fit is "thesis match", "partly" or "no public thesis".` };
+    fit = thesis === 'no public thesis' ? 'not a fit' : 'fit';
+  } else {
+    if ((OUTREACH_THESIS as readonly unknown[]).includes(row.fit)) return { ok: false, error: `${company}: "${String(row.fit)}" is an investor's fit; add "audience": "investor", or use "fit" / "not a fit" for a customer.` };
+    fit = row.fit === 'not a fit' ? 'not a fit' : row.fit === 'fit' ? 'fit' : null;
+  }
   if (!fit) return { ok: false, error: `${company}: fit is neither "fit" nor "not a fit".` };
   const email = text(row.email, 254);
   if (email && !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) return { ok: false, error: `${company}: ${email} is not one address.` };
@@ -547,6 +620,7 @@ function parseTarget(raw: unknown, at: string): Parsed<OutreachSeedTarget> {
       city: text(row.city, 80),
       size: text(row.size, 120),
       group: text(row.group, 8),
+      ...(audience === 'investor' ? { audience: 'investor' as const, thesis: thesis! } : {}),
       fit,
       notAFitReason: text(row.notAFitReason),
       newOn2Nov: row.newOn2Nov === true,
@@ -581,13 +655,16 @@ export function parseOutreachWrite(json: unknown): { ok: true; write: OutreachWr
     const one = parseTarget(doc, 'The company');
     return one.ok ? { ok: true, write: { targets: [one.value], words: null } } : one;
   }
+  // A batch's "audience" (note #1115) is whose template and follow-ups it carries, and its companies' unless one says otherwise.
+  const audience = parseAudience(doc.audience, 'customer');
+  if (!audience) return { ok: false, error: 'audience is neither "customer" nor "investor".' };
   const targets: OutreachSeedTarget[] = [];
   if (doc.targets !== undefined) {
     if (!Array.isArray(doc.targets) || doc.targets.length === 0) return { ok: false, error: 'targets is not a list of companies.' };
     if (doc.targets.length > MAX_TARGETS) return { ok: false, error: `At most ${MAX_TARGETS} companies at once.` };
     const seen = new Set<string>();
     for (const [at, raw] of doc.targets.entries()) {
-      const one = parseTarget(raw, `targets[${at}]`);
+      const one = parseTarget(raw, `targets[${at}]`, audience);
       if (!one.ok) return one;
       const id = outreachTargetId(one.value.company);
       if (seen.has(id)) return { ok: false, error: `${one.value.company} appears twice.` };
@@ -623,7 +700,7 @@ export function parseOutreachWrite(json: unknown): { ok: true; write: OutreachWr
     write: {
       targets,
       words: template || followUps
-        ? { source: text(doc.source, 600), generatedBy: text(doc.generatedBy, 200), generatedAt: text(doc.generatedAt, 40), ...(template ? { template } : {}), ...(followUps ? { followUps } : {}) }
+        ? { audience, source: text(doc.source, 600), generatedBy: text(doc.generatedBy, 200), generatedAt: text(doc.generatedAt, 40), ...(template ? { template } : {}), ...(followUps ? { followUps } : {}) }
         : null,
     },
   };
@@ -1024,6 +1101,10 @@ export function outreachNewerDraft(record: Pick<OutreachTargetRecord, 'seed' | '
 /** One company in the list. */
 export interface OutreachRow {
   id: string;
+  /** Customer or investor (note #1115). */
+  audience: OutreachAudience;
+  /** An investor's fit in its own words; null for a customer. */
+  thesis: OutreachThesis | null;
   company: string;
   group: string | null;
   fit: 'fit' | 'not a fit';
@@ -1113,6 +1194,8 @@ export interface OutreachWriteAnswer {
 /** What an agent may read back: the words and facts it wrote, the state as a word, never a reply, a note or a sent letter. */
 export interface OutreachAgentRow {
   id: string;
+  audience: OutreachAudience;
+  thesis: OutreachThesis | null;
   company: string;
   fit: 'fit' | 'not a fit';
   firstBatchOrder: number | null;
@@ -1167,7 +1250,9 @@ export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords
   return { ...draft, subject: fill(draft.subject), text: fill(draft.text), newer: draft.newer ? { ...draft.newer, subject: fill(draft.newer.subject), text: fill(draft.newer.text) } : null };
 }
 
-function draftWords(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
+function draftWords(record: OutreachTargetRecord, all: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
+  // An investor's letters come from the investors' words, never the customers' (note #1115).
+  const words = outreachWordsFor(all, outreachAudience(record.seed));
   const to = targetEmail(record);
   if (!next || !to) return null;
   const by = record.written?.by.name ?? null;
@@ -1185,7 +1270,7 @@ function draftWords(record: OutreachTargetRecord, words: OutreachWords | null, t
     if (!words?.template) return null;
     return { step: 'first', to, subject: words.template.subject, text: words.template.body, from: 'template', by: words.writtenBy?.name ?? null, noteWordCount: null, newer: null };
   }
-  const followUp = words?.followUps[next.step];
+  const followUp = words?.followUps?.[next.step];
   if (!followUp) return null;
   const first = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent' && touch.step === 'first');
   return {
