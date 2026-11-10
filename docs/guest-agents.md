@@ -166,6 +166,28 @@ is today. The exception is a question about the code itself, or code work the
 visitor asked for: then it names the files it read or changed, never a test
 file as evidence. The rule, with the "is it MCP?" example, is in `guest-agent-instructions.ts`.
 
+## Whether it fits the visitor, and a person to write to (note #1136)
+
+The outreach letters invite a prospect to start a guest agent "to see whether
+this is what you need". So the guest has a goal, not just a topic:
+
+- **The greeting asks first** (`guestGreeting` in `shared/guest-agent.ts`):
+  which coding agents the visitor's team uses today and where they run, and
+  what gets in the way, or they can just ask how it works. Two questions at
+  most; no turn is spent on it.
+- **Answers carry the visitor's situation.** The agent says plainly whether
+  the Agentic Cloud fits what they described and, when it does not or only in
+  part, what is missing. No selling, no pressure, and no claim beyond the code,
+  the docs and the exact claims. Those claims are one copy shared with the
+  guide (`config/public-agent-claims.ts`). A need the product does not cover
+  is not declined as off-topic.
+- **Adam's address.** When the fit is unclear, something is missing, or the
+  visitor asks what happens next, the agent says Adam, the founder, reads every
+  guest conversation, and gives adam@agenticcloudcomputer.com as plain text
+  (answers link only to agenticcloudcomputer.com pages). It is the only address
+  it gives, and it promises nothing on Adam's behalf. The outgoing check lets
+  agenticcloudcomputer.com addresses through.
+
 ## The build, from nothing (note #1055)
 
 Start guest agent reserves a sealed guest record (its name) and builds the rest

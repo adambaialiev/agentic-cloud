@@ -71,7 +71,7 @@ function buildSteps(done: number): GuestCreateStep[] {
     id, done: i < done, startedAt: i <= done ? '2026-11-07T16:00:00.000Z' : null, doneAt: i < done ? '2026-11-07T16:00:10.000Z' : null,
   }));
 }
-const GREETING = "Hi, I'm Juno. I run on a computer of my own, with a copy of the Agentic Cloud's open-source code. Ask me how it works, or ask me to change something and I'll show you what I did.";
+const GREETING = "Hi, I'm Juno, a Claude Code agent on a computer of my own, with the Agentic Cloud's open-source code to read and run. I'm here to help you find out whether it fits your team. Which coding agents does your team use today, and where do they run? And what gets in the way? Or just ask me how it works.";
 const KEY = 'k_abcdefghijklmnopqrstuvwxyz012345';
 const GUEST = '/workspace/api/public/guest';
 const MACHINE = { cores: 2, memoryGb: 4, dedicated: true, awake: true };

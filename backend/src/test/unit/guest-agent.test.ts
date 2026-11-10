@@ -109,6 +109,52 @@ describe('the guest\'s instructions: product terms (note #1133)', () => {
   });
 });
 
+describe('the guest helps the visitor find out whether it fits (note #1136)', () => {
+  it('opens on the visitor\'s own situation: their coding agents, where they run, and what gets in the way', async () => {
+    const { guestGreeting } = await import('../../shared/guest-agent.js');
+    const greeting = guestGreeting('Juno');
+    expect(greeting).toMatch(/^Hi, I'm Juno, a Claude Code agent/);
+    expect(greeting).toContain('whether it fits your team');
+    expect(greeting).toContain('Which coding agents does your team use today, and where do they run?');
+    expect(greeting).toContain('And what gets in the way?');
+    // At most two questions: the visitor is not interviewed.
+    expect(greeting.match(/\?/g)).toHaveLength(2);
+  });
+
+  it('answers with that situation in mind and says plainly when it fits and when it does not, without selling', async () => {
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Answer every question with their situation in mind');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Say plainly whether the Agentic Cloud fits what they described');
+    expect(GUEST_AGENT_INSTRUCTIONS).toMatch(/When it does not fit, or fits only in part, say so just as plainly/);
+    expect(GUEST_AGENT_INSTRUCTIONS).toMatch(/No selling: no pressure, no urgency/);
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('A need the Agentic Cloud does not cover is not off-topic');
+    // The product-terms rule of note #1133 stays.
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Answer questions about the product in product terms.');
+  });
+
+  it('gives Adam\'s address, and only his, and promises nothing on his behalf', async () => {
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Adam, the founder of the Agentic Cloud, reads every guest conversation.');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('It is the only address you ever give');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Never promise what Adam will do, build or charge');
+    const addresses = GUEST_AGENT_INSTRUCTIONS.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g);
+    expect(addresses).toEqual(['adam@agenticcloudcomputer.com']);
+    // The outgoing check lets it through, so the visitor actually sees it.
+    const { guideAnswerLeak } = await import('../../services/public-guide-machine.js');
+    expect(guideAnswerLeak('Write to Adam at adam@agenticcloudcomputer.com with what you need.')).toBeNull();
+  });
+
+  it('carries the same exact claims as the guide, from one copy', async () => {
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    const { PUBLIC_GUIDE_INSTRUCTIONS } = await import('../../config/public-guide-instructions.js');
+    const { PUBLIC_AGENT_EXACT_CLAIMS } = await import('../../config/public-agent-claims.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain(PUBLIC_AGENT_EXACT_CLAIMS);
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain(PUBLIC_AGENT_EXACT_CLAIMS);
+    expect(PUBLIC_AGENT_EXACT_CLAIMS).toContain('free for now: no licence, no key and no charge from us');
+    expect(PUBLIC_AGENT_EXACT_CLAIMS).toContain('Never offer a hosted sign-up');
+  });
+});
+
 describe('the guest machine\'s setup', () => {
   const script = buildGuestSetupScript(SOURCE);
   it('fails closed: no nftables, no turn; the lock must load', () => {
@@ -387,7 +433,7 @@ describe('GuestAgentService — making one', () => {
     await x.service.idle();
     const status = await x.service.status(key);
     expect(status).toMatchObject({ state: 'ready', agent: { name: 'Juno' }, machine: { cores: 2, memoryGb: 4, dedicated: true }, messagesLeft: 40, steps: null, step: null });
-    expect(status.messages).toEqual([expect.objectContaining({ role: 'agent', text: expect.stringContaining("Hi, I'm Juno.") })]);
+    expect(status.messages).toEqual([expect.objectContaining({ role: 'agent', text: expect.stringContaining("Hi, I'm Juno, a Claude Code agent") })]);
     // Each step a real command, in order: the seal (no copy), the copy, Claude Code started once.
     const build = x.commands.filter((c) => c.includes('GUEST_SETUP_EOF') || c.includes('claude --version'));
     expect(build).toHaveLength(3);

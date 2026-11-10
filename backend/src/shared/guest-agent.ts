@@ -305,9 +305,13 @@ export const GUEST_DECLINED_MARKER = '[declined]';
 /** The sentence a declined answer becomes. */
 export const GUEST_DECLINED_TEXT = 'I only work on Agentic Cloud Computer and its open-source code. Ask me how it works, or what you would change in it.';
 
-/** The fixed greeting (note #1038, decision 13): no turn is spent on hello. */
+/**
+ * The fixed greeting (note #1038, decision 13): no turn is spent on hello.
+ * Since note #1136 it opens on the visitor's own situation, so the agent can
+ * tell them whether the Agentic Cloud fits; the instructions build on it.
+ */
 export function guestGreeting(name: string): string {
-  return `Hi, I'm ${name}. I run on a computer of my own, with a copy of the Agentic Cloud's open-source code. Ask me how it works, or ask me to change something and I'll show you what I did.`;
+  return `Hi, I'm ${name}, a Claude Code agent on a computer of my own, with the Agentic Cloud's open-source code to read and run. I'm here to help you find out whether it fits your team. Which coding agents does your team use today, and where do they run? And what gets in the way? Or just ask me how it works.`;
 }
 
 /** The owner's transcript of one guest agent (the Guests screen). */
