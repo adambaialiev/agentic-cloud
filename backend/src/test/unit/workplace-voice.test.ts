@@ -75,6 +75,44 @@ describe('WorkplaceVoiceService', () => {
     expect((await t.service.state(t.orgId)).state).toBe('on');
   });
 
+  // Note #1116: a copy from another workplace is this workplace's own secret
+  // from then on, and nothing ties the two afterwards.
+  it('copies another workplace\u2019s key once, and keeps the two apart afterwards', async () => {
+    const t = await setup();
+    const other = await t.orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'u1' });
+    await t.service.saveKey(other.orgId, KEY, 'Adam');
+    expect(await t.service.copySources(t.orgId, [other.orgId, t.orgId, 'gone'])).toEqual([{ orgId: other.orgId, name: 'Eldiiar' }]);
+
+    await t.service.copyKey(t.orgId, other.orgId, 'Adam');
+    expect(await t.orgSecrets.getOrgSecret(t.orgId, VOICE_KEY_SECRET_NAME)).toBe(KEY);
+    expect((await t.orgStorage.getOrg(t.orgId))?.voice).toMatchObject({ keySavedByName: 'Adam', keyCopiedFromName: 'Eldiiar' });
+    const answer = await t.service.answer(t.orgId, { admin: true, admins: ['Adam'], alsoAdminOf: [other.orgId] });
+    expect(answer).toMatchObject({ state: 'on', admin: { key: { copiedFromName: 'Eldiiar' } } });
+    expect(answer.admin).not.toHaveProperty('copyFrom');
+
+    // Removing the key in the source leaves the copy working; a new key
+    // pasted here is no longer "copied".
+    await t.service.removeKey(other.orgId);
+    expect((await t.service.state(t.orgId)).state).toBe('on');
+    const replacement = `${KEY.slice(0, -4)}ffff`;
+    await t.service.saveKey(t.orgId, replacement, 'Adam');
+    expect((await t.orgStorage.getOrg(t.orgId))?.voice).not.toHaveProperty('keyCopiedFromName');
+    expect(await t.orgSecrets.getOrgSecret(other.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
+  });
+
+  it('refuses to copy over a key, from a workplace with none, or a key OpenRouter no longer accepts', async () => {
+    const t = await setup();
+    const other = await t.orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'u1' });
+    await expect(t.service.copyKey(t.orgId, other.orgId, 'Adam')).rejects.toMatchObject({ status: 404 });
+    await expect(t.service.copyKey(t.orgId, t.orgId, 'Adam')).rejects.toMatchObject({ status: 400 });
+    await t.orgSecrets.setOrgSecret(other.orgId, VOICE_KEY_SECRET_NAME, KEY, 'test');
+    (t.openRouter.checkKey as ReturnType<typeof vi.fn>).mockResolvedValueOnce('rejected');
+    await expect(t.service.copyKey(t.orgId, other.orgId, 'Adam')).rejects.toMatchObject({ status: 400, code: 'voice_key_rejected' });
+    expect(await t.orgSecrets.getOrgSecret(t.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
+    await t.service.saveKey(t.orgId, KEY, 'Dana');
+    await expect(t.service.copyKey(t.orgId, other.orgId, 'Adam')).rejects.toMatchObject({ status: 409, code: 'voice_key_exists' });
+  });
+
   it('refuses a key OpenRouter rejects, a malformed one, and one it could not check', async () => {
     const rejected = await setup({ checkKey: vi.fn().mockResolvedValue('rejected') });
     await expect(rejected.service.saveKey(rejected.orgId, KEY, 'Dana')).rejects.toMatchObject({ status: 400, code: 'voice_key_rejected' });

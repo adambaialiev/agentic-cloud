@@ -204,6 +204,12 @@ export interface OrgDocument {
     modelChangedByName?: string;
     keySavedAt?: string;
     keySavedByName?: string;
+    /**
+     * The key was copied, once, from another workplace the same admin runs
+     * (note #1116): that workplace's name at the moment of the copy. Nothing
+     * links the two afterwards; a key pasted here clears it.
+     */
+    keyCopiedFromName?: string;
   };
   /**
    * Set when OpenRouter refused a recording for a reason no retry fixes: the

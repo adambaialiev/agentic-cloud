@@ -37,8 +37,15 @@ export function registerVoiceRoutes(router: Router, deps: RouteDeps,
     return names.sort((a, b) => a.localeCompare(b));
   };
 
+  /** The other workplaces this person is ALSO an admin of (note #1116). */
+  const alsoAdminOf = async (who: WorkplaceReader): Promise<string[]> => {
+    if (!who.admin) return [];
+    const memberships = await deps.orgStorage?.listMembershipsByUser(who.userId).catch(() => []) ?? [];
+    return memberships.filter((m) => m.role === 'admin' && m.orgId !== who.orgId).map((m) => m.orgId);
+  };
+
   const answer = async (who: WorkplaceReader): Promise<VoiceAnswer> =>
-    service()!.answer(who.orgId, { admin: who.admin, admins: await adminNames(who.orgId) });
+    service()!.answer(who.orgId, { admin: who.admin, admins: await adminNames(who.orgId), alsoAdminOf: await alsoAdminOf(who) });
 
   const fail = (res: Response, error: unknown, what: string) => {
     if (error instanceof VoiceSettingsError) {
@@ -104,6 +111,30 @@ export function registerVoiceRoutes(router: Router, deps: RouteDeps,
       return res.json(await answer(who));
     } catch (error) {
       return fail(res, error, 'saving the key');
+    }
+  });
+
+  // Copy the key another workplace already holds (note #1116, Adam: "if I
+  // am admin for both of course"). An admin HERE, and an admin THERE by the
+  // membership row, not by anything the browser says. The value is read and
+  // re-stored on the server; the answer carries names only.
+  router.post('/api/voice/key/copy', async (req, res) => {
+    const who = await admin(req, res);
+    if (!who) return;
+    const fromOrgId = (req.body as { fromOrgId?: unknown } | undefined)?.fromOrgId;
+    if (typeof fromOrgId !== 'string' || !fromOrgId.trim() || fromOrgId === who.orgId) {
+      return res.status(400).json({ error: 'Choose another workplace to copy the key from.' });
+    }
+    const there = await deps.orgStorage?.getMembership(fromOrgId, who.userId).catch(() => null) ?? null;
+    if (there?.role !== 'admin') {
+      return res.status(403).json({ error: 'Only an admin of both workplaces can copy the key.' });
+    }
+    try {
+      await service()!.copyKey(who.orgId, fromOrgId, await nameOf(who.userId));
+      console.log(`[voice-transcription] ${who.orgId}: an admin copied the OpenRouter key from workplace ${fromOrgId}`);
+      return res.json(await answer(who));
+    } catch (error) {
+      return fail(res, error, 'copying the key');
     }
   });
 

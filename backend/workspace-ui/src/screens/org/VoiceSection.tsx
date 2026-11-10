@@ -234,6 +234,20 @@ export function VoiceSection({ admin }: { admin: boolean }) {
       setBusy(false);
     }
   };
+  // Note #1116: copy the key this admin already saved in another workplace.
+  // One tap, no value on the screen; the server checks both admin roles.
+  const copyFrom = admin && !key ? voice.admin?.copyFrom ?? [] : [];
+  const copyKey = async (fromOrgId: string, fromName: string) => {
+    setBusy(true);
+    try {
+      setVoice(await api.api<VoiceAnswer>('api/voice/key/copy', jsonBody({ fromOrgId }, 'POST')));
+      banner.show(`Voice-to-text is on, with a copy of the key from ${fromName}.`, true);
+    } catch (err) {
+      banner.show(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
   const checkAgain = async () => {
     setBusy(true);
     await load();
@@ -277,7 +291,7 @@ export function VoiceSection({ admin }: { admin: boolean }) {
               <div className="name plain">Key</div>
               <div className="cline"><span className="ctext">
                 {key.preview}
-                {key.savedByName ? ` · saved by ${key.savedByName}${key.savedAt ? ` on ${dateWords(key.savedAt)}` : ''}` : ''}
+                {key.savedByName ? ` · ${key.copiedFromName ? 'copied' : 'saved'} by ${key.savedByName}${key.copiedFromName ? ` from ${key.copiedFromName}` : ''}${key.savedAt ? ` on ${dateWords(key.savedAt)}` : ''}` : ''}
                 {voice.admin?.creditLeftUsd !== null && voice.admin?.creditLeftUsd !== undefined ? ` · credit left ${voiceUsdWords(voice.admin.creditLeftUsd)}` : ''}
               </span></div>
               {voice.admin ? <div className="cline"><span className="ctext">{voiceMonthWords(voice.admin.month)}</span></div> : null}
@@ -291,11 +305,29 @@ export function VoiceSection({ admin }: { admin: boolean }) {
             </div>
           </div>
         ) : null}
+        {copyFrom.map((source) => (
+          <button
+            key={source.orgId} className="addrow strong orgVoiceCopy" type="button" disabled={busy}
+            onClick={() => void copyKey(source.orgId, source.name)}
+          >
+            Use the key from {source.name}
+          </button>
+        ))}
         {admin && !key ? (
-          <button className="addrow strong" id="orgVoiceTurnOn" type="button" onClick={() => setDialog(true)}>Turn on with an OpenRouter key</button>
+          <button className={copyFrom.length ? 'addrow' : 'addrow strong'} id="orgVoiceTurnOn" type="button" onClick={() => setDialog(true)}>
+            {copyFrom.length ? 'Use a new OpenRouter key instead' : 'Turn on with an OpenRouter key'}
+          </button>
         ) : null}
       </div>
-      {admin && !key ? <p className="formhint">OpenRouter is one account for many speech models. You add credit there and it bills you directly.</p> : null}
+      {copyFrom.length ? (
+        <p className="formhint">
+          You already saved a key in {copyFrom.length === 1 ? copyFrom[0]!.name : 'another workplace you run'}. Using it copies it here once, without showing it:
+          after that the two are not linked, so replacing or removing the key in one workplace does not change the other. Both pay the same OpenRouter account.
+        </p>
+      ) : admin && !key ? <p className="formhint">OpenRouter is one account for many speech models. You add credit there and it bills you directly.</p> : null}
+      {admin && key?.copiedFromName ? (
+        <p className="formhint">This is this workplace’s own copy of the key from {key.copiedFromName}. Replacing or removing it here does not change {key.copiedFromName}, and a change there does not reach here.</p>
+      ) : null}
       {!admin && voice.state !== 'off' ? <p className="formhint">{voiceAdminsWords(voice.admins)} can change this.</p> : null}
       {admin && key ? <ModelPicker voice={voice} onChanged={setVoice} /> : null}
       {dialog ? (

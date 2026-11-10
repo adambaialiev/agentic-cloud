@@ -86,11 +86,23 @@ export interface VoiceAnswer {
   /** True when the reader is an admin and may change this. */
   canChange: boolean;
   admin?: {
-    key: { preview: string; savedAt: string; savedByName: string } | null;
+    key: { preview: string; savedAt: string; savedByName: string; copiedFromName?: string } | null;
+    /**
+     * With no key here: the OTHER workplaces this admin also runs that hold
+     * one, so the key can be copied across in one tap (note #1116). Names
+     * only; the value never leaves the server.
+     */
+    copyFrom?: VoiceKeySource[];
     /** OpenRouter's own figure for the account behind the key, in USD; null when it did not answer. */
     creditLeftUsd: number | null;
     month: VoiceMonthUsage;
   };
+}
+
+/** Another workplace whose voice-to-text key this admin may copy (note #1116). */
+export interface VoiceKeySource {
+  orgId: string;
+  name: string;
 }
 
 export interface VoiceMonthUsage {

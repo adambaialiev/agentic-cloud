@@ -87,6 +87,51 @@ describe('the recorder when voice-to-text is not set up (note #1026)', () => {
     expect(screen.getByTestId('where').textContent).toBe('/workplace#orgVoice');
   });
 
+  // Note #1116: an admin who saved a key in another workplace they run is
+  // offered it right here, in one tap, and the next press records.
+  it('copies the key from another workplace this admin runs in one tap, then records', async () => {
+    giveMicrophone();
+    const eldiiar = { orgId: 'org-eldiiar', name: 'Eldiiar' };
+    const { calls } = mount({
+      'GET api/voice': () => voice({ state: 'off', canChange: true, admin: { key: null, creditLeftUsd: null, month: { month: '2026-11', recordings: 0, seconds: 0, costUsd: 0 }, copyFrom: [eldiiar] } }),
+      'POST api/voice/key/copy': () => voice({ state: 'on', canChange: true }),
+      'POST api/transcribe': () => ({ text: 'hello' }),
+    });
+    await waitFor(() => expect(asked(calls, 'api/voice')).toBe(1));
+    await act(async () => { fireEvent.click(dictate()); });
+
+    const dialog = screen.getByRole('dialog', { name: 'Voice-to-text' });
+    expect(dialog.textContent).toContain('You already saved a key in Eldiiar.');
+    expect(screen.getByRole('button', { name: 'Use a new key instead' })).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use the key from Eldiiar' })); });
+
+    const copy = calls.find((call) => call.path === 'api/voice/key/copy');
+    expect(JSON.parse(String(copy?.init?.body))).toEqual({ fromOrgId: 'org-eldiiar' });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('Voice-to-text is on'));
+    expect(screen.getByRole('dialog').textContent).toContain('does not change the other');
+    expect(gum()).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog', { name: 'Voice-to-text' })).toBeNull();
+    await act(async () => { fireEvent.click(dictate()); });
+    expect(gum()).toHaveBeenCalled();
+  });
+
+  it('keeps the screen open and says why when the copy is refused', async () => {
+    giveMicrophone();
+    const { calls } = mount({
+      'GET api/voice': () => voice({ state: 'off', canChange: true, admin: { key: null, creditLeftUsd: null, month: { month: '2026-11', recordings: 0, seconds: 0, costUsd: 0 }, copyFrom: [{ orgId: 'o2', name: 'Eldiiar' }] } }),
+      'POST api/voice/key/copy': () => {
+        throw new WorkspaceApiError('OpenRouter no longer accepts the key saved in Eldiiar, so it was not copied. Paste a new key instead.', 400, {});
+      },
+    });
+    await waitFor(() => expect(asked(calls, 'api/voice')).toBe(1));
+    await act(async () => { fireEvent.click(dictate()); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use the key from Eldiiar' })); });
+    expect(screen.getByRole('alert').textContent).toContain('no longer accepts the key saved in Eldiiar');
+    expect(screen.getByRole('button', { name: 'Use the key from Eldiiar' })).toBeTruthy();
+  });
+
   it('says a paused workplace is out of credit, in Rosa’s words', async () => {
     giveMicrophone();
     const { calls } = mount({ 'GET api/voice': () => voice({ state: 'paused', reason: 'out_of_credit' }) });
