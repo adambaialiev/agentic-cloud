@@ -9,13 +9,16 @@
  * microphone records as before, and the transcribe route still refuses with
  * the same code, which then lands here so the next press knows.
  */
-import type { VoiceAnswer } from '../../../src/shared/voice.js';
+import type { VoiceAnswer, VoiceKeySource } from '../../../src/shared/voice.js';
 import { VOICE_ERROR_CODES } from '../../../src/shared/voice-transcription.js';
 
 export const VOICE_STATUS_TTL_MS = 60_000;
 
 /** The part of the answer the recorder needs. */
-export type VoiceStatus = Pick<VoiceAnswer, 'state' | 'reason' | 'admins' | 'canChange'>;
+export type VoiceStatus = Pick<VoiceAnswer, 'state' | 'reason' | 'admins' | 'canChange'> & {
+  /** For an admin with no key here: other workplaces of theirs that have one (note #1116). */
+  copyFrom?: VoiceKeySource[];
+};
 
 type Reader = <T>(path: string) => Promise<T>;
 
@@ -24,6 +27,22 @@ let inFlight: Promise<VoiceStatus | null> | null = null;
 /** When a read last failed: every microphone on a page asks, and a backend
  *  that cannot answer is not asked again for a minute. */
 let failedAt = 0;
+
+/** The recorder's part of an answer from api/voice. */
+export function voiceStatusOf(answer: VoiceAnswer): VoiceStatus {
+  const copyFrom = answer.state === 'off' && answer.canChange ? answer.admin?.copyFrom ?? [] : [];
+  return {
+    state: answer.state, reason: answer.reason, admins: answer.admins ?? [], canChange: Boolean(answer.canChange),
+    ...(copyFrom.length ? { copyFrom } : {}),
+  };
+}
+
+/** An admin's change answered with the new settings: every microphone on
+ *  the page knows at once, without another read. */
+export function rememberVoiceAnswer(answer: VoiceAnswer): void {
+  known = { status: voiceStatusOf(answer), at: Date.now() };
+  failedAt = 0;
+}
 
 /** What is known now, or null when nothing has been read yet. */
 export function knownVoiceStatus(now = Date.now()): VoiceStatus | null {
@@ -40,7 +59,7 @@ export function refreshVoiceStatus(read: Reader, now = Date.now()): Promise<Voic
       // Only a real answer decides anything: something that is not one of
       // the three states (an old backend, a proxy's page) records as before.
       if (!answer || !['on', 'off', 'paused'].includes(answer.state)) return known?.status ?? null;
-      known = { status: { state: answer.state, reason: answer.reason, admins: answer.admins ?? [], canChange: Boolean(answer.canChange) }, at: Date.now() };
+      known = { status: voiceStatusOf(answer), at: Date.now() };
       return known.status;
     })
     .catch(() => { failedAt = Date.now(); return known?.status ?? null; })

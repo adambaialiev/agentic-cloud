@@ -8,6 +8,7 @@ import {
   voiceErrorCodeFor,
   voiceModelInfo,
   type VoiceAnswer,
+  type VoiceKeySource,
   type VoiceModelOption,
   type VoiceModelsAnswer,
   type VoiceMonthUsage,
@@ -177,7 +178,7 @@ export class WorkplaceVoiceService {
   }
 
   /** The answer for GET api/voice; the admin part only for admins. */
-  async answer(orgId: string, viewer: { admin: boolean; admins: string[] }): Promise<VoiceAnswer> {
+  async answer(orgId: string, viewer: { admin: boolean; admins: string[]; alsoAdminOf?: readonly string[] }): Promise<VoiceAnswer> {
     const { state, reason, pausedAt, org, key } = await this.state(orgId);
     const modelId = this.modelOf(org);
     const answer: VoiceAnswer = {
@@ -194,10 +195,15 @@ export class WorkplaceVoiceService {
           preview: voiceKeyPreview(key),
           savedAt: org.voice?.keySavedAt ?? '',
           savedByName: org.voice?.keySavedByName ?? '',
+          ...(org.voice?.keyCopiedFromName ? { copiedFromName: org.voice.keyCopiedFromName } : {}),
         } : null,
         creditLeftUsd: key ? await this.creditLeft(orgId, key) : null,
         month: this.month(org),
       };
+      if (!key && viewer.alsoAdminOf?.length) {
+        const copyFrom = await this.copySources(orgId, viewer.alsoAdminOf);
+        if (copyFrom.length) answer.admin.copyFrom = copyFrom;
+      }
     }
     return answer;
   }
@@ -226,6 +232,50 @@ export class WorkplaceVoiceService {
       throw new VoiceSettingsError('That does not look like an OpenRouter key. It starts with sk-or- and has no spaces.', 400);
     }
     await this.org(orgId);
+    await this.check(key, 'OpenRouter did not accept this key. Copy it again from openrouter.ai/keys.');
+    await this.keep(orgId, key, byName);
+  }
+
+  /**
+   * Of the other workplaces this admin also runs, those holding a key, by
+   * name (note #1116). The caller decides who is an admin where; this only
+   * looks for keys, and never returns one.
+   */
+  async copySources(orgId: string, otherOrgIds: readonly string[]): Promise<VoiceKeySource[]> {
+    const found = await Promise.all([...new Set(otherOrgIds)]
+      .filter((other) => other && other !== orgId)
+      .map(async (other): Promise<VoiceKeySource | null> => {
+        const [org, key] = await Promise.all([
+          this.deps.orgStorage.getOrg(other).catch(() => null),
+          this.key(other).catch(() => null),
+        ]);
+        return org && key ? { orgId: other, name: org.name } : null;
+      }));
+    return found.filter((source): source is VoiceKeySource => source !== null)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Copy another workplace's key into this one, server side, once (note
+   * #1116, Adam: "if I am admin for both of course" — the route checks
+   * both). The value is read and re-stored here and never sent anywhere but
+   * OpenRouter's key check; the copy is this workplace's own secret from
+   * then on, and nothing ties the two together afterwards.
+   */
+  async copyKey(orgId: string, fromOrgId: string, byName: string): Promise<void> {
+    if (!fromOrgId || fromOrgId === orgId) throw new VoiceSettingsError('Choose another workplace to copy the key from.', 400);
+    await this.org(orgId);
+    if (await this.key(orgId)) {
+      throw new VoiceSettingsError('This workplace already has a key. Replace it here instead.', 409, 'voice_key_exists');
+    }
+    const from = await this.deps.orgStorage.getOrg(fromOrgId);
+    const key = from ? await this.key(fromOrgId) : null;
+    if (!from || !key) throw new VoiceSettingsError('That workplace has no voice-to-text key to copy.', 404);
+    await this.check(key, `OpenRouter no longer accepts the key saved in ${from.name}, so it was not copied. Paste a new key instead.`);
+    await this.keep(orgId, key, byName, from.name);
+  }
+
+  private async check(key: string, rejected: string): Promise<void> {
     let check;
     try {
       check = await this.deps.openRouter.checkKey(key);
@@ -235,13 +285,20 @@ export class WorkplaceVoiceService {
       }
       throw error;
     }
-    if (check === 'rejected') {
-      throw new VoiceSettingsError('OpenRouter did not accept this key. Copy it again from openrouter.ai/keys.', 400, 'voice_key_rejected');
-    }
+    if (check === 'rejected') throw new VoiceSettingsError(rejected, 400, 'voice_key_rejected');
+  }
+
+  private async keep(orgId: string, key: string, byName: string, copiedFromName?: string): Promise<void> {
     await this.deps.orgSecrets.setOrgSecret(orgId, VOICE_KEY_SECRET_NAME, key, 'The workplace’s OpenRouter key for voice-to-text, saved by an admin on the Workplace screen.');
     const org = await this.org(orgId);
+    const { keyCopiedFromName: _from, ...voice } = org.voice ?? {};
     await this.deps.orgStorage.updateOrg(orgId, {
-      voice: { ...org.voice, keySavedAt: new Date(this.now()).toISOString(), keySavedByName: byName },
+      voice: {
+        ...voice,
+        keySavedAt: new Date(this.now()).toISOString(),
+        keySavedByName: byName,
+        ...(copiedFromName ? { keyCopiedFromName: copiedFromName } : {}),
+      },
       voicePaused: undefined,
     });
     this.creditCache.delete(orgId);
@@ -250,7 +307,7 @@ export class WorkplaceVoiceService {
   async removeKey(orgId: string): Promise<void> {
     await this.deps.orgSecrets.deleteOrgSecret(orgId, VOICE_KEY_SECRET_NAME);
     const org = await this.org(orgId);
-    const { keySavedAt: _at, keySavedByName: _by, ...rest } = org.voice ?? {};
+    const { keySavedAt: _at, keySavedByName: _by, keyCopiedFromName: _from, ...rest } = org.voice ?? {};
     await this.deps.orgStorage.updateOrg(orgId, { voice: rest, voicePaused: undefined });
     this.creditCache.delete(orgId);
   }

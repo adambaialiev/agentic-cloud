@@ -126,6 +126,28 @@ describe('Voice-to-text on the Workplace screen (note #1026)', () => {
     expect(screen.getByRole('button', { name: 'Check again' })).toBeTruthy();
   });
 
+  // Note #1116: an admin who saved a key in another workplace they run.
+  it('offers the key from another workplace this admin runs, copies it in one tap, and says the two stay apart', async () => {
+    const { calls } = await open('admin', {
+      'GET api/voice': () => answer({ admin: { ...answer().admin!, copyFrom: [{ orgId: 'o2', name: 'Eldiiar' }] } }),
+      'POST api/voice/key/copy': () => answer({ ...ON, admin: { ...ON.admin!, key: { ...ON.admin!.key!, savedByName: 'Adam', copiedFromName: 'Eldiiar' } } }),
+    });
+    const section = document.getElementById('orgVoice')!;
+    expect(section.textContent).toContain('You already saved a key in Eldiiar.');
+    expect(section.textContent).toContain('does not change the other');
+    expect(screen.getByRole('button', { name: 'Use a new OpenRouter key instead' })).toBeTruthy();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use the key from Eldiiar' })); });
+
+    const copy = calls.find((call) => call.path === 'api/voice/key/copy');
+    expect(JSON.parse(String(copy?.init?.body))).toEqual({ fromOrgId: 'o2' });
+    expect(copy?.scope).toMatchObject({ org: 'o1' });
+    expect(screen.queryByLabelText('OpenRouter key')).toBeNull();
+    const card = document.getElementById('orgVoiceCard')!;
+    expect(card.textContent).toContain('On for everyone');
+    expect(card.textContent).toContain('copied by Adam from Eldiiar on');
+    expect(document.getElementById('orgVoice')!.textContent).toContain('Replacing or removing it here does not change Eldiiar');
+  });
+
   it('shows a member who pays and who can change it, and nothing to change', async () => {
     await open('member', {
       'GET api/voice': () => ({ state: 'on', model: { id: VOICE_MODELS[0]!.id, name: 'GPT-4o mini Transcribe' }, admins: ['Dana Rivera'], canChange: false }),

@@ -7790,6 +7790,8 @@ h2.mailfileshead { margin-top: 16px; }
   width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
   color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
+.voiceblocked-icon.on { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.voiceblocked-stage .formfail { margin: 0; padding: 0; }
 .voiceblocked-actions { align-items: center; }
 .voiceblocked-actions > .btn { min-width: 220px; justify-content: center; }
 /* Voice rows say who pays, the key and the month in full: they wrap rather

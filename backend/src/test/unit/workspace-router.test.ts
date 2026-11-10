@@ -534,6 +534,76 @@ describe('telegram mini app routes', () => {
     expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
   });
 
+  // Note #1116 (Adam: "if I am admin for both of course"): an admin with no
+  // key here is offered the key they already saved in another workplace they
+  // run, copied on the server in one tap, names only on the wire.
+  it('offers and copies the key from another workplace this person also runs as an admin', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { role: 'admin' });
+    const other = await voice.orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'user-1' });
+    await voice.orgStorage.addMember({ orgId: other.orgId, userId: 'user-1', role: 'admin' });
+    await voice.orgSecrets.setOrgSecret(other.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+    const keyless = await voice.orgStorage.createOrg({ name: 'Studio', createdByUserId: 'user-1' });
+    await voice.orgStorage.addMember({ orgId: keyless.orgId, userId: 'user-1', role: 'admin' });
+
+    const before = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), before);
+    expect(before.body).toMatchObject({ state: 'off', admin: { key: null, copyFrom: [{ orgId: other.orgId, name: 'Eldiiar' }] } });
+    expect(JSON.stringify(before.body)).not.toContain(VOICE_TEST_KEY.slice(-6));
+
+    const copied = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key/copy', 'post')(mockRequest({ headers: authHeader(42), body: { fromOrgId: other.orgId } }), copied);
+    expect(copied.statusCode).toBe(200);
+    expect(copied.body).toMatchObject({ state: 'on', admin: { key: { copiedFromName: 'Eldiiar' } } });
+    expect(copied.body).not.toHaveProperty('admin.copyFrom');
+    expect(JSON.stringify(copied.body)).not.toContain(VOICE_TEST_KEY);
+    expect(voice.checkKey).toHaveBeenCalledWith(VOICE_TEST_KEY);
+    expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBe(VOICE_TEST_KEY);
+
+    // A second copy over a key that is now here is refused, not a silent swap.
+    const again = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key/copy', 'post')(mockRequest({ headers: authHeader(42), body: { fromOrgId: other.orgId } }), again);
+    expect(again.statusCode).toBe(409);
+  });
+
+  it('refuses to copy a key from a workplace where this person is not an admin, and offers none', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { role: 'admin' });
+    const other = await voice.orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'user-9' });
+    await voice.orgStorage.addMember({ orgId: other.orgId, userId: 'user-1', role: 'member' });
+    await voice.orgSecrets.setOrgSecret(other.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+    const stranger = await voice.orgStorage.createOrg({ name: 'Elsewhere', createdByUserId: 'user-9' });
+    await voice.orgSecrets.setOrgSecret(stranger.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+
+    const read = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), read);
+    expect(read.body).toMatchObject({ state: 'off', admin: { key: null } });
+    expect(read.body).not.toHaveProperty('admin.copyFrom');
+
+    for (const fromOrgId of [other.orgId, stranger.orgId]) {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/voice/key/copy', 'post')(mockRequest({ headers: authHeader(42), body: { fromOrgId } }), res);
+      expect(res.statusCode).toBe(403);
+    }
+    expect(voice.checkKey).not.toHaveBeenCalled();
+    expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
+  });
+
+  it('never lets a member of this workplace copy a key in, even one they hold elsewhere', async () => {
+    const { deps } = await buildDeps();
+    const voice = await withVoice(deps, { role: 'member' });
+    const other = await voice.orgStorage.createOrg({ name: 'Eldiiar', createdByUserId: 'user-1' });
+    await voice.orgStorage.addMember({ orgId: other.orgId, userId: 'user-1', role: 'admin' });
+    await voice.orgSecrets.setOrgSecret(other.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+    const read = createMockResponse();
+    await getRouteHandler(deps, '/api/voice', 'get')(mockRequest({ headers: authHeader(42) }), read);
+    expect(read.body).not.toHaveProperty('admin');
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/key/copy', 'post')(mockRequest({ headers: authHeader(42), body: { fromOrgId: other.orgId } }), res);
+    expect(res.statusCode).toBe(403);
+    expect(await voice.orgSecrets.getOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME)).toBeNull();
+  });
+
   it('puts the landing agent\u2019s name and face on a knowledge page', async () => {
     // A page belongs to the ACCOUNT and six agents write into one base, so the
     // row carries who wrote it — the same pair a site's and a note's row do

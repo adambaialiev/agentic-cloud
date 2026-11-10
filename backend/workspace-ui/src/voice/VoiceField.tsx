@@ -29,14 +29,15 @@
  */
 
 import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { WorkspaceApiError } from '../api/client.js';
+import { WorkspaceApiError, jsonBody } from '../api/client.js';
 import { useBanner } from '../chrome/useBanner.js';
 import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES, voiceErrorIsSettled } from '../../../src/shared/voice-transcription.js';
 import { useSession } from '../session/useSession.js';
 import { Svg } from '../ui/icons.js';
 import { VoiceReview, type VoiceReviewDraft } from './VoiceReview.js';
 import { VoiceBlocked } from './VoiceBlocked.js';
-import { knownVoiceStatus, noteVoiceOutcome, refreshVoiceStatus, type VoiceStatus } from './voice-status.js';
+import { knownVoiceStatus, noteVoiceOutcome, refreshVoiceStatus, rememberVoiceAnswer, type VoiceStatus } from './voice-status.js';
+import type { VoiceAnswer } from '../../../src/shared/voice.js';
 import { WorkspaceContext } from '../workspace/context.js';
 import {
   VOICE_RECORDING_MAX_MS, VOICE_WAVE_BARS, VOICE_WAVE_STEP_MS,
@@ -164,6 +165,14 @@ export function VoiceField({ onTranscript, children, review }: {
   const [blocked, setBlocked] = useState<VoiceStatus | null>(null);
   const orgId = useContext(WorkspaceContext)?.state?.org?.orgId;
   const read = useCallback(<T,>(path: string) => api.api<T>(path), [api]);
+  // The "not set up" screen's one tap (note #1116): copy the key this admin
+  // already saved in another workplace. Same scope as the read above, so it
+  // lands in the workplace that answered "off".
+  const copyKey = useCallback(async (fromOrgId: string) => {
+    const answer = await api.api<VoiceAnswer>('api/voice/key/copy', jsonBody({ fromOrgId }, 'POST'));
+    rememberVoiceAnswer(answer);
+    return answer;
+  }, [api]);
   const report = useCallback((message: string, retry = true) => {
     if (fullscreen) { setError(message); setCanRetry(retry); }
     else banner.show(message);
@@ -488,7 +497,7 @@ export function VoiceField({ onTranscript, children, review }: {
       >
         {recording ? <Svg name="stop" size={17} /> : state === 'idle' ? <Svg name="mic" size={18} /> : <span className="voicespin" />}
       </button>
-      {blocked ? <VoiceBlocked status={blocked} orgId={orgId} onClose={() => setBlocked(null)} /> : null}
+      {blocked ? <VoiceBlocked status={blocked} orgId={orgId} onCopy={copyKey} onClose={() => setBlocked(null)} /> : null}
       {reviewOpen && review ? (
         <VoiceReview
           draft={review} state={state} error={error} canRetry={canRetry} wave={wave} metered={metered}
