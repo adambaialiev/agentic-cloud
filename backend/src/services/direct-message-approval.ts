@@ -3,8 +3,10 @@ import {
   DIRECT_MESSAGE_APPROVAL_TTL_MS,
   DIRECT_MESSAGE_MAX_LENGTH,
   DIRECT_MESSAGE_VIA_PREFIX,
+  DIRECT_MESSAGE_FILES_PER_MESSAGE,
   type DirectMessageApproval,
   type DirectMessageApprovalStatus,
+  type DirectMessageFile,
 } from '../shared/direct-messages.js';
 import type { DirectMessageStorage } from './direct-message-storage.js';
 import { OrgMsgHostOpening } from './org-msg-host.js';
@@ -34,6 +36,12 @@ export interface DirectMessageApprovalDocument {
   toName: string;
   /** Present only while pending or sending. */
   text?: string;
+  /**
+   * Note #1125: the files it carries — their names, sizes and ids, present
+   * only while it waits. The bytes wait on the messaging machine as the
+   * person's own unsent uploads; a tap attaches them, anything else deletes them.
+   */
+  files?: DirectMessageFile[];
   /** Stable across retries: the messaging machine dedupes on it. */
   clientId: string;
   status: DirectMessageApprovalStatus;
@@ -134,6 +142,7 @@ export function visibleDirectMessageApproval(doc: DirectMessageApprovalDocument)
     id: doc.id,
     to: { userId: doc.toUserId, name: doc.toName },
     ...(waiting && doc.text ? { text: doc.text } : {}),
+    ...(waiting && doc.files?.length ? { files: doc.files } : {}),
     status: doc.status,
     createdAt: doc.createdAt,
     ...(doc.decidedAt ? { decidedAt: doc.decidedAt } : {}),
@@ -143,7 +152,7 @@ export function visibleDirectMessageApproval(doc: DirectMessageApprovalDocument)
 
 /** Decided: the words go, whatever the outcome. */
 const settled = (doc: DirectMessageApprovalDocument, status: DirectMessageApprovalStatus, at: string, error?: string): DirectMessageApprovalDocument => {
-  const { text: _text, sendingAt: _sending, error: _error, ...rest } = doc;
+  const { text: _text, files: _files, sendingAt: _sending, error: _error, ...rest } = doc;
   return { ...rest, status, decidedAt: at, ...(error ? { error } : {}) };
 };
 
@@ -170,7 +179,7 @@ export function resolveTeammate(
 export class DirectMessageApprovalService {
   constructor(
     private readonly storage: DirectMessageApprovalStorage,
-    private readonly messages: () => Pick<DirectMessageStorage, 'send'> | undefined,
+    private readonly messages: () => (Pick<DirectMessageStorage, 'send'> & Partial<Pick<DirectMessageStorage, 'files'>>) | undefined,
     private readonly isMember: (orgId: string, userId: string) => Promise<boolean>,
     private readonly now: () => Date = () => new Date(),
   ) {}
@@ -187,15 +196,27 @@ export class DirectMessageApprovalService {
       }) ?? doc;
     }
     if (doc.status === 'pending' && now - Date.parse(doc.createdAt) >= DIRECT_MESSAGE_APPROVAL_TTL_MS) {
-      return await this.storage.transition(doc.userId, doc.id, 'pending',
-        (d) => settled(d, 'expired', this.now().toISOString())) ?? doc;
+      const expired = await this.storage.transition(doc.userId, doc.id, 'pending',
+        (d) => settled(d, 'expired', this.now().toISOString()));
+      if (expired) void this.letGo(doc);
+      return expired ?? doc;
     }
     return doc;
   }
 
-  async request(args: { userId: string; orgId: string; agentId: string; to: { userId: string; name: string }; text: string }): Promise<DirectMessageApprovalDocument> {
+  /** A draft that will never be sent takes its waiting files with it (best effort: the machine deletes unsent ones after 26 hours anyway). */
+  private async letGo(doc: DirectMessageApprovalDocument): Promise<void> {
+    const ids = (doc.files ?? []).map((file) => file.id);
+    if (!ids.length) return;
+    await this.messages()?.files?.discard(doc.orgId, doc.userId, doc.toUserId, ids)
+      .catch(() => { console.warn('[direct-message-approval] waiting files were not discarded; the messaging machine sweeps them'); });
+  }
+
+  async request(args: { userId: string; orgId: string; agentId: string; to: { userId: string; name: string }; text: string; files?: DirectMessageFile[] }): Promise<DirectMessageApprovalDocument> {
     const text = args.text.trim();
-    if (!text || text.length > DIRECT_MESSAGE_MAX_LENGTH) {
+    const files = args.files ?? [];
+    if (files.length > DIRECT_MESSAGE_FILES_PER_MESSAGE) throw new DirectMessageApprovalError(`A message can carry up to ${DIRECT_MESSAGE_FILES_PER_MESSAGE} files.`);
+    if ((!text && !files.length) || text.length > DIRECT_MESSAGE_MAX_LENGTH) {
       throw new DirectMessageApprovalError(`Write a message of up to ${DIRECT_MESSAGE_MAX_LENGTH.toLocaleString('en-US')} characters.`);
     }
     if (args.to.userId === args.userId) throw new DirectMessageApprovalError('That is your user. A direct message goes to a teammate.');
@@ -207,6 +228,7 @@ export class DirectMessageApprovalService {
       toUserId: args.to.userId,
       toName: args.to.name,
       text,
+      ...(files.length ? { files } : {}),
       clientId: `${DIRECT_MESSAGE_VIA_PREFIX}${randomBytes(12).toString('hex')}`,
       status: 'pending',
       createdAt: this.now().toISOString(),
@@ -236,11 +258,13 @@ export class DirectMessageApprovalService {
     const at = this.now().toISOString();
     if (args.decision === 'reject') {
       const done = await this.storage.transition(args.userId, args.id, 'pending', (doc) => settled(doc, 'rejected', at));
+      if (done) await this.letGo(found);
       return visibleDirectMessageApproval(done ?? (await this.storage.get(args.userId, args.id)) ?? found);
     }
     if (!await this.isMember(found.orgId, found.toUserId)) {
       const gone = await this.storage.transition(args.userId, args.id, 'pending',
         (doc) => settled(doc, 'rejected', at, `${doc.toName} is no longer in this workplace. Nothing was sent.`));
+      if (gone) await this.letGo(found);
       return visibleDirectMessageApproval(gone ?? (await this.storage.get(args.userId, args.id)) ?? found);
     }
     const messages = this.messages();
@@ -257,7 +281,8 @@ export class DirectMessageApprovalService {
       return latest ? visibleDirectMessageApproval(latest) : null;
     }
     try {
-      await messages.send(claimed.orgId, claimed.userId, claimed.toUserId, claimed.text ?? '', claimed.clientId);
+      await messages.send(claimed.orgId, claimed.userId, claimed.toUserId, claimed.text ?? '', claimed.clientId,
+        (claimed.files ?? []).map((file) => file.id));
     } catch (error) {
       // Never log the error itself: it may carry the words.
       const words = error instanceof OrgMsgHostOpening

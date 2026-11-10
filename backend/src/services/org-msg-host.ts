@@ -188,11 +188,50 @@ export class OrgMsgHostService {
    * on a machine that had just stopped is safely repeated after the wake.
    */
   async call<T>(orgId: string, operation: string, body: Record<string, unknown>): Promise<T> {
+    return this.through(orgId, operation, (pointer) => this.post<T>(orgId, pointer, operation, body));
+  }
+
+  /**
+   * Note #1125: one file's bytes onto the machine (or a picture's small
+   * copy). Held in memory here — at most DIRECT_MESSAGE_FILE_MAX_BYTES — so
+   * a dial to a machine that had just stopped is repeated after the wake like
+   * any other operation; the machine itself streams it to its volume.
+   */
+  async upload<T>(orgId: string, meta: Record<string, unknown>, bytes: Buffer): Promise<T> {
+    return this.through(orgId, 'upload', async (pointer) => {
+      const res = await this.dial(orgId, pointer, 'upload', {
+        headers: { 'content-type': 'application/octet-stream', 'x-msg-file': encodeURIComponent(JSON.stringify(meta)) },
+        body: bytes, timeoutMs: 120_000,
+      });
+      return this.json<T>(orgId, res);
+    });
+  }
+
+  /** Note #1125: a file's bytes, streamed back; null when the machine says it is not this reader's. */
+  async download(orgId: string, body: Record<string, unknown>): Promise<{ meta: unknown; size: number; body: ReadableStream<Uint8Array> } | null> {
+    return this.through(orgId, 'file', async (pointer) => {
+      const res = await this.dial(orgId, pointer, 'file', {
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), timeoutMs: 10 * 60_000,
+      });
+      if (res.status === 404) { await res.body?.cancel().catch(() => {}); this.warm(orgId); return null; }
+      if (!res.ok || !res.body) return this.json<never>(orgId, res);
+      let meta: unknown = null;
+      try { meta = JSON.parse(decodeURIComponent(res.headers.get('x-msg-file') ?? '')); } catch { /* checked by the caller */ }
+      this.warm(orgId);
+      return { meta, size: Number(res.headers.get('content-length') ?? 0), body: res.body };
+    });
+  }
+
+  /**
+   * Reach the machine and run `attempt` against it: straight in while it is
+   * known warm, otherwise (or when that dial fails) through the wake.
+   */
+  private async through<T>(orgId: string, operation: string, attempt: (pointer: OrgMsgHostPointer) => Promise<T>): Promise<T> {
     const org = await this.deps.orgStorage.getOrg(orgId);
     const pointer = org?.messages?.host;
     if (pointer && (this.warmUntil.get(orgId) ?? 0) > this.now()) {
       try {
-        return await this.post<T>(orgId, pointer, operation, body);
+        return await attempt(pointer);
       } catch (error) {
         if (error instanceof OrgMsgHostRefusal) throw error;
         this.warmUntil.delete(orgId);
@@ -204,7 +243,7 @@ export class OrgMsgHostService {
     const ready = await this.ready(orgId);
     const since = home === undefined ? 'no wake from Home' : `Home woke it ${Math.round((asked - home) / 100) / 10} s before`;
     console.log(`[org-msg-host] ${ready.app} ${operation}: waited ${this.now() - asked} ms for the machine (${since})`);
-    return this.post<T>(orgId, ready, operation, body);
+    return attempt(ready);
   }
 
   /** Wait a moment for the machine; past that the caller is told it is opening. */
@@ -256,13 +295,21 @@ export class OrgMsgHostService {
       // update reboots a running machine (a few seconds, once) and, measured
       // on production 9 Nov 2026 18:36 UTC, leaves a STOPPED one stopped —
       // so it is started explicitly afterwards (PR #140).
-      const current = machine.config && keptIdle === ORG_MSG_IDLE_MS && (machine.config.restart as { policy?: string } | undefined)?.policy === RESTART_POLICY;
+      // Note #1125: and onto the server production names. A repoint of
+      // FLY_MSG_HOST_IMAGE used to reach new machines only — an existing one
+      // woke on its old image for ever — so files would never have reached a
+      // workplace that already had conversations.
+      const wantImage = this.deps.msgHostImage;
+      const imageCurrent = !wantImage || machine.config?.image === wantImage;
+      const current = machine.config && imageCurrent && keptIdle === ORG_MSG_IDLE_MS && (machine.config.restart as { policy?: string } | undefined)?.policy === RESTART_POLICY;
       if (machine.state === 'stopping') {
         await client.waitForMachineState(existing.app, existing.machineId, { state: 'stopped', timeoutSeconds: 30 });
       }
       if (machine.config && !current && client.updateMachine) {
+        if (!imageCurrent) console.log(`[org-msg-host] ${existing.app} moving to ${wantImage} (was ${machine.config.image ?? 'unknown'})`);
         await client.updateMachine(existing.app, existing.machineId, {
           ...machine.config,
+          ...(wantImage ? { image: wantImage } : {}),
           env: { ...(machine.config.env ?? {}), MSG_HOST_IDLE_MS: String(ORG_MSG_IDLE_MS) },
           restart: { policy: RESTART_POLICY },
         });
@@ -406,14 +453,25 @@ export class OrgMsgHostService {
   }
 
   private async post<T>(orgId: string, pointer: OrgMsgHostPointer, operation: string, body: Record<string, unknown>): Promise<T> {
+    const res = await this.dial(orgId, pointer, operation, {
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), timeoutMs: 6_000,
+    });
+    return this.json<T>(orgId, res);
+  }
+
+  private async dial(orgId: string, pointer: OrgMsgHostPointer, operation: string,
+    init: { headers: Record<string, string>; body: string | Buffer; timeoutMs: number }): Promise<Response> {
     const secret = await this.deps.orgSecrets.getOrgSecret(orgId, pointer.secretName ?? ORG_MSG_HOST_SECRET_NAME);
     if (!secret) throw new Error(`org ${orgId} points at messaging host ${pointer.app} but its secret is missing`);
-    const res = await (this.deps.fetchImpl ?? fetch)(`http://[${pointer.privateIp}]:8080/v1/${operation}`, {
+    return (this.deps.fetchImpl ?? fetch)(`http://[${pointer.privateIp}]:8080/v1/${operation}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-msg-host-secret': secret, 'x-msg-host-org': orgId },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(6_000),
+      headers: { ...init.headers, 'x-msg-host-secret': secret, 'x-msg-host-org': orgId },
+      body: typeof init.body === 'string' ? init.body : new Blob([new Uint8Array(init.body)]),
+      signal: AbortSignal.timeout(init.timeoutMs),
     });
+  }
+
+  private async json<T>(orgId: string, res: Response): Promise<T> {
     const answer = await res.json().catch(() => null) as (T & { error?: string }) | null;
     if (!res.ok || !answer) throw new OrgMsgHostRefusal(res.status, answer?.error ?? 'The messaging machine gave no answer.');
     this.warm(orgId);

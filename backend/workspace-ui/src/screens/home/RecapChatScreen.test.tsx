@@ -184,6 +184,32 @@ describe('the Chief of Staff\'s conversation, drawn with the room chat\'s parts'
     expect(within(card as HTMLElement).queryByRole('button', { name: 'Send message' })).toBeNull();
     expect(within(card as HTMLElement).getByRole('link', { name: 'Open the conversation' }).getAttribute('href')).toBe('/messages/u2?org=o1');
   });
+  it('shows the files a Chief of Staff draft carries — a picture as a picture — and none once it is sent (note #1125)', async () => {
+    const approval = {
+      id: 'dma_2', to: { userId: 'u2', name: 'Aigerim' }, text: 'The chart and the plan.', status: 'pending' as const, createdAt: now,
+      files: [
+        { id: 'f000000000000000000000001', name: 'chart.png', type: 'image/png', size: 40_000, width: 800, height: 400 },
+        { id: 'f000000000000000000000002', name: 'plan.pdf', type: 'application/pdf', size: 90_000 },
+      ],
+    };
+    mount({
+      ...conversation,
+      messages: [...conversation.messages, {
+        id: 'dm2', role: 'action', text: 'Workspace Agent wants to send Aigerim a direct message with 2 files.', at: now,
+        messageApprovalId: approval.id, messageApproval: approval,
+      }],
+    }, undefined, {
+      'POST api/message-approvals/dma_2/decision': () => ({ approval: { id: 'dma_2', to: approval.to, status: 'sent', createdAt: now, decidedAt: now } }),
+    });
+    await screen.findByText('Chief of Staff wants to send this to Aigerim');
+    const card = document.querySelector('[data-message-approval="dma_2"]')!;
+    // A picture the agent attached has no small copy: drawn from its own bytes, read with the person's session.
+    expect(card.querySelector('.messageapprovalfiles img')?.getAttribute('src')).toBe('/workspace/api/messages/u2/files/f000000000000000000000001?org=o1');
+    expect(within(card as HTMLElement).getByRole('link', { name: 'Download plan.pdf' })).toBeTruthy();
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Send message' }));
+    await within(card as HTMLElement).findByText(/Sent to Aigerim\./);
+    expect(card.querySelector('.messageapprovalfiles')).toBeNull();
+  });
   it('shows the typing bubble with the phase and a Stop while a request runs, and keeps the composer open with its paperclip (note #423)', async () => {
     mount({ ...conversation, working: true, phase: 'Thinking…', waiting: ['Theo'] });
     await screen.findByText('Ask Theo for an update');

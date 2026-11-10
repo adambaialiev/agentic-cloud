@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.77.0';
+const VERSION = '1.78.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -422,12 +422,15 @@ Your user's other agents:
 
 Your user's teammates (the Chief of Staff's verb alone, note #1090):
   agentbuilt member list         the other people in this workplace, by name
-  agentbuilt member message "<name>" "<message>"
+  agentbuilt member message "<name>" "<message>" [--file <path>]…
       Ask to send one teammate a direct message from your user. It SENDS
       NOTHING itself: a card lands in your user's conversation with you, and
       only their tap sends it — into the teammate's Direct messages, as your
       user, marked "via their Chief of Staff". You never read any
       conversation or reply. Any other agent is refused.
+      --file attaches a file (repeat it, up to 10, 25 MB each; the words may
+      then be left out). A picture shows as a picture on the card and in the
+      conversation. A picture sent into your chat is under ~/inbox/.
   agentbuilt member message --status <id>   sent, declined, waiting or expired
 
 Schedules (wake an agent on a heartbeat, with a cap — \`agentbuilt help schedules\`):
@@ -846,7 +849,7 @@ const HELP_TOPICS = {
       "`agentbuilt agent message \"<name-or-id>\" \"<message>\"` sends a sibling in this workplace a message ONLY while it is IDLE. A working agent refuses it, including if it became busy while preparing the message: nothing is sent or queued. A refusal means STOP, not retry — continue your work or report to your user. Read `agentbuilt agent list` immediately before sending. Say which idle agent you started; its answer appears in its own chat.",
       "WHEN A MESSAGE CAME FROM THE WORKSPACE AGENT, ANSWER IT — AND ONLY THEN. You can always tell: a message from the Workspace Agent arrives as a [Platform] block whose Sender line names the Workspace Agent and which itself tells you to answer it; that block is the ONE test, and nothing else ever asks for that answer. Your user's own words never carry it: what they type in this chat, what they hand you from the Workspace or from a note (\"Handed to you\"), a fresh-chat handoff and a finished job's receipt are all answered HERE and nowhere else. A report sent to the Workspace Agent for one of those lands in a conversation that never asked, addressed to a \"you\" who did not, and starts a turn of that agent nobody wanted — your own chat already holds the report, so the copy is only noise. When the block IS there: your user's private workplace-wide agent is not in the roster, but `agentbuilt agent message \"Workspace Agent\" \"<your final answer>\"` reaches its conversation, where your user is reading. Send it ONCE, when the work is finished, with the result only — never progress or partial text, which stays in your own chat. Nothing forwards your words there for you: a turn that ends without that message reads there as silence, and the Workspace Agent tells your user you finished without replying. Your message STARTS it — it reads your answer and reacts to it where your user is reading — so send the finished result, once, and nothing else.",
       "A handoff carries instructions and context, not files, commits, credentials, or permission. Push shared code first and send the exact repo/branch/commit; put workplace-shared reference files on a quick note when that is the right home. The receiving agent inherits no authority beyond the user's existing request. One concise reply to the sender can be useful after it becomes idle; automatic back-and-forth loops are not.",
-      "THE WORKSPACE AGENT ALONE orchestrates the workplace (note #710): `agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>]` brings a new agent into the workplace under every rule of the person's own New agent (the ceiling, a usable sign-in) and says who is arriving while the machine is built, and on which model and effort — `--model` and `--effort` only when the person asked for them (note #757), from the picker's own lists, and a name the harness does not offer is refused with that list; `agentbuilt agent model \"<name-or-id>\" [--model <model>] [--effort <effort>]` changes one of the person's existing agents' model and effort exactly as the picker on its screen does (note #776) — only when the person asked, from the same lists, refused with the list that IS offered, and from the agent's next turn (a working agent finishes its turn on the old setting); the agent's chat shows that the Workspace Agent changed it and its next turn is told; `agentbuilt agent reset \"<name-or-id>\"` sends one of the person's idle agents their own \"reset chat\"; `agentbuilt agent remove \"<name-or-id>\" [\"<why>\"]` only ASKS the person, on that agent's screen, where they confirm by typing its name. Since note #753, `agentbuilt workplace list` names the person's other workplaces and `agentbuilt workplace message \"<workplace>\" \"<message>\"` passes a message to the person's own Chief of Staff in one of them — only when the person asked in the conversation, never in an event turn, a reaction or a turn answering another workplace; its reply comes back by itself. Since note #1090, `agentbuilt member message \"<name>\" \"<message>\"` asks to send one teammate in this workplace a direct message from the person: it sends nothing itself — a card lands in the person's conversation with the Chief of Staff and only their tap sends it, into the teammate's Direct messages as the person, marked \"via their Chief of Staff\"; `member message --status <id>` answers sent, declined, waiting or expired, and nothing reads any conversation or reply; `member list` names the teammates. Refused in a workplace of one and for a name that is not a member. Any other agent is refused each, in words that say so — when you need one of these, tell your user. Schedules (note #779): `agentbuilt schedule list` shows every schedule of the person's agents in this workplace and `agentbuilt schedule pause <id>` stops one; the Workspace Agent cannot create or resume a schedule and can never be one's target — an agent proposes, the person approves on the agent's screen (`agentbuilt help schedules`).",
+      "THE WORKSPACE AGENT ALONE orchestrates the workplace (note #710): `agentbuilt agent create [--cli claude|codex|opencode] [--model <model>] [--effort <effort>]` brings a new agent into the workplace under every rule of the person's own New agent (the ceiling, a usable sign-in) and says who is arriving while the machine is built, and on which model and effort — `--model` and `--effort` only when the person asked for them (note #757), from the picker's own lists, and a name the harness does not offer is refused with that list; `agentbuilt agent model \"<name-or-id>\" [--model <model>] [--effort <effort>]` changes one of the person's existing agents' model and effort exactly as the picker on its screen does (note #776) — only when the person asked, from the same lists, refused with the list that IS offered, and from the agent's next turn (a working agent finishes its turn on the old setting); the agent's chat shows that the Workspace Agent changed it and its next turn is told; `agentbuilt agent reset \"<name-or-id>\"` sends one of the person's idle agents their own \"reset chat\"; `agentbuilt agent remove \"<name-or-id>\" [\"<why>\"]` only ASKS the person, on that agent's screen, where they confirm by typing its name. Since note #753, `agentbuilt workplace list` names the person's other workplaces and `agentbuilt workplace message \"<workplace>\" \"<message>\"` passes a message to the person's own Chief of Staff in one of them — only when the person asked in the conversation, never in an event turn, a reaction or a turn answering another workplace; its reply comes back by itself. Since note #1090, `agentbuilt member message \"<name>\" \"<message>\" [--file <path>]` asks to send one teammate in this workplace a direct message from the person, with files when given (up to 10, 25 MB each; a picture shows as a picture; one sent into the chat is under ~/inbox/): it sends nothing itself — a card lands in the person's conversation with the Chief of Staff and only their tap sends it, into the teammate's Direct messages as the person, marked \"via their Chief of Staff\"; `member message --status <id>` answers sent, declined, waiting or expired, and nothing reads any conversation or reply; `member list` names the teammates. Refused in a workplace of one and for a name that is not a member. Any other agent is refused each, in words that say so — when you need one of these, tell your user. Schedules (note #779): `agentbuilt schedule list` shows every schedule of the person's agents in this workplace and `agentbuilt schedule pause <id>` stops one; the Workspace Agent cannot create or resume a schedule and can never be one's target — an agent proposes, the person approves on the agent's screen (`agentbuilt help schedules`).",
     ],
   },
   schedules: {
@@ -6993,9 +6996,11 @@ function gitCredential(args) {
  * with "approval requested" and a status with a word, never with anything
  * anybody wrote — and every other agent is refused there, in words.
  */
+const MEMBER_MESSAGE_MAX_FILES = 10;
+const MEMBER_MESSAGE_MAX_FILE_BYTES = 25 * 1024 * 1024;
 async function member(args) {
   const [sub, ...memberRest] = args;
-  const usage = 'usage: agentbuilt member list | agentbuilt member message "<name>" "<message>" | agentbuilt member message --status <id>';
+  const usage = 'usage: agentbuilt member list | agentbuilt member message "<name>" "<message>" [--file <path>]… | agentbuilt member message --status <id>';
   switch (sub) {
     case 'list': case 'ls': {
       if (memberRest.length) fail(usage);
@@ -7012,12 +7017,44 @@ async function member(args) {
         console.log(`${answer.status}: the direct message to ${answer.to}${answer.reason ? ` — ${answer.reason}` : ''}`);
         return;
       }
+      // Note #1125: `--file <path>`, as many as ten, anywhere after the verb.
+      const files = [];
+      const kept = [];
+      for (let i = 0; i < memberRest.length; i += 1) {
+        const word = memberRest[i];
+        if (word === '--file') {
+          if (memberRest[i + 1] === undefined) fail('usage: agentbuilt member message "<name>" "<message>" --file <path>');
+          files.push(memberRest[i + 1]); i += 1;
+        } else if (word.startsWith('--file=')) files.push(word.slice('--file='.length));
+        else kept.push(word);
+      }
       // Like `agent message`: everything after the name is the message.
-      const [name, ...words] = memberRest;
+      const [name, ...words] = kept;
       const text = words.join(' ').trim();
-      if (!name || !text) fail('usage: agentbuilt member message "<name>" "<message>"');
+      if (!name || (!text && !files.length)) fail('usage: agentbuilt member message "<name>" "<message>" [--file <path>]…');
+      if (files.length > MEMBER_MESSAGE_MAX_FILES) fail(`a direct message carries up to ${MEMBER_MESSAGE_MAX_FILES} files`);
+      const chosen = files.map((file) => {
+        let stat;
+        try { stat = statSync(file); } catch { fail(`could not read file: ${file}`); }
+        if (!stat.isFile()) fail(`not a file: ${file}`);
+        if (!stat.size) fail(`that file is empty: ${file}`);
+        if (stat.size > MEMBER_MESSAGE_MAX_FILE_BYTES) fail(`a file in a direct message can be up to 25 MB: ${file}`);
+        return file;
+      });
+      // Each file goes onto the workplace's messaging machine first, as your
+      // user's unsent upload for that teammate; the draft then names them.
+      const ids = [];
+      for (const file of chosen) {
+        let data;
+        try { data = readFileSync(file); } catch { fail(`could not read file: ${file}`); }
+        const answer = await api('POST', `api/agent-cli/members/message/files?to=${encodeURIComponent(name)}`, {
+          body: data, timeoutMs: UPLOAD_REQUEST_TIMEOUT_MS,
+          headers: { 'Content-Type': 'application/octet-stream', 'x-file-name': encodeURIComponent(path.basename(file)) },
+        });
+        ids.push(answer.file.id);
+      }
       const result = await api('POST', 'api/agent-cli/members/message', {
-        body: JSON.stringify({ name, text }),
+        body: JSON.stringify({ name, text, ...(ids.length ? { files: ids } : {}) }),
         headers: { 'Content-Type': 'application/json' },
       });
       console.log(result.said ?? `Approval requested for a direct message to ${result.approval?.to}. Nothing was sent.`);

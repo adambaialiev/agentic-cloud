@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { sentViaChiefOfStaff, type DirectMessageInbox } from '../../../../src/shared/direct-messages.js';
-import { reportPreview } from '../chat/report-fold.js';
+import type { DirectMessageInbox } from '../../../../src/shared/direct-messages.js';
+import { directMessagePreview } from './dm-files.js';
 import type { WorkspaceOrgMember } from '../../../../src/shared/workspace-api.js';
 import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, WorkspaceApiError } from '../../api/client.js';
 import { ScreenTitle } from '../../chrome/ScreenTitle.js';
@@ -80,7 +80,7 @@ export function MessagesScreen() {
         <div className="main">
           <div className="name plain">{thread.person.name}</div>
           <div className="cline">
-            <span className="ctext">{thread.lastMessage.senderId !== thread.person.userId ? 'You: ' : ''}{sentViaChiefOfStaff(thread.lastMessage) ? reportPreview(thread.lastMessage.text) : thread.lastMessage.text}</span>
+            <span className="ctext">{thread.lastMessage.senderId !== thread.person.userId ? 'You: ' : ''}{directMessagePreview(thread.lastMessage)}</span>
             <span className="cwhen">· {relative(thread.lastMessage.createdAt)}</span>
           </div>
           {thread.unread > 1 || !thread.person.available ? <div className="cline">

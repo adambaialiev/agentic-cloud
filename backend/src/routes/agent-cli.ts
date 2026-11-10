@@ -9,7 +9,9 @@ import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
 import { registerOutreachAgentRoutes } from './outreach.js';
 import { WORKSPACE_AGENT_NAME, personDisplayName, workspaceAssistantId } from '../types/user.js';
-import { DIRECT_MESSAGES_OFFERED } from '../shared/direct-messages.js';
+import { DIRECT_MESSAGE_FILE_MAX_BYTES, DIRECT_MESSAGES_OFFERED, directMessageFileSize, type DirectMessageFile } from '../shared/direct-messages.js';
+import { describeDirectMessageUpload, directMessageFileIds, directMessageFileName, directMessageFileRefusal } from './direct-messages.js';
+import { OrgMsgHostOpening } from '../services/org-msg-host.js';
 import { DirectMessageApprovalError, resolveTeammate } from '../services/direct-message-approval.js';
 import { checkCreationRuntime, resolveEffectiveEffort, resolveEffectiveModel } from '../agent/harness-models.js';
 import { Router, raw } from 'express';
@@ -7124,7 +7126,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
    * verb is write-only: no route here reads a conversation, a reply or the
    * words of a decided draft. What comes back is a status.
    */
-  const MEMBER_MESSAGE_USAGE = '`agentbuilt member message "<name>" "<message>"`';
+  const MEMBER_MESSAGE_USAGE = '`agentbuilt member message "<name>" "<message>" [--file <path>]`';
   const teammatesOf = async (auth: AgentAuth & { orgId: string }) => {
     const members = await deps.orgStorage!.listMembers(auth.orgId);
     return Promise.all(members.filter((member) => member.userId !== auth.userId).map(async (member) => ({
@@ -7154,10 +7156,54 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     return res.json({ members: people.map((person) => ({ id: person.userId, name: person.name })) });
   });
 
+  /**
+   * Note #1125: a file for a draft (`member message … --file <path>`). It
+   * goes straight onto the workplace's messaging machine as the PERSON's own
+   * unsent upload for that teammate's conversation — never into a platform
+   * table — and waits there for the card's tap. The answer is the file's id,
+   * name and size; nothing here reads a file back.
+   */
+  router.post('/members/message/files',
+    (req: Request, res: Response, next: (error?: unknown) => void) => {
+      void (async () => {
+        const auth = await memberMessageAuth(req, res);
+        if (!auth) return;
+        if (!deps.directMessageStorage!.files) return res.status(503).json({ error: 'Files cannot be sent in direct messages here. Nothing was sent.' });
+        const people = await teammatesOf(auth);
+        const to = resolveTeammate(people, String(req.query.to ?? ''));
+        if ('error' in to) return res.status(404).json({ error: `${to.error} Nothing was sent.` });
+        (req as Request & { memberFile?: { auth: typeof auth; to: typeof to } }).memberFile = { auth, to };
+        next();
+      })().catch(next);
+    },
+    raw({ type: () => true, limit: DIRECT_MESSAGE_FILE_MAX_BYTES }),
+    async (req: Request, res: Response) => {
+      const { auth, to } = (req as Request & { memberFile?: { auth: AgentAuth & { orgId: string }; to: { userId: string; name: string } } }).memberFile!;
+      if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'That file is empty. Nothing was sent.' });
+      let name: string;
+      try { name = directMessageFileName(decodeURIComponent(req.get('x-file-name') ?? '')); }
+      catch { return res.status(400).json({ error: 'The file name could not be read. Nothing was sent.' }); }
+      try {
+        const file = await deps.directMessageStorage!.files!.upload(auth.orgId, auth.userId, to.userId,
+          describeDirectMessageUpload(req.body, name, req.get('x-file-type') ?? undefined), req.body);
+        return res.status(201).json({ file: { id: file.id, name: file.name, type: file.type, size: file.size } });
+      } catch (error) {
+        const refusal = directMessageFileRefusal(error);
+        if (refusal) return res.status(refusal.status).json({ error: `${refusal.message} Nothing was sent.` });
+        if (error instanceof OrgMsgHostOpening) return res.status(503).json({ error: 'Messages are waking up. Run the same command again in a few seconds. Nothing was sent.' });
+        console.error('[agent-cli] member message file upload failed');
+        return res.status(503).json({ error: 'The file could not be stored. Nothing was sent.' });
+      }
+    },
+    (error: { type?: string }, _req: Request, res: Response, next: (error: unknown) => void) => {
+      if (error.type === 'entity.too.large') res.status(413).json({ error: `A file can be up to ${directMessageFileSize(DIRECT_MESSAGE_FILE_MAX_BYTES)}. Nothing was sent.` });
+      else next(error);
+    });
+
   router.post('/members/message', async (req, res) => {
     const auth = await memberMessageAuth(req, res);
     if (!auth) return;
-    const body = (req.body ?? {}) as { name?: unknown; text?: unknown };
+    const body = (req.body ?? {}) as { name?: unknown; text?: unknown; files?: unknown };
     if (typeof body.name !== 'string' || typeof body.text !== 'string') {
       return res.status(400).json({ error: `usage: ${MEMBER_MESSAGE_USAGE}` });
     }
@@ -7167,9 +7213,27 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     }
     const to = resolveTeammate(people, body.name);
     if ('error' in to) return res.status(404).json({ error: `${to.error} Nothing was sent.` });
+    // Note #1125: the files it carries must be this person's own unsent
+    // uploads for exactly this teammate (`/members/message/files`).
+    let files: DirectMessageFile[] = [];
+    let fileIds: string[];
+    try { fileIds = directMessageFileIds(body.files); }
+    catch (error) { return res.status(400).json({ error: `${error instanceof Error ? error.message : 'Those files are not valid.'} Nothing was sent.` }); }
+    if (fileIds.length) {
+      if (!deps.directMessageStorage!.files) return res.status(503).json({ error: 'Files cannot be sent in direct messages here. Nothing was sent.' });
+      try {
+        const found = await deps.directMessageStorage!.files.pending(auth.orgId, auth.userId, to.userId, fileIds);
+        files = fileIds.map((id) => found.find((file) => file.id === id)).filter((file): file is DirectMessageFile => Boolean(file));
+      } catch (error) {
+        if (error instanceof OrgMsgHostOpening) return res.status(503).json({ error: 'Messages are waking up. Run the same command again in a few seconds. Nothing was sent.' });
+        console.error('[agent-cli] member message file check failed');
+        return res.status(503).json({ error: 'The files could not be checked. Nothing was sent.' });
+      }
+      if (files.length !== fileIds.length) return res.status(400).json({ error: 'A file was not found for that teammate. Upload it again with --file. Nothing was sent.' });
+    }
     let approval;
     try {
-      approval = await deps.directMessageApprovals!.request({ userId: auth.userId, orgId: auth.orgId, agentId: auth.agentId, to, text: body.text });
+      approval = await deps.directMessageApprovals!.request({ userId: auth.userId, orgId: auth.orgId, agentId: auth.agentId, to, text: body.text, files });
     } catch (error) {
       if (error instanceof DirectMessageApprovalError) return res.status(400).json({ error: `${error.message} Nothing was sent.` });
       console.error('[agent-cli] message approval request failed');
@@ -7177,7 +7241,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     }
     const landed = await deps.workspaceAgent?.requestMessageApproval?.({
       userId: auth.userId, orgId: auth.orgId, approvalId: approval.id,
-      text: `${WORKSPACE_AGENT_NAME} wants to send ${to.name} a direct message. Nothing will be sent until you approve it here.`,
+      text: `${WORKSPACE_AGENT_NAME} wants to send ${to.name} a direct message${files.length ? ` with ${files.length === 1 ? 'a file' : `${files.length} files`}` : ''}. Nothing will be sent until you approve it here.`,
     }).catch(() => false);
     if (!landed) {
       await deps.directMessageApprovals!.withdraw(auth.userId, approval.id);
@@ -7185,7 +7249,7 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     }
     return res.status(202).json({
       approval: { id: approval.id, to: to.name },
-      said: `Approval requested in your chat for a direct message to ${to.name}. Nothing was sent. \`agentbuilt member message --status ${approval.id}\` says whether they sent it.`,
+      said: `Approval requested in your chat for a direct message to ${to.name}${files.length ? ` with ${files.map((file) => file.name).join(', ')}` : ''}. Nothing was sent. \`agentbuilt member message --status ${approval.id}\` says whether they sent it.`,
     });
   });
 

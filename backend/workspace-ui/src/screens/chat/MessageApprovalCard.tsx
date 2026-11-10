@@ -5,7 +5,10 @@ import { jsonBody } from '../../api/client.js';
 import { Markdown } from '../../render/Markdown.js';
 import { toFor } from '../../routes.js';
 import { errorMessage } from '../../ui/format.js';
+import { useImageViewer } from '../../ui/useImageViewer.js';
 import { useOrgApi, useOrgId } from '../org/useOrgApi.js';
+import { directMessageFileUrl, directMessagePictureSource } from '../messages/dm-files.js';
+import { DirectMessageFiles } from '../messages/DirectMessageFiles.js';
 
 const POLL_MS = 5000;
 
@@ -27,6 +30,7 @@ export function MessageApprovalCard({ id, approval: initial, at, fallback }: {
   const [approval, setApproval] = useState<DirectMessageApproval | null>(initial ?? null);
   const [busy, setBusy] = useState<'approve' | 'reject' | null>(null);
   const [said, setSaid] = useState('');
+  const viewer = useImageViewer();
 
   useEffect(() => { if (initial) setApproval(initial); }, [initial]);
 
@@ -101,6 +105,16 @@ export function MessageApprovalCard({ id, approval: initial, at, fallback }: {
         {/* Drawn exactly as the teammate will read it (Adam, 13:25 UTC):
             the agent's paragraphs, line breaks and lists, never raw markup. */}
         {approval.text ? <div className="mailapprovaltext dmformatted"><Markdown source={approval.text} className="chatmarkdown" /></div> : null}
+        {/* Note #1125: the files it carries, a picture as a picture. Their
+            bytes wait on the messaging machine as this person's own unsent
+            upload; the tap sends them with the words. */}
+        {approval.files?.length ? <div className="messageapprovalfiles" data-gallery="dm-approval-files">
+          <DirectMessageFiles files={approval.files} orgId={orgId} peerId={approval.to.userId} onOpenPicture={(file) => {
+            const pictures = (approval.files ?? []).filter((candidate) => directMessagePictureSource(candidate) !== null);
+            const at = pictures.findIndex((candidate) => candidate.id === file.id);
+            if (at >= 0) viewer(pictures.map((picture) => ({ url: directMessageFileUrl(orgId, approval.to.userId, picture.id, 'full'), name: picture.name })), at);
+          }} />
+        </div> : null}
         {pending ? (
           <div className="mailapprovalactions">
             <button className="btn primary" type="button" disabled={Boolean(busy)} onClick={() => { void decide('approve'); }}>
