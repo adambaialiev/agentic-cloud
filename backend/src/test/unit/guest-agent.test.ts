@@ -152,6 +152,11 @@ describe('the guest helps the visitor find out whether it fits (note #1136)', ()
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain(PUBLIC_AGENT_EXACT_CLAIMS);
     expect(PUBLIC_AGENT_EXACT_CLAIMS).toContain('free for now: no licence, no key and no charge from us');
     expect(PUBLIC_AGENT_EXACT_CLAIMS).toContain('Never offer a hosted sign-up');
+    // Adam, 10 Nov 2026 (note #1136): the approval claim is said whole, auto-merge included, in both prompts.
+    const whole = 'A change to protected code comes back as a proposal that a person approves before it merges, or it merges by itself once its checks pass if that person has turned on auto-merge for their own agents; they are told either way.';
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain(whole);
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain(whole);
+    expect(PUBLIC_AGENT_EXACT_CLAIMS).toContain('Say both halves, never only the first.');
   });
 });
 
