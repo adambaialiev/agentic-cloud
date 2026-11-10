@@ -61,6 +61,16 @@ describe('Outreach words and places', () => {
     expect(outreachLocalTime('Washington DC', at)).toBe('Mon 08:00');
     expect(outreachLocalTime('Helsinki', at)).toBe('Mon 15:00');
     expect(outreachLocalTime('Austin', at)).toBe('Mon 07:00');
+    // Europe (note #1113), accents as people write them.
+    expect(outreachLocalTime('Munich', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Zürich', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Kraków', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Porto', at)).toBe('Mon 13:00');
+    expect(outreachLocalTime('Tallinn', at)).toBe('Mon 15:00');
+    expect(outreachLocalTime('Kyiv', at)).toBe('Mon 15:00');
+    expect(outreachLocalTime('Istanbul', at)).toBe('Mon 16:00');
+    expect(outreachLocalTime('Reykjavik', at)).toBe('Mon 13:00');
+    expect(outreachLocalTime('the hague', at)).toBe('Mon 14:00');
     for (const unknown of ['US', 'US remote', '', null, 'Richmond']) expect(outreachLocalTime(unknown, at)).toBeNull();
   });
 
