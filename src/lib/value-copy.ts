@@ -17,7 +17,12 @@
    us: only a daily report of counts and the contact you chose, which your
    admin sees and can turn off."). Never "leaves" (claims-we-never-make: the
    AI provider reads what the agents send it), and never "none of your data
-   comes to us" without the report. */
+   comes to us" without the report.
+
+   Note #1131 (Adam, 10 Nov 2026, 11:26 UTC): "Move from Claude Code to
+   Codex or OpenCode without losing it." came off the second fact because it
+   is heavy; the fact ends at "live in your own cloud." The lead still names
+   the three agents. */
 export const VALUE_HEADING = 'Your agents. Your cloud. Your data.';
 export const VALUE_LEAD =
   'Claude Code, Codex and OpenCode on the plans you already pay for, each on a computer of its own in your company’s cloud. None of your data comes to us, only a daily report.';
@@ -28,6 +33,6 @@ export const VALUE_FACTS: readonly { title: string; line: string }[] = [
   },
   {
     title: 'Switch tools, keep the context',
-    line: 'Your context belongs to your workplace, not to Anthropic or OpenAI: notes, knowledge, code and history live in your own cloud. Move from Claude Code to Codex or OpenCode without losing it.',
+    line: 'Your context belongs to your workplace, not to Anthropic or OpenAI: notes, knowledge, code and history live in your own cloud.',
   },
 ];

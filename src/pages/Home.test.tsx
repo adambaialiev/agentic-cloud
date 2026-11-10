@@ -115,6 +115,18 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     const words = value.textContent ?? '';
     expect(words).not.toMatch(/leaves|never sees|cutting.edge|latest|best|free|price/i);
     expect(words).not.toMatch(/Kept current/);
+    // Note #1131 (Adam, 10 Nov 2026): the switch sentence came off, and one
+    // picture he picked stands over each fact, decorative, in two sizes.
+    expect(facts[1]![1]).toMatch(/live in your own cloud\.$/);
+    expect(words).not.toMatch(/without losing it/);
+    const art = [...value.querySelectorAll('[data-value-fact] img[data-value-art]')] as HTMLImageElement[];
+    expect(art).toHaveLength(2);
+    for (const img of art) {
+      expect(img.getAttribute('alt')).toBe('');
+      expect(img.getAttribute('srcset')).toMatch(/ 640w, .* 1200w$/);
+      expect(img.getAttribute('width')).toBe('1200');
+      expect(img.getAttribute('height')).toBe('825');
+    }
   });
 
   // Note #841 (the owner, 30 Oct 2026, 13:31 UTC): one drawing of the whole
