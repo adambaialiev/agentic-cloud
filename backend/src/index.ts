@@ -1504,6 +1504,8 @@ const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET?.trim() || '';
 const outreach = PRIVATE_COPY ? null : new OutreachService({
   store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
   mailEventsConfigured: Boolean(RESEND_WEBHOOK_SECRET),
+  // A sent letter's words, read back from his Sent (note #1130).
+  sentMail: (userId, mailId) => mailMessageStorage.get(userId, mailId),
   outbox: () => mailOutbox,
   mailboxes: mailboxStorage,
   pulses: async () => (copyPulses ? (await copyPulses.list()).map((record) => record.pulse) : []),

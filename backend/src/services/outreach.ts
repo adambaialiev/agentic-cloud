@@ -4,7 +4,7 @@ import {
   outreachAudience, outreachGraph, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
-  type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
+  type OutreachAgentRow, type OutreachSentLetter, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
   type OutreachState, type OutreachStep, type OutreachTargetAnswer, type OutreachTargetRecord, type OutreachTouch, type OutreachWords,
   type OutreachWrite, type OutreachWriteAnswer, type OutreachWriter,
 } from '../shared/outreach.js';
@@ -12,6 +12,7 @@ import type { CopyPulse } from '../shared/copy-pulse.js';
 import type { MailArrival } from '../types/mail-arrival.js';
 import type { MailAllowance, MailOutboxService } from './mail-outbox.js';
 import type { MailboxStorage } from './mailbox-storage.js';
+import type { MailMessageDocument } from './mail-message-storage.js';
 import type { OutreachStore } from './outreach-storage.js';
 
 /**
@@ -73,6 +74,8 @@ export interface OutreachServiceDeps {
   senderName?: (userId: string) => Promise<string>;
   /** Whether the backend holds the provider's webhook signing secret, so its delivery facts can arrive (note #1112). */
   mailEventsConfigured?: boolean;
+  /** One stored letter of the person's mail, by our id: where a sent letter's words are read back (note #1130). */
+  sentMail?: (userId: string, mailId: string) => Promise<MailMessageDocument | null>;
   now?: () => Date;
 }
 
@@ -186,7 +189,42 @@ export class OutreachService {
     return {
       row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row, touches), links: outreachLinks(record.links!),
       known: outreachKnown(touches), mailFacts: this.mailFacts(await this.deps.store.touches(userId)),
+      sent: await this.sentLetters(userId, touches),
     };
+  }
+
+  /**
+   * Every letter that has gone to a company, oldest first, as it left: read
+   * from his Sent by the id the send stored (note #1130). The owner's alone —
+   * only the site's pass reaches `detail()`; an agent's read-back never
+   * carries a sent letter's words.
+   */
+  private async sentLetters(userId: string, touches: OutreachTouch[]): Promise<OutreachSentLetter[]> {
+    const sent = touches.filter((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent')
+      .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+    const letters: OutreachSentLetter[] = [];
+    for (const touch of sent) {
+      const row = await this.deps.sentMail?.(userId, touch.mailId).catch(() => null) ?? null;
+      const mail = row && row.direction === 'sent' ? row : null;
+      const text = (mail?.text ?? '').replace(/\r\n/g, '\n');
+      const wrote = mail?.wrote?.replace(/\r\n/g, '\n');
+      const words = mail ? (wrote ?? text).replace(/\s+$/, '') : touch.text;
+      const rest = mail && wrote !== undefined && text.startsWith(wrote) ? text.slice(wrote.length).trim() : '';
+      letters.push({
+        step: touch.step,
+        mailId: touch.mailId,
+        at: mail?.receivedAt ?? touch.at,
+        from: mail?.from?.address ? { address: mail.from.address, name: mail.from.name?.trim() || null } : null,
+        to: mail?.to?.[0]?.address ?? touch.to,
+        cc: (mail?.cc ?? []).map((one) => one.address).filter(Boolean),
+        subject: mail?.subject ?? touch.subject,
+        words,
+        quoted: rest || null,
+        providerId: touch.providerId ?? mail?.providerId ?? null,
+        source: mail ? 'sent-mail' : 'record',
+      });
+    }
+    return letters;
   }
 
   /**
