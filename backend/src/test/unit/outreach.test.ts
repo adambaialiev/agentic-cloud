@@ -14,7 +14,7 @@ import { OUTREACH_MAIL_ALLOWANCE, OutreachService, type OutreachMailEventInput }
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
-  addressMatches, hostMatches, outreachLocalTime, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, type OutreachTouch, type OutreachWrite,
+  addressMatches, hostMatches, outreachLocalTime, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
 } from '../../shared/outreach.js';
 import { fixtureOutreachProfile, fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 import type { CopyPulse } from '../../shared/copy-pulse.js';
@@ -833,32 +833,35 @@ describe('The graph of contacts: funds down to their portfolio companies (note #
     expect((await service.agentList('user-adam')).find((row) => row.company === 'Made Up Ventures')).toMatchObject({ portfolio: 2 });
   });
 
-  it('links by the same name only where one side has no website: a different site is a different company (Alex, note #1124)', async () => {
+  it('links a customer by the same name only where one side has no website or the two are the same site (Alex, note #1124)', async () => {
     // The live case, with made-up names: a fund's 'Reflex' at workreflex.com is not our customer Reflex at reflex.dev.
     const { service } = await world();
     await service.write('user-adam', ROWAN, read({ targets: [
       { company: 'Lumen', fit: 'fit', email: 'mia@lumen.test', city: 'Austin' },
       { company: 'Quill', fit: 'fit', email: 'quill.founder@gmail.com', city: 'Austin' },
+      { company: 'Fjord', fit: 'fit', email: 'ola@fjord.de', city: 'Berlin' },
     ] }));
     await service.write('user-adam', ADA, read({ audience: 'investor', targets: [
-      fund('Alpha Fund', [{ name: 'Lumen', website: 'https://worklumen.test' }, { name: 'Atlas', website: 'atlas-one.test' }, { name: 'Quill', website: 'quill.test' }]),
-      fund('Beta Fund', [{ name: 'Lumen', website: 'https://www.lumen.test/' }, { name: 'Atlas', website: 'atlas-two.test' }]),
-      fund('Gamma Fund', [{ name: 'Lumen' }, { name: 'Atlas' }]),
+      // The fund that backs the customer comes first, so the other Lumen cannot slip in by name after it.
+      fund('Alpha Fund', [{ name: 'Lumen', website: 'https://app.lumen.test/' }]),
+      fund('Beta Fund', [{ name: 'Lumen', website: 'https://worklumen.test' }, { name: 'Quill', website: 'quill.test' }, { name: 'Fjord', website: 'https://www.fjord.com/' }]),
+      fund('Gamma Fund', [{ name: 'Lumen' }]),
     ] }));
     const graph = await service.graph('user-adam');
     const ids = Object.fromEntries(graph.funds.map((one) => [one.name, one.id]));
     const node = (key: string) => graph.companies.find((one) => one.key === key);
-    // Both sides have a website and they differ: no link to the customer, and no merge with it.
-    expect(node('p:lumen')).toMatchObject({ name: 'Lumen', website: 'https://worklumen.test', record: null, funds: [ids['Alpha Fund']] });
-    // The same site: the customer. No website on the fund's side: the name is all there is, so the customer.
+    // Both sides have a website and they are different sites: no link to the customer.
+    expect(node('p:lumen')).toMatchObject({ name: 'Lumen', website: 'https://worklumen.test', record: null, funds: [ids['Beta Fund']] });
+    // The same site (a subdomain of it), or no website on the fund's side: the customer.
     expect(node('lumen')).toMatchObject({ record: { id: 'lumen', company: 'Lumen' } });
-    expect(node('lumen')!.funds.sort()).toEqual([ids['Beta Fund'], ids['Gamma Fund']].sort());
+    expect(node('lumen')!.funds.sort()).toEqual([ids['Alpha Fund'], ids['Gamma Fund']].sort());
     // A customer known by no website of its own (a shared mail domain) still matches by name.
-    expect(node('quill')).toMatchObject({ record: { id: 'quill' }, funds: [ids['Alpha Fund']] });
-    // Between funds too: two sites, two companies; the one with no site joins the first of that name.
-    expect(node('p:atlas')!.funds.sort()).toEqual([ids['Alpha Fund'], ids['Gamma Fund']].sort());
-    expect(node('p:atlas@atlas-two.test')).toMatchObject({ name: 'Atlas', website: 'atlas-two.test', funds: [ids['Beta Fund']] });
-    expect(graph.edges).toHaveLength(7);
+    expect(node('quill')).toMatchObject({ record: { id: 'quill' }, funds: [ids['Beta Fund']] });
+    // The same name under another ending is the same company.
+    expect(node('fjord')).toMatchObject({ record: { id: 'fjord' }, funds: [ids['Beta Fund']] });
+    expect(graph.edges).toHaveLength(5);
+    expect([sameSite('workreflex.com', 'reflex.dev'), sameSite('personio.de', 'personio.com'), sameSite('studio.playgoals.com', 'playgoals.com'), sameSite('shop.co.uk', 'shop.com'), sameSite('a.co.uk', 'b.co.uk')])
+      .toEqual([false, true, true, true, false]);
   });
 
   it('keeps the portfolio it replaced on the timeline, and takes a portfolio for an investor whose letter has gone', async () => {
