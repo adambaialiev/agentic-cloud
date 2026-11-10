@@ -50,6 +50,27 @@ const canvas = await page.waitForSelector('#og-canvas', { visible: true });
 // before it resolves and the fallback face is baked into the asset, on the one
 // picture that gets forwarded.
 await page.evaluate(() => document.fonts.ready);
+// Square-safe (note #1137): WhatsApp and iMessage may draw only the centre
+// square of the card, x 285..915 of 1200. Refuse to write a picture whose
+// words leave it.
+const outside = await page.evaluate(() => {
+  const canvas = document.querySelector('#og-canvas').getBoundingClientRect();
+  const range = document.createRange();
+  const bad = [];
+  for (const el of document.querySelectorAll('#og-canvas [data-og-column] *')) {
+    range.selectNodeContents(el);
+    for (const r of range.getClientRects()) {
+      const left = r.left - canvas.left, right = r.right - canvas.left;
+      if (r.width > 0 && (left < 285 || right > 915)) bad.push(`${el.tagName} ${Math.round(left)}..${Math.round(right)}`);
+    }
+  }
+  return bad;
+});
+if (outside.length) {
+  console.error(`Not square-safe, text outside x 285..915: ${outside.join(', ')}`);
+  await browser.close();
+  process.exit(1);
+}
 await canvas.screenshot({ path: output });
 await browser.close();
 

@@ -14,11 +14,15 @@ export const SHARE_LINE = 'The all-in-one workplace for Claude Code, Codex and O
 export const SHARE_TITLE = 'One workplace for Claude Code, Codex and OpenCode agents';
 /** The home page's <title>: the share title, then the name (81). */
 export const HOME_TITLE = `${SHARE_TITLE} — Agentic Cloud Computer`;
-/** The meta, og and twitter description of the home page (143). */
+/** The meta, og and twitter description of the home page (134). Since note
+ *  #1137 (Adam, 10 Nov 2026, 15:33 UTC, "Fix all") it says what the title
+ *  does not, instead of naming the three agents a second time: where each
+ *  agent works, that none of the data comes to us (the daily report is
+ *  Privacy Policy material, note #1135), and what is built in. */
 export const SHARE_DESCRIPTION =
-  'Your team. Your agents. Your cloud. Your rules. One workplace for Claude Code, Codex and OpenCode agents, with git, hosting and email built in.';
+  'Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.';
 /** og:image:alt: the card's own words (116). */
 export const SHARE_IMAGE_ALT = `${SHARE_HEADLINE} ${SHARE_LINE}`;
 /** Bump with every new public/og-image.png: X, Slack, iMessage and Telegram
  *  cache the picture by its URL. */
-export const SHARE_IMAGE_VERSION = 32;
+export const SHARE_IMAGE_VERSION = 33;

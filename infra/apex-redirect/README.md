@@ -1,7 +1,17 @@
-# agentbuilt.app apex redirect
+# agentbuilt.app apex redirect (and www.agenticcloudcomputer.com)
 
 `https://agentbuilt.app/<anything>` answers `301` to
 `https://agenticcloudcomputer.com/<anything>` (path and query kept). Note #683.
+
+Since note #1137 (10 Nov 2026) the same project also answers
+`https://www.agenticcloudcomputer.com/<anything>` with the same `301` to the
+bare domain. `www.agenticcloudcomputer.com` is a second Pages custom domain on
+`agentbuilt-app-redirect`, and the agenticcloudcomputer.com zone has a proxied
+`CNAME www -> agentbuilt-app-redirect.pages.dev`, written with the workplace
+secret `CLOUDFLARE_R2_TOKEN` (DNS edit on that zone). A redirect rule was not
+possible because that token cannot write rulesets. The landing's own Pages
+Function could not do it either, because `public/_routes.json` keeps many
+paths out of it. Until note #1137, www had no DNS record at all.
 
 The whole site is `public/_redirects`, served by the Cloudflare Pages project
 `agentbuilt-app-redirect` (account `2acc98ccfb2a55a86ba0314e7955f657`).
