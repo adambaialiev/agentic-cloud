@@ -1327,6 +1327,33 @@ export interface OutreachTargetAnswer {
   /** What we know about each letter, and about the company (note #1112). */
   known: OutreachKnown;
   mailFacts: OutreachMailFacts;
+  /** Every letter that has gone to this company, in the order sent, as it left (note #1130). */
+  sent: OutreachSentLetter[];
+}
+
+/**
+ * A letter that has gone, as it LEFT (note #1130, Adam: "Why I don't see
+ * email that was sent? I want to see all emails."). Read from his Sent, the
+ * mail row the send stored under its own id, never from the store's current
+ * letter, which agents may have rewritten since. `words` is what he sent;
+ * `quoted` is what a follow-up carried under it (the earlier letter). Where
+ * the row is gone from his Sent, the words kept with the send's own record
+ * are shown instead, and `from` says so.
+ */
+export interface OutreachSentLetter {
+  step: OutreachStep;
+  mailId: string;
+  at: string;
+  from: { address: string; name: string | null } | null;
+  to: string;
+  cc: string[];
+  subject: string;
+  words: string;
+  quoted: string | null;
+  /** The mail service's own id, kept since note #1112; null for the letters of 9 Nov. */
+  providerId: string | null;
+  /** Where the words were read: his Sent, or (the row gone) the send's own record. */
+  source: 'sent-mail' | 'record';
 }
 
 /** What `agentbuilt outreach set` did, company by company. */

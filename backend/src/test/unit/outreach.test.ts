@@ -131,7 +131,7 @@ describe('Outreach words and places', () => {
   });
 });
 
-async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean; mailEvents?: boolean } = {}) {
+async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean; mailEvents?: boolean; noSentMail?: boolean } = {}) {
   const db = openSqliteDb(':memory:');
   const mailboxes = new SqliteMailboxStorage(db);
   const messages = new SqliteMailMessageStorage(db);
@@ -145,6 +145,7 @@ async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sq
   const pulses: CopyPulse[] = [];
   const service = new OutreachService({
     store, outbox: () => outbox, mailboxes, now, pulses: async () => pulses, senderName: async () => 'Adam B', mailEventsConfigured: opts.mailEvents === true,
+    sentMail: (userId, mailId) => (opts.noSentMail ? Promise.resolve(null) : messages.get(userId, mailId)),
   });
   await service.write('user-adam', ROWAN, batch());
   return { service, outbox, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
@@ -255,6 +256,40 @@ describe('Outreach, the service', () => {
     const done = (await service.detail('user-adam', 'northwind-health'))!;
     expect(done.draft).toBeNull();
     expect(done.noSend).toMatch(/then stop/);
+  });
+
+  it('shows every letter that has gone as it left, read from his Sent, not the letter the agents hold now (note #1130)', async () => {
+    const { service, at } = await world();
+    expect((await service.detail('user-adam', 'northwind-health'))!.sent).toEqual([]);
+    const draft = await firstOf(service, 'northwind-health');
+    const { mailId } = await service.send('user-adam', 'northwind-health', { step: 'first', subject: draft.subject, text: draft.text });
+    // Rowan rewrites the letter afterwards: what went does not change.
+    const rewritten = company('Northwind Health');
+    rewritten.firstEmail!.body = 'Words that never went.';
+    await service.write('user-adam', ROWAN, { targets: [rewritten], words: null });
+    let sent = (await service.detail('user-adam', 'northwind-health'))!.sent;
+    expect(sent).toEqual([{
+      step: 'first', mailId, at: '2026-11-09T13:00:00.000Z', from: { address: 'adam@agenticcloudcomputer.com', name: 'Adam B' },
+      to: 'mara@northwind-health.test', cc: [], subject: draft.subject, words: draft.text, quoted: null, providerId: 're-1', source: 'sent-mail',
+    }]);
+    // Day 4: the follow-up, its words, and the first letter quoted under it, in the order sent.
+    at('2026-11-13T13:00:01Z');
+    const day4 = await firstOf(service, 'northwind-health');
+    await service.send('user-adam', 'northwind-health', { step: 'day4', text: day4.text });
+    sent = (await service.detail('user-adam', 'northwind-health'))!.sent;
+    expect(sent.map((letter) => letter.step)).toEqual(['first', 'day4']);
+    expect(sent[1]).toMatchObject({ subject: 'Re: Your agents need a workplace', words: day4.text, source: 'sent-mail' });
+    expect(sent[1]!.quoted).toMatch(/Adam B wrote:\n> Hi Mara,/);
+    expect(JSON.stringify(sent)).not.toContain('Words that never went.');
+  });
+
+  it('a letter no longer in his Sent shows the words kept with the send, and says where they came from', async () => {
+    const { service } = await world({ noSentMail: true });
+    const draft = await firstOf(service, 'northwind-health');
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject: draft.subject, text: draft.text });
+    expect((await service.detail('user-adam', 'northwind-health'))!.sent).toEqual([expect.objectContaining({
+      step: 'first', to: 'mara@northwind-health.test', subject: draft.subject, words: draft.text, from: null, quoted: null, source: 'record',
+    })]);
   });
 
   it('keeps one address per company once a letter has gone', async () => {
