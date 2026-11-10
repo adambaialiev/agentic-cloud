@@ -1415,25 +1415,36 @@ export interface OutreachGraph { funds: OutreachGraphFund[]; companies: Outreach
  * or, failing that, by its name folded the way record ids are; companies of
  * different funds with the same host or folded name are the same node. The
  * match is made here on every read and never stored.
+ *
+ * A name is only a fallback for a side with no website (10 Nov 2026, Alex on
+ * note #1124): a fund's 'Reflex' at workreflex.com is not our customer
+ * Reflex at reflex.dev. Where both sides have one and they differ, the same
+ * name links nothing and merges nothing.
  */
 export function outreachGraph(rows: Array<{ record: OutreachTargetRecord; state: OutreachState }>): OutreachGraph {
   const customers = rows.filter((row) => outreachAudience(row.record.seed) === 'customer');
   const byName = new Map<string, (typeof customers)[number]>();
   const byHost = new Map<string, (typeof customers)[number]>();
+  // Every host a customer is known by: its address's domain, its website and domain.
+  const hostsOf = new Map<(typeof customers)[number], Set<string>>();
   for (const row of customers) {
     byName.set(outreachTargetId(row.record.seed.company), row);
+    const hosts = new Set<string>();
     const host = companyDomain(targetEmail(row.record));
-    if (host) byHost.set(host, row);
+    if (host) hosts.add(host);
     for (const field of ['website', 'domain'] as const) {
       const site = websiteHost((row.record.seed as unknown as Record<string, unknown>)[field] as string | undefined)
         ?? websiteHost((row.record.seed.profile as Record<string, unknown> | null)?.[field] as string | undefined);
-      if (site) byHost.set(site, row);
+      if (site) hosts.add(site);
     }
+    for (const one of hosts) byHost.set(one, row);
+    hostsOf.set(row, hosts);
   }
   const funds: OutreachGraphFund[] = [];
   const companies = new Map<string, OutreachGraphCompany>();
   const keyOfName = new Map<string, string>();
   const keyOfHost = new Map<string, string>();
+  const nodeHosts = new Map<string, Set<string>>();
   const edges: OutreachGraphEdge[] = [];
   const investors = rows.filter((row) => outreachAudience(row.record.seed) === 'investor')
     .sort((a, b) => a.record.seed.company.localeCompare(b.record.seed.company));
@@ -1443,8 +1454,12 @@ export function outreachGraph(rows: Array<{ record: OutreachTargetRecord; state:
     for (const one of portfolio) {
       const host = websiteHost(one.website);
       const folded = outreachTargetId(one.name);
-      const match = (host ? byHost.get(host) : undefined) ?? byName.get(folded);
-      const key = match ? match.record.id : (host && keyOfHost.get(host)) || keyOfName.get(folded) || `p:${folded}`;
+      // By the same name only where one side has no website to tell them apart.
+      const named = byName.get(folded);
+      const match = (host ? byHost.get(host) : undefined) ?? (named && (!host || !hostsOf.get(named)!.size) ? named : undefined);
+      const sameName = keyOfName.get(folded);
+      const key = match ? match.record.id
+        : (host && keyOfHost.get(host)) || (sameName && (!host || !nodeHosts.get(sameName)?.size) ? sameName : undefined) || (companies.has(`p:${folded}`) ? `p:${folded}@${host}` : `p:${folded}`);
       let node = companies.get(key);
       if (!node) {
         node = {
@@ -1456,8 +1471,11 @@ export function outreachGraph(rows: Array<{ record: OutreachTargetRecord; state:
       }
       node.website ??= one.website;
       node.builds ??= one.builds;
-      if (host) keyOfHost.set(host, key);
-      keyOfName.set(folded, key);
+      if (host) {
+        keyOfHost.set(host, key);
+        nodeHosts.set(key, (nodeHosts.get(key) ?? new Set()).add(host));
+      }
+      if (!keyOfName.has(folded)) keyOfName.set(folded, key);
       if (!node.funds.includes(record.id)) {
         node.funds.push(record.id);
         edges.push({ fund: record.id, company: key, builds: one.builds, source: one.source, readOn: one.readOn });
