@@ -65,6 +65,17 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
     }
   });
 
+  /** The graph of contacts (note #1124): funds, their portfolio companies, who backs whom, and which are customers here. */
+  router.get(`${base}/graph`, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    try {
+      return res.json(await open.outreach.graph(open.auth.userId));
+    } catch (error) {
+      return failed(res, error, 'Reading the graph');
+    }
+  });
+
   router.get(`${base}/targets/:id`, async (req, res) => {
     const open = await gate(req, res);
     if (!open) return;

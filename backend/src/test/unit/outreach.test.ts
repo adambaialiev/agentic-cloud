@@ -769,3 +769,66 @@ describe('Investors, a second audience (note #1115)', () => {
     expect(back.refused[0]!.reason).toMatch(/already an investor/);
   });
 });
+
+describe('The graph of contacts: funds down to their portfolio companies (note #1124)', () => {
+  const fund = (name: string, portfolio: unknown, extra: Record<string, unknown> = {}) => ({
+    company: name, audience: 'investor', fit: 'thesis match', email: `pat@${name.toLowerCase().replace(/[^a-z]+/g, '')}.test`, city: 'London', portfolio, ...extra,
+  });
+  const read = (doc: unknown) => {
+    const parsed = parseOutreachWrite(doc);
+    if (!parsed.ok) throw new Error(parsed.error);
+    return parsed.write;
+  };
+
+  it('reads a portfolio strictly: a name each, a real website, investors only, no company twice', () => {
+    const ok = read(fund('Made Up Ventures', [{ name: 'Northwind Health', website: 'https://www.northwind-health.test/', builds: 'Clinics run by agents.', source: 'madeup.test/portfolio', readOn: '2026-11-10' }, { name: 'Tiny Robot Co' }]));
+    expect(ok.targets[0]!.portfolio).toEqual([
+      { name: 'Northwind Health', website: 'https://www.northwind-health.test/', builds: 'Clinics run by agents.', source: 'madeup.test/portfolio', readOn: '2026-11-10' },
+      { name: 'Tiny Robot Co', website: null, builds: null, source: null, readOn: null },
+    ]);
+    expect(read(fund('No List Yet', undefined)).targets[0]).not.toHaveProperty('portfolio');
+    expect(parseOutreachWrite(fund('X Fund', [{ website: 'a.test' }]))).toEqual({ ok: false, error: 'X Fund: portfolio[0] has no name.' });
+    expect(parseOutreachWrite(fund('X Fund', [{ name: 'A' }, { name: 'a' }]))).toEqual({ ok: false, error: 'X Fund: a is in its portfolio twice.' });
+    expect(parseOutreachWrite(fund('X Fund', [{ name: 'A', website: 'not a site' }])).ok).toBe(false);
+    expect(parseOutreachWrite(fund('X Fund', { name: 'A' })).ok).toBe(false);
+    expect(parseOutreachWrite({ company: 'Shop', fit: 'fit', portfolio: [{ name: 'A' }] })).toEqual({ ok: false, error: 'Shop: only an investor has a portfolio; add "audience": "investor".' });
+  });
+
+  it('draws every fund, each company once however many funds back it, and links a company that is a customer here by website or name, with its state', async () => {
+    const { service } = await world();
+    await service.send('user-adam', 'northwind-health', { step: 'first', subject: 'Hello', text: 'Hi Mara.' });
+    await service.write('user-adam', ADA, read({ audience: 'investor', targets: [
+      fund('Made Up Ventures', [
+        { name: 'Northwind Health Inc', website: 'https://northwind-health.test', builds: 'Clinics.', source: 'madeup.test/portfolio', readOn: '2026-11-10' },
+        { name: 'Tiny Robot Co', website: 'tinyrobot.test' },
+      ]),
+      fund('Example Angels', [{ name: 'Tiny Robot', website: 'https://www.tinyrobot.test/about' }, { name: 'Fernhill Labs' }]),
+      fund('Quiet Capital', undefined, { fit: 'no public thesis' }),
+    ] }));
+    const graph = await service.graph('user-adam');
+    expect(graph.funds.map((one) => [one.name, one.written, one.thesis])).toEqual([
+      ['Example Angels', true, 'thesis match'], ['Made Up Ventures', true, 'thesis match'], ['Quiet Capital', false, 'no public thesis']]);
+    const ids = Object.fromEntries(graph.funds.map((one) => [one.name, one.id]));
+    expect(graph.companies.map((one) => [one.key, one.name, one.record?.state ?? null, one.funds.length])).toEqual([
+      ['p:tiny-robot', 'Tiny Robot', null, 2],
+      ['fernhill-labs', 'Fernhill Labs', 'not-contacted', 1],
+      ['northwind-health', 'Northwind Health', 'sent', 1],
+    ]);
+    expect(graph.companies[0]!.funds.sort()).toEqual([ids['Example Angels'], ids['Made Up Ventures']].sort());
+    expect(graph.edges).toHaveLength(4);
+    expect(graph.edges.find((edge) => edge.company === 'northwind-health')).toEqual({ fund: ids['Made Up Ventures'], company: 'northwind-health', builds: 'Clinics.', source: 'madeup.test/portfolio', readOn: '2026-11-10' });
+    // Nothing about the match is stored: the link follows the store.
+    expect(JSON.stringify((await service.agentShow('user-adam', 'Made Up Ventures'))!.written)).not.toContain('northwind-health"');
+    expect((await service.agentList('user-adam')).find((row) => row.company === 'Made Up Ventures')).toMatchObject({ portfolio: 2 });
+  });
+
+  it('keeps the portfolio it replaced on the timeline, and takes a portfolio for an investor whose letter has gone', async () => {
+    const { service } = await world();
+    await service.write('user-adam', ADA, read(fund('Made Up Ventures', [{ name: 'Tiny Robot Co' }], { firstEmail: { subject: 'Hi', body: 'Hi Pat.' } })));
+    await service.send('user-adam', 'made-up-ventures', { step: 'first', subject: 'Hi', text: 'Hi Pat.' });
+    const answer = await service.write('user-adam', ADA, read(fund('Made Up Ventures', [{ name: 'Tiny Robot Co' }, { name: 'Second Co' }], { firstEmail: { subject: 'Hi', body: 'Hi Pat.' } })));
+    expect(answer).toMatchObject({ updated: [{ company: 'Made Up Ventures', fields: ['portfolio'] }], refused: [] });
+    const written = (await service.detail('user-adam', 'made-up-ventures'))!.touches.find((touch) => touch.kind === 'written' && !touch.added);
+    expect(written && written.kind === 'written' && written.previous?.portfolio).toEqual([{ name: 'Tiny Robot Co', website: null, builds: null, source: null, readOn: null }]);
+  });
+});

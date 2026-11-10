@@ -447,6 +447,38 @@ export interface OutreachSeedTarget {
   checkedOn: string | null;
   firstEmail: OutreachLetter | null;
   profile: OutreachProfile | null;
+  /** An investor's portfolio (note #1124): the companies it backs. Present only on an investor that has one. */
+  portfolio?: OutreachPortfolioCompany[];
+}
+
+/**
+ * One company in an investor's portfolio (note #1124; Adam, 10 Nov 2026: "In
+ * outreach app let's build graphs of contacts. Let's start from investment
+ * funds and go down to their portfolio companies"). Only the name is
+ * required. Whether it is also a customer in Outreach is NOT stored: it is
+ * matched at read time by name or website (`outreachGraph`), so the link
+ * follows the store and is never kept twice.
+ */
+export interface OutreachPortfolioCompany {
+  name: string;
+  /** Its own site, as the fund prints it. */
+  website: string | null;
+  /** One line on what it builds, in the fund's or the company's words. */
+  builds: string | null;
+  /** Where it was read: the fund's portfolio page. */
+  source: string | null;
+  /** When it was read. */
+  readOn: string | null;
+}
+
+export const OUTREACH_MAX_PORTFOLIO = 400;
+
+/** A website as a bare host for matching: "https://www.Example.com/about" → "example.com". */
+export function websiteHost(value: string | null | undefined): string | null {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return null;
+  const host = raw.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split(/[/?#]/)[0]!.replace(/^www\./, '').replace(/:\d+$/, '').replace(/\.$/, '');
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? host : null;
 }
 
 /** Who wrote: the agent's id and its name at the time. */
@@ -587,6 +619,13 @@ function parseTarget(raw: unknown, at: string, audienceDefault: OutreachAudience
     fit = row.fit === 'not a fit' ? 'not a fit' : row.fit === 'fit' ? 'fit' : null;
   }
   if (!fit) return { ok: false, error: `${company}: fit is neither "fit" nor "not a fit".` };
+  let portfolio: OutreachPortfolioCompany[] | null = null;
+  if (row.portfolio !== undefined && row.portfolio !== null) {
+    if (audience !== 'investor') return { ok: false, error: `${company}: only an investor has a portfolio; add "audience": "investor".` };
+    const parsed = parsePortfolio(row.portfolio, company);
+    if (!parsed.ok) return parsed;
+    portfolio = parsed.value;
+  }
   const email = text(row.email, 254);
   if (email && !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) return { ok: false, error: `${company}: ${email} is not one address.` };
   let firstEmail: OutreachLetter | null = null;
@@ -640,8 +679,30 @@ function parseTarget(raw: unknown, at: string, audienceDefault: OutreachAudience
       checkedOn: text(row.checkedOn, 40),
       firstEmail,
       profile,
+      ...(portfolio ? { portfolio } : {}),
     },
   };
+}
+
+/** An investor's portfolio, strictly (note #1124): a list of companies, each with a name. */
+function parsePortfolio(value: unknown, company: string): Parsed<OutreachPortfolioCompany[]> {
+  if (!Array.isArray(value)) return { ok: false, error: `${company}: portfolio is not a list of companies.` };
+  if (value.length > OUTREACH_MAX_PORTFOLIO) return { ok: false, error: `${company}: at most ${OUTREACH_MAX_PORTFOLIO} companies in a portfolio.` };
+  const out: OutreachPortfolioCompany[] = [];
+  const seen = new Set<string>();
+  for (const [at, raw] of value.entries()) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, error: `${company}: portfolio[${at}] is not an object.` };
+    const row = raw as Record<string, unknown>;
+    const name = text(row.name, 120);
+    if (!name) return { ok: false, error: `${company}: portfolio[${at}] has no name.` };
+    const key = outreachTargetId(name);
+    if (seen.has(key)) return { ok: false, error: `${company}: ${name} is in its portfolio twice.` };
+    seen.add(key);
+    const website = text(row.website, 300);
+    if (website && !websiteHost(website)) return { ok: false, error: `${company}: ${name}'s website "${website}" is not a web address.` };
+    out.push({ name, website, builds: text(row.builds, 400), source: text(row.source, 600), readOn: text(row.readOn, 40) });
+  }
+  return { ok: true, value: out };
 }
 
 /**
@@ -1208,6 +1269,8 @@ export interface OutreachAgentRow {
   id: string;
   audience: OutreachAudience;
   thesis: OutreachThesis | null;
+  /** An investor's portfolio size (note #1124); null where none is written. */
+  portfolio: number | null;
   company: string;
   fit: 'fit' | 'not a fit';
   firstBatchOrder: number | null;
@@ -1306,4 +1369,105 @@ export function sortOutreachRows<Row extends Pick<OutreachRow, 'id' | 'fit' | 'f
     || (a.firstBatchOrder ?? 0) - (b.firstBatchOrder ?? 0)
     || (numbers.get(a.id) ?? 9999) - (numbers.get(b.id) ?? 9999)
     || a.company.localeCompare(b.company));
+}
+
+// ---------------------------------------------------------------------------
+// The graph of contacts (note #1124): from the funds down to their companies.
+
+/** A company in the graph: one node however many funds back it. */
+export interface OutreachGraphCompany {
+  /** Stable within one read: the Outreach record's id when it is in Outreach, else "p:" and its name folded. */
+  key: string;
+  name: string;
+  website: string | null;
+  builds: string | null;
+  /** The customer record it matched, by name or website, with what happened there; null when it is not in Outreach. */
+  record: { id: string; company: string; state: OutreachState; fit: 'fit' | 'not a fit' } | null;
+  /** The funds that back it, by record id. */
+  funds: string[];
+}
+
+export interface OutreachGraphFund {
+  id: string;
+  name: string;
+  thesis: OutreachThesis | null;
+  state: OutreachState;
+  city: string | null;
+  /** False until an agent writes its portfolio. */
+  written: boolean;
+}
+
+export interface OutreachGraphEdge {
+  fund: string;
+  company: string;
+  /** The fund's own words for it, and where and when they were read. */
+  builds: string | null;
+  source: string | null;
+  readOn: string | null;
+}
+
+export interface OutreachGraph { funds: OutreachGraphFund[]; companies: OutreachGraphCompany[]; edges: OutreachGraphEdge[] }
+
+/**
+ * The graph, read whole (note #1124): every investor as a fund at the top,
+ * every company in their portfolios once, and an edge per fund that backs
+ * it. A company is matched to a customer in the store by its website's host
+ * or, failing that, by its name folded the way record ids are; companies of
+ * different funds with the same host or folded name are the same node. The
+ * match is made here on every read and never stored.
+ */
+export function outreachGraph(rows: Array<{ record: OutreachTargetRecord; state: OutreachState }>): OutreachGraph {
+  const customers = rows.filter((row) => outreachAudience(row.record.seed) === 'customer');
+  const byName = new Map<string, (typeof customers)[number]>();
+  const byHost = new Map<string, (typeof customers)[number]>();
+  for (const row of customers) {
+    byName.set(outreachTargetId(row.record.seed.company), row);
+    const host = companyDomain(targetEmail(row.record));
+    if (host) byHost.set(host, row);
+    for (const field of ['website', 'domain'] as const) {
+      const site = websiteHost((row.record.seed as unknown as Record<string, unknown>)[field] as string | undefined)
+        ?? websiteHost((row.record.seed.profile as Record<string, unknown> | null)?.[field] as string | undefined);
+      if (site) byHost.set(site, row);
+    }
+  }
+  const funds: OutreachGraphFund[] = [];
+  const companies = new Map<string, OutreachGraphCompany>();
+  const keyOfName = new Map<string, string>();
+  const keyOfHost = new Map<string, string>();
+  const edges: OutreachGraphEdge[] = [];
+  const investors = rows.filter((row) => outreachAudience(row.record.seed) === 'investor')
+    .sort((a, b) => a.record.seed.company.localeCompare(b.record.seed.company));
+  for (const { record, state } of investors) {
+    const portfolio = record.seed.portfolio ?? [];
+    funds.push({ id: record.id, name: record.seed.company, thesis: record.seed.thesis ?? null, state, city: targetCity(record), written: Boolean(record.seed.portfolio) });
+    for (const one of portfolio) {
+      const host = websiteHost(one.website);
+      const folded = outreachTargetId(one.name);
+      const match = (host ? byHost.get(host) : undefined) ?? byName.get(folded);
+      const key = match ? match.record.id : (host && keyOfHost.get(host)) || keyOfName.get(folded) || `p:${folded}`;
+      let node = companies.get(key);
+      if (!node) {
+        node = {
+          key, name: match ? match.record.seed.company : one.name, website: one.website, builds: one.builds,
+          record: match ? { id: match.record.id, company: match.record.seed.company, state: match.state, fit: match.record.seed.fit } : null,
+          funds: [],
+        };
+        companies.set(key, node);
+      }
+      node.website ??= one.website;
+      node.builds ??= one.builds;
+      if (host) keyOfHost.set(host, key);
+      keyOfName.set(folded, key);
+      if (!node.funds.includes(record.id)) {
+        node.funds.push(record.id);
+        edges.push({ fund: record.id, company: key, builds: one.builds, source: one.source, readOn: one.readOn });
+      }
+    }
+  }
+  return {
+    funds,
+    // Companies backed by more funds first, then the ones in Outreach, then by name.
+    companies: [...companies.values()].sort((a, b) => b.funds.length - a.funds.length || Number(Boolean(b.record)) - Number(Boolean(a.record)) || a.name.localeCompare(b.name)),
+    edges,
+  };
 }

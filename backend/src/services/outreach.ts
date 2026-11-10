@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_REVIEW_AFTER, OUTREACH_WORDS_HISTORY, addressMatches,
-  outreachAudience, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
+  outreachAudience, outreachGraph, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
@@ -187,6 +187,18 @@ export class OutreachService {
       row, seed: record.seed, edits: record.edits, touches, draft, noSend: draft ? null : this.noSend(record, row, touches), links: outreachLinks(record.links!),
       known: outreachKnown(touches), mailFacts: this.mailFacts(await this.deps.store.touches(userId)),
     };
+  }
+
+  /**
+   * The graph of contacts (note #1124): the funds, every company in their
+   * portfolios once, and who backs whom, with each company's Outreach record
+   * and state where it is a customer here. One read, matched afresh.
+   */
+  async graph(userId: string): Promise<OutreachGraph> {
+    const [records, touches] = await Promise.all([this.deps.store.targets(userId), this.deps.store.touches(userId)]);
+    const byTarget = new Map<string, OutreachTouch[]>();
+    for (const touch of touches) byTarget.set(touch.targetId, [...(byTarget.get(touch.targetId) ?? []), touch]);
+    return outreachGraph(records.map((record) => ({ record, state: outreachStateFrom(byTarget.get(record.id) ?? []) })));
   }
 
   /** Whether the provider's delivery facts reach us: off without the secret, waiting until the first signed event, on after. */
@@ -450,6 +462,8 @@ export class OutreachService {
       fit: record.seed.fit,
       firstBatchOrder: record.seed.firstBatchOrder,
       state: outreachStateFrom(touches),
+      // How many companies its portfolio names (note #1124); null where none is written.
+      portfolio: record.seed.portfolio ? record.seed.portfolio.length : null,
       letter: Boolean(record.seed.firstEmail),
       profile: Boolean(record.seed.profile),
       firstLetterGone: touches.some((touch) => touch.kind === 'sent' && touch.step === 'first'),
