@@ -396,8 +396,10 @@ export interface OutreachProfile {
 /**
  * Who a record is (note #1115; Adam, 10 Nov 2026: "we should also outreach
  * not only customers, but investors also. We should aim for early stage
- * pre-seed round."). A company to sell to, or an investor (an angel, a fund)
- * to raise from. A record with no audience is a customer: every record
+ * pre-seed round."; then, 07:19 UTC: pitch them the product and "just ask
+ * them to try us"). A company to sell to, or an investor (an early-stage
+ * fund, an angel, a scout) asked to try the product, themselves and with
+ * their founders. A record with no audience is a customer: every record
  * written before note #1115 is one, unchanged.
  */
 export const OUTREACH_AUDIENCES = ['customer', 'investor'] as const;
