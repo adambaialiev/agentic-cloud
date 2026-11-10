@@ -72,6 +72,17 @@ describe('Outreach words and places', () => {
     expect(outreachLocalTime('Reykjavik', at)).toBe('Mon 13:00');
     expect(outreachLocalTime('the hague', at)).toBe('Mon 14:00');
     expect(outreachLocalTime('Forlì', at)).toBe('Mon 14:00');
+    // North America beyond the tech hubs (Adam, 10 Nov 2026).
+    expect(outreachLocalTime('San Antonio', at)).toBe('Mon 07:00');
+    expect(outreachLocalTime('Dallas', at)).toBe('Mon 07:00');
+    expect(outreachLocalTime('Atlanta', at)).toBe('Mon 08:00');
+    expect(outreachLocalTime('Salt Lake City', at)).toBe('Mon 06:00');
+    expect(outreachLocalTime('Phoenix', at)).toBe('Mon 06:00');
+    expect(outreachLocalTime('San Diego', at)).toBe('Mon 05:00');
+    expect(outreachLocalTime('Montreal', at)).toBe('Mon 08:00');
+    expect(outreachLocalTime('Calgary', at)).toBe('Mon 07:00'); // Alberta keeps UTC-6 all year in tzdata 2026e
+    expect(outreachLocalTime('Indianapolis', at)).toBe('Mon 08:00');
+    expect(outreachLocalTime('Honolulu', at)).toBe('Mon 03:00');
     expect(outreachLocalTime('Carpentras', at)).toBe('Mon 14:00');
     for (const unknown of ['US', 'US remote', '', null, 'Richmond']) expect(outreachLocalTime(unknown, at)).toBeNull();
   });
