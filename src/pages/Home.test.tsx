@@ -123,10 +123,13 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(art).toHaveLength(2);
     for (const img of art) {
       expect(img.getAttribute('alt')).toBe('');
-      expect(img.getAttribute('srcset')).toMatch(/ 640w, .* 1200w$/);
       expect(img.getAttribute('width')).toBe('1200');
       expect(img.getAttribute('height')).toBe('825');
     }
+    // Built in: the fal.ai picture in two sizes. Switch tools: the hand-drawn
+    // SVG on one isometric grid (Adam, 10 Nov 2026, 12:40 UTC).
+    expect(art[0]!.getAttribute('srcset')).toMatch(/ 640w, .* 1200w$/);
+    expect(art[1]!.getAttribute('src')).toMatch(/switch-tools.*\.svg/);
   });
 
   // Note #841 (the owner, 30 Oct 2026, 13:31 UTC): one drawing of the whole
