@@ -1,14 +1,62 @@
-import type { Request, Response, Router } from 'express';
-import { DIRECT_MESSAGE_MAX_LENGTH, DIRECT_MESSAGE_PAGE_SIZE, DIRECT_MESSAGE_VIA_PREFIX, type DirectMessageApprovalAnswer, type DirectMessageInbox, type DirectMessagePage, type DirectMessagePerson } from '../shared/direct-messages.js';
+import { raw, type Request, type Response, type Router } from 'express';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import {
+  DIRECT_MESSAGE_FILE_MAX_BYTES, DIRECT_MESSAGE_FILES_PER_MESSAGE, DIRECT_MESSAGE_MAX_LENGTH, DIRECT_MESSAGE_PAGE_SIZE,
+  DIRECT_MESSAGE_THUMB_MAX_BYTES, DIRECT_MESSAGE_VIA_PREFIX, directMessageFileSize, directMessageImageSize, isDirectMessageImage,
+  sniffDirectMessageImage, type DirectMessageApprovalAnswer, type DirectMessageInbox, type DirectMessagePage, type DirectMessagePerson,
+} from '../shared/direct-messages.js';
 import { visibleDirectMessageApproval } from '../services/direct-message-approval.js';
-import { DirectMessageConflict } from '../services/direct-message-storage.js';
-import { OrgMsgHostOpening, OrgMsgHostUnavailable } from '../services/org-msg-host.js';
+import { DirectMessageConflict, type DirectMessageUpload } from '../services/direct-message-storage.js';
+import { attachmentDisposition } from '../services/drive-service.js';
+import { OrgMsgHostOpening, OrgMsgHostRefusal, OrgMsgHostUnavailable } from '../services/org-msg-host.js';
 import { RateLimiter } from '../services/rate-limiter.js';
 import { personDisplayName } from '../types/user.js';
 import type { RouteDeps } from './deps.js';
 
 interface Actor { userId: string; orgId: string }
 class MessageError extends Error { constructor(readonly status: number, text: string) { super(text); } }
+
+/** The ids a send names (note #1125): this sender's own uploads, at most ten. */
+export function directMessageFileIds(value: unknown): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > DIRECT_MESSAGE_FILES_PER_MESSAGE
+    || value.some((id) => typeof id !== 'string' || !/^f[0-9a-f]{24}$/.test(id)) || new Set(value).size !== value.length) {
+    throw new MessageError(400, `A message can carry up to ${DIRECT_MESSAGE_FILES_PER_MESSAGE} files.`);
+  }
+  return value as string[];
+}
+
+/** A name a file may keep: no path, no control characters, at most 255 characters. */
+export function directMessageFileName(value: string): string {
+  return value.normalize('NFC').replace(/[\x00-\x1f\x7f/\\]/g, '').trim().slice(0, 255) || 'file';
+}
+
+/**
+ * What the upload is, decided from its bytes (note #1125): a picture only
+ * when its first bytes say so, with its size read from its header. Anything
+ * else keeps the type its sender claimed — for the list and the icon only:
+ * it is never served as anything but a download.
+ */
+export function describeDirectMessageUpload(bytes: Buffer, name: string, claimed: string | undefined): DirectMessageUpload {
+  const sniffed = sniffDirectMessageImage(bytes);
+  if (sniffed) return { name, type: sniffed, ...(directMessageImageSize(bytes) ?? {}) };
+  const said = String(claimed ?? '').split(';')[0]!.trim().toLowerCase();
+  const type = /^[\w.+-]+\/[\w.+-]+$/.test(said) && said.length <= 100 && !isDirectMessageImage({ type: said }) ? said : 'application/octet-stream';
+  return { name, type };
+}
+
+/** The messaging machine's refusal of an upload or a send, in the person's words. */
+export function directMessageFileRefusal(error: unknown): MessageError | null {
+  if (!(error instanceof OrgMsgHostRefusal)) return null;
+  if (error.status === 507) return new MessageError(507, 'This workplace’s message storage is full, so the file was not sent.');
+  if (error.status === 413) return new MessageError(413, `A file can be up to ${directMessageFileSize(DIRECT_MESSAGE_FILE_MAX_BYTES)}.`);
+  // A machine still on the server from before files (it moves at its next wake).
+  if (error.status === 404 && error.message === 'not found') return new MessageError(503, 'Files are being switched on for these messages. Try again in a minute.');
+  if (error.status === 404) return new MessageError(404, 'No such file.');
+  if (error.status === 400 && /file/i.test(error.message)) return new MessageError(400, 'A file could not be found. Attach it again.');
+  return null;
+}
 
 /** Browser sessions only. No agent/CLI door and no admin override — the
  * Chief of Staff's draft (note #1090) is RELEASED here, by the person's own
@@ -40,6 +88,8 @@ export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
       if (!deps.directMessageStorage || !deps.orgStorage || !deps.userStorage) return res.status(503).json({ error: 'Messages are not available right now.' });
       return await fn(req, res, actor);
     } catch (err) {
+      const refusal = directMessageFileRefusal(err);
+      if (refusal) return res.status(refusal.status).json({ error: refusal.message });
       if (err instanceof MessageError || err instanceof DirectMessageConflict) return res.status(err instanceof MessageError ? err.status : 409).json({ error: err.message });
       // The workplace's messaging machine sleeps when nobody is writing; the
       // first open wakes it (or, once, builds it). Not a fault: the screen
@@ -88,13 +138,87 @@ export function registerDirectMessageRoutes(router: Router, deps: RouteDeps,
     if (!await deps.orgStorage!.getMembership(actor.orgId, peerId)) throw new MessageError(404, 'This person is no longer in this workplace.');
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     const clientId = req.body?.clientId;
-    if (!text || text.length > DIRECT_MESSAGE_MAX_LENGTH) throw new MessageError(400, `Write a message of up to ${DIRECT_MESSAGE_MAX_LENGTH.toLocaleString('en-US')} characters.`);
+    const files = directMessageFileIds(req.body?.files);
+    if (files.length && !deps.directMessageStorage!.files) throw new MessageError(503, 'Files cannot be sent here.');
+    if ((!text && !files.length) || text.length > DIRECT_MESSAGE_MAX_LENGTH) throw new MessageError(400, `Write a message of up to ${DIRECT_MESSAGE_MAX_LENGTH.toLocaleString('en-US')} characters.`);
     if (typeof clientId !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(clientId)) throw new MessageError(400, 'This send needs a valid message identifier.');
     // The Chief of Staff's mark (note #1090) is written by its card's tap alone.
     if (clientId.startsWith(DIRECT_MESSAGE_VIA_PREFIX)) throw new MessageError(400, 'This send needs a valid message identifier.');
     if (!limiter.check(`${actor.orgId}:${actor.userId}`)) { res.setHeader('Retry-After', '60'); throw new MessageError(429, 'You are sending quickly. Wait a minute and try again.'); }
-    const result = await deps.directMessageStorage!.send(actor.orgId, actor.userId, peerId, text, clientId);
+    const result = await deps.directMessageStorage!.send(actor.orgId, actor.userId, peerId, text, clientId, files);
     return res.status(result.created ? 201 : 200).json({ message: result.message });
+  }));
+  /**
+   * Note #1125: one file onto the workplace's messaging machine, unsent —
+   * its uploader's alone until a send names it. `?thumbOf=<id>` is a
+   * picture's small copy, made by the sender's browser. Identity and the
+   * teammate are checked BEFORE the bytes are read.
+   */
+  const fileLimiter = new RateLimiter(120, 60_000);
+  router.post('/api/messages/:userId/files',
+    (req: Request, res: Response, next: (error?: unknown) => void) => {
+      void route(async (inner, answer, actor) => {
+        const peerId = peer(inner, actor);
+        if (!deps.directMessageStorage!.files) throw new MessageError(503, 'Files cannot be sent here.');
+        if (!await deps.orgStorage!.getMembership(actor.orgId, peerId)) throw new MessageError(404, 'This person is no longer in this workplace.');
+        if (!fileLimiter.check(`${actor.orgId}:${actor.userId}`)) { answer.setHeader('Retry-After', '60'); throw new MessageError(429, 'You are sending quickly. Wait a minute and try again.'); }
+        (inner as Request & { dmActor?: Actor }).dmActor = actor;
+        next();
+      })(req, res);
+    },
+    raw({ type: () => true, limit: DIRECT_MESSAGE_FILE_MAX_BYTES }),
+    route(async (req, res) => {
+      const actor = (req as Request & { dmActor?: Actor }).dmActor!;
+      const peerId = peer(req, actor);
+      const bytes = req.body;
+      if (!Buffer.isBuffer(bytes) || !bytes.length) throw new MessageError(400, 'That file is empty.');
+      const thumbOf = typeof req.query.thumbOf === 'string' ? req.query.thumbOf : undefined;
+      let meta: DirectMessageUpload;
+      if (thumbOf !== undefined) {
+        if (!/^f[0-9a-f]{24}$/.test(thumbOf)) throw new MessageError(400, 'That is not a file of yours.');
+        // Always a JPEG, so it is served as one whatever its picture was.
+        if (sniffDirectMessageImage(bytes) !== 'image/jpeg' || bytes.length > DIRECT_MESSAGE_THUMB_MAX_BYTES) throw new MessageError(415, 'A small copy is a JPEG picture.');
+        meta = { name: 'thumb', type: 'image/jpeg', thumbOf, ...(directMessageImageSize(bytes) ?? {}) };
+      } else {
+        let name: string;
+        try { name = directMessageFileName(decodeURIComponent(req.get('x-file-name') ?? '')); }
+        catch { throw new MessageError(400, 'The file name could not be read.'); }
+        meta = describeDirectMessageUpload(bytes, name, req.get('x-file-type') ?? req.get('content-type'));
+      }
+      const file = await deps.directMessageStorage!.files!.upload(actor.orgId, actor.userId, peerId, meta, bytes);
+      return res.status(201).json({ file });
+    }),
+    (error: { type?: string }, _req: Request, res: Response, next: (error: unknown) => void) => {
+      if (error.type === 'entity.too.large') res.status(413).json({ error: `A file can be up to ${directMessageFileSize(DIRECT_MESSAGE_FILE_MAX_BYTES)}.` });
+      else next(error);
+    });
+  /**
+   * Note #1125: a file's bytes, to either of the pair once sent and to its
+   * uploader before. A picture is drawn inline; anything else — and a
+   * picture with `?download=1` — is a download, never a page this origin
+   * renders. `?thumb=1` is the picture's small copy.
+   */
+  router.get('/api/messages/:userId/files/:fileId', route(async (req, res, actor) => {
+    const peerId = peer(req, actor);
+    if (!deps.directMessageStorage!.files) throw new MessageError(404, 'No such file.');
+    const fileId = String(req.params.fileId ?? '');
+    if (!/^f[0-9a-f]{24}$/.test(fileId)) throw new MessageError(404, 'No such file.');
+    const got = await deps.directMessageStorage!.files.read(actor.orgId, actor.userId, peerId, fileId, req.query.thumb === '1');
+    if (!got) throw new MessageError(404, 'No such file.');
+    const picture = isDirectMessageImage(got.file) && req.query.download !== '1';
+    const thumb = req.query.thumb === '1';
+    res.status(200);
+    res.setHeader('Content-Type', picture ? (thumb ? 'image/jpeg' : got.file.type) : 'application/octet-stream');
+    if (got.size) res.setHeader('Content-Length', String(got.size));
+    res.setHeader('Content-Disposition', picture ? 'inline' : attachmentDisposition(got.file.name));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    // This browser may keep it a few minutes, as mail's pictures; nothing in front of it may.
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    const stream = Readable.fromWeb(got.body as unknown as NodeReadableStream<Uint8Array>);
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
   }));
   router.post('/api/messages/:userId/read', route(async (req, res, actor) => {
     const peerId = peer(req, actor);

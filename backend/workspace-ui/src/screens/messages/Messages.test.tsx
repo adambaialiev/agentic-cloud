@@ -158,6 +158,91 @@ describe('human messages', () => {
       expect(heldThread('saddam', 'o1', 'bob')).toBeNull();
     });
   });
+  describe('files (note #1125)', () => {
+    const picture = { id: 'f000000000000000000000001', name: 'chart.png', type: 'image/png', size: 2048, width: 640, height: 320, thumb: true };
+    const sheet = { id: 'f000000000000000000000002', name: 'plan.pdf', type: 'application/pdf', size: 3 * 1024 * 1024 };
+    it('draws a picture from its small copy and names any other file with its size and a download', async () => {
+      open('/messages/bob?org=o1', { 'GET api/messages/bob': () => page([{ ...msg(1, 'Look'), files: [picture, sheet] }]) });
+      await flush();
+      const row = document.querySelector('[role=log] .chatmsg.chatfile')!;
+      expect(row.querySelector('.chatfilecaption')?.textContent).toBe('Look');
+      const img = row.querySelector('img.chatpicturebytes') as HTMLImageElement;
+      expect(img.getAttribute('src')).toBe('/workspace/api/messages/bob/files/f000000000000000000000001?org=o1&thumb=1');
+      const link = within(row as HTMLElement).getByRole('link', { name: 'Download plan.pdf' });
+      expect(link.getAttribute('href')).toBe('/workspace/api/messages/bob/files/f000000000000000000000002?org=o1&download=1');
+      expect(link.textContent).toContain('plan.pdf · 3.0 MB');
+    });
+    it('says "Photo" in the inbox for a picture sent alone, and the file name for a file', async () => {
+      open('/messages?org=o1', {
+        'GET api/messages': () => ({ threads: [
+          { person: page().person, lastMessage: { ...msg(2, ''), files: [picture] }, unread: 0 },
+          { person: { userId: 'carol', name: 'Carol', available: true }, lastMessage: { ...msg(1, ''), files: [sheet] }, unread: 0 },
+        ], unread: 0 }),
+      });
+      await flush();
+      expect([...document.querySelectorAll('#screenMessages .ctext')].map(one => one.textContent)).toEqual(['Photo', 'You: plan.pdf']);
+    });
+    it('uploads picked files, their small copies when it can, and sends them with the words; a file alone is enough', async () => {
+      const scripted = open('/messages/bob?org=o1', {
+        'GET api/messages/bob': () => page([msg(1)]),
+        'POST api/messages/bob/files': () => ({ file: { id: 'f00000000000000000000000a', name: 'notes.txt', type: 'text/plain', size: 5 } }),
+        'POST api/messages/bob': () => ({ message: { ...msg(2, '', 'alice'), files: [{ id: 'f00000000000000000000000a', name: 'notes.txt', type: 'text/plain', size: 5 }] } }),
+      });
+      await flush();
+      const send = screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement;
+      expect(send.disabled).toBe(true);
+      const input = document.querySelector('#directMessageFile') as HTMLInputElement;
+      fireEvent.change(input, { target: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] } });
+      await flush();
+      expect(document.querySelector('#directMessageDraft')?.textContent).toContain('notes.txt');
+      expect(send.disabled).toBe(false);
+      fireEvent.click(send); await flush();
+      const upload = scripted.calls.find(c => c.path === 'api/messages/bob/files')!;
+      expect(new Headers(upload.init?.headers).get('x-file-name')).toBe('notes.txt');
+      expect(upload.init?.body).toBeInstanceOf(File);
+      const sent = scripted.calls.find(c => c.init?.method === 'POST' && c.path === 'api/messages/bob')!;
+      expect(JSON.parse(String(sent.init!.body))).toMatchObject({ text: '', files: ['f00000000000000000000000a'] });
+      expect(document.querySelector('#directMessageDraft')?.hasAttribute('hidden')).toBe(true);
+      expect(within(screen.getByRole('log')).getByRole('link', { name: 'Download notes.txt' })).toBeTruthy();
+    });
+    it('a failed send gives the files back and does not upload them twice', async () => {
+      let attempts = 0;
+      const scripted = open('/messages/bob?org=o1', {
+        'GET api/messages/bob': () => page([msg(1)]),
+        'POST api/messages/bob/files': () => ({ file: { id: 'f00000000000000000000000b', name: 'a.txt', type: 'text/plain', size: 1 } }),
+        'POST api/messages/bob': () => { if (++attempts === 1) throw new Error('Connection lost.'); return { message: { ...msg(2, 'With file', 'alice'), files: [{ id: 'f00000000000000000000000b', name: 'a.txt', type: 'text/plain', size: 1 }] } }; },
+      });
+      await flush();
+      fireEvent.change(document.querySelector('#directMessageFile') as HTMLInputElement, { target: { files: [new File(['a'], 'a.txt', { type: 'text/plain' })] } });
+      fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), { target: { value: 'With file' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' })); await flush();
+      expect(screen.getByRole('alert').textContent).toContain('Your message and files are back');
+      expect(document.querySelector('#directMessageDraft')?.textContent).toContain('a.txt');
+      fireEvent.click(screen.getByRole('button', { name: 'Send' })); await flush();
+      expect(scripted.calls.filter(c => c.path === 'api/messages/bob/files')).toHaveLength(1);
+      const sends = scripted.calls.filter(c => c.init?.method === 'POST' && c.path === 'api/messages/bob');
+      expect(sends).toHaveLength(2); expect(sends[0]!.init!.body).toBe(sends[1]!.init!.body);
+    });
+    it('takes a pasted picture, and refuses a file over the ceiling before sending anything', async () => {
+      const scripted = open('/messages/bob?org=o1', { 'GET api/messages/bob': () => page([msg(1)]) });
+      await flush();
+      const box = screen.getByRole('textbox', { name: 'Message' });
+      // Words copied from a document, with a picture of themselves: the words win.
+      fireEvent.paste(box, { clipboardData: { files: [new File(['png'], 'words.png', { type: 'image/png' })], getData: () => 'Some words' } });
+      await flush();
+      expect(document.querySelector('#directMessageDraft')?.textContent).not.toContain('words.png');
+      fireEvent.paste(box, { clipboardData: { files: [new File(['png'], 'image.png', { type: 'image/png' })], getData: () => '' } });
+      await flush();
+      expect(document.querySelector('#directMessageDraft')?.textContent).toContain('image.png');
+      const huge = new File(['x'], 'huge.mov', { type: 'video/quicktime' });
+      Object.defineProperty(huge, 'size', { value: 26 * 1024 * 1024 });
+      fireEvent.change(document.querySelector('#directMessageFile') as HTMLInputElement, { target: { files: [huge] } });
+      await flush();
+      expect(screen.getByRole('alert').textContent).toContain('A file can be up to 25 MB');
+      expect(document.querySelector('#directMessageDraft')?.textContent).not.toContain('huge.mov');
+      expect(scripted.calls.some(c => c.path === 'api/messages/bob/files')).toBe(false);
+    });
+  });
   it('keeps a failed send for retry, reuses its identifier and catches concurrent incoming text', async () => {
     let attempts = 0;
     const scripted = open('/messages/bob?org=o1', {

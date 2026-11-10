@@ -20,7 +20,7 @@
 import { fileIcon, safeFileName } from './file-kind.js';
 import { Icon, TypeIcon } from './icons.js';
 
-export function DraftChip({ name, url, picture, meta, onOpen, onRemove, onBroken }: {
+export function DraftChip({ name, url, picture, meta, onOpen, onRemove, onBroken, exactName = false }: {
   /** The file's name, already through `safeFileName` or not — it is run
    *  through it here either way, because this is what the reader is shown. */
   name: string;
@@ -37,8 +37,11 @@ export function DraftChip({ name, url, picture, meta, onOpen, onRemove, onBroken
   /** Bytes that will not decode, so the caller can stop counting this one as
    *  a picture and take it out of the gallery rather than leaving a hole. */
   onBroken?: () => void;
+  /** Show the name as it is: a direct message keeps its file's real name
+   *  (note #1125), where an agent's machine renames it for its disk. */
+  exactName?: boolean;
 }) {
-  const shown = safeFileName(name);
+  const shown = exactName ? name : safeFileName(name);
   const kind = fileIcon(shown);
   return (
     <div className="chatdraftitem">

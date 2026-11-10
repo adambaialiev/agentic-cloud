@@ -288,5 +288,19 @@ describe('the workplace messaging machine', () => {
       await h.service.convergeAll([ORG]);
       expect(h.log).toEqual(['tunnel']);
     });
+    it('a machine on an older server is moved onto the image production names (note #1125), once, keeping its own settings', async () => {
+      const h = harness();
+      await h.service.call(ORG, 'unread', { userId: 'a' });
+      h.machines[0]!.config = { ...h.machines[0]!.config!, image: 'ghcr.io/x/ia-machine-images:msg-host-sha-old' } as never;
+      h.log.length = 0;
+      await h.service.convergeAll([ORG]);
+      expect(h.log).toEqual(['tunnel', 'update idle=0']);
+      expect(h.machines[0]!.config!.image).toBe('ghcr.io/x/ia-machine-images:msg-host-sha-1');
+      expect(h.machines[0]!.config!.env).toMatchObject({ MSG_HOST_ORG: ORG, MSG_HOST_SECRET: expect.any(String) });
+      expect(h.machines[0]!.config!.mounts).toEqual([{ volume: 'vol_1', path: '/data' }]);
+      h.log.length = 0;
+      await h.service.convergeAll([ORG]);
+      expect(h.log).toEqual(['tunnel']);
+    });
   });
 });

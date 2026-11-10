@@ -1108,7 +1108,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // company's two short links for its letters (agenticcloudcomputer.com/go/…).
 // v193 (note #1120): CLI 1.77.0 — `agentbuilt outreach show` prints the
 // third short link too, the setup guide ({install link} → /own-cloud.md).
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 193;
+// v194 (note #1125): CLI 1.78.0 — `agentbuilt member message … --file
+// <path>` attaches files to the Chief of Staff's draft; help says so.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 194;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

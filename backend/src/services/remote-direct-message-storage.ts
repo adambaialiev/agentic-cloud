@@ -1,5 +1,8 @@
-import type { DirectMessage } from '../shared/direct-messages.js';
-import { DirectMessageConflict, type DirectMessageStorage, type DirectMessageSummary } from './direct-message-storage.js';
+import type { DirectMessage, DirectMessageFile } from '../shared/direct-messages.js';
+import {
+  DirectMessageConflict, type DirectMessageFileBytes, type DirectMessageFileStorage, type DirectMessageStorage,
+  type DirectMessageSummary, type DirectMessageUpload,
+} from './direct-message-storage.js';
 import { OrgMsgHostRefusal, type OrgMsgHostService } from './org-msg-host.js';
 
 /**
@@ -21,10 +24,34 @@ export interface DirectMessageUnreadStore {
 
 /** Direct messages stored on the workplace's own messaging machine. */
 export class RemoteDirectMessageStorage implements DirectMessageStorage {
+  readonly files?: DirectMessageFileStorage;
   constructor(
-    private readonly host: Pick<OrgMsgHostService, 'call'> & Partial<Pick<OrgMsgHostService, 'wake'>>,
+    private readonly host: Pick<OrgMsgHostService, 'call'> & Partial<Pick<OrgMsgHostService, 'wake' | 'upload' | 'download'>>,
     private readonly unreadStore: DirectMessageUnreadStore,
-  ) {}
+  ) {
+    const { upload, download } = host;
+    // Note #1125: the bytes go where the words go — the workplace's own machine.
+    if (upload && download) {
+      this.files = {
+        upload: async (orgId, userId, peerId, meta: DirectMessageUpload, bytes) => {
+          const { file } = await upload.call(host, orgId, { userId, peerId, ...meta }, bytes) as { file: DirectMessageFile };
+          return file;
+        },
+        read: async (orgId, userId, peerId, fileId, thumb): Promise<DirectMessageFileBytes | null> => {
+          const got = await download.call(host, orgId, { userId, peerId, fileId, ...(thumb ? { thumb: true } : {}) });
+          if (!got) return null;
+          const file = got.meta as DirectMessageFile | null;
+          if (!file || typeof file.id !== 'string' || file.id !== fileId) { await got.body.cancel().catch(() => {}); return null; }
+          return { file, size: got.size, body: got.body };
+        },
+        pending: async (orgId, userId, peerId, fileIds) =>
+          (await host.call<{ files: DirectMessageFile[] }>(orgId, 'pending', { userId, peerId, files: fileIds })).files,
+        discard: async (orgId, userId, peerId, fileIds) => {
+          if (fileIds.length) await host.call(orgId, 'discard', { userId, peerId, files: fileIds });
+        },
+      };
+    }
+  }
 
   async wake(orgId: string): Promise<void> {
     await this.host.wake?.(orgId);
@@ -49,10 +76,10 @@ export class RemoteDirectMessageStorage implements DirectMessageStorage {
     });
   }
 
-  async send(orgId: string, userId: string, peerId: string, text: string, clientId: string) {
+  async send(orgId: string, userId: string, peerId: string, text: string, clientId: string, files?: string[]) {
     try {
       const answer = await this.host.call<{ message: DirectMessage; created: boolean; peerUnread: number }>(
-        orgId, 'send', { userId, peerId, text, clientId });
+        orgId, 'send', { userId, peerId, text, clientId, ...(files?.length ? { files } : {}) });
       this.unreadStore.set(orgId, peerId, answer.peerUnread);
       return { message: answer.message, created: answer.created };
     } catch (error) {

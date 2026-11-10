@@ -46,6 +46,26 @@ for expected in true false; do
 done
 echo "send stored once, retry returned the original"
 
+# Files (note #1125): an upload lands on the volume as msghost's, rides a
+# send, and comes back byte for byte.
+printf 'smoke file bytes' > /tmp/msg-smoke.file
+# {"userId":"u-a","peerId":"u-b","name":"smoke.txt","type":"text/plain"}, URI-encoded.
+META='%7B%22userId%22%3A%22u-a%22%2C%22peerId%22%3A%22u-b%22%2C%22name%22%3A%22smoke.txt%22%2C%22type%22%3A%22text%2Fplain%22%7D'
+CODE=$(curl -s -o /tmp/msg-smoke.out -w '%{http_code}' -X POST -H "x-msg-host-secret: $SECRET" -H 'x-msg-host-org: org-smoke' \
+  -H 'content-type: application/octet-stream' -H "x-msg-file: $META" --data-binary @/tmp/msg-smoke.file "http://127.0.0.1:$PORT/v1/upload")
+[ "$CODE" = "200" ] || { echo "upload answered $CODE"; cat /tmp/msg-smoke.out; exit 1; }
+FILE_ID=$(sed -n 's/.*"id":"\(f[0-9a-f]*\)".*/\1/p' /tmp/msg-smoke.out)
+[ -n "$FILE_ID" ] || { echo "upload gave no file id"; cat /tmp/msg-smoke.out; exit 1; }
+CODE=$(call -H "x-msg-host-secret: $SECRET" -H 'x-msg-host-org: org-smoke' \
+  -d "{\"userId\":\"u-a\",\"peerId\":\"u-b\",\"text\":\"\",\"clientId\":\"smoke-client-0002\",\"files\":[\"$FILE_ID\"]}" "http://127.0.0.1:$PORT/v1/send")
+[ "$CODE" = "200" ] || { echo "send with a file answered $CODE"; cat /tmp/msg-smoke.out; exit 1; }
+curl -fsS -X POST -H "x-msg-host-secret: $SECRET" -H 'x-msg-host-org: org-smoke' -H 'content-type: application/json' \
+  -d "{\"userId\":\"u-b\",\"peerId\":\"u-a\",\"fileId\":\"$FILE_ID\"}" "http://127.0.0.1:$PORT/v1/file" -o /tmp/msg-smoke.back
+cmp -s /tmp/msg-smoke.file /tmp/msg-smoke.back || { echo "the file did not come back byte for byte"; exit 1; }
+FILE_OWNER=$(docker exec "$CONTAINER" stat -c '%U' "/data/messages/files/$FILE_ID")
+[ "$FILE_OWNER" = "msghost" ] || { echo "the file is $FILE_OWNER's, expected msghost"; exit 1; }
+echo "a file was stored on the volume, sent, and read back"
+
 OWNER=$(docker exec "$CONTAINER" stat -c '%U %a' /data/messages)
 [ "$OWNER" = "msghost 700" ] || { echo "expected /data/messages msghost 700, got $OWNER"; exit 1; }
 PROC_USER=$(docker exec "$CONTAINER" stat -c '%U' /proc/1)

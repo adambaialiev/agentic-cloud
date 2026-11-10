@@ -99,7 +99,7 @@ try {
   await a.click(`#homePeople [data-person="${bob.userId}"] [data-row-door]`);
   await a.waitForSelector('#screenDirectMessage textarea:not([disabled])');
   assert.equal(a.url(), thread(bob.userId));
-  await a.type('textarea', 'Hi Mira! Is the launch page ready for a final look?'); await a.click('#directMessageForm button');
+  await a.type('textarea', 'Hi Mira! Is the launch page ready for a final look?'); await a.click('#directMessageForm button.chatsend');
   await a.waitForFunction(() => document.querySelectorAll('.chatmsg.owner').length === 1);
   assert.equal(await messages.unread(org.orgId, bob.userId), 1);
   await b.goto(`${origin}/messages?org=${org.orgId}`); await b.waitForSelector('.unreaddot');
@@ -112,9 +112,9 @@ try {
   await b.click('#screenMessages .card .crow'); await b.waitForSelector('textarea:not([disabled])');
   await b.waitForFunction(() => document.querySelector('[role=log]')?.textContent?.includes('launch page'));
   assert.equal(await messages.unread(org.orgId, bob.userId), 0);
-  await b.type('textarea', 'Yes — the new photos are in. I’ll send the final copy after lunch.'); await b.click('#directMessageForm button');
+  await b.type('textarea', 'Yes — the new photos are in. I’ll send the final copy after lunch.'); await b.click('#directMessageForm button.chatsend');
   await a.waitForFunction(() => document.querySelector('[role=log]')?.textContent?.includes('after lunch'), { timeout: 10000 });
-  await a.type('textarea', 'Perfect. I’ll check the mobile layout and we can publish together.'); await a.click('#directMessageForm button');
+  await a.type('textarea', 'Perfect. I’ll check the mobile layout and we can publish together.'); await a.click('#directMessageForm button.chatsend');
   await a.waitForFunction(() => document.querySelectorAll('.chatmsg.owner').length === 2);
   await a.screenshot({ path: `${out}/conversation-mobile.png`, fullPage: true });
   const geometry = await a.evaluate(() => ({ width: document.documentElement.scrollWidth, viewport: innerWidth, height: innerHeight,

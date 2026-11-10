@@ -305,3 +305,100 @@ describe('agentbuilt member: the Chief of Staff\'s verb, write-only', () => {
     expect((refused.body as { error: string }).error).toMatch(/Nothing was sent/);
   });
 });
+
+/**
+ * Note #1125: the Chief of Staff's draft carries files. Through the REAL
+ * agent-cli and Workspace routers and the REAL messaging server: the file
+ * waits on the machine as the person's own unsent upload, the card shows it,
+ * the tap sends it with the words, and a declined draft's file is deleted.
+ */
+describe('a Chief of Staff draft with files, end to end', () => {
+  let server: Server, origin: string, orgId: string, host: MsgHostProcess, db: SqliteDb, wa: string;
+  const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'), Buffer.from([0, 0, 0, 200, 0, 0, 0, 100]), Buffer.alloc(40, 3)]);
+  beforeEach(async () => {
+    const users = new InMemoryUserStorage(), orgs = new InMemoryOrgStorage();
+    await users.createProfile('alice', { email: 'a@example.test', displayName: 'Alice' });
+    await users.createProfile('bob', { email: 'b@example.test', displayName: 'Bob' });
+    await users.createProfile('carol', { email: 'c@example.test', displayName: 'Carol' });
+    orgId = (await orgs.createOrg({ name: 'Studio', createdByUserId: 'alice' })).orgId;
+    for (const name of ['alice', 'bob', 'carol']) await orgs.addMember({ orgId, userId: name, role: name === 'alice' ? 'admin' : 'member' });
+    const token = mintAgentbuiltToken('alice', 'wa-alice');
+    wa = token.token;
+    await users.updateProfile('alice', {
+      telegram: {
+        chatId: '1', linkedAt: 't', notificationsEnabled: true,
+        agents: { 'wa-alice': { id: 'wa-alice', name: 'Workspace Agent', cli: 'claude', orgId, purpose: 'workspace-recap', agentbuiltTokenHash: token.tokenHash } as never },
+      },
+    });
+    db = openSqliteDb(':memory:');
+    host = await startMsgHost({ orgId });
+    const storage = new RemoteDirectMessageStorage(host, new SqliteDirectMessageUnreadStore(db));
+    const approvals = new DirectMessageApprovalService(new SqliteDirectMessageApprovalStorage(db), () => storage,
+      async (org, user) => Boolean(await orgs.getMembership(org, user)));
+    const deps: Partial<RouteDeps> = {
+      userStorage: users, orgStorage: orgs, directMessageStorage: storage, directMessageApprovals: approvals,
+    };
+    await addWorkspaceTestAuth(deps, users, { 1: 'alice', 2: 'bob', 3: 'carol' });
+    const app = express(); app.use(express.json());
+    app.use('/api/agent-cli', agentCliRoutes(deps as RouteDeps));
+    app.use('/workspace', workspaceRoutes(deps as RouteDeps));
+    // The Workspace router installs its own conversation; the card's row is not what is tested here.
+    deps.workspaceAgent = { requestMessageApproval: async () => true } as never;
+    server = createServer(app); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => { await new Promise<void>(resolve => server.close(() => resolve())); db.close(); await host.stop(); });
+  const cli = (path: string, init: RequestInit = {}) => fetch(`${origin}/api/agent-cli/${path}`, { ...init, headers: { authorization: `Bearer ${wa}`, ...(init.headers ?? {}) } });
+  const attach = (to: string, bytes: Buffer, name: string) => cli(`members/message/files?to=${encodeURIComponent(to)}`, {
+    method: 'POST', body: new Uint8Array(bytes), headers: { 'content-type': 'application/octet-stream', 'x-file-name': encodeURIComponent(name) },
+  });
+  const ask = (body: unknown) => cli('members/message', { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
+  const web = (who: number, path: string, method = 'GET', body?: unknown) => fetch(`${origin}/workspace/api/${path}${path.includes('?') ? '&' : '?'}org=${orgId}`, {
+    method, headers: { ...workspaceTestHeaders(who), 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+
+  it('the file waits as the person\'s unsent upload, the card shows it, and the tap sends both, marked', async () => {
+    const up = await attach('Bob', PNG, 'chart.png');
+    expect(up.status).toBe(201);
+    const { file } = await up.json();
+    expect(file).toEqual({ id: expect.stringMatching(/^f[0-9a-f]{24}$/), name: 'chart.png', type: 'image/png', size: PNG.length });
+    const res = await ask({ name: 'Bob', text: 'Here is the chart.', files: [file.id] });
+    expect(res.status).toBe(202);
+    const { approval, said } = await res.json();
+    expect(said).toMatch(/with chart\.png.*Nothing was sent/);
+    // The card: words and file. Alice sees the waiting picture; Bob sees nothing yet.
+    const card = (await (await web(1, `message-approvals/${approval.id}`)).json()).approval;
+    expect(card.files).toEqual([expect.objectContaining({ id: file.id, name: 'chart.png', type: 'image/png', width: 200, height: 100 })]);
+    expect((await web(1, `messages/bob/files/${file.id}`)).status).toBe(200);
+    expect((await web(2, `messages/alice/files/${file.id}`)).status).toBe(404);
+    // No agent route reads it back.
+    expect((await cli(`members/message/files/${file.id}`)).status).toBe(404);
+    // The tap.
+    const tap = (await (await web(1, `message-approvals/${approval.id}/decision`, 'POST', { decision: 'approve' })).json()).approval;
+    expect(tap.status).toBe('sent');
+    expect(tap.files).toBeUndefined();
+    const page = await (await web(2, 'messages/alice')).json();
+    expect(page.messages[0]).toMatchObject({ senderId: 'alice', text: 'Here is the chart.', files: [expect.objectContaining({ id: file.id })] });
+    expect(sentViaChiefOfStaff(page.messages[0])).toBe(true);
+    const bytes = await web(2, `messages/alice/files/${file.id}`);
+    expect(Buffer.from(await bytes.arrayBuffer()).equals(PNG)).toBe(true);
+    // Decided: no word and no file name left on the platform.
+    const row = db.prepare('SELECT doc FROM workspace_message_approvals').get() as { doc: string };
+    expect(row.doc).not.toMatch(/chart|Here is/);
+  });
+
+  it('a file alone is a message; a declined draft takes its file with it; another teammate\'s file is refused', async () => {
+    const { file } = await (await attach('Bob', PNG, 'only.png')).json();
+    // Uploaded for Bob, so it cannot ride a draft to Carol.
+    expect((await ask({ name: 'Carol', text: 'Hi', files: [file.id] })).status).toBe(400);
+    const res = await ask({ name: 'Bob', text: '', files: [file.id] });
+    expect(res.status).toBe(202);
+    const { approval } = await res.json();
+    await web(1, `message-approvals/${approval.id}/decision`, 'POST', { decision: 'reject' });
+    expect((await web(1, `messages/bob/files/${file.id}`)).status).toBe(404);
+    expect(await host.call(orgId, 'storage', {})).toMatchObject({ files: 0 });
+    // Words or a file: one of them.
+    expect((await ask({ name: 'Bob', text: '  ' })).status).toBe(400);
+    expect((await attach('Zara', PNG, 'x.png')).status).toBe(404);
+  });
+});

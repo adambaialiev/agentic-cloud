@@ -1586,6 +1586,16 @@ button.chatmsg.platform.aside:active {
    Staff's card says so, on its own quiet line in the clock's voice; the
    clock floats into that line, as it does into any last line. */
 .chatmsg .dmvia { display: block; margin-top: 2px; font-size: var(--ui-sm); line-height: var(--ui-sm-leading); opacity: .62; }
+/* Note #1125: files in direct messages use the agent chat's file rows. The
+   paperclip sits inside the field as the agent chat's does; a drag held over
+   the conversation says where it will land; the card shows what goes. */
+.chatinput.withattach > textarea { padding-left: 0; }
+.dmdrop { text-align: center; border: 1px dashed var(--accent); }
+#screenDirectMessage.dmdragging .chatpane { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.chatmsg.chatfile .dmvia { align-self: inherit; }
+a.chatfileitem.dmfile { text-decoration: none; }
+.messageapprovalfiles { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 8px 0 4px; }
+.messageapprovalfiles .chatfileline { background: var(--card); border: 1px solid var(--border); }
 /* A file message with no words keeps its clock on the row, which is a
    column now: floating is meaningless there, so it lands as its own quiet
    line under the attachments on the side the message is spoken from. */
