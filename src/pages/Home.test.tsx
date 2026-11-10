@@ -104,7 +104,10 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(value.nextElementSibling?.id).toBe('workplace');
     expect(value.querySelector('h2')!.textContent).toBe('Your agents. Your cloud. Your data.');
     expect(value.querySelector('p')!.textContent).toBe(VALUE_LEAD);
-    expect(VALUE_LEAD).toMatch(/None of your data comes to us, only a daily report\.$/);
+    // Note #1135 (Adam, 10 Nov 2026): the daily report belongs to the Privacy
+    // Policy, not the home page; the lead ends on the promise.
+    expect(VALUE_LEAD).toMatch(/your company’s cloud\. None of your data comes to us\.$/);
+    expect(VALUE_LEAD).not.toMatch(/daily report/);
     expect(VALUE_HEADING).toBe('Your agents. Your cloud. Your data.');
     const facts = [...value.querySelectorAll('[data-value-fact]')].map((fact) => [fact.querySelector('dt')!.textContent, fact.querySelector('dd')!.textContent]);
     expect(facts).toEqual(VALUE_FACTS.map(({ title, line }) => [title, line]));

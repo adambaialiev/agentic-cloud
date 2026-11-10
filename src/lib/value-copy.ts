@@ -16,8 +16,14 @@
    Everywhere else the long fixed sentence holds ("None of your data comes to
    us: only a daily report of counts and the contact you chose, which your
    admin sees and can turn off."). Never "leaves" (claims-we-never-make: the
-   AI provider reads what the agents send it), and never "none of your data
-   comes to us" without the report.
+   AI provider reads what the agents send it). Everywhere but this section,
+   never "none of your data comes to us" without the report.
+
+   Note #1135 (Adam, 10 Nov 2026, 14:53 UTC): the lead ends at "None of your
+   data comes to us." "Only daily report leaves a question in customer's
+   head ... It's not worth it to say it in the home page. In privacy policy
+   is enough." The daily report is privacy-policy material, not home-page
+   copy; the Privacy Policy explains it.
 
    Note #1131 (Adam, 10 Nov 2026, 11:26 UTC): "Move from Claude Code to
    Codex or OpenCode without losing it." came off the second fact because it
@@ -25,7 +31,7 @@
    the three agents. */
 export const VALUE_HEADING = 'Your agents. Your cloud. Your data.';
 export const VALUE_LEAD =
-  'Claude Code, Codex and OpenCode on the plans you already pay for, each on a computer of its own in your company’s cloud. None of your data comes to us, only a daily report.';
+  'Claude Code, Codex and OpenCode on the plans you already pay for, each on a computer of its own in your company’s cloud. None of your data comes to us.';
 export const VALUE_FACTS: readonly { title: string; line: string }[] = [
   {
     title: 'Built in',
