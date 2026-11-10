@@ -171,8 +171,8 @@ function encodeTurnInputPayload(line: string): string {
 
 /**
  * Redirect a turn command's stdout into the turn file. The brace group scopes
- * the redirect over compound commands (e.g. Codex's `codex mcp add …; codex
- * exec …`). Each file lives directly in the world-writable sticky `/tmp`
+ * the redirect over compound commands (a setup step followed by the CLI's own
+ * command). Each file lives directly in the world-writable sticky `/tmp`
  * directory: using a shared subdirectory lets a stale root-owned directory
  * block the non-root harness user. `umask 077` keeps the per-turn file private.
  *

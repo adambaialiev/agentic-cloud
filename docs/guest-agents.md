@@ -155,6 +155,17 @@ a-finished-job-wakes-its-agent), without a platform token:
   the decline line). It now reads "I stopped without writing an answer…",
   not counted.
 
+## How it answers: product terms (note #1133)
+
+A visitor hears what the product is and does, in plain words. The agent reads
+the public code and docs to ground every answer, but does not quote their
+internals back: no file paths, folder names, function or variable names, flag
+or setting names, endpoints or internal doc names, and no remarks that a doc is
+stale (the current code wins, stated plainly). It describes the product as it
+is today. The exception is a question about the code itself, or code work the
+visitor asked for: then it names the files it read or changed, never a test
+file as evidence. The rule, with the "is it MCP?" example, is in `guest-agent-instructions.ts`.
+
 ## The build, from nothing (note #1055)
 
 Start guest agent reserves a sealed guest record (its name) and builds the rest

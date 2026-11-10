@@ -17,6 +17,15 @@ describe('the public guide\'s instructions', () => {
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('never a test file');
   });
 
+  it('answers in product terms: no paths, flags or doc names, no remarks on stale docs (note #1133)', () => {
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('Answer in product terms.');
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toMatch(/no file paths, folder names, function or variable names, flags or setting names, endpoints, and no names of internal docs/);
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toMatch(/Never remark that a doc is old, stale or disagrees with the code/);
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('Nothing in the Agentic Cloud is built on MCP.');
+    // The old invitation to cite paths is gone.
+    expect(PUBLIC_GUIDE_INSTRUCTIONS).not.toMatch(/when it helps the reader check you/);
+  });
+
   it('carries the claims that must stay exact', () => {
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('free for now: no licence, no key and no charge from us');
     expect(PUBLIC_GUIDE_INSTRUCTIONS).toContain('AGPL-3.0');

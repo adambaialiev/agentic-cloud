@@ -97,6 +97,18 @@ describe('the guest\'s instructions', () => {
   });
 });
 
+describe('the guest\'s instructions: product terms (note #1133)', () => {
+  it('grounds answers in the code but never quotes its internals back to a visitor', async () => {
+    const { GUEST_AGENT_INSTRUCTIONS } = await import('../../config/guest-agent-instructions.js');
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Answer questions about the product in product terms.');
+    expect(GUEST_AGENT_INSTRUCTIONS).toMatch(/no file paths, folder names, function or variable names, flags or setting names, endpoints, and no names of internal docs/);
+    expect(GUEST_AGENT_INSTRUCTIONS).toMatch(/Never remark that a doc is old, stale or disagrees with the code/);
+    expect(GUEST_AGENT_INSTRUCTIONS).toContain('Nothing in the Agentic Cloud is built on MCP.');
+    // Asked-for code work still names its files.
+    expect(GUEST_AGENT_INSTRUCTIONS).toMatch(/name the files you read or changed/);
+  });
+});
+
 describe('the guest machine\'s setup', () => {
   const script = buildGuestSetupScript(SOURCE);
   it('fails closed: no nftables, no turn; the lock must load', () => {

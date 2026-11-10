@@ -418,18 +418,11 @@ answer from the `text` lines, and deletes the session it had to open. The Chief
 of Staff does not run on OpenCode: an OpenCode key powers the workplace's
 other agents.
 
-## Optional Platform MCP
+## Tools
 
-When the platform MCP registry and public backend base URL are configured, each
-turn receives a short-lived, session-scoped MCP token.
-
-Claude receives an inline `--mcp-config` plus `--strict-mcp-config`. Codex runs
-an idempotent `codex mcp add platform` and supplies the token through the
-environment variable named in that configuration. The registry token is revoked
-when the turn finishes.
-
-MCP is optional. A log field of `"mcp": false` means the CLI turn is running
-without platform MCP tools, not that the harness itself is broken.
+The CLIs run with their own built-in tools only: the shell, files and editing
+that Claude Code, Codex and OpenCode ship with. The platform adds no tool server
+of its own to a turn; its former MCP server has been removed.
 
 ## JSONL Transport and Process Supervision
 
@@ -558,8 +551,6 @@ docs/dedicated-credentials-and-limbo.md).
   model turns. Child-session completion notifications are delivered directly.
 - A single CLI attempt has a 30-minute deadline. A missing local resume target
   can cause one additional fresh attempt for the same message.
-- Platform MCP exposes only its curated platform-tool subset. It is not a
-  transparent bridge to every tool available to the built-in agent loop.
 - The user's Codex or Claude subscription pays for CLI inference. The platform
   itself is free and does not meter or bill usage. A connected harness turn
   should not consume built-in model tokens.
@@ -571,7 +562,7 @@ persists the error without `lastErrorType: generic`, so the generic session
 recovery coordinator does not restart the failed Telegram session with the
 default model. The user can send a fresh message to retry the selected harness.
 
-Known runtime secrets, including Claude OAuth and platform MCP tokens, must be
+Known runtime secrets, including Claude OAuth tokens, must be
 removed from PTY transcripts before logging error tails or timeout diagnostics.
 The SSH shell echoes the full command, so redacting only the structured "turn
 start" log is insufficient.
@@ -603,7 +594,6 @@ Use these signals:
 | `resume: true`, followed by missing conversation | VM lost the stored CLI conversation; harness should retry once fresh |
 | `delivered > 0` but terminal remains running | Supervising shell did not exit or the CLI still has work/open handles |
 | Controller-model token logs after a harness error | Incorrect generic recovery or routing fallback; harness errors must remain non-recoverable |
-| `mcp: false` | Platform MCP is disabled/unconfigured; ordinary CLI chat should still work |
 
 ## Debugging Checklist
 
@@ -638,7 +628,6 @@ Use these signals:
 | `backend/src/agent/opencode/opencode-command.ts` | OpenCode command, its environment, and the limit plugin |
 | `backend/src/agent/opencode/opencode-key.ts` | OpenCode key's live check at sign-in |
 | `backend/src/agent/harness-turn-output.ts` | Per-turn file path, headless wrapper, polling, cleanup, secret redaction |
-| `backend/src/mcp/platform-mcp-registry.ts` | Session-scoped MCP registration and revocation |
 | `backend/src/agent/telegram-setup-system-prompt.ts` | Setup-agent connection procedure |
 
 Focused tests live in:
