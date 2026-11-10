@@ -70,7 +70,10 @@ import {
   GUEST_TURN_FINAL_STATES,
   GUEST_TURNSTILE_ACTION,
   guestGreeting,
+  guestOutreachCompanyId,
   type GuestActivity,
+  type GuestArrival,
+  type GuestArrivalView,
   type GuestCreateAnswer,
   type GuestCreateStep,
   type GuestCreateStepId,
@@ -146,6 +149,17 @@ export interface GuestAgentServiceDeps {
    * their agent.
    */
   buildRetryMs?: number;
+  /**
+   * The owner's Outreach (note #1139): a guest whose link tags name one of
+   * the owner's Outreach companies is shown with that company, and the
+   * company's timeline says a guest was started. Absent in a private copy.
+   */
+  outreach?: {
+    company(userId: string, companyId: string): Promise<{ id: string; name: string } | null>;
+    guestStarted(userId: string, companyId: string, guest: { agentId: string; name: string; country: string | null }): Promise<void>;
+    /** The Outreach site, for the link to a company's page (`<origin>/c/<id>`). */
+    siteOrigin: string;
+  } | null;
 }
 
 interface LiveTurn {
@@ -473,7 +487,7 @@ export class GuestAgentService {
   }
 
   /** POST /api/public/guest — Make my agent. */
-  async create(args: { key?: unknown; turnstileToken?: unknown; address: string }): Promise<{ httpStatus: number; answer: GuestCreateAnswer | { state: 'invalid'; error: string } }> {
+  async create(args: { key?: unknown; turnstileToken?: unknown; address: string; arrival?: GuestArrival }): Promise<{ httpStatus: number; answer: GuestCreateAnswer | { state: 'invalid'; error: string } }> {
     if (this.validKey(args.key)) {
       const current = await this.status(args.key);
       if (['creating', 'ready', 'working', 'asleep'].includes(current.state)) return { httpStatus: 200, answer: { status: current } };
@@ -496,7 +510,7 @@ export class GuestAgentService {
       // No ceiling on how many are alive and no line (note #1055): built now, from nothing.
       const key = randomBytes(32).toString('base64url');
       const keyHash = hashGuestKey(key);
-      const row = await this.claim(settings, keyHash, args.address);
+      const row = await this.claim(settings, keyHash, args.address, args.arrival);
       if (!row) {
         this.failedKeys.set(keyHash, now);
         return { httpStatus: 200, answer: { status: this.blankStatus('failed') } };
@@ -515,7 +529,7 @@ export class GuestAgentService {
    * rest of the build runs in finishClaim. Caller holds the lock. Holding it
    * only spans the reservation, so builds run side by side.
    */
-  private async claim(settings: GuestAgentSettings, keyHash: string, address: string): Promise<GuestAgentRow | null> {
+  private async claim(settings: GuestAgentSettings, keyHash: string, address: string, arrival?: GuestArrival): Promise<GuestAgentRow | null> {
     const now = this.now();
     const nowIso = new Date(now).toISOString();
     const made = await this.deps.host.createRecord(settings.userId, settings.orgId).catch((error) => ({ error: String(error) }));
@@ -539,9 +553,11 @@ export class GuestAgentService {
       removedAt: null,
       removedReason: null,
       transcript: this.newTranscript(made.id, made.name),
+      ...(arrival ? { arrival } : {}),
     };
     await this.deps.storage.put(row);
     console.log(`[guest] building ${made.name} (${made.id}) from nothing`);
+    this.tellOutreach(settings.userId, row);
     this.addressMade.set(address, [...this.madeToday(address, now), now]);
     const live = this.addressLive.get(address) ?? new Set<string>();
     live.add(row.agentId);
@@ -1216,26 +1232,60 @@ export class GuestAgentService {
     }
   }
 
+  // ── Where a guest came from (note #1139) ────────────────────────────────
+
+  /** A guest whose tags name one of the owner's Outreach companies goes on that company's timeline. Never blocks the build. */
+  private tellOutreach(userId: string, row: GuestAgentRow): void {
+    const companyId = guestOutreachCompanyId(row.arrival);
+    const outreach = this.deps.outreach;
+    if (!companyId || !outreach) return;
+    this.track(outreach.guestStarted(userId, companyId, { agentId: row.agentId, name: row.transcript.name, country: row.arrival?.country ?? null })
+      .catch((error) => { console.warn(`[guest] could not note ${row.transcript.name} on its Outreach company: ${String(error)}`); }));
+  }
+
+  /** The owner's view of where each guest came from, with the Outreach company looked up once per read. */
+  private arrivalViews(): (row: GuestAgentRow) => Promise<GuestArrivalView | null> {
+    const companies = new Map<string, Promise<{ id: string; name: string } | null>>();
+    return async (row) => {
+      if (!row.arrival) return null;
+      const companyId = guestOutreachCompanyId(row.arrival);
+      const outreach = this.deps.outreach;
+      let company: { id: string; name: string } | null = null;
+      if (companyId && outreach) {
+        const key = `${row.userId}\u0000${companyId}`;
+        if (!companies.has(key)) companies.set(key, outreach.company(row.userId, companyId).catch(() => null));
+        company = await companies.get(key)!;
+      }
+      return {
+        ...row.arrival,
+        outreach: company && outreach ? { id: company.id, name: company.name, url: `${outreach.siteOrigin}/c/${encodeURIComponent(company.id)}` } : null,
+      };
+    };
+  }
+
   // ── The owner's Guests screen ───────────────────────────────────────────
 
   async listForOwner(): Promise<WorkspaceGuestsAnswer> {
     const now = this.now();
     const live = await this.deps.storage.listByPhase(['creating', 'live']);
     const past = await this.deps.storage.listRemoved(200);
+    const arrivalOf = this.arrivalViews();
     return {
-      live: live.map((row) => {
+      live: await Promise.all(live.map(async (row) => {
         const status = this.statusOfRow(row);
         return {
           agentId: row.agentId, name: row.transcript.name, avatarUrl: row.transcript.avatarUrl, createdAt: row.claimedAt ?? row.preparedAt,
           messages: row.transcript.messages.filter((m) => m.role === 'visitor').length, state: status.state, quietUntil: status.quietUntil,
+          arrival: await arrivalOf(row),
         };
-      }),
-      past: past.filter((row) => row.claimedAt).map((row) => ({
+      })),
+      past: await Promise.all(past.filter((row) => row.claimedAt).map(async (row) => ({
         agentId: row.agentId, name: row.transcript.name, avatarUrl: row.transcript.avatarUrl, createdAt: row.claimedAt ?? row.preparedAt,
         removedAt: row.removedAt, removedReason: row.removedReason,
         messages: row.transcript.messages.filter((m) => m.role === 'visitor').length,
         costUsd: Math.round(row.transcript.messages.reduce((sum, m) => sum + (m.costUsd ?? 0), 0) * 10_000) / 10_000,
-      })),
+        arrival: await arrivalOf(row),
+      }))),
       limits: { globalPerDay: this.limits.globalPerDay, perAddressPerDay: this.limits.perAddressPerDay },
       madeToday: await this.deps.storage.countClaimedSince(utcDayStart(now)),
     };
@@ -1247,7 +1297,7 @@ export class GuestAgentService {
     if (!row || (!row.claimedAt && row.phase !== 'removed')) return null;
     const running = this.runningByAgent.get(agentId);
     const turn = running ? this.turns.get(running) : undefined;
-    return { ...row.transcript, state: this.statusOfRow(row).state, partial: turn?.partial ?? null };
+    return { ...row.transcript, arrival: await this.arrivalViews()(row), state: this.statusOfRow(row).state, partial: turn?.partial ?? null };
   }
 
   /** Whether an agent id is a guest's (the harness and `agent message` refuse them). */

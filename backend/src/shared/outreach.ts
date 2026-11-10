@@ -1017,6 +1017,12 @@ export type OutreachTouch = {
    * reason for a bounce; `permanent` is false for a bounce it calls passing.
    */
   | { kind: 'mail'; event: OutreachMailEvent; mailId: string; step: OutreachStep; eventId: string; detail?: string | null; permanent?: boolean }
+  /**
+   * A visitor who arrived through one of the company's links started a guest
+   * agent on the home page (note #1139): its name and id (the conversation is
+   * in the owner's Guests group) and Cloudflare's country for the visit.
+   */
+  | { kind: 'guest'; agentId: string; name: string; country: string | null }
 );
 
 /**

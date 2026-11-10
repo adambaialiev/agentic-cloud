@@ -269,12 +269,52 @@ One row per agent lives in `guest_agents` (SQLite). It holds the
 conversation with each answer's activity (files read and changed, searches,
 commands), seconds, Claude's cost line, and any flag from the outgoing check
 (the guide's `guideAnswerLeak`). A held-back answer reaches the visitor as
-the declined sentence, and the owner sees what was held. Nothing about the
-visitor is kept beyond what they typed: no address, no user agent, and their
-key only as a SHA-256, dropped a day after the agent goes. The owner reads
-it all on the Guests group (`GET /workspace/api/guests`,
-`/workspace/api/guests/:agentId`) and can delete a live one
-(`DELETE /workspace/api/guests/:agentId`).
+the declined sentence, and the owner sees what was held. Beyond what they
+typed, the row keeps only where the visitor came from (below): no address,
+no city, no user agent, and their key only as a SHA-256, dropped a day after
+the agent goes. The owner reads it all on the Guests group
+(`GET /workspace/api/guests`, `/workspace/api/guests/:agentId`) and can
+delete a live one (`DELETE /workspace/api/guests/:agentId`).
+
+### Where a guest came from (note #1139)
+
+Adam, 10 Nov 2026: "where is he from (country), or maybe if it a contact that
+following link we should know utm". The row's `arrival` holds:
+
+- **country**: Cloudflare's `CF-IPCountry` for the Start guest agent request,
+  two letters (`T1` is Tor; `XX` and anything else is unknown). Never the
+  address or a city.
+- **utm**: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content` and
+  `utm_term` of the visit's first page, each cleaned and cut to 100
+  characters; any other query word is dropped.
+- **referrerHost**: the referring site's host, when the browser names one and
+  it is not ours.
+
+The page notes the tags and the referrer on the first page of the visit, in
+the tab's sessionStorage (`src/lib/guest-arrival.ts`, key `acc.guestArrival`,
+no cookie), and sends them only inside Start guest agent. The backend cleans
+them again (`cleanGuestArrival` in `shared/guest-agent.ts`). They are data
+for the owner: nothing of them reaches the guest's agent, its prompt or its
+machine, and the visitor's own status never carries them (a test holds all
+three).
+
+**Outreach.** A letter's home link already lands with `utm_source=outreach`
+and the company's record id in `utm_content` (note #1106), so letters sent
+before this change are matched too. For such a guest, the owner's read names
+the company and links to its page on the Outreach site (`<OUTREACH_SITE_ORIGIN>/c/<id>`),
+looked up on every read. When the guest is made, the company's timeline gets
+one `guest` touch (name, id, country), which the Outreach site shows as
+"Started a guest agent on the home page (Theo, from Netherlands)…". It is a
+fact, not a step: the state does not move. An id that is no company of the
+owner's records nothing. The touch does not link to the conversation
+itself: the Guests group has no address of its own yet.
+
+**On the Guests group**, each row starts with the country's name and the
+source: "from Outreach: Company", else the utm source and campaign, else
+"from <site>", else "no link tags". An opened guest lists country, the
+Outreach company (linked), every tag and the referring site. A guest made
+before this change says so. The Privacy Policy says it in section 3,
+"Guest agents on our home page" (effective November 10, 2026).
 
 ## The public routes
 

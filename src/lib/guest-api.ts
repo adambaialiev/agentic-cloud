@@ -6,7 +6,7 @@
  * touches the routes.
  *
  *   GET    /workspace/api/public/guest                       → GuestStatus
- *   POST   /workspace/api/public/guest {turnstileToken?}     → {key?, status} | {state:'invalid'}
+ *   POST   /workspace/api/public/guest {turnstileToken?, arrival?} → {key?, status} | {state:'invalid'}
  *   POST   /workspace/api/public/guest/messages {text}       → GuestMessageAnswer
  *   GET    /workspace/api/public/guest/turns/:turnId         → GuestTurnStatus
  *   POST   /workspace/api/public/guest/turns/:turnId/stop    → {state}
@@ -36,6 +36,7 @@ import {
   type GuestTurnState,
   type GuestTurnStatus,
 } from '../../backend/src/shared/guest-agent';
+import { readArrival } from './guest-arrival';
 
 export { GUEST_KEY_HEADER, GUEST_KEY_STORAGE };
 export type { GuestActivity, GuestCreateStep, GuestMessage, GuestMessageAnswer, GuestRemovedReason, GuestState, GuestStatus, GuestTurnState, GuestTurnStatus };
@@ -137,10 +138,12 @@ export async function readGuest(signal?: AbortSignal): Promise<GuestStatus> {
 }
 
 export async function makeGuest(turnstileToken: string | null): Promise<GuestCreateAnswer> {
+  // How this tab arrived (note #1139): data for the owner's Guests group, never shown to the agent.
+  const arrival = typeof window === 'undefined' ? undefined : readArrival(window);
   return read<GuestCreateAnswer>(await fetch(GUEST_PATH, {
     method: 'POST',
     headers: headers(true),
-    body: JSON.stringify(turnstileToken ? { turnstileToken } : {}),
+    body: JSON.stringify({ ...(turnstileToken ? { turnstileToken } : {}), ...(arrival ? { arrival } : {}) }),
   }));
 }
 

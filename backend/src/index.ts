@@ -2184,6 +2184,14 @@ const guestAgentService = new GuestAgentService({
   sandboxClient: () => sessionManager.getSandboxClient(),
   turnstile: guestTurnstile,
   idleStopMs: FLY_IDLE_STOP_MINUTES * 60_000,
+  // A guest from one of the owner's Outreach letters names its company (note #1139).
+  outreach: outreach
+    ? {
+      company: (userId, companyId) => outreach.company(userId, companyId),
+      guestStarted: async (userId, companyId, guest) => { await outreach.guestStarted(userId, companyId, guest); },
+      siteOrigin: OUTREACH_SITE_ORIGIN,
+    }
+    : null,
 });
 guestAgentService.start();
 console.log(`[config] GUEST_AGENTS door=${guestDoorUrl ?? 'off (AGENTBUILT_API_URL is not https)'}, turnstile=${guestTurnstile ? 'on' : 'off'}`);

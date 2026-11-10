@@ -102,7 +102,19 @@ describe('Privacy Policy', () => {
     expect(body).toMatch(/We keep the questions you type and\s+its answers for 90 days, and the founder reads them/);
     expect(body).toMatch(/We store no\s+address, cookie or account with them/);
     expect(body).toMatch(/processed by Anthropic’s Claude, on the\s+founder’s own Claude subscription/);
-    expect(body).toMatch(/November 8, 2026/);
+    expect(body).toMatch(/November 10, 2026/);
+  });
+
+  // Note #1139 (Adam, 10 Nov 2026): a guest agent's conversation, with where its visitor came from.
+  it('says what a guest agent keeps: the conversation, the country and the link tags, 90 days, never the address', () => {
+    render(<PrivacyPolicy />);
+    const body = (document.body.textContent ?? '').replace(/\s+/g, ' ');
+    expect(body).toMatch(/Guest agents on our home page\./);
+    expect(body).toMatch(/We keep that conversation for 90 days, and the founder reads it\./);
+    expect(body).toMatch(/your country, as our network provider Cloudflare reports it for the visit \(two letters, never your address or city\)/);
+    expect(body).toMatch(/the campaign tags on the link you followed \(such as utm_source\)/);
+    expect(body).toMatch(/If that link was in a letter from the founder, we can tell which company it was sent to\./);
+    expect(body).toMatch(/We store no address, cookie or account with it/);
   });
 
   it('says a builder page’s numbers are shown only to its person, and names no Leaderboard (note #824)', () => {

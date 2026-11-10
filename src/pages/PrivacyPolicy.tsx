@@ -75,6 +75,15 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  * visit id lives in the tab's sessionStorage; the founder reads them in
  * Visits; the guide is Claude Code on the founder's own Claude subscription.
  *
+ * 2026-11-10 (note #1139, Adam: "where is he from (country) … utm"): "Guest
+ * agents on our home page" in section 3 — the guest agent of note #1038.
+ * Its conversation is kept 90 days in guest_agents with, since note #1139,
+ * Cloudflare's two-letter country (CF-IPCountry), the utm tags and the
+ * referring host (cleanGuestArrival in shared/guest-agent.ts); the address
+ * only keys in-memory daily counts; the key lives in localStorage and the
+ * tags in the tab's sessionStorage (lib/guest-arrival.ts). An Outreach
+ * letter's link names its company (utm_content), hence the letter sentence.
+ *
  * 2026-11-08 (note #1081, after the acceptance pass of notes #1077–#1080):
  * section 2 names what release 2026.11.07.0 sends and reads. The daily
  * pulse (note #1057; routes/copy-pulse.ts keeps it in copy_pulses) is held
@@ -85,7 +94,7 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  */
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="November 8, 2026">
+    <LegalLayout title="Privacy Policy" effectiveDate="November 10, 2026">
       <LegalSection title="1. Who we are">
         <p>
           Agentic Cloud Computer makes a shared Workspace for a company&rsquo;s AI agents. We offer it
@@ -174,6 +183,19 @@ export default function PrivacyPolicy() {
           address, cookie or account with them: your internet address is only used, in memory, to
           count your questions per hour, and your browser keeps a random visit number for the open
           tab. The questions and answers are processed by Anthropic&rsquo;s Claude, on the
+          founder&rsquo;s own Claude subscription.
+        </p>
+        <p>
+          <b className="text-white">Guest agents on our home page.</b> Anyone can start a guest agent
+          on our home page, signed out, and talk to it about the product. We keep that conversation
+          for 90 days, and the founder reads it. With it we keep where you came from: your country,
+          as our network provider Cloudflare reports it for the visit (two letters, never your
+          address or city), the campaign tags on the link you followed (such as utm_source), and the
+          name of the site that sent you, if your browser says. If that link was in a letter from the
+          founder, we can tell which company it was sent to. We store no address, cookie or account
+          with it: your internet address is only used, in memory, to count the guest agents started
+          from it in a day, and your browser keeps the agent&rsquo;s key and the link tags for the
+          open tab. The conversation is processed by Anthropic&rsquo;s Claude, on the
           founder&rsquo;s own Claude subscription.
         </p>
         <p>

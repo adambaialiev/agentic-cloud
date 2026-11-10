@@ -594,6 +594,26 @@ export class OutreachService {
     throw new OutreachError(400, 'Say save, take or keep.');
   }
 
+  /** The company an Outreach link's tags name (note #1139), or null: its id and name only. */
+  async company(userId: string, targetId: string): Promise<{ id: string; name: string } | null> {
+    const record = await this.deps.store.target(userId, String(targetId ?? ''));
+    return record ? { id: record.id, name: record.seed.company } : null;
+  }
+
+  /**
+   * A guest agent was started by a visitor whose link named this company
+   * (note #1139): one `guest` touch on its timeline. An id that is no company
+   * of this owner records nothing; the same guest twice is one touch.
+   */
+  async guestStarted(userId: string, targetId: string, guest: { agentId: string; name: string; country: string | null }): Promise<boolean> {
+    const record = await this.deps.store.target(userId, String(targetId ?? ''));
+    if (!record) return false;
+    const touches = await this.deps.store.touches(userId, record.id);
+    if (touches.some((touch) => touch.kind === 'guest' && touch.agentId === guest.agentId)) return false;
+    await this.touch(userId, record.id, { kind: 'guest', agentId: guest.agentId, name: String(guest.name).slice(0, 80), country: guest.country });
+    return true;
+  }
+
   private async mine(userId: string, targetId: string): Promise<OutreachTargetRecord> {
     const record = await this.deps.store.target(userId, targetId);
     if (!record) throw new OutreachError(404, 'No such company in Outreach.');

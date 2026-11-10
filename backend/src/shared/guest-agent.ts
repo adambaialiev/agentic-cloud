@@ -227,6 +227,93 @@ export const GUEST_TURNSTILE_ACTION = 'make-guest-agent';
 export interface GuestCreateRequest {
   /** The Turnstile token from the invisible widget (required while the check is on), rendered with action GUEST_TURNSTILE_ACTION. */
   turnstileToken?: string;
+  /** How the visitor arrived (note #1139), as the page kept it from the first page of the visit: data for the owner, never shown to the agent. */
+  arrival?: GuestArrivalInput;
+}
+
+/**
+ * How a visitor arrived (note #1139): the campaign tags on the link they
+ * followed and the site that sent them, kept by the page for the tab's
+ * session (sessionStorage, no cookie) from the first page of the visit.
+ */
+export interface GuestArrivalInput {
+  utm?: Partial<Record<GuestUtmKey, string>>;
+  referrerHost?: string | null;
+}
+
+/** The campaign tags kept, in this order; any other query word is dropped. */
+export const GUEST_UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'] as const;
+export type GuestUtmKey = typeof GUEST_UTM_KEYS[number];
+/** A tag's value is cut to this many characters. */
+export const GUEST_UTM_MAX_CHARS = 100;
+
+/**
+ * What the platform keeps about where a guest came from (note #1139), on the
+ * guest's row beside its conversation, for the same 90 days. The country is
+ * Cloudflare's two-letter code for the request (never the address, never a
+ * city; unknown stays null). Never sent to the guest's agent.
+ */
+export interface GuestArrival {
+  country: string | null;
+  utm: Partial<Record<GuestUtmKey, string>>;
+  referrerHost: string | null;
+}
+
+/** The owner's view of an arrival: the stored facts, and the Outreach company its tags name, when there is one. */
+export interface GuestArrivalView extends GuestArrival {
+  outreach: { id: string; name: string; url: string } | null;
+}
+
+const UTM_VALUE_DROP = /[\u0000-\u001f\u007f<>"`\\]/g;
+
+/** One tag's value, cleaned: printable, no markup characters, trimmed, at most GUEST_UTM_MAX_CHARS. */
+function cleanUtmValue(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.replace(UTM_VALUE_DROP, '').replace(/\s+/g, ' ').trim().slice(0, GUEST_UTM_MAX_CHARS).trim();
+  return clean || null;
+}
+
+/** A host name, lower case, or null when it is not one (an address with a path, a port, anything odd). */
+export function cleanGuestHost(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const host = value.trim().toLowerCase().replace(/\.$/, '');
+  if (!host || host.length > 253 || !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return null;
+  return host;
+}
+
+/** Cloudflare's country code: two letters (or T1 for Tor), upper case; XX and anything else is unknown. */
+export function cleanGuestCountry(value: unknown): string | null {
+  const code = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if (code === 'T1') return 'T1';
+  return /^[A-Z]{2}$/.test(code) && code !== 'XX' ? code : null;
+}
+
+/**
+ * The arrival as stored (note #1139): only the five utm tags, each cleaned
+ * and bounded; the referring host only when it is a plain host and not our
+ * own site; the country from the request. Whatever else the page sends is
+ * dropped.
+ */
+export function cleanGuestArrival(input: unknown, country: unknown, ownHosts: readonly string[] = ['agenticcloudcomputer.com', 'www.agenticcloudcomputer.com']): GuestArrival {
+  const raw = (input && typeof input === 'object' ? input : {}) as { utm?: unknown; referrerHost?: unknown };
+  const tags = (raw.utm && typeof raw.utm === 'object' ? raw.utm : {}) as Record<string, unknown>;
+  const utm: Partial<Record<GuestUtmKey, string>> = {};
+  for (const key of GUEST_UTM_KEYS) {
+    const value = cleanUtmValue(tags[key]);
+    if (value) utm[key] = value;
+  }
+  const host = cleanGuestHost(raw.referrerHost);
+  return { country: cleanGuestCountry(country), utm, referrerHost: host && !ownHosts.includes(host) ? host : null };
+}
+
+/**
+ * The Outreach company a guest's tags name (note #1139): an Outreach letter's
+ * links land on the home page with utm_source=outreach and the company's
+ * record id in utm_content (outreachLinkTarget in shared/outreach.ts).
+ */
+export function guestOutreachCompanyId(arrival: Pick<GuestArrival, 'utm'> | null | undefined): string | null {
+  if (!arrival || arrival.utm.utm_source !== 'outreach') return null;
+  return arrival.utm.utm_content ?? null;
 }
 
 /**
@@ -320,6 +407,8 @@ export interface GuestTranscriptRecord {
   name: string;
   avatarUrl: string | null;
   createdAt: string;
+  /** Where the visitor came from (note #1139); absent on guests made before it. Filled in for the owner's read only. */
+  arrival?: GuestArrivalView | null;
   removedAt: string | null;
   removedReason: GuestRemovedReason | null;
   messages: Array<GuestMessage & {
@@ -333,8 +422,8 @@ export interface GuestTranscriptRecord {
 
 /** GET /workspace/api/guests — the owner's Guests screen: live first, then the last 90 days. */
 export interface WorkspaceGuestsAnswer {
-  live: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; messages: number; state: GuestState; quietUntil: string | null }>;
-  past: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; removedAt: string | null; removedReason: GuestRemovedReason | null; messages: number; costUsd: number }>;
+  live: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; messages: number; state: GuestState; quietUntil: string | null; arrival: GuestArrivalView | null }>;
+  past: Array<{ agentId: string; name: string; avatarUrl: string | null; createdAt: string; removedAt: string | null; removedReason: GuestRemovedReason | null; messages: number; costUsd: number; arrival: GuestArrivalView | null }>;
   limits: { globalPerDay: number; perAddressPerDay: number };
   madeToday: number;
 }

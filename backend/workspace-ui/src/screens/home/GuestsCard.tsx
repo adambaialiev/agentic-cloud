@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { GuestState, GuestTranscriptRecord, WorkspaceGuestsAnswer } from '../../../../src/shared/guest-agent.js';
+import { GUEST_UTM_KEYS, type GuestArrivalView, type GuestState, type GuestTranscriptRecord, type WorkspaceGuestsAnswer } from '../../../../src/shared/guest-agent.js';
 import { useSession } from '../../session/useSession.js';
 import { useWorkspace } from '../../workspace/useWorkspace.js';
 import { Markdown } from '../../render/Markdown.js';
@@ -21,6 +21,52 @@ const STATE_WORDS: Partial<Record<GuestState, string>> = {
   working: 'Working',
   asleep: 'Asleep',
 };
+
+/** A country's name from Cloudflare's two-letter code (T1 is Tor); the code itself when the browser cannot name it. */
+export function countryName(code: string | null | undefined): string | null {
+  if (!code) return null;
+  if (code === 'T1') return 'Tor';
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/**
+ * Where a guest came from, in a few words (note #1139): the Outreach company
+ * its link named, else its campaign tags, else the site that sent it.
+ */
+export function arrivalSource(arrival: GuestArrivalView | null | undefined): string | null {
+  if (!arrival) return null;
+  if (arrival.outreach) return `from Outreach: ${arrival.outreach.name}`;
+  const { utm_source: source, utm_campaign: campaign } = arrival.utm;
+  if (source || campaign) return `from ${[source, campaign].filter(Boolean).join(' / ')}`;
+  if (arrival.referrerHost) return `from ${arrival.referrerHost}`;
+  return 'no link tags';
+}
+
+/** The row's few words: country, then source. Nothing for a guest made before note #1139. */
+function arrivalWords(arrival: GuestArrivalView | null | undefined): string[] {
+  if (!arrival) return [];
+  return [countryName(arrival.country) ?? 'country unknown', arrivalSource(arrival)!];
+}
+
+/** Inside an opened guest: everything kept about how its visitor arrived. */
+function ArrivalFacts({ arrival }: { arrival: GuestArrivalView | null | undefined }) {
+  if (!arrival) return <div className="v dim guestarrival">Made before arrivals were kept: no country or link tags.</div>;
+  const tags = GUEST_UTM_KEYS.filter((key) => arrival.utm[key]).map((key) => `${key}=${arrival.utm[key]}`);
+  return (
+    <div className="v dim guestarrival" data-guest-arrival>
+      <div>{`Country: ${countryName(arrival.country) ?? 'unknown'}${arrival.country && arrival.country !== 'T1' ? ` (${arrival.country})` : ''}`}</div>
+      {arrival.outreach
+        ? <div>{'From Outreach: '}<a href={arrival.outreach.url} target="_blank" rel="noreferrer">{arrival.outreach.name}</a></div>
+        : null}
+      <div>{`Link tags: ${tags.length ? tags.join(' · ') : 'none'}`}</div>
+      <div>{`Sent by: ${arrival.referrerHost ?? 'no site named'}`}</div>
+    </div>
+  );
+}
 
 /**
  * The Guests group (note #1038): every agent a visitor of the home page made
@@ -79,14 +125,14 @@ export function GuestsCard({ now }: { now: number }) {
 
   if (!here || !list) return null;
   const rows = [
-    ...list.live.map((row) => ({ ...row, live: true as const, meta: [STATE_WORDS[row.state] ?? row.state, `${row.messages} message${row.messages === 1 ? '' : 's'}`, `made ${relative(row.createdAt, now) || 'just now'}`].join(' · ') })),
-    ...list.past.map((row) => ({ ...row, live: false as const, meta: [`${row.messages} message${row.messages === 1 ? '' : 's'}`, REMOVED_WORDS[row.removedReason ?? 'quiet'] ?? 'removed', relative(row.removedAt ?? row.createdAt, now) || 'just now', ...(row.costUsd ? [`$${row.costUsd.toFixed(2)} at API prices`] : [])].join(' · ') })),
+    ...list.live.map((row) => ({ ...row, live: true as const, meta: [...arrivalWords(row.arrival), STATE_WORDS[row.state] ?? row.state, `${row.messages} message${row.messages === 1 ? '' : 's'}`, `made ${relative(row.createdAt, now) || 'just now'}`].join(' · ') })),
+    ...list.past.map((row) => ({ ...row, live: false as const, meta: [...arrivalWords(row.arrival), `${row.messages} message${row.messages === 1 ? '' : 's'}`, REMOVED_WORDS[row.removedReason ?? 'quiet'] ?? 'removed', relative(row.removedAt ?? row.createdAt, now) || 'just now', ...(row.costUsd ? [`$${row.costUsd.toFixed(2)} at API prices`] : [])].join(' · ') })),
   ];
   return (
     <div className="card" id="agentGuests">
       <button className="drow visitrow" type="button" id="agentGuestsToggle" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
         <div className="k">{`Guests · ${list.live.length} live`}</div>
-        <div className="v dim">{`Agents visitors made on the home page: ${list.madeToday} of ${list.limits.globalPerDay} today, each built on its own computer when its visitor asked. Read-only; kept 90 days, nothing about a visitor beyond what they typed.`}</div>
+        <div className="v dim">{`Agents visitors made on the home page: ${list.madeToday} of ${list.limits.globalPerDay} today, each built on its own computer when its visitor asked. Read-only; kept 90 days with the visitor's country and the link they came by, never their address.`}</div>
       </button>
       {!expanded ? null : rows.length === 0
         ? <div className="empty" id="agentGuestsEmpty">No visitor has made an agent yet.</div>
@@ -117,6 +163,7 @@ export function GuestsCard({ now }: { now: number }) {
                     ? <div className="empty">Opening…</div>
                     : (
                       <>
+                        <ArrivalFacts arrival={transcript.arrival} />
                         {transcript.messages.map((message) => (
                           <div className="visitturn" key={message.id} data-role={message.role} data-state={message.state}>
                             {message.role === 'visitor'

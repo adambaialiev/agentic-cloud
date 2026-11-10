@@ -189,3 +189,24 @@ describe('The third link, the setup guide (note #1120)', () => {
     expect(draft.text).not.toMatch(/[{}]/);
   });
 });
+
+describe('A guest agent from a letter\'s link (note #1139)', () => {
+  for (const sqlite of [false, true]) {
+    it(`names the company and puts one guest touch on its timeline; an unknown id records nothing (${sqlite ? 'sqlite' : 'memory'})`, async () => {
+      const { service, store } = await world({ sqlite });
+      // The home link lands with the company's id in utm_content: that is what a guest carries.
+      expect(outreachLinkTarget('home', 'northwind-health')).toContain('utm_content=northwind-health');
+      expect(await service.company('user-adam', 'northwind-health')).toEqual({ id: 'northwind-health', name: 'Northwind Health' });
+      expect(await service.company('user-adam', 'nobody')).toBeNull();
+      expect(await service.company('someone-else', 'northwind-health')).toBeNull();
+
+      expect(await service.guestStarted('user-adam', 'northwind-health', { agentId: 'g1', name: 'Theo', country: 'NL' })).toBe(true);
+      expect(await service.guestStarted('user-adam', 'northwind-health', { agentId: 'g1', name: 'Theo', country: 'NL' })).toBe(false);
+      expect(await service.guestStarted('user-adam', 'nobody', { agentId: 'g2', name: 'Gus', country: null })).toBe(false);
+      const guests = (await store.touches('user-adam', 'northwind-health')).filter((touch) => touch.kind === 'guest');
+      expect(guests).toEqual([expect.objectContaining({ kind: 'guest', agentId: 'g1', name: 'Theo', country: 'NL' })]);
+      // A guest is a fact on the timeline, not a step: the state does not move.
+      expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('not-contacted');
+    });
+  }
+});

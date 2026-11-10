@@ -39,7 +39,7 @@ import {
   type WorkspacePublicGuideVisitsAnswer,
 } from '../shared/public-guide.js';
 import { isSealedAgent } from '../types/user.js';
-import { GUEST_AGENT_KIND, GUEST_AGENT_LIMITS, type GuestCreateAnswer, type GuestDeleteAnswer, type GuestMessageAnswer, type GuestStatus, type GuestStopAnswer, type GuestTurnStatus, type WorkspaceGuestsAnswer } from '../shared/guest-agent.js';
+import { GUEST_AGENT_KIND, GUEST_AGENT_LIMITS, cleanGuestArrival, type GuestCreateAnswer, type GuestDeleteAnswer, type GuestMessageAnswer, type GuestStatus, type GuestStopAnswer, type GuestTurnStatus, type WorkspaceGuestsAnswer } from '../shared/guest-agent.js';
 import type {
   WorkspaceMailAddressClaimAnswer,
   WorkspaceMailApproval,
@@ -3519,8 +3519,10 @@ self.addEventListener('activate', (event) => {
   router.post('/api/public/guest', async (req, res) => {
     if (guestOriginRefused(req, res)) return;
     if (!deps.guestAgents) return res.json({ status: restingGuestStatus() } satisfies GuestCreateAnswer);
-    const body = (req.body ?? {}) as { turnstileToken?: unknown };
-    const result = await deps.guestAgents.create({ key: guestKey(req), turnstileToken: body.turnstileToken, address: publicAskAddress(req) })
+    const body = (req.body ?? {}) as { turnstileToken?: unknown; arrival?: unknown };
+    // Where the visitor came from (note #1139): Cloudflare's country for this request and the page's link tags, cleaned. Never the address.
+    const arrival = cleanGuestArrival(body.arrival, req.get('cf-ipcountry'));
+    const result = await deps.guestAgents.create({ key: guestKey(req), turnstileToken: body.turnstileToken, address: publicAskAddress(req), arrival })
       .catch((error) => {
         console.warn('[guest] create failed:', error);
         return { httpStatus: 200, answer: { status: restingGuestStatus() } as GuestCreateAnswer };

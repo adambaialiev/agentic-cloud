@@ -2,12 +2,14 @@
  * What the platform keeps about guests' agents (note #1038): one row per
  * agent — one being built, a live one, or a removed one kept as the owner's
  * transcript for 90 days — and the switch that says whose workplace they
- * are made in. Nothing about the visitor is kept beyond what they typed: no
- * address, no user agent; their key only as a SHA-256, dropped a day after
- * the agent goes.
+ * are made in. Beyond what they typed, the only thing kept about a visitor
+ * is where they came from (note #1139): Cloudflare's two-letter country, the
+ * utm tags of the link they followed and the referring site's host. No
+ * address, no city, no user agent; their key only as a SHA-256, dropped a
+ * day after the agent goes.
  */
 import type { SqliteDb } from './sqlite/sqlite-db.js';
-import { GUEST_AGENT_LIMITS, type GuestCreateStep, type GuestRemovedReason, type GuestTranscriptRecord } from '../shared/guest-agent.js';
+import { GUEST_AGENT_LIMITS, type GuestArrival, type GuestCreateStep, type GuestRemovedReason, type GuestTranscriptRecord } from '../shared/guest-agent.js';
 
 /** `preparing` and `spare` are from before note #1055 (no spares now): the sweeper retires any it finds. */
 export type GuestAgentPhase = 'preparing' | 'spare' | 'creating' | 'live' | 'removing' | 'removed';
@@ -36,6 +38,8 @@ export interface GuestAgentRow {
   removedReason: GuestRemovedReason | null;
   /** Background jobs this agent started (note #1063), newest last. */
   jobs?: GuestJobRecord[];
+  /** Where its visitor came from (note #1139); absent on rows made before. Never given to the agent. */
+  arrival?: GuestArrival;
   /** The visitor-facing conversation and the owner's transcript, one record. */
   transcript: GuestTranscriptRecord;
 }
