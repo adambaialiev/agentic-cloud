@@ -71,6 +71,8 @@ describe('Outreach words and places', () => {
     expect(outreachLocalTime('Istanbul', at)).toBe('Mon 16:00');
     expect(outreachLocalTime('Reykjavik', at)).toBe('Mon 13:00');
     expect(outreachLocalTime('the hague', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Forlì', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Carpentras', at)).toBe('Mon 14:00');
     for (const unknown of ['US', 'US remote', '', null, 'Richmond']) expect(outreachLocalTime(unknown, at)).toBeNull();
   });
 
