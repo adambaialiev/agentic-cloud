@@ -12180,6 +12180,23 @@ describe('the guests\' public door (notes #1038, #1043)', () => {
     await getRouteHandler(deps(), '/api/public/guest', 'post')(mockRequest({ headers: { Origin: WORKSPACE_ORIGIN }, body: {} }), ok);
     expect(ok.statusCode).toBe(201);
   });
+  // Note #1139: the edge hands Cloudflare's country on in its own header; the page's tags arrive cleaned.
+  it('passes the visitor\'s country and cleaned link tags to the build, never the address', async () => {
+    create.mockClear();
+    const res = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'post')(mockRequest({
+      headers: { Origin: WORKSPACE_ORIGIN, 'x-acc-visitor-country': 'nl', 'cf-ipcountry': 'US' },
+      body: { arrival: { utm: { utm_source: 'outreach', utm_content: 'test-co', other: 'x' }, referrerHost: 'mail.google.com' } },
+    }), res);
+    expect(res.statusCode).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      arrival: { country: 'NL', utm: { utm_source: 'outreach', utm_content: 'test-co' }, referrerHost: 'mail.google.com' },
+    }));
+    // A request that reached Cloudflare directly still has its CF-IPCountry.
+    const direct = createMockResponse();
+    await getRouteHandler(deps(), '/api/public/guest', 'post')(mockRequest({ headers: { Origin: WORKSPACE_ORIGIN, 'cf-ipcountry': 'DE' }, body: {} }), direct);
+    expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ arrival: { country: 'DE', utm: {}, referrerHost: null } }));
+  });
 });
 
 describe('the public guide\'s door (note #1010)', () => {

@@ -281,9 +281,15 @@ delete a live one (`DELETE /workspace/api/guests/:agentId`).
 Adam, 10 Nov 2026: "where is he from (country), or maybe if it a contact that
 following link we should know utm". The row's `arrival` holds:
 
-- **country**: Cloudflare's `CF-IPCountry` for the Start guest agent request,
-  two letters (`T1` is Tor; `XX` and anything else is unknown). Never the
-  address or a city.
+- **country**: Cloudflare's country for the Start guest agent request, two
+  letters (`T1` is Tor; `XX` and anything else is unknown). Never the address
+  or a city. The site's edge function (`functions/[[path]].js`) forwards
+  `/workspace` requests to the backend as a request of its own, which does
+  NOT carry `CF-IPCountry`; so the function hands `request.cf.country` on as
+  `x-acc-visitor-country` (dropping any value a browser sent), and the route
+  reads that first, then `CF-IPCountry`. The first live guest after the
+  launch (10 Nov 2026, 18:07 UTC) came through with no country for exactly
+  this reason; the header fixed it.
 - **utm**: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content` and
   `utm_term` of the visit's first page, each cleaned and cut to 100
   characters; any other query word is dropped.

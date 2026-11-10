@@ -281,6 +281,13 @@ export function cleanGuestHost(value: unknown): string | null {
   return host;
 }
 
+/**
+ * The header the site's edge function (functions/[[path]].js,
+ * VISITOR_COUNTRY_HEADER) puts the visitor's Cloudflare country in: the
+ * function's own request to the backend does not carry CF-IPCountry.
+ */
+export const GUEST_COUNTRY_HEADER = 'x-acc-visitor-country';
+
 /** Cloudflare's country code: two letters (or T1 for Tor), upper case; XX and anything else is unknown. */
 export function cleanGuestCountry(value: unknown): string | null {
   const code = typeof value === 'string' ? value.trim().toUpperCase() : '';

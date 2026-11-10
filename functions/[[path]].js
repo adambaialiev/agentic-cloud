@@ -27,6 +27,16 @@
 const WORKSPACE_UPSTREAM_ORIGIN = 'https://api.agenticcloudcomputer.com';
 
 /**
+ * The visitor's country as Cloudflare saw it at this edge (note #1139).
+ * Cloudflare puts it on the incoming request (`request.cf.country`, and the
+ * CF-IPCountry header), but not on this function's own request to the
+ * backend, so the function hands it on in a header of ours. Whatever a
+ * browser sent under the same name is dropped first. Only a guest agent's
+ * start reads it (backend/src/shared/guest-agent.ts, GUEST_COUNTRY_HEADER).
+ */
+export const VISITOR_COUNTRY_HEADER = 'x-acc-visitor-country';
+
+/**
  * The first path segments that belong to the LANDING SITE: its pages, and
  * the retired addresses public/_redirects still forwards. Kept as a literal
  * because this file runs at the edge, built apart from the backend; the
@@ -78,9 +88,13 @@ export async function onRequest(context) {
   // test implementation for a streamed body and accepted by the Workers
   // runtime. The subrequest URL supplies Host; the browser never learns it.
   const hasBody = context.request.method !== 'GET' && context.request.method !== 'HEAD';
+  const headers = new Headers(context.request.headers);
+  headers.delete(VISITOR_COUNTRY_HEADER);
+  const country = context.request.cf?.country;
+  if (typeof country === 'string' && /^[A-Za-z0-9]{2}$/.test(country)) headers.set(VISITOR_COUNTRY_HEADER, country);
   const init = {
     method: context.request.method,
-    headers: context.request.headers,
+    headers,
     redirect: 'manual',
     ...(hasBody ? { body: context.request.body, duplex: 'half' } : {}),
   };

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LANDING_FIRST_SEGMENTS as EDGE_LANDING_FIRST_SEGMENTS, onRequest, routesToBackend } from '../../functions/[[path]].js';
+import { LANDING_FIRST_SEGMENTS as EDGE_LANDING_FIRST_SEGMENTS, onRequest, routesToBackend, VISITOR_COUNTRY_HEADER } from '../../functions/[[path]].js';
+import { GUEST_COUNTRY_HEADER } from '../../backend/src/shared/guest-agent.js';
 import { WORKSPACE_ENTRY_PATTERNS, WORKSPACE_LEGACY_SEGMENTS, WORKSPACE_ROUTE_DEFS } from '../../backend/src/shared/workspace-routes.js';
 import { LANDING_FIRST_SEGMENTS } from '../../backend/src/shared/handles.js';
 
@@ -49,6 +50,23 @@ describe('same-domain Workspace proxy', () => {
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('set-cookie')).toContain('__Host-acc_session=session-token');
+  });
+
+  // Note #1139: the forwarded request does not carry Cloudflare's country, so the edge hands it on, and a browser cannot supply it.
+  it('hands the visitor\'s Cloudflare country to the backend in its own header, replacing anything the browser sent', async () => {
+    expect(VISITOR_COUNTRY_HEADER).toBe(GUEST_COUNTRY_HEADER);
+    const seen: Array<string | null> = [];
+    vi.stubGlobal('fetch', vi.fn(async (request: Request) => { seen.push(request.headers.get(VISITOR_COUNTRY_HEADER)); return new Response('{}'); }));
+    const next = () => { throw new Error('not the landing site'); };
+    const withCf = new Request('https://agenticcloudcomputer.com/workspace/api/public/guest', { method: 'POST', headers: { [VISITOR_COUNTRY_HEADER]: 'XX' }, body: '{}' });
+    Object.defineProperty(withCf, 'cf', { value: { country: 'NL' } });
+    await onRequest({ request: withCf, next });
+    const forged = new Request('https://agenticcloudcomputer.com/workspace/api/public/guest', { method: 'POST', headers: { [VISITOR_COUNTRY_HEADER]: 'US' }, body: '{}' });
+    await onRequest({ request: forged, next });
+    const odd = new Request('https://agenticcloudcomputer.com/workspace/api/state');
+    Object.defineProperty(odd, 'cf', { value: { country: '<script>' } });
+    await onRequest({ request: odd, next });
+    expect(seen).toEqual(['NL', null, null]);
   });
 
   it('cannot be steered to another upstream by the incoming hostname or query', async () => {
