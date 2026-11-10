@@ -37,10 +37,10 @@ const CLAUDE = 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; C
 
 describe('The letters\' short links (note #1106)', () => {
   for (const sqlite of [false, true]) {
-    it(`gives every company two short codes of its own, kept across reads and writes (${sqlite ? 'sqlite' : 'memory'})`, async () => {
+    it(`gives every company its short codes, kept across reads and writes (${sqlite ? 'sqlite' : 'memory'})`, async () => {
       const { service } = await world({ sqlite });
       const rows = await service.agentList('user-adam');
-      const codes = rows.flatMap((row) => [row.links.home, row.links.agents].map((link) => link.replace('https://agenticcloudcomputer.com/go/', '')));
+      const codes = rows.flatMap((row) => [row.links.home, row.links.agents, row.links.install!].map((link) => link.replace('https://agenticcloudcomputer.com/go/', '')));
       expect(codes.every(isOutreachCode)).toBe(true);
       expect(new Set(codes).size).toBe(codes.length);
       const shown = (await service.agentShow('user-adam', 'Northwind Health'))!;
@@ -149,5 +149,43 @@ describe('The link placeholders in shared words (note #1106)', () => {
     // Saving the filled words unchanged is not a version of his own.
     await service.letter('user-adam', 'fernhill-labs', { action: 'save', subject: draft.subject, text: draft.text });
     expect((await service.detail('user-adam', 'fernhill-labs'))!.draft!.from).toBe('written');
+  });
+});
+
+describe('The third link, the setup guide (note #1120)', () => {
+  it('gives every company an install code too, leading to /own-cloud.md with the same UTM data; a record from before keeps its two codes and gains the third', async () => {
+    const { service, store } = await world();
+    const before = (await service.agentShow('user-adam', 'Northwind Health'))!.links;
+    expect(before.install).toMatch(/^https:\/\/agenticcloudcomputer\.com\/go\/[a-z2-9]{6}$/);
+    expect(new Set([before.home, before.agents, before.install]).size).toBe(3);
+    expect(outreachLinkTarget('install', 'northwind-health')).toBe('https://agenticcloudcomputer.com/own-cloud.md?utm_source=outreach&utm_medium=email&utm_campaign=cold-email&utm_content=northwind-health');
+    // As every record was stored before note #1120: two codes only.
+    const record = (await store.target('user-adam', 'lakeview-data'))!;
+    const two = { home: record.links!.home, agents: record.links!.agents };
+    await store.putTarget({ ...record, links: two });
+    const after = (await service.detail('user-adam', 'lakeview-data'))!.links;
+    expect(after.home).toBe(`https://agenticcloudcomputer.com/go/${two.home}`);
+    expect(after.agents).toBe(`https://agenticcloudcomputer.com/go/${two.agents}`);
+    expect(after.install).toMatch(/\/go\/[a-z2-9]{6}$/);
+    expect((await service.detail('user-adam', 'lakeview-data'))!.links).toEqual(after);
+    const install = after.install!.split('/go/')[1]!;
+    const visit = await service.visit(install, { userAgent: CLAUDE });
+    expect(visit).toEqual({ location: outreachLinkTarget('install', 'lakeview-data'), recorded: true });
+    expect((await visits(store, 'lakeview-data')).map((touch) => [touch.link, touch.reader])).toEqual([['install', 'agent']]);
+  });
+
+  it('fills {install link} in a letter and a follow-up like the other two', async () => {
+    const { service } = await world();
+    const parsed = parseOutreachWrite(fixtureOutreachWrite());
+    if (!parsed.ok) throw new Error(parsed.error);
+    const write = parsed.write;
+    const fernhill = write.targets.find((target) => target.company === 'Fernhill Labs')!;
+    write.targets = [{ ...fernhill, firstEmail: { ...fernhill.firstEmail!, body: 'Hi Otto,\n\nYour agent sets it up from one line: {install link}\n\nWhat it does: {agents link}\n\nAdam\n{home link}' } }];
+    write.words = { audience: 'customer', source: null, generatedBy: null, generatedAt: null, followUps: { day4: { text: 'Setup: {install link}', wordCount: 2 } } };
+    await service.write('user-adam', ROWAN, write);
+    const links = (await service.agentShow('user-adam', 'Fernhill Labs'))!.links;
+    const draft = (await service.detail('user-adam', 'fernhill-labs'))!.draft!;
+    expect(draft.text).toBe(`Hi Otto,\n\nYour agent sets it up from one line: ${links.install}\n\nWhat it does: ${links.agents}\n\nAdam\n${links.home}`);
+    expect(draft.text).not.toMatch(/[{}]/);
   });
 });

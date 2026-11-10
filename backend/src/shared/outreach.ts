@@ -765,15 +765,21 @@ export interface OutreachTargetRecord {
    a browser, an agent (a program reading it) or a mail system checking the
    link before anyone opened it. Nothing personal: no address, no IP, only
    the client's own product word ("Chrome", "curl", "Claude-User"). */
-export type OutreachLink = 'home' | 'agents';
-export interface OutreachLinkCodes { home: string; agents: string }
+export type OutreachLink = 'home' | 'agents' | 'install';
+/**
+ * A company's codes. `install` (note #1120; Adam, 10 Nov 2026: "I want three
+ * links. To the landing page, to workplace.md and to install instructions
+ * for agent") came later: a record from before gets it the first time it is
+ * read or written, and its other two never change.
+ */
+export interface OutreachLinkCodes { home: string; agents: string; install?: string }
 export type OutreachReader = 'browser' | 'agent' | 'check';
 
 /** Where the letters' links live: the public front door, whatever host serves the routes. */
 export const OUTREACH_LINK_ORIGIN = 'https://agenticcloudcomputer.com';
 export const OUTREACH_LINK_PATH = '/go/';
 /** Where each link leads. */
-export const OUTREACH_LINK_TARGETS: Record<OutreachLink, string> = { home: '/', agents: '/workplace.md' };
+export const OUTREACH_LINK_TARGETS: Record<OutreachLink, string> = { home: '/', agents: '/workplace.md', install: '/own-cloud.md' };
 /** The UTM data every link carries; utm_content is the company's id. Kept stable: analytics group by them. */
 export const OUTREACH_UTM = { source: 'outreach', medium: 'email', campaign: 'cold-email' } as const;
 /** A short code: six letters and digits with no look-alikes (no 0/o, 1/l/i), lower case. */
@@ -781,10 +787,14 @@ export const OUTREACH_CODE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 export const OUTREACH_CODE_LENGTH = 6;
 export const isOutreachCode = (code: string): boolean => new RegExp(`^[${OUTREACH_CODE_ALPHABET}]{${OUTREACH_CODE_LENGTH}}$`).test(code);
 
-export interface OutreachLinks { home: string; agents: string }
-/** The two short links of a company, as they go into a letter. */
+export interface OutreachLinks { home: string; agents: string; install?: string }
+/** The short links of a company, as they go into a letter: home, agents and (note #1120) install. */
 export function outreachLinks(codes: OutreachLinkCodes, origin = OUTREACH_LINK_ORIGIN): OutreachLinks {
-  return { home: `${origin}${OUTREACH_LINK_PATH}${codes.home}`, agents: `${origin}${OUTREACH_LINK_PATH}${codes.agents}` };
+  return {
+    home: `${origin}${OUTREACH_LINK_PATH}${codes.home}`,
+    agents: `${origin}${OUTREACH_LINK_PATH}${codes.agents}`,
+    ...(codes.install ? { install: `${origin}${OUTREACH_LINK_PATH}${codes.install}` } : {}),
+  };
 }
 
 /** Where a visit is sent: the link's page with the UTM data. */
@@ -1238,11 +1248,13 @@ export function followUpSubject(subject: string): string {
  * company's own short links in the Send box. So one follow-up text carries
  * each company's own links, and a letter that goes never holds a brace.
  */
-export const OUTREACH_LINK_PLACEHOLDERS = { home: '{home link}', agents: '{agents link}' } as const;
+export const OUTREACH_LINK_PLACEHOLDERS = { home: '{home link}', agents: '{agents link}', install: '{install link}' } as const;
 export function fillOutreachLinks(text: string, codes: OutreachLinkCodes | undefined): string {
   if (!codes) return text;
   const links = outreachLinks(codes);
-  return text.split(OUTREACH_LINK_PLACEHOLDERS.home).join(links.home).split(OUTREACH_LINK_PLACEHOLDERS.agents).join(links.agents);
+  const filled = text.split(OUTREACH_LINK_PLACEHOLDERS.home).join(links.home).split(OUTREACH_LINK_PLACEHOLDERS.agents).join(links.agents);
+  // The setup guide's link (note #1120); a record not yet given its code keeps the placeholder, so Send stays off.
+  return links.install ? filled.split(OUTREACH_LINK_PLACEHOLDERS.install).join(links.install) : filled;
 }
 
 export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {

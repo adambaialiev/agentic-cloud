@@ -251,9 +251,11 @@ export class OutreachService {
    * read or written and never changed after: a letter that has gone carries
    * them. Unique across every company in the store.
    */
-  private async withLinks(record: OutreachTargetRecord): Promise<OutreachTargetRecord & { links: OutreachLinkCodes }> {
-    if (record.links && isOutreachCode(record.links.home) && isOutreachCode(record.links.agents)) return record as OutreachTargetRecord & { links: OutreachLinkCodes };
-    const taken = new Set((await this.deps.store.allTargets()).flatMap((other) => (other.links ? [other.links.home, other.links.agents] : [])));
+  private async withLinks(record: OutreachTargetRecord): Promise<OutreachTargetRecord & { links: Required<OutreachLinkCodes> }> {
+    const kept = record.links;
+    const good = (code: string | undefined) => Boolean(code && isOutreachCode(code));
+    if (kept && good(kept.home) && good(kept.agents) && good(kept.install)) return record as OutreachTargetRecord & { links: Required<OutreachLinkCodes> };
+    const taken = new Set((await this.deps.store.allTargets()).flatMap((other) => (other.links ? [other.links.home, other.links.agents, other.links.install].filter((code): code is string => Boolean(code)) : [])));
     const fresh = () => {
       for (;;) {
         const bytes = randomBytes(OUTREACH_CODE_LENGTH);
@@ -261,7 +263,13 @@ export class OutreachService {
         if (!taken.has(code)) { taken.add(code); return code; }
       }
     };
-    const next = { ...record, links: { home: fresh(), agents: fresh() } };
+    // Only what is missing is made: a code that a letter may already carry never changes (note #1120 adds `install`).
+    const links = {
+      home: good(kept?.home) ? kept!.home : fresh(),
+      agents: good(kept?.agents) ? kept!.agents : fresh(),
+      install: good(kept?.install) ? kept!.install! : fresh(),
+    };
+    const next = { ...record, links };
     await this.deps.store.putTarget(next);
     return next;
   }
@@ -279,9 +287,9 @@ export class OutreachService {
     const home = `${OUTREACH_LINK_ORIGIN}/`;
     const wanted = String(code ?? '').toLowerCase();
     if (!isOutreachCode(wanted)) return { location: home, recorded: false };
-    const record = (await this.deps.store.allTargets()).find((one) => one.links?.home === wanted || one.links?.agents === wanted);
+    const record = (await this.deps.store.allTargets()).find((one) => one.links?.home === wanted || one.links?.agents === wanted || one.links?.install === wanted);
     if (!record) return { location: home, recorded: false };
-    const link: OutreachLink = record.links!.home === wanted ? 'home' : 'agents';
+    const link: OutreachLink = record.links!.home === wanted ? 'home' : record.links!.agents === wanted ? 'agents' : 'install';
     const location = outreachLinkTarget(link, record.id);
     const who = outreachReader(reader.userAgent, reader.method);
     const now = this.now();
