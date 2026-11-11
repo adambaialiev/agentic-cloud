@@ -224,6 +224,7 @@ describe('Outreach, the service', () => {
     // The words an agent once wrote stay in the record; the box never draws them.
     expect((await service.detail('user-adam', 'northwind-health'))!.seed.firstEmail).toMatchObject({ subject: written.subject, body: written.body });
     await expect(service.send('user-adam', 'kestrel-systems', { step: 'first', subject: '', text: 'Hi.' })).rejects.toThrow('Write a subject.');
+    await expect(service.send('user-adam', 'kestrel-systems', { step: 'first', subject: 'Hi', text: '  \n ' })).rejects.toThrow('Paste the letter first.');
     const pasted = 'Hi Lena,\n\nTwo lines,\nkept as they are: https://agenticcloudcomputer.com/go/abcdef\n\n– Adam';
     await service.send('user-adam', 'kestrel-systems', { step: 'first', subject: 'A subject he pasted', text: pasted });
     expect(sent[0]!.subject).toBe('A subject he pasted');
@@ -298,6 +299,7 @@ describe('Outreach, the service', () => {
     at('2026-11-13T13:00:01Z');
     // Due: an empty body under the thread's own subject (note #1157); he pastes the words.
     expect(await blankOf(service, 'northwind-health')).toMatchObject({ step: 'day4', to: 'mara@northwind-health.test', subject: 'Re: Your agents need a workplace', text: '', from: 'blank' });
+    await expect(service.send('user-adam', 'northwind-health', { step: 'day4', text: '' })).rejects.toThrow('Paste the day-4 follow-up first.');
     const day4 = await firstOf(service, 'northwind-health');
     expect(day4.text).toBe(batch().words!.followUps!.day4!.text);
     await service.send('user-adam', 'northwind-health', { step: 'day4', text: day4.text });

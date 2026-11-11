@@ -778,6 +778,8 @@ export class OutreachService {
       if (!next.due) throw new OutreachError(409, `The ${stepWords(step)} is due ${next.dueAt!.slice(0, 10)}. Nothing sends early.`);
       const text = String(args.text ?? '').trim();
       const subject = String(args.subject ?? '').trim();
+      // Nothing ready is kept any more (note #1157): an empty body is refused here, plainly, for a first letter and a follow-up alike.
+      if (!text) throw new OutreachError(400, step === 'first' ? 'Paste the letter first.' : `Paste the ${stepWords(step)} first.`);
       const left = outreachPlaceholders(`${subject}\n${text}`);
       if (left.length) throw new OutreachError(400, `Fill in ${left.join(' and ')} first.`);
       const senderName = (await this.deps.senderName?.(userId).catch(() => '')) || undefined;
