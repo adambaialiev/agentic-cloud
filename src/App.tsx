@@ -18,6 +18,8 @@ const AiAgentsForYourTeam = lazy(() =>
 )
 const FourPhases = lazy(() => import('./pages/FourPhases'))
 const WhyFly = lazy(() => import('./pages/WhyFly'))
+const SelfHosted = lazy(() => import('./pages/SelfHosted'))
+const OpenSource = lazy(() => import('./pages/OpenSource'))
 /* The documentation is one module too: the contents page and every chapter
    share a layout and one chapter list, so one chunk serves all of /docs. */
 const DocsIndex = lazy(() => import('./pages/Docs').then((m) => ({ default: m.DocsIndex })))
@@ -56,6 +58,10 @@ function App() {
         {/* Why your own Agentic Cloud runs on Fly, for the engineer whose
             company is on AWS or Google Cloud (note #838). */}
         <Route path="/why-fly" element={<WhyFly />} />
+        {/* Topic pages for the searches the site was not found for (note
+            #1154, from Iris's search report, note #1144). */}
+        <Route path="/self-hosted-coding-agents" element={<SelfHosted />} />
+        <Route path="/open-source" element={<OpenSource />} />
         {/* The private copy, for a company's engineer (note #818): linked
             from /product only. */}
         <Route path="/own-cloud" element={<Navigate to="/" replace />} />

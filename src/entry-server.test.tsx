@@ -35,6 +35,8 @@ describe('prerendered routes', () => {
       '/ai-agents-for-your-team',
       '/four-phases',
       '/why-fly',
+      '/self-hosted-coding-agents',
+      '/open-source',
       '/docs',
       ...CHAPTERS.map((chapter) => `/docs/${chapter.slug}`),
       '/og-preview',
@@ -171,7 +173,6 @@ describe('prerendered routes', () => {
       '/guides/claude-code-in-the-cloud',
       '/guides/claude-code-channels',
       '/guides/keep-claude-code-running',
-      '/guides/claude-code-on-a-vps',
       '/guides/openclaw-hosting',
       '/guides/what-to-hand-an-ai-engineer',
       '/guides/claude-code-alternatives',
@@ -180,12 +181,15 @@ describe('prerendered routes', () => {
       '/guides/background-agents',
       '/guides/ai-agent-for-a-small-business',
       '/guides/hire-an-ai-engineer',
-      '/open-source',
-      '/open-source/',
       // The public Leaderboard, taken down on 2026-10-28 (note #824).
       '/leaderboard',
       '/leaderboard/',
     ];
+
+    // Old addresses a new page took over (note #1154): the VPS guide goes to
+    // the self-hosted page, and /open-source is a page again.
+    expect(redirects).toMatch(/^\/guides\/claude-code-on-a-vps\s+\/self-hosted-coding-agents\s+301$/m);
+    expect(redirects).not.toMatch(/^\/open-source\/?\s/m);
 
     for (const path of retired) {
       expect(ROUTES.some((route) => route.path === path), `${path} is still prerendered`).toBe(false);
@@ -295,6 +299,8 @@ describe('prerendered routes', () => {
     ['/ai-agents-for-your-team', 'A whole team of AI agents, run by one person'],
     ['/four-phases', 'One agent becomes a team.'],
     ['/why-fly', 'Questions your team will ask.'],
+    ['/self-hosted-coding-agents', 'Self-hosting moves where the agent works, not where the model thinks.'],
+    ['/open-source', 'Why the source matters for an agent platform.'],
   ])('renders %s to HTML containing its own content', async (path, needle) => {
     const html = await render(path);
 

@@ -146,6 +146,21 @@ export const ROUTES: RouteMeta[] = [
     description:
       'Every agent gets its own computer that sleeps when idle and wakes when work arrives. On Fly that is built in. What AWS, Google Cloud and Vercel offer instead.',
   },
+  // Topic pages for the searches the site was not found for (note #1154,
+  // the first two of Iris's "Pages that are missing", note #1144).
+  {
+    path: '/self-hosted-coding-agents',
+    title: 'Self-hosted coding agents — Agentic Cloud Computer',
+    description:
+      'Claude Code, Codex and OpenCode agents on computers of their own in your company’s cloud account, with git, hosting and email built in. Open source.',
+    agentGuide: '/own-cloud.md',
+  },
+  {
+    path: '/open-source',
+    title: 'Open source under the AGPL-3.0 — Agentic Cloud Computer',
+    description:
+      'The whole platform for a team of Claude Code, Codex and OpenCode agents is open source under the AGPL-3.0, the installer included. Read it, run it, change it.',
+  },
   // /own-cloud (note #829) is part of the home page since note #832, and
   // answers with a permanent redirect to / (public/_redirects).
   // The documentation: the contents page and one route per chapter, read

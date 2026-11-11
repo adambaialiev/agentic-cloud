@@ -21,7 +21,7 @@
 /guides/claude-code-in-the-cloud / 301
 /guides/claude-code-channels / 301
 /guides/keep-claude-code-running / 301
-/guides/claude-code-on-a-vps / 301
+/guides/claude-code-on-a-vps /self-hosted-coding-agents 301
 /guides/openclaw-hosting / 301
 /guides/what-to-hand-an-ai-engineer / 301
 /guides/claude-code-alternatives / 301
@@ -53,12 +53,10 @@
 /docs/every-screen /docs 301
 /docs/every-screen/ /docs 301
 
-# The open-source page (note #674) was taken down on 2026-09-29, a day after
-# it went up: the owner decided the platform is for closed-source work. Its
-# footer link had been on every landing page, so the address goes home rather
-# than to a public-address lookup for a name nobody may hold.
-/open-source / 301
-/open-source/ / 301
+# The open-source page (note #674), a directory of public repositories, was
+# taken down on 2026-09-29 and this address went home. Since note #1154 it is
+# the page about the platform's own source (public since 2026-11-01), so it
+# answers again and is no longer redirected.
 
 # The Request access page (note #791) stood for a few hours on 2026-10-25,
 # while registration was closed; the owner reopened sign-up the same evening
