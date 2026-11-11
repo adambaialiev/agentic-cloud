@@ -85,6 +85,9 @@ export interface VoiceAnswer {
   admins: string[];
   /** True when the reader is an admin and may change this. */
   canChange: boolean;
+  /** The model and voice the Chief of Staff's recap is read aloud with
+   *  (note #1151); present once the workplace has a key. */
+  speech?: import('./voice-speech.js').RecapSpeechSetting;
   admin?: {
     key: { preview: string; savedAt: string; savedByName: string; copiedFromName?: string } | null;
     /**

@@ -45,6 +45,8 @@ export function useRecapVoice(
   const [error, setError] = useState('');
   const heard = useRef<RecapHeard>(RECAP_NOT_PRIMED);
   const urls = useRef(new Map<string, string>());
+  /** Recaps the default voice read because the chosen one failed. */
+  const fellBack = useRef(new Map<string, string>());
   /** Which request is current: a tap on Stop, or a newer play, outdates it. */
   const asked = useRef(0);
 
@@ -84,7 +86,12 @@ export function useRecapVoice(
         url = audioUrl(answer.audio, answer.contentType);
         urls.current.set(text, url);
         noteVoiceOutcome(null);
+        // The workplace's chosen voice failed and the default read it (note
+        // #1151): said in the same one line, never silently.
+        if (answer.fallback) fellBack.current.set(text, answer.fallback);
       }
+      const fell = fellBack.current.get(text);
+      if (fell && ask === asked.current) setError(fell);
       if (ask !== asked.current) return;
       const element = recapPlayer();
       // Only a recap's end counts: the unlocking breath of silence ends too.

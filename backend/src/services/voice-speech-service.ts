@@ -19,6 +19,26 @@ const TIMEOUT_MS = 30_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * 16-bit little-endian PCM, as OpenRouter returns Gemini's speech
+ * (`audio/pcm;rate=24000;channels=1`), wrapped in a WAV header (note #1151).
+ */
+export function pcmToWav(pcm: Buffer, contentType: string): Buffer {
+  const param = (name: string, fallback: number) => {
+    const match = new RegExp(`${name}=(\\d+)`, 'i').exec(contentType);
+    const value = match ? Number(match[1]) : NaN;
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  const rate = param('rate', 24000), channels = param('channels', 1), bytesPerSample = 2;
+  const header = Buffer.alloc(44);
+  header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVEfmt ', 8);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * channels * bytesPerSample, 28);
+  header.writeUInt16LE(channels * bytesPerSample, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36); header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
 export class VoiceSpeechService implements VoiceSpeaker {
   constructor(private readonly doFetch: typeof fetch = (input, init) => fetch(input, init), private readonly retryDelayMs = 600) {}
 
@@ -41,9 +61,12 @@ export class VoiceSpeechService implements VoiceSpeaker {
         await sleep(this.retryDelayMs);
         continue;
       }
-      const contentType = (response.headers.get('content-type') ?? '').split(';', 1)[0]!.trim().toLowerCase();
+      const header = response.headers.get('content-type') ?? '';
+      const contentType = header.split(';', 1)[0]!.trim().toLowerCase();
       if (response.ok && contentType.startsWith('audio/')) {
         const audio = Buffer.from(await response.arrayBuffer());
+        // Raw PCM (Gemini's only format) plays nowhere; as WAV it plays everywhere.
+        if (audio.byteLength > 0 && contentType === 'audio/pcm') return { audio: pcmToWav(audio, header), contentType: 'audio/wav' };
         if (audio.byteLength > 0) return { audio, contentType };
         failure = new VoiceTranscriptionError('OpenRouter speech request failed: empty audio', 'upstream_error', 502, response.status);
         break;

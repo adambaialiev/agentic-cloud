@@ -247,7 +247,10 @@ describe('WorkplaceVoiceService', () => {
       model: { id: DEFAULT_VOICE_MODEL, name: 'GPT-4o mini Transcribe' },
       admins: ['Dana Rivera'],
       canChange: false,
+      // Which voice reads the recaps (note #1151): names only.
+      speech: { model: 'elevenlabs/eleven-v4-turbo', modelName: 'ElevenLabs: Eleven v4 Turbo', voice: 'sarah', voiceName: 'Sarah', isDefault: true },
     });
+    expect(JSON.stringify(answer)).not.toContain(KEY.slice(-8));
   });
 
   it('previews a key without giving it away', () => {
@@ -289,5 +292,102 @@ describe('OpenRouterAccountClient', () => {
       { nonsense: true },
     ] })) as unknown as typeof fetch);
     expect(await client.transcriptionModels()).toEqual([{ id: 'openai/whisper-large-v3', prompt: 0.0000075, completion: 0 }]);
+  });
+});
+
+/**
+ * Note #1151: the recap's voice is the workplace's choice, from what
+ * OpenRouter offers, and the default reads the recap whenever the choice
+ * cannot — saying so, never silently.
+ */
+describe('WorkplaceVoiceService — the recap voice (note #1151)', () => {
+  const offered = [
+    { id: 'elevenlabs/eleven-v4-turbo', name: 'ElevenLabs: Eleven v4 Turbo', prompt: 0.00004, completion: 0, voices: ['george', 'sarah'] },
+    { id: 'hexgrad/kokoro-82m', name: 'hexgrad: Kokoro 82M', prompt: 0.00000062, completion: 0, voices: ['af_heart', 'af_bella'] },
+    { id: 'google/gemini-3.8-flash-tts', name: 'Google: Gemini 3.8 Flash TTS', prompt: 0.0000005, completion: 0.000009, voices: ['Kore'] },
+    { id: 'fish-audio/s1', name: 'Fish Audio: S1', prompt: 0.000015, completion: 0, voices: [] },
+    { id: 'heygen/heygen-voice-1-turbo:free', name: 'HeyGen (free)', prompt: 0, completion: 0, voices: ['nadine'] },
+  ];
+  async function speechSetup(speak = vi.fn().mockResolvedValue({ audio: Buffer.from('mp3'), contentType: 'audio/mpeg' }), list: typeof offered | Error = offered) {
+    const orgStorage = new InMemoryOrgStorage();
+    const org = await orgStorage.createOrg({ name: 'Northwind', createdByUserId: 'u1' });
+    const orgSecrets = new OrgSecretsService(new InMemorySecretStorage());
+    await orgSecrets.setOrgSecret(org.orgId, VOICE_KEY_SECRET_NAME, KEY, 'test');
+    const speechModels = list instanceof Error ? vi.fn().mockRejectedValue(list) : vi.fn().mockResolvedValue(list);
+    const service = new WorkplaceVoiceService({
+      orgStorage, orgSecrets,
+      openRouter: { checkKey: vi.fn().mockResolvedValue('ok'), creditLeft: vi.fn().mockResolvedValue(3), transcriptionModels: vi.fn().mockResolvedValue([]), speechModels },
+      transcriber: { transcribe: vi.fn() }, speaker: { speak },
+      pauseReasonFor: (error) => error instanceof Upstream && error.status === 402 ? 'out_of_credit' : null,
+    });
+    return { service, orgStorage, orgId: org.orgId, speak, speechModels };
+  }
+
+  it('lists what OpenRouter offers, priced per 240-character recap, the default first; no voiceless or free models', async () => {
+    const t = await speechSetup();
+    const answer = await t.service.speechModels();
+    expect(answer.models.map((m) => m.id)).toEqual(['elevenlabs/eleven-v4-turbo', 'google/gemini-3.8-flash-tts', 'hexgrad/kokoro-82m']);
+    expect(answer.models[0]).toMatchObject({ usdPerRecap: 0.00004 * 240, estimate: false, voices: ['george', 'sarah'] });
+    expect(answer.models[1]!.estimate).toBe(true);
+    expect(answer.default).toEqual({ model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah' });
+  });
+
+  it('defaults to Eleven v4 Turbo and Sarah, keeps an offered choice, and refuses one OpenRouter does not offer', async () => {
+    const t = await speechSetup();
+    expect((await t.service.answer(t.orgId, { admin: true, admins: [] })).speech).toMatchObject({ model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah', voiceName: 'Sarah', isDefault: true });
+    await expect(t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'nobody', 'Dana')).rejects.toMatchObject({ status: 400 });
+    await expect(t.service.setSpeech(t.orgId, 'made/up', 'x', 'Dana')).rejects.toMatchObject({ status: 400 });
+    await t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'af_bella', 'Dana');
+    expect((await t.service.answer(t.orgId, { admin: false, admins: [] })).speech).toMatchObject({ model: 'hexgrad/kokoro-82m', modelName: 'hexgrad: Kokoro 82M', voice: 'af_bella', isDefault: false, changedByName: 'Dana' });
+    await t.service.speak(t.orgId, 'I shipped it.');
+    expect(t.speak).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'hexgrad/kokoro-82m', voice: 'af_bella', format: 'mp3', text: 'I shipped it.' }));
+  });
+
+  it('says it cannot check a choice while OpenRouter does not answer', async () => {
+    const t = await speechSetup(undefined, new Error('down'));
+    await expect(t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'af_bella', 'Dana')).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('asks Gemini for PCM, the only format it speaks', async () => {
+    const t = await speechSetup();
+    await t.service.sample(t.orgId, 'google/gemini-3.8-flash-tts', 'Kore');
+    expect(t.speak).toHaveBeenCalledWith(expect.objectContaining({ model: 'google/gemini-3.8-flash-tts', voice: 'Kore', format: 'pcm' }));
+  });
+
+  it('falls back to the default, and says so, when the chosen voice fails; works again once it does', async () => {
+    const speak = vi.fn(async (args: { model: string }) => {
+      if (args.model === 'hexgrad/kokoro-82m' && speak.mock.calls.length < 3) throw new Error('provider 500');
+      return { audio: Buffer.from(args.model), contentType: 'audio/mpeg' };
+    });
+    const t = await speechSetup(speak as never);
+    await t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'af_heart', 'Dana');
+    const first = await t.service.speak(t.orgId, 'Recap one.');
+    expect(first).toMatchObject({ model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah' });
+    expect(first.fallback).toContain('could not read this recap, so the default voice did');
+    expect((await t.orgStorage.getOrg(t.orgId))?.voiceSpeechProblem?.words).toBe(first.fallback);
+    const second = await t.service.speak(t.orgId, 'Recap two.');
+    expect(second).toMatchObject({ model: 'hexgrad/kokoro-82m' });
+    expect(second.fallback).toBeUndefined();
+    expect((await t.orgStorage.getOrg(t.orgId))?.voiceSpeechProblem).toBeUndefined();
+  });
+
+  it('reads with the default when OpenRouter no longer offers the chosen model', async () => {
+    const t = await speechSetup();
+    await t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'af_heart', 'Dana');
+    // A day later the list no longer has it.
+    (t.service as unknown as { speechCache: unknown }).speechCache = null;
+    t.speechModels.mockResolvedValue(offered.filter((m) => m.id !== 'hexgrad/kokoro-82m'));
+    const spoken = await t.service.speak(t.orgId, 'Recap.');
+    expect(spoken).toMatchObject({ model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah' });
+    expect(spoken.fallback).toContain('no longer offers');
+    expect(t.speak).toHaveBeenCalledTimes(1);
+  });
+
+  it('never falls back over a paused account: out of credit is out of credit for every voice', async () => {
+    const speak = vi.fn().mockRejectedValue(new Upstream(402));
+    const t = await speechSetup(speak);
+    await t.service.setSpeech(t.orgId, 'hexgrad/kokoro-82m', 'af_heart', 'Dana');
+    await expect(t.service.speak(t.orgId, 'Recap.')).rejects.toMatchObject({ code: 'voice_out_of_credit' });
+    expect(speak).toHaveBeenCalledTimes(1);
   });
 });

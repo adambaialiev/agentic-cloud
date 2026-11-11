@@ -210,7 +210,24 @@ export interface OrgDocument {
      * links the two afterwards; a key pasted here clears it.
      */
     keyCopiedFromName?: string;
+    /**
+     * The model and voice the Chief of Staff's recap is read aloud with
+     * (note #1151), chosen by an admin from what OpenRouter offers. Absent:
+     * RECAP_SPEECH_MODEL / RECAP_SPEECH_VOICE.
+     */
+    speechModel?: string;
+    speechVoice?: string;
+    speechChangedAt?: string;
+    speechChangedByName?: string;
   };
+  /**
+   * The last time the chosen speech model or voice failed and the default
+   * read the recap instead (note #1151): shown to the admin beside the
+   * choice. Its own field, written by the speaking path, so it never
+   * rewrites an admin's settings; cleared when the choice is changed or the
+   * chosen voice works again.
+   */
+  voiceSpeechProblem?: { at: string; words: string };
   /**
    * Set when OpenRouter refused a recording for a reason no retry fixes: the
    * account ran out of credit (402) or the key no longer works (401/403).

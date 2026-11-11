@@ -23,6 +23,7 @@ import { Scrim } from '../../ui/Ask.js';
 import { errorMessage } from '../../ui/format.js';
 import { Svg, TypeIcon } from '../../ui/icons.js';
 import { useOrgApi } from './useOrgApi.js';
+import { RecapVoicePicker } from './RecapVoicePicker.js';
 import { forgetVoiceStatus } from '../../voice/voice-status.js';
 import { VOICE_SETTINGS_ANCHOR } from '../../voice/VoiceBlocked.js';
 import { voiceAdminsWords, voiceMonthWords, voiceUsdWords } from './voice-words.js';
@@ -174,7 +175,7 @@ function ModelPicker({ voice, onChanged }: { voice: VoiceAnswer; onChanged: (ans
           <button className="addrow" type="button" onClick={() => setOther(true)}>Use another OpenRouter model…</button>
         )}
       </div>
-      <p className="formhint">Prices are OpenRouter’s{models?.pricesCheckedAt ? ', checked today' : ''}; ≈ marks a model billed by the word, where the price a minute is the maker’s estimate. A 30-second message costs about a tenth of a cent with the recommended model. The same key reads the Chief of Staff’s recaps aloud for whoever turns on its speaker: the recap’s words go to OpenRouter, up to about a cent each.</p>
+      <p className="formhint">Prices are OpenRouter’s{models?.pricesCheckedAt ? ', checked today' : ''}; ≈ marks a model billed by the word, where the price a minute is the maker’s estimate. A 30-second message costs about a tenth of a cent with the recommended model. The same key reads the Chief of Staff’s recaps aloud for whoever turns on its speaker; its voice is chosen below.</p>
     </>
   );
 }
@@ -330,6 +331,8 @@ export function VoiceSection({ admin }: { admin: boolean }) {
       ) : null}
       {!admin && voice.state !== 'off' ? <p className="formhint">{voiceAdminsWords(voice.admins)} can change this.</p> : null}
       {admin && key ? <ModelPicker voice={voice} onChanged={setVoice} /> : null}
+      {/* The recap's voice (note #1151): every member reads it, an admin chooses it. */}
+      {voice.speech && voice.state !== 'off' ? <RecapVoicePicker voice={voice} admin={admin} onChanged={setVoice} /> : null}
       {dialog ? (
         <KeyDialog
           replacing={Boolean(key)}

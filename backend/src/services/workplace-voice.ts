@@ -17,8 +17,12 @@ import {
 } from '../shared/voice.js';
 import type { VoiceErrorCode } from '../shared/voice-transcription.js';
 import { createHash } from 'node:crypto';
-import { RECAP_SPEECH_FORMAT, RECAP_SPEECH_MODEL, RECAP_SPEECH_VOICE } from '../shared/voice-speech.js';
-import { OpenRouterUnavailableError, type OpenRouterAccount, type OpenRouterTranscriptionModel } from './openrouter-account.js';
+import {
+  RECAP_SPEECH_FORMAT, RECAP_SPEECH_MODEL, RECAP_SPEECH_SAMPLE, RECAP_SPEECH_VOICE,
+  speechUsdPerRecap, speechVoiceName,
+  type RecapSpeechSetting, type SpeechModelOption, type SpeechModelsAnswer,
+} from '../shared/voice-speech.js';
+import { OpenRouterUnavailableError, type OpenRouterAccount, type OpenRouterSpeechModel, type OpenRouterTranscriptionModel } from './openrouter-account.js';
 import { maskSecretPreview } from './user-secrets.js';
 
 /**
@@ -133,6 +137,8 @@ export class WorkplaceVoiceService {
   private readonly rechecks = new Map<string, Promise<void>>();
   /** Spoken recaps by workplace, model, voice and words, newest last. */
   private readonly spoken = new Map<string, VoiceSpeakerResult>();
+  private speechCache: { at: number; models: SpeechModelOption[] } | null = null;
+  private speechInFlight: Promise<SpeechModelOption[] | null> | null = null;
 
   constructor(private readonly deps: WorkplaceVoiceDeps) {
     this.now = deps.now ?? Date.now;
@@ -216,6 +222,7 @@ export class WorkplaceVoiceService {
       model: { id: modelId, name: voiceModelInfo(modelId)?.name ?? modelId },
       admins: viewer.admins,
       canChange: viewer.admin,
+      ...(key ? { speech: await this.speechSetting(org) } : {}),
     };
     if (viewer.admin) {
       answer.admin = {
@@ -422,27 +429,113 @@ export class WorkplaceVoiceService {
     return { text: result.text, model };
   }
 
+  /** The model and voice this workplace reads recaps with (note #1151). */
+  speechOf(org: OrgDocument): { model: string; voice: string } {
+    const model = org.voice?.speechModel, voice = org.voice?.speechVoice;
+    return model && voice ? { model, voice } : { model: RECAP_SPEECH_MODEL, voice: RECAP_SPEECH_VOICE };
+  }
+
+  private async speechSetting(org: OrgDocument): Promise<RecapSpeechSetting> {
+    const { model, voice } = this.speechOf(org);
+    const known = model === RECAP_SPEECH_MODEL ? undefined : (await this.liveSpeechModels())?.find((entry) => entry.id === model);
+    return {
+      model, voice,
+      modelName: known?.name ?? (model === RECAP_SPEECH_MODEL ? 'ElevenLabs: Eleven v4 Turbo' : model),
+      voiceName: speechVoiceName(voice),
+      isDefault: model === RECAP_SPEECH_MODEL && voice === RECAP_SPEECH_VOICE,
+      ...(org.voice?.speechChangedByName ? { changedByName: org.voice.speechChangedByName } : {}),
+      ...(org.voice?.speechChangedAt ? { changedAt: org.voice.speechChangedAt } : {}),
+      ...(org.voiceSpeechProblem ? { problem: org.voiceSpeechProblem } : {}),
+    };
+  }
+
   /**
-   * Words read aloud on the workplace's key (note #1146): the same key, the
-   * same on/off/paused state and the same pause as a recording, because it
-   * is the same OpenRouter account. Throws {@link VoiceUnavailableError}
-   * without calling OpenRouter when there is no key or voice is paused.
+   * What OpenRouter offers for speech, as the chooser shows it: every model
+   * that names its voices and has a price, the free variants left out (they
+   * are rate-limited copies). Kept a day; null when OpenRouter never answered.
    */
-  async speak(orgId: string, text: string): Promise<VoiceSpeakerResult & { model: string; voice: string }> {
+  private liveSpeechModels(): Promise<SpeechModelOption[] | null> {
+    if (this.speechCache && this.now() - this.speechCache.at < VOICE_MODELS_CACHE_MS) return Promise.resolve(this.speechCache.models);
+    if (!this.deps.openRouter.speechModels) return Promise.resolve(null);
+    if (this.speechInFlight) return this.speechInFlight;
+    this.speechInFlight = this.deps.openRouter.speechModels()
+      .then((list) => {
+        const models = list
+          .filter((entry: OpenRouterSpeechModel) => entry.voices.length > 0 && !entry.id.endsWith(':free'))
+          .map((entry): SpeechModelOption => {
+            const price = speechUsdPerRecap(entry.prompt, entry.completion);
+            return { id: entry.id, name: entry.name, voices: entry.voices, usdPerRecap: price.usd, estimate: price.estimate };
+          })
+          .filter((entry) => entry.usdPerRecap !== null && entry.usdPerRecap > 0)
+          .sort((a, b) => (a.id === RECAP_SPEECH_MODEL ? -1 : b.id === RECAP_SPEECH_MODEL ? 1 : a.name.localeCompare(b.name)));
+        this.speechCache = { at: this.now(), models };
+        return models;
+      })
+      .catch(() => this.speechCache?.models ?? null)
+      .finally(() => { this.speechInFlight = null; });
+    return this.speechInFlight;
+  }
+
+  async speechModels(): Promise<SpeechModelsAnswer> {
+    const models = await this.liveSpeechModels();
+    return {
+      models: models ?? [],
+      checkedAt: this.speechCache ? new Date(this.speechCache.at).toISOString() : null,
+      default: { model: RECAP_SPEECH_MODEL, voice: RECAP_SPEECH_VOICE },
+    };
+  }
+
+  /** A model and voice OpenRouter offers now, or a sentence why not. */
+  private async offered(rawModel: unknown, rawVoice: unknown): Promise<{ model: SpeechModelOption; voice: string }> {
+    const id = typeof rawModel === 'string' ? rawModel.trim() : '';
+    const voice = typeof rawVoice === 'string' ? rawVoice.trim() : '';
+    if (!id || !voice) throw new VoiceSettingsError('Choose a model and a voice.', 400);
+    const live = await this.liveSpeechModels();
+    if (!live) throw new VoiceSettingsError('OpenRouter could not be reached to check that model. Try again in a minute.', 503);
+    const model = live.find((entry) => entry.id === id);
+    if (!model) throw new VoiceSettingsError(`OpenRouter does not offer a speech model called ${id}.`, 400);
+    if (!model.voices.includes(voice)) throw new VoiceSettingsError(`${model.name} has no voice called ${voice}.`, 400);
+    return { model, voice };
+  }
+
+  /** An admin's choice of model and voice for reading recaps aloud. */
+  async setSpeech(orgId: string, rawModel: unknown, rawVoice: unknown, byName: string): Promise<void> {
+    const { model, voice } = await this.offered(rawModel, rawVoice);
+    const org = await this.org(orgId);
+    await this.deps.orgStorage.updateOrg(orgId, {
+      voice: { ...org.voice, speechModel: model.id, speechVoice: voice, speechChangedAt: new Date(this.now()).toISOString(), speechChangedByName: byName },
+      voiceSpeechProblem: undefined,
+    });
+  }
+
+  /** One sentence in a model and voice an admin is trying, on the key. */
+  async sample(orgId: string, rawModel: unknown, rawVoice: unknown): Promise<VoiceSpeakerResult & { model: string; voice: string }> {
+    const { model, voice } = await this.offered(rawModel, rawVoice);
+    const { key } = await this.ready(orgId);
+    const result = await this.spoken1(orgId, key, model.id, voice, RECAP_SPEECH_SAMPLE);
+    return { ...result, model: model.id, voice };
+  }
+
+  private async ready(orgId: string): Promise<{ org: OrgDocument; key: string }> {
     if (!this.deps.speaker) throw new VoiceUnavailableError(voiceErrorCodeFor('off'));
-    const { state, reason, key } = await this.state(orgId);
+    const { state, reason, org, key } = await this.state(orgId);
     if (state !== 'on' || !key) throw new VoiceUnavailableError(voiceErrorCodeFor(state === 'on' ? 'off' : state, reason));
-    const model = RECAP_SPEECH_MODEL, voice = RECAP_SPEECH_VOICE;
+    return { org, key };
+  }
+
+  /** One spoken text, cached; a 402 or 401 pauses the workplace. */
+  private async spoken1(orgId: string, key: string, model: string, voice: string, text: string): Promise<VoiceSpeakerResult> {
     const cacheKey = createHash('sha256').update(JSON.stringify([orgId, model, voice, text])).digest('hex');
     const cached = this.spoken.get(cacheKey);
     if (cached) {
       this.spoken.delete(cacheKey);
       this.spoken.set(cacheKey, cached);
-      return { ...cached, model, voice };
+      return cached;
     }
     let result: VoiceSpeakerResult;
     try {
-      result = await this.deps.speaker.speak({ apiKey: key, model, voice, format: RECAP_SPEECH_FORMAT, text });
+      // Gemini's voices answer raw PCM only; the speaker wraps it as WAV.
+      result = await this.deps.speaker!.speak({ apiKey: key, model, voice, format: model.startsWith('google/') ? 'pcm' : RECAP_SPEECH_FORMAT, text });
     } catch (error) {
       const pause = this.deps.pauseReasonFor(error);
       if (pause) {
@@ -457,7 +550,47 @@ export class WorkplaceVoiceService {
     }
     this.spoken.set(cacheKey, result);
     while (this.spoken.size > SPOKEN_CACHE_ENTRIES) this.spoken.delete(this.spoken.keys().next().value!);
-    return { ...result, model, voice };
+    return result;
+  }
+
+  /**
+   * Words read aloud on the workplace's key (note #1146), in the model and
+   * voice an admin chose (note #1151). Throws {@link VoiceUnavailableError}
+   * without calling OpenRouter when there is no key or voice is paused. When
+   * the chosen model or voice is gone from OpenRouter, or fails, the default
+   * reads it instead and `fallback` says so in one sentence — never silence.
+   */
+  async speak(orgId: string, text: string): Promise<VoiceSpeakerResult & { model: string; voice: string; fallback?: string }> {
+    const { org, key } = await this.ready(orgId);
+    const chosen = this.speechOf(org);
+    const fallbackTo = { model: RECAP_SPEECH_MODEL, voice: RECAP_SPEECH_VOICE };
+    const isDefault = chosen.model === fallbackTo.model && chosen.voice === fallbackTo.voice;
+    let fallback: string | undefined;
+    let use = chosen;
+    if (!isDefault) {
+      const live = await this.liveSpeechModels();
+      const entry = live?.find((model) => model.id === chosen.model);
+      const named = `${entry?.name ?? chosen.model} · ${speechVoiceName(chosen.voice)}`;
+      if (live && !entry) fallback = `OpenRouter no longer offers the workplace's voice (${named}), so the default voice read this.`;
+      else if (entry && !entry.voices.includes(chosen.voice)) fallback = `The workplace's voice (${named}) is no longer offered, so the default voice read this.`;
+      if (fallback) use = fallbackTo;
+    }
+    let result: VoiceSpeakerResult;
+    try {
+      result = await this.spoken1(orgId, key, use.model, use.voice, text);
+    } catch (error) {
+      if (error instanceof VoiceUnavailableError || use === fallbackTo || isDefault) throw error;
+      const name = this.speechCache?.models.find((model) => model.id === chosen.model)?.name ?? chosen.model;
+      fallback = `The workplace's voice (${name} · ${speechVoiceName(chosen.voice)}) could not read this recap, so the default voice did.`;
+      use = fallbackTo;
+      result = await this.spoken1(orgId, key, use.model, use.voice, text);
+    }
+    if (fallback) {
+      await this.deps.orgStorage.updateOrg(orgId, { voiceSpeechProblem: { at: new Date(this.now()).toISOString(), words: fallback } }).catch(() => undefined);
+    } else if (!isDefault && org.voiceSpeechProblem) {
+      await this.deps.orgStorage.updateOrg(orgId, { voiceSpeechProblem: undefined }).catch(() => undefined);
+    }
+    return { ...result, model: use.model, voice: use.voice, ...(fallback ? { fallback } : {}) };
   }
 
   private async count(orgId: string, result: VoiceTranscriberResult): Promise<void> {

@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceOrgDetail } from '../../../../src/shared/workspace-api.js';
 import type { VoiceAnswer, VoiceModelsAnswer } from '../../../../src/shared/voice.js';
 import { VOICE_MODELS } from '../../../../src/shared/voice.js';
+import type { SpeechModelsAnswer } from '../../../../src/shared/voice-speech.js';
 import { App } from '../../App.js';
 import { WorkspaceApiError } from '../../api/client.js';
 import { emptyState, scriptedApi, workspaceScript, type Answer } from '../../test/fixtures.js';
@@ -168,5 +169,74 @@ describe('voice words', () => {
     expect(voiceUsdWords(11.624)).toBe('$11.62');
     expect(voiceMonthWords({ month: '2026-11', recordings: 0, seconds: 0, costUsd: 0 })).toBe('No recordings yet this month.');
     expect(voiceMonthWords({ month: '2026-11', recordings: 1, seconds: 20, costUsd: 0.001 })).toBe('This month: 1 recording, under a minute of speech, under 1¢');
+  });
+});
+
+/** Note #1151: the recap's voice, chosen on the same section. */
+describe('the recap voice on the Workplace screen (note #1151)', () => {
+  const speech = { model: 'elevenlabs/eleven-v4-turbo', modelName: 'ElevenLabs: Eleven v4 Turbo', voice: 'sarah', voiceName: 'Sarah', isDefault: true };
+  const SPEECH_MODELS: SpeechModelsAnswer = {
+    checkedAt: '2026-11-11T10:00:00.000Z',
+    default: { model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah' },
+    models: [
+      { id: 'elevenlabs/eleven-v4-turbo', name: 'ElevenLabs: Eleven v4 Turbo', voices: ['george', 'sarah'], usdPerRecap: 0.0096, estimate: false },
+      { id: 'google/gemini-3.8-flash-tts', name: 'Google: Gemini 3.8 Flash TTS', voices: ['Kore', 'Puck'], usdPerRecap: 0.0031, estimate: true },
+      { id: 'hexgrad/kokoro-82m', name: 'hexgrad: Kokoro 82M', voices: ['af_heart', 'af_bella'], usdPerRecap: 0.0001488, estimate: false },
+    ],
+  };
+  const select = (id: string) => document.getElementById(id) as HTMLSelectElement;
+
+  it('offers what OpenRouter offers with a price a recap, plays a sample, and keeps the choice', async () => {
+    const played: string[] = [];
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) { played.push(this.src); return Promise.resolve(); });
+    (URL as unknown as { createObjectURL: () => string }).createObjectURL = () => 'blob:sample';
+    let kept: unknown = null;
+    const { calls } = await open('admin', {
+      'GET api/voice': () => ({ ...ON, speech }),
+      'GET api/voice/speech/models': () => SPEECH_MODELS,
+      'POST api/voice/speech/sample': () => ({ audio: btoa('mp3'), contentType: 'audio/mpeg', model: 'hexgrad/kokoro-82m', voice: 'af_heart' }),
+      'PUT api/voice/speech': (call) => {
+        kept = JSON.parse(String(call.init?.body));
+        return { ...ON, speech: { model: 'hexgrad/kokoro-82m', modelName: 'hexgrad: Kokoro 82M', voice: 'af_heart', voiceName: 'af_heart', isDefault: false, changedByName: 'Dana Rivera', changedAt: '2026-11-11T10:30:00.000Z' } };
+      },
+    });
+    await waitFor(() => expect(document.getElementById('orgSpeechModel')).toBeTruthy());
+    expect(document.getElementById('orgSpeechCurrent')!.textContent).toBe('Sarah · ElevenLabs: Eleven v4 Turbo');
+    expect([...select('orgSpeechModel').options].map((o) => o.textContent)).toEqual([
+      'Eleven v4 Turbo · ElevenLabs · 0.96¢ a recap · default',
+      'Gemini 3.8 Flash TTS · Google · ≈ 0.31¢ a recap',
+      'Kokoro 82M · hexgrad · 0.015¢ a recap',
+    ]);
+    expect(select('orgSpeechVoice').value).toBe('sarah');
+    expect((document.getElementById('orgSpeechSave') as HTMLButtonElement).disabled).toBe(true);
+
+    await act(async () => { fireEvent.change(select('orgSpeechModel'), { target: { value: 'hexgrad/kokoro-82m' } }); });
+    // Sarah is not one of Kokoro's voices: its first voice stands in.
+    expect(select('orgSpeechVoice').value).toBe('af_heart');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Play sample' })); });
+    expect(JSON.parse(String(calls.find((c) => c.path === 'api/voice/speech/sample')!.init!.body))).toEqual({ model: 'hexgrad/kokoro-82m', voice: 'af_heart' });
+    await waitFor(() => expect(played.at(-1)).toBe('blob:sample'));
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Use this voice' })); });
+    expect(kept).toEqual({ model: 'hexgrad/kokoro-82m', voice: 'af_heart' });
+    await waitFor(() => expect(document.getElementById('orgSpeechCurrent')!.textContent).toBe('af_heart · hexgrad: Kokoro 82M'));
+    expect(document.getElementById('orgSpeechCard')!.textContent).toContain('Chosen by Dana Rivera');
+    play.mockRestore();
+  });
+
+  it('shows a member which voice reads the recaps, without the choosers', async () => {
+    await open('member', { 'GET api/voice': () => ({ state: 'on', model: ON.model, admins: ['Dana Rivera'], canChange: false, speech }) });
+    await waitFor(() => expect(document.getElementById('orgSpeechCurrent')).toBeTruthy());
+    expect(document.getElementById('orgSpeechModel')).toBeNull();
+    expect(document.getElementById('orgSpeechSample')).toBeNull();
+  });
+
+  it('says when the chosen voice failed and the default read the recap', async () => {
+    await open('admin', {
+      'GET api/voice': () => ({ ...ON, speech: { ...speech, model: 'hexgrad/kokoro-82m', modelName: 'hexgrad: Kokoro 82M', voice: 'af_heart', voiceName: 'af_heart', isDefault: false, problem: { at: '2026-11-11T10:40:00.000Z', words: 'The workplace’s voice could not read this recap, so the default voice did.' } } }),
+      'GET api/voice/speech/models': () => SPEECH_MODELS,
+    });
+    await waitFor(() => expect(document.getElementById('orgSpeechProblem')).toBeTruthy());
+    expect(document.getElementById('orgSpeechProblem')!.textContent).toContain('so the default voice did');
   });
 });

@@ -59,7 +59,7 @@ import { DEFAULT_VOICE_MODEL } from '../../shared/voice.js';
 
 const VOICE_TEST_KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef01234567';
 import { VOICE_ERROR_SENTENCES } from '../../shared/voice-transcription.js';
-import { RECAP_SPEECH_CHANGED, RECAP_SPEECH_MODEL, RECAP_SPEECH_SENTENCES, RECAP_SPEECH_VOICE } from '../../shared/voice-speech.js';
+import { RECAP_SPEECH_CHANGED, RECAP_SPEECH_MODEL, RECAP_SPEECH_SAMPLE, RECAP_SPEECH_SENTENCES, RECAP_SPEECH_VOICE } from '../../shared/voice-speech.js';
 import {
   InMemoryWorkspaceWebAuthStorage,
   WorkspaceWebAuthService,
@@ -526,6 +526,73 @@ describe('telegram mini app routes', () => {
     const unauthenticated = createMockResponse();
     await getRouteHandler(deps, '/api/recap/speech', 'post')(mockRequest({ body: { text: recap } }), unauthenticated);
     expect(unauthenticated.statusCode).toBe(401);
+  });
+
+  // Note #1151: the recap's voice is the workplace's, chosen by an admin from
+  // what OpenRouter offers, sampled on the key, and the default reads the
+  // recap — saying so — when the choice fails.
+  async function withSpeechChoice(deps: Partial<RouteDeps>, role: 'admin' | 'member', speak: ReturnType<typeof vi.fn>) {
+    const voice = await withVoice(deps, { key: true, role });
+    deps.workplaceVoice = new WorkplaceVoiceService({
+      orgStorage: voice.orgStorage, orgSecrets: voice.orgSecrets,
+      openRouter: {
+        checkKey: vi.fn() as never, creditLeft: vi.fn().mockResolvedValue(3), transcriptionModels: vi.fn().mockResolvedValue([]),
+        speechModels: vi.fn().mockResolvedValue([
+          { id: 'elevenlabs/eleven-v4-turbo', name: 'ElevenLabs: Eleven v4 Turbo', prompt: 0.00004, completion: 0, voices: ['george', 'sarah'] },
+          { id: 'hexgrad/kokoro-82m', name: 'hexgrad: Kokoro 82M', prompt: 0.00000062, completion: 0, voices: ['af_heart'] },
+        ]),
+      },
+      transcriber: { transcribe: vi.fn() as never }, speaker: { speak: speak as never }, pauseReasonFor: voicePauseReasonFor,
+    });
+    return voice;
+  }
+
+  it('lets an admin choose and sample the recap voice, and nobody else', async () => {
+    const { deps } = await buildDeps();
+    const speak = vi.fn().mockResolvedValue({ audio: Buffer.from('sample'), contentType: 'audio/mpeg' });
+    await withSpeechChoice(deps, 'admin', speak);
+    const models = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/speech/models', 'get')(mockRequest({ headers: authHeader(42) }), models);
+    expect((models.body as { models: Array<{ id: string; usdPerRecap: number }> }).models.map((m) => m.id)).toEqual(['elevenlabs/eleven-v4-turbo', 'hexgrad/kokoro-82m']);
+
+    const sample = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/speech/sample', 'post')(mockRequest({ headers: authHeader(42), body: { model: 'hexgrad/kokoro-82m', voice: 'af_heart' } }), sample);
+    expect(sample.statusCode).toBe(200);
+    expect(sample.body).toMatchObject({ audio: Buffer.from('sample').toString('base64'), model: 'hexgrad/kokoro-82m', voice: 'af_heart' });
+    expect(speak).toHaveBeenCalledWith(expect.objectContaining({ apiKey: VOICE_TEST_KEY, model: 'hexgrad/kokoro-82m', voice: 'af_heart', text: RECAP_SPEECH_SAMPLE }));
+    expect(JSON.stringify(sample.body)).not.toContain(VOICE_TEST_KEY);
+
+    const wrongVoice = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/speech', 'put')(mockRequest({ headers: authHeader(42), body: { model: 'hexgrad/kokoro-82m', voice: 'sarah' } }), wrongVoice);
+    expect(wrongVoice.statusCode).toBe(400);
+    const saved = createMockResponse();
+    await getRouteHandler(deps, '/api/voice/speech', 'put')(mockRequest({ headers: authHeader(42), body: { model: 'hexgrad/kokoro-82m', voice: 'af_heart' } }), saved);
+    expect(saved.statusCode).toBe(200);
+    expect((saved.body as { speech: unknown }).speech).toMatchObject({ model: 'hexgrad/kokoro-82m', voice: 'af_heart', isDefault: false });
+
+    const member = await buildDeps();
+    await withSpeechChoice(member.deps, 'member', speak);
+    for (const [path, method] of [['/api/voice/speech', 'put'], ['/api/voice/speech/sample', 'post']] as const) {
+      const refused = createMockResponse();
+      await getRouteHandler(member.deps, path, method)(mockRequest({ headers: authHeader(42), body: { model: 'hexgrad/kokoro-82m', voice: 'af_heart' } }), refused);
+      expect(refused.statusCode).toBe(403);
+    }
+  });
+
+  it('reads the recap in the chosen voice, and with the default plus one plain line when the choice fails', async () => {
+    const { deps, userStorage } = await buildDeps();
+    const speak = vi.fn(async (args: { model: string }) => {
+      if (args.model === 'hexgrad/kokoro-82m') throw new VoiceTranscriptionError('OpenRouter speech request failed: Unknown voice', 'upstream_error', 502, 400);
+      return { audio: Buffer.from(args.model), contentType: 'audio/mpeg' };
+    });
+    const voice = await withSpeechChoice(deps, 'admin', speak as never);
+    await deps.workplaceVoice!.setSpeech(voice.orgId, 'hexgrad/kokoro-82m', 'af_heart', 'Adam');
+    const recap = await withRecap(userStorage, voice.orgId);
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(recap), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah' });
+    expect((res.body as { fallback?: string }).fallback).toMatch(/could not read this recap, so the default voice did/);
   });
 
   it('says plainly why a recap cannot be read aloud: no key, out of credit, a passing fault', async () => {

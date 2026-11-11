@@ -42,6 +42,89 @@ export interface RecapSpeechAnswer {
   contentType: string;
   model: string;
   voice: string;
+  /**
+   * The workplace's chosen model or voice could not read it, so the default
+   * did (note #1151): the one plain line the page shows under the recap.
+   */
+  fallback?: string;
+}
+
+/* ---------------------------------------------------------------------------
+ * The workplace's choice of model and voice (note #1151). Adam, 11 Nov 2026:
+ * "What voice model is used and I think I need to be able to switch voice
+ * models in workspace settings."
+ * ------------------------------------------------------------------------- */
+
+/** The price shown beside each model is for a recap this long: the
+ *  summarizer's own limit (TELEGRAM_AGENT_RECAP_MAX_LENGTH). */
+export const RECAP_SPEECH_PRICE_CHARS = 240;
+
+/** What a Play sample button says, on the workplace's key. */
+export const RECAP_SPEECH_SAMPLE = 'Hi, I\'m your Chief of Staff. This is how your recaps will sound when I read them to you.';
+
+/** One text-to-speech model OpenRouter offers, as the chooser shows it. */
+export interface SpeechModelOption {
+  id: string;
+  /** OpenRouter's own name, "ElevenLabs: Eleven v4 Turbo". */
+  name: string;
+  /** The voice ids OpenRouter lists for it, in its order. */
+  voices: string[];
+  /** USD for a recap of RECAP_SPEECH_PRICE_CHARS characters; null when
+   *  OpenRouter gives no price we can turn into one. */
+  usdPerRecap: number | null;
+  /** True for a model billed by audio tokens: the price is an estimate. */
+  estimate: boolean;
+}
+
+/** GET api/voice/speech/models. */
+export interface SpeechModelsAnswer {
+  models: SpeechModelOption[];
+  /** When OpenRouter's list was read (ISO); null when it never answered. */
+  checkedAt: string | null;
+  default: { model: string; voice: string };
+}
+
+/** The workplace's recap voice, in GET api/voice for every member. */
+export interface RecapSpeechSetting {
+  model: string;
+  /** OpenRouter's name when known, else the id. */
+  modelName: string;
+  voice: string;
+  voiceName: string;
+  isDefault: boolean;
+  changedByName?: string;
+  changedAt?: string;
+  /** The last time the chosen model or voice failed and the default read
+   *  the recap instead: what happened, in one sentence, and when. */
+  problem?: { at: string; words: string };
+}
+
+/** A voice id as a person reads it: "sarah" → "Sarah"; anything with
+ *  marks in it ("aura-2-thalia-en", "en-US-Harper:MAI-Voice-2") as it is. */
+export function speechVoiceName(id: string): string {
+  return /^[a-z]+$/.test(id) ? id[0]!.toUpperCase() + id.slice(1) : id;
+}
+
+/** Words for a price a recap: "0.96¢", "≈ 0.31¢", "0.015¢". */
+export function speechRecapPriceWords(model: Pick<SpeechModelOption, 'usdPerRecap' | 'estimate'>): string {
+  if (model.usdPerRecap === null) return 'price not listed';
+  const cents = model.usdPerRecap * 100;
+  const text = cents === 0 ? '0' : cents >= 1 ? cents.toFixed(1).replace(/\.0$/, '') : Number(cents.toPrecision(2)).toString();
+  return `${model.estimate ? '≈ ' : ''}${text}¢`;
+}
+
+/**
+ * The price of one recap from OpenRouter's listing. Most speech models are
+ * priced per CHARACTER of input (`prompt`, checked against OpenRouter's own
+ * generation records on 11 Nov 2026: Kokoro, Voxtral, Deepgram, ElevenLabs,
+ * Grok all billed exactly characters × prompt). Gemini's are priced per
+ * token, mostly per AUDIO token out: measured at about a quarter of a prompt
+ * token and 1.41 audio tokens a character, so that price is an estimate.
+ */
+export function speechUsdPerRecap(prompt: number, completion: number, chars = RECAP_SPEECH_PRICE_CHARS): { usd: number | null; estimate: boolean } {
+  if (!Number.isFinite(prompt) || !Number.isFinite(completion) || prompt < 0 || completion < 0) return { usd: null, estimate: false };
+  if (completion === 0) return { usd: prompt * chars, estimate: false };
+  return { usd: chars * (prompt / 4 + completion * 1.41), estimate: true };
 }
 
 export const RECAP_SPEECH_SENTENCES: Record<VoiceErrorCode, string> = {

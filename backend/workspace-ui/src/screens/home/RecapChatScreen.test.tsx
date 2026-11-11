@@ -1919,6 +1919,19 @@ describe('the recap read aloud (note #1146)', () => {
     expect(played.at(-1)).toBe('blob:recap-1');
   }, 20_000);
 
+  it('plays the default voice and says so in one plain line when the workplace\u2019s chosen voice failed (note #1151)', async () => {
+    localStorage.setItem(RECAP_VOICE_KEY, 'on');
+    const words = 'The workplace\u2019s voice (hexgrad: Kokoro 82M \u00b7 af_heart) could not read this recap, so the default voice did.';
+    mount(talk, undefined, {
+      'GET api/voice': () => voiceOn,
+      'POST api/recap/speech': () => ({ audio: btoa('mp3'), contentType: 'audio/mpeg', model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah', fallback: words }),
+    });
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')).toBeTruthy());
+    await act(async () => fireEvent.click(document.getElementById('recapChatRecapPlay')!));
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')!.dataset.state).toBe('playing'));
+    expect(document.getElementById('recapChatRecapVoiceError')?.textContent).toBe(words);
+  });
+
   it('says in one plain line when the recap cannot be read aloud, and keeps the recap as it is', async () => {
     localStorage.setItem(RECAP_VOICE_KEY, 'on');
     mount(talk, undefined, {

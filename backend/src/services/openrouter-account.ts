@@ -26,12 +26,24 @@ export interface OpenRouterTranscriptionModel {
   completion: number;
 }
 
+/** A text-to-speech model (note #1151): prices as OpenRouter lists them,
+ *  and the voices it names in `supported_voices`. */
+export interface OpenRouterSpeechModel {
+  id: string;
+  name: string;
+  prompt: number;
+  completion: number;
+  voices: string[];
+}
+
 export interface OpenRouterAccount {
   checkKey(apiKey: string): Promise<OpenRouterKeyCheck>;
   /** USD left on the account behind the key (and under the key's own limit
    *  when it has one), or null when OpenRouter did not say. */
   creditLeft(apiKey: string): Promise<number | null>;
   transcriptionModels(): Promise<OpenRouterTranscriptionModel[]>;
+  /** The speech models (note #1151); absent on a fake that has none. */
+  speechModels?(): Promise<OpenRouterSpeechModel[]>;
 }
 
 type Fetch = typeof fetch;
@@ -96,6 +108,27 @@ export class OpenRouterAccountClient implements OpenRouterAccount {
       if (!isRecord(entry) || typeof entry.id !== 'string') continue;
       const pricing = isRecord(entry.pricing) ? entry.pricing : {};
       models.push({ id: entry.id, prompt: num(pricing.prompt) ?? 0, completion: num(pricing.completion) ?? 0 });
+    }
+    return models;
+  }
+
+  async speechModels(): Promise<OpenRouterSpeechModel[]> {
+    const { status, body } = await this.get('/models?output_modalities=speech', 'the speech model list');
+    if (status !== 200 || !isRecord(body) || !Array.isArray(body.data)) {
+      throw new OpenRouterUnavailableError('the speech model list', status);
+    }
+    const models: OpenRouterSpeechModel[] = [];
+    for (const entry of body.data) {
+      if (!isRecord(entry) || typeof entry.id !== 'string') continue;
+      const pricing = isRecord(entry.pricing) ? entry.pricing : {};
+      const voices = Array.isArray(entry.supported_voices) ? entry.supported_voices.filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
+      models.push({
+        id: entry.id,
+        name: typeof entry.name === 'string' && entry.name ? entry.name : entry.id,
+        prompt: num(pricing.prompt) ?? 0,
+        completion: num(pricing.completion) ?? 0,
+        voices,
+      });
     }
     return models;
   }

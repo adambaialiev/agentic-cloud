@@ -5865,6 +5865,7 @@ self.addEventListener('activate', (event) => {
       const spoken = await deps.workplaceVoice.speak(auth.orgId, text);
       return res.json({
         audio: spoken.audio.toString('base64'), contentType: spoken.contentType, model: spoken.model, voice: spoken.voice,
+        ...(spoken.fallback ? { fallback: spoken.fallback } : {}),
       } satisfies RecapSpeechAnswer);
     } catch (error) {
       if (error instanceof VoiceUnavailableError) {

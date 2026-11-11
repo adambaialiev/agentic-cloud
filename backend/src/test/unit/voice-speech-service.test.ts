@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OPENROUTER_SPEECH_URL, VoiceSpeechService } from '../../services/voice-speech-service.js';
+import { OPENROUTER_SPEECH_URL, pcmToWav, VoiceSpeechService } from '../../services/voice-speech-service.js';
 import { voicePauseReasonFor } from '../../services/voice-transcription-service.js';
 
 /** Note #1146: OpenRouter's text to speech, on the workplace's own key. */
@@ -54,5 +54,18 @@ describe('VoiceSpeechService', () => {
     const offline = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
     await expect(new VoiceSpeechService(offline as never, 0).speak(ARGS)).rejects.toMatchObject({ code: 'upstream_error' });
     expect(offline).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('pcmToWav (note #1151)', () => {
+  it('wraps Gemini’s raw PCM as a WAV a browser can play, at the rate OpenRouter names', async () => {
+    const pcm = Buffer.alloc(4800);
+    const doFetch = vi.fn().mockResolvedValue(new Response(pcm, { status: 200, headers: { 'Content-Type': 'audio/pcm;rate=24000;channels=1' } }));
+    const result = await new VoiceSpeechService(doFetch as never, 0).speak({ ...ARGS, model: 'google/gemini-3.8-flash-tts', voice: 'Kore', format: 'pcm' });
+    expect(result.contentType).toBe('audio/wav');
+    expect(result.audio.subarray(0, 4).toString()).toBe('RIFF');
+    expect(result.audio.readUInt32LE(24)).toBe(24000);
+    expect(result.audio.readUInt32LE(40)).toBe(4800);
+    expect(pcmToWav(pcm, 'audio/pcm').length).toBe(4844);
   });
 });

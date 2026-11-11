@@ -7815,6 +7815,18 @@ h2.mailfileshead { margin-top: 16px; }
 .voiceother label { display: block; }
 .voiceother .k { display: block; font-size: var(--ui-sm); font-weight: 500; text-transform: uppercase; letter-spacing: .06em; color: var(--hint); margin: 0 0 6px; }
 .voiceother input { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* The recap's voice (note #1151): two choosers and their two buttons, one
+   under the other on a phone and at a desk alike. */
+.speechchoose label + label { margin-top: 12px; }
+.speechchoose select {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--r-lg); padding: 11px 13px;
+}
+.speechchoose select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.speechchoose .formfail { margin: 10px 0 0; padding: 0; }
+#orgSpeechCard .cline .ctext { white-space: normal; overflow: visible; text-overflow: clip; }
+#orgSpeechCard .crow .cline { height: auto; align-items: baseline; }
+#orgSpeechCard .warnline { color: var(--warn); }
 .ask .formfail { margin-top: 10px; padding: 0; }
 .ask .formhint { margin-top: 8px; padding: 0; }
 

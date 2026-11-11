@@ -1,6 +1,8 @@
 import type { Request, Response, Router } from 'express';
 import type { RouteDeps } from './deps.js';
-import { VoiceSettingsError } from '../services/workplace-voice.js';
+import { VoiceSettingsError, VoiceUnavailableError } from '../services/workplace-voice.js';
+import { RECAP_SPEECH_SENTENCES, VOICE_ERROR_CODES, type RecapSpeechAnswer, type SpeechModelsAnswer } from '../shared/voice-speech.js';
+import { VoiceTranscriptionError } from '../services/voice-transcription-service.js';
 import { personDisplayName } from '../types/user.js';
 import { DEFAULT_VOICE_MODEL, voiceModelInfo, type VoiceAnswer, type VoiceModelsAnswer } from '../shared/voice.js';
 
@@ -158,6 +160,47 @@ export function registerVoiceRoutes(router: Router, deps: RouteDeps,
       return res.json(await answer(who));
     } catch (error) {
       return fail(res, error, 'choosing the model');
+    }
+  });
+
+  /**
+   * The recap's voice (note #1151; Adam, 11 Nov 2026: "I need to be able to
+   * switch voice models in workspace settings"). The list is what OpenRouter
+   * offers now, priced per recap; choosing and sampling are an admin's, as
+   * the key is. A sample is one fixed sentence on the workplace's key.
+   */
+  router.get('/api/voice/speech/models', async (req, res) => {
+    const who = await reader(req, res);
+    if (!who) return;
+    if (!service()) return unavailable(res);
+    return res.json(await service()!.speechModels() satisfies SpeechModelsAnswer);
+  });
+
+  router.put('/api/voice/speech', async (req, res) => {
+    const who = await admin(req, res);
+    if (!who) return;
+    const body = req.body as { model?: unknown; voice?: unknown } | undefined;
+    try {
+      await service()!.setSpeech(who.orgId, body?.model, body?.voice, await nameOf(who.userId));
+      console.log(`[voice-speech] ${who.orgId}: an admin chose ${String(body?.model)} / ${String(body?.voice)} for recaps`);
+      return res.json(await answer(who));
+    } catch (error) {
+      return fail(res, error, 'choosing the recap voice');
+    }
+  });
+
+  router.post('/api/voice/speech/sample', async (req, res) => {
+    const who = await admin(req, res);
+    if (!who) return;
+    const body = req.body as { model?: unknown; voice?: unknown } | undefined;
+    try {
+      const spoken = await service()!.sample(who.orgId, body?.model, body?.voice);
+      return res.json({ audio: spoken.audio.toString('base64'), contentType: spoken.contentType, model: spoken.model, voice: spoken.voice } satisfies RecapSpeechAnswer);
+    } catch (error) {
+      if (error instanceof VoiceSettingsError) return fail(res, error, 'the sample');
+      if (error instanceof VoiceUnavailableError) return res.status(503).json({ error: RECAP_SPEECH_SENTENCES[error.code], code: error.code });
+      if (!(error instanceof VoiceTranscriptionError)) console.warn(`[voice-speech] sample failed: ${error instanceof Error ? error.message : String(error)}`);
+      return res.status(502).json({ error: 'That model and voice could not read the sample. Try another voice, or try again.', code: VOICE_ERROR_CODES.failed });
     }
   });
 }
