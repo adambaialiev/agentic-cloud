@@ -7,7 +7,9 @@ import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-stora
 import { openSqliteDb } from '../../services/sqlite/sqlite-db.js';
 import { outreachLinkRoutes } from '../../routes/outreach-links.js';
 import { isReservedHandle } from '../../shared/handles.js';
-import { isOutreachCode, outreachLinkTarget, outreachReader, parseOutreachWrite, type OutreachTouch } from '../../shared/outreach.js';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { OUTREACH_LINK_PREVIEWS, OUTREACH_PREVIEW_IMAGE, isOutreachCode, outreachKnown, outreachLinkTarget, outreachPreviewApp, outreachReader, parseOutreachWrite, type OutreachTouch } from '../../shared/outreach.js';
 import { fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 
 /**
@@ -61,7 +63,7 @@ describe('The letters\' short links (note #1106)', () => {
     const home = links.home.split('/go/')[1]!;
     const agents = links.agents.split('/go/')[1]!;
     const first = await service.visit(home, { userAgent: CHROME, method: 'GET' });
-    expect(first).toEqual({ location: 'https://agenticcloudcomputer.com/?utm_source=outreach&utm_medium=email&utm_campaign=cold-email&utm_content=northwind-health', recorded: true });
+    expect(first).toEqual({ location: 'https://agenticcloudcomputer.com/?utm_source=outreach&utm_medium=email&utm_campaign=cold-email&utm_content=northwind-health', recorded: true, link: 'home' });
     const agent = await service.visit(agents, { userAgent: CLAUDE });
     expect(agent.location).toBe(outreachLinkTarget('agents', 'northwind-health'));
     expect(agent.location).toMatch(/^https:\/\/agenticcloudcomputer\.com\/workplace\.md\?utm_source=outreach&/);
@@ -84,7 +86,7 @@ describe('The letters\' short links (note #1106)', () => {
   it('lands an unknown or malformed code on the home page and records nothing', async () => {
     const { service, store } = await world();
     for (const code of ['zzzzzz', 'NOPE', '../../etc', '', 'abcdefghij']) {
-      expect(await service.visit(code, { userAgent: CHROME })).toEqual({ location: 'https://agenticcloudcomputer.com/', recorded: false });
+      expect(await service.visit(code, { userAgent: CHROME })).toEqual({ location: 'https://agenticcloudcomputer.com/', recorded: false, link: null });
     }
     expect((await store.touches('user-adam')).filter((touch) => touch.kind === 'visit')).toEqual([]);
   });
@@ -170,7 +172,7 @@ describe('The third link, the setup guide (note #1120)', () => {
     expect((await service.detail('user-adam', 'lakeview-data'))!.links).toEqual(after);
     const install = after.install!.split('/go/')[1]!;
     const visit = await service.visit(install, { userAgent: CLAUDE });
-    expect(visit).toEqual({ location: outreachLinkTarget('install', 'lakeview-data'), recorded: true });
+    expect(visit).toEqual({ location: outreachLinkTarget('install', 'lakeview-data'), recorded: true, link: 'install' });
     expect((await visits(store, 'lakeview-data')).map((touch) => [touch.link, touch.reader])).toEqual([['install', 'agent']]);
   });
 
@@ -209,4 +211,85 @@ describe('A guest agent from a letter\'s link (note #1139)', () => {
       expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('not-contacted');
     });
   }
+});
+
+/* Note #1148 (Adam, 11 Nov 2026, 09:27 UTC): "If customer shares a link that
+   it received through our email, I want the links to have preview". */
+const PREVIEWERS: Array<[string, string]> = [
+  ['TelegramBot (like TwitterBot)', 'Telegram'],
+  ['WhatsApp/2.23.20.0', 'WhatsApp'],
+  ['facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)', 'Facebook'],
+  ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_1) AppleWebKit/601.2.4 (KHTML, like Gecko) Version/9.0.1 Safari/601.2.4 facebookexternalhit/1.1 Facebot Twitterbot/1.0', 'iMessage'],
+  ['Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)', 'Slack'],
+  ['Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)', 'Discord'],
+  ['LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)', 'LinkedIn'],
+  ['Twitterbot/1.0', 'X'],
+  ['Mozilla/5.0 (Windows NT 6.1; WOW64) SkypeUriPreview Preview/0.5 skype-url-preview@microsoft.com', 'Teams or Skype'],
+  ['Mozilla/5.0 (compatible; Google-PageRenderer Google (+https://developers.google.com/+/web/snippet/))', 'Google Chat'],
+];
+
+describe('A link preview of a letter\'s short link (note #1148)', () => {
+  it('names the app drawing a preview, and never a browser or an agent', () => {
+    for (const [ua, app] of PREVIEWERS) {
+      expect(outreachPreviewApp(ua), ua).toBe(app);
+      expect(outreachReader(ua), ua).toEqual({ reader: 'preview', client: app });
+    }
+    for (const ua of [CHROME, SAFARI_PHONE, CLAUDE, 'curl/8.5.0', 'Mozilla/5.0 (compatible; proofpoint)', '']) expect(outreachPreviewApp(ua)).toBeNull();
+  });
+
+  it('keeps the home link\'s card the home page\'s own, and the picture the site\'s', () => {
+    const indexHtml = readFileSync(path.resolve(__dirname, '..', '..', '..', '..', 'index.html'), 'utf8');
+    const meta = (key: string) => new RegExp(`<meta (?:property|name)="${key}" content="([^"]*)"`).exec(indexHtml)?.[1];
+    expect(OUTREACH_LINK_PREVIEWS.home.title).toBe(meta('og:title'));
+    expect(OUTREACH_LINK_PREVIEWS.home.description).toBe(meta('og:description'));
+    expect(OUTREACH_PREVIEW_IMAGE.url).toBe(meta('og:image'));
+    expect(OUTREACH_PREVIEW_IMAGE.alt).toBe(meta('og:image:alt'));
+    expect(String(OUTREACH_PREVIEW_IMAGE.width)).toBe(meta('og:image:width'));
+    for (const card of Object.values(OUTREACH_LINK_PREVIEWS)) expect(card.description.length).toBeLessThan(150);
+  });
+
+  it('answers a preview app with the link\'s card and og:url the short link, a person and an agent with the redirect, and records the share plainly', async () => {
+    const { service, store, at } = await world();
+    const app = express();
+    app.use(outreachLinkRoutes(() => service));
+    const server = app.listen(0);
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const get = (p: string, ua: string) => fetch(`${base}${p}`, { redirect: 'manual', headers: { 'User-Agent': ua } });
+    try {
+      const links = (await service.agentShow('user-adam', 'Northwind Health'))!.links;
+      for (const kind of ['home', 'agents', 'install'] as const) {
+        const code = links[kind]!.split('/go/')[1]!;
+        for (const [ua] of PREVIEWERS) {
+          const answer = await get(`/go/${code}`, ua);
+          expect(answer.status, ua).toBe(200);
+          expect(answer.headers.get('content-type')).toMatch(/^text\/html/);
+          expect(answer.headers.get('cache-control')).toBe('no-store');
+          const page = await answer.text();
+          expect(page).toContain(`<meta property="og:title" content="${OUTREACH_LINK_PREVIEWS[kind].title}">`);
+          expect(page).toContain(`<meta property="og:url" content="https://agenticcloudcomputer.com/go/${code}">`);
+          expect(page).toContain(`<meta property="og:image" content="${OUTREACH_PREVIEW_IMAGE.url}">`);
+          expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
+          // Nothing names the company: not its name, and not its id in the tags.
+          expect(page).not.toMatch(/northwind/i);
+        }
+        for (const ua of [CHROME, SAFARI_PHONE, CLAUDE, 'curl/8.5.0']) {
+          const answer = await get(`/go/${code}`, ua);
+          expect([answer.status, answer.headers.get('location')], ua).toEqual([302, outreachLinkTarget(kind, 'northwind-health')]);
+        }
+      }
+      // An unknown code still draws the home card, and records nothing.
+      const unknown = await (await get('/go/zzzzzz', 'TelegramBot (like TwitterBot)')).text();
+      expect(unknown).toContain(`content="${OUTREACH_LINK_PREVIEWS.home.title}"`);
+      // On the timeline: each app's preview once per link and minute, as a share, never as a follow.
+      const seen = (await visits(store, 'northwind-health')).filter((touch) => touch.reader === 'preview');
+      expect(seen.filter((touch) => touch.link === 'agents').map((touch) => touch.client).sort()).toEqual(PREVIEWERS.map(([, app]) => app).sort());
+      at('2026-11-09T18:05:00Z');
+      const known = outreachKnown(await store.touches('user-adam', 'northwind-health'));
+      expect(known.shared).toBe(PREVIEWERS.length * 3);
+      expect(known.followed?.times).toBe(3 * 4);
+      expect(known.checked).toBe(0);
+    } finally {
+      server.close();
+    }
+  });
 });

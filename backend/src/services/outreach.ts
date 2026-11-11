@@ -355,16 +355,18 @@ export class OutreachService {
    * is a redirect: a mistyped or unknown code still lands on the home page,
    * and records nothing. A known one lands on its page with the UTM data and
    * leaves a visit on the company's timeline: which link, and whether the
-   * reader looked like a browser, an agent or a mail system checking it.
+   * reader looked like a browser, an agent, a mail system checking it, or
+   * (note #1148) a chat app drawing a link preview, which is recorded as
+   * `preview` with the app's name: the letter was pasted into a chat.
    * The same reader on the same link within a minute is one visit. Nothing
    * else about the reader is kept.
    */
-  async visit(code: string, reader: { userAgent?: string | null; method?: string }): Promise<{ location: string; recorded: boolean }> {
+  async visit(code: string, reader: { userAgent?: string | null; method?: string }): Promise<{ location: string; recorded: boolean; link: OutreachLink | null }> {
     const home = `${OUTREACH_LINK_ORIGIN}/`;
     const wanted = String(code ?? '').toLowerCase();
-    if (!isOutreachCode(wanted)) return { location: home, recorded: false };
+    if (!isOutreachCode(wanted)) return { location: home, recorded: false, link: null };
     const found = codeOwner(await this.deps.store.allTargets(), wanted);
-    if (!found) return { location: home, recorded: false };
+    if (!found) return { location: home, recorded: false, link: null };
     const { record, link } = found;
     const location = outreachLinkTarget(link, record.id);
     const who = outreachReader(reader.userAgent, reader.method);
@@ -372,9 +374,9 @@ export class OutreachService {
     const recent = (await this.deps.store.touches(record.userId, record.id)).find((touch) =>
       touch.kind === 'visit' && touch.link === link && touch.reader === who.reader && touch.client === who.client
       && now.getTime() - Date.parse(touch.at) < VISIT_REPEAT_MS);
-    if (recent) return { location, recorded: false };
+    if (recent) return { location, recorded: false, link };
     await this.touch(record.userId, record.id, { kind: 'visit', link, reader: who.reader, client: who.client });
-    return { location, recorded: true };
+    return { location, recorded: true, link };
   }
 
   /**

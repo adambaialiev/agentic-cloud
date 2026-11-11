@@ -928,7 +928,12 @@ export type OutreachLink = 'home' | 'agents' | 'install';
  * read or written, and its other two never change.
  */
 export interface OutreachLinkCodes { home: string; agents: string; install?: string }
-export type OutreachReader = 'browser' | 'agent' | 'check';
+/**
+ * `preview` (note #1148): a chat or social app fetching the link to draw its
+ * preview card, which means somebody pasted it into a conversation. It is
+ * neither a person opening it nor a mail system's check.
+ */
+export type OutreachReader = 'browser' | 'agent' | 'check' | 'preview';
 
 /** Where the letters' links live: the public front door, whatever host serves the routes. */
 export const OUTREACH_LINK_ORIGIN = 'https://agenticcloudcomputer.com';
@@ -1002,8 +1007,99 @@ export const OUTREACH_MAX_LINK_CHECKS = 20;
 const CHECKERS: Array<[RegExp, string]> = [
   [/proofpoint/i, 'Proofpoint'], [/mimecast/i, 'Mimecast'], [/barracuda/i, 'Barracuda'], [/symantec|broadcom/i, 'Symantec'],
   [/googleimageproxy|google-safety|feedfetcher/i, 'Google'], [/cisco|ironport/i, 'Cisco'], [/fortinet|fortiguard/i, 'Fortinet'],
-  [/trendmicro/i, 'Trend Micro'], [/sophos/i, 'Sophos'], [/forcepoint/i, 'Forcepoint'], [/slackbot|linkexpanding|discordbot|telegrambot|whatsapp|facebookexternalhit|twitterbot|linkedinbot|skypeuripreview|microsoftpreview/i, 'link preview'],
+  [/trendmicro/i, 'Trend Micro'], [/sophos/i, 'Sophos'], [/forcepoint/i, 'Forcepoint'],
 ];
+
+/* ── Link previews (note #1148) ─────────────────────────────────────────
+   Adam, 11 Nov 2026, 09:27 UTC: "If customer shares a link that it received
+   through our email, I want the links to have preview". A chat or social app
+   fetches a pasted link to draw its card; each is named by the word in its
+   own User-Agent. Apple's iMessage says both facebookexternalhit and
+   Twitterbot, so it is matched first. Signal fetches as "WhatsApp", so a
+   Signal share reads as WhatsApp. These get an HTML page of preview tags
+   instead of the redirect (outreachLinkPreviewPage); people and agents still
+   get the redirect. */
+const PREVIEW_APPS: Array<[RegExp, string]> = [
+  [/facebookexternalhit.*twitterbot|twitterbot.*facebookexternalhit/i, 'iMessage'],
+  [/telegrambot/i, 'Telegram'], [/whatsapp/i, 'WhatsApp'], [/facebookexternalhit|facebot|meta-externalagent/i, 'Facebook'],
+  [/slackbot|slack-imgproxy/i, 'Slack'], [/discordbot/i, 'Discord'], [/linkedinbot/i, 'LinkedIn'], [/twitterbot/i, 'X'],
+  [/skypeuripreview/i, 'Teams or Skype'], [/microsoftpreview/i, 'Microsoft'], [/google-pagerenderer|google-chat|googlechat/i, 'Google Chat'],
+  [/viber/i, 'Viber'], [/mastodon/i, 'Mastodon'], [/bluesky|cardyb/i, 'Bluesky'], [/vkshare/i, 'VK'], [/redditbot/i, 'Reddit'],
+  [/pinterest/i, 'Pinterest'], [/snapchat/i, 'Snapchat'], [/embedly/i, 'Embedly'], [/iframely/i, 'Iframely'],
+];
+/** The app drawing a link preview, by its User-Agent; null for anything else. */
+export function outreachPreviewApp(userAgent: string | null | undefined): string | null {
+  const ua = (userAgent ?? '').trim();
+  for (const [pattern, name] of PREVIEW_APPS) if (pattern.test(ua)) return name;
+  return null;
+}
+
+/** The share picture of the site (og-image.png, square-safe since note #1137). Kept equal to index.html by outreach-links.test. */
+export const OUTREACH_PREVIEW_IMAGE = {
+  url: 'https://agenticcloudcomputer.com/og-image.png?v=33',
+  width: 2400,
+  height: 1260,
+  alt: 'Your team. Your agents. Your cloud. Your rules. The all-in-one workplace for Claude Code, Codex and OpenCode agents.',
+} as const;
+/**
+ * Each link's card, in the site's own words (landing-copy-rules). The home
+ * link's is the home page's own (index.html, held equal by the test); the
+ * other two say which page for agents it is. Nothing names the company.
+ */
+export const OUTREACH_LINK_PREVIEWS: Record<OutreachLink, { title: string; description: string }> = {
+  home: {
+    title: 'One workplace for Claude Code, Codex and OpenCode agents',
+    description: 'Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.',
+  },
+  agents: {
+    title: 'Agentic Cloud Computer: what it does, for agents',
+    description: 'Every part of the workplace, what it does and how an agent there uses it, on one page an agent reads in one fetch.',
+  },
+  install: {
+    title: 'Agentic Cloud Computer: setup guide for agents',
+    description: 'The steps an AI agent follows to set up your own Agentic Cloud in your company’s Fly.io account, with your yes before it changes anything.',
+  },
+};
+
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * The page a link-preview app gets for /go/<code> (note #1148): the link's
+ * card, with og:url the short link itself so the card opens through it, and
+ * a plain link back through the short link for anyone who lands here. The
+ * page carries nothing of the company: not its name, not its id.
+ */
+export function outreachLinkPreviewPage(link: OutreachLink, shortUrl: string): string {
+  const { title, description } = OUTREACH_LINK_PREVIEWS[link];
+  const image = OUTREACH_PREVIEW_IMAGE;
+  const meta = (key: string, value: string | number) =>
+    `<meta ${key.startsWith('og:') ? 'property' : 'name'}="${key}" content="${escapeHtml(String(value))}">`;
+  return [
+    '<!doctype html>',
+    '<html lang="en"><head><meta charset="utf-8">',
+    `<title>${escapeHtml(title)}</title>`,
+    meta('description', description),
+    meta('robots', 'noindex'),
+    meta('og:type', 'website'),
+    meta('og:site_name', 'Agentic Cloud Computer'),
+    meta('og:title', title),
+    meta('og:description', description),
+    meta('og:url', shortUrl),
+    meta('og:image', image.url),
+    meta('og:image:width', image.width),
+    meta('og:image:height', image.height),
+    meta('og:image:alt', image.alt),
+    meta('twitter:card', 'summary_large_image'),
+    meta('twitter:title', title),
+    meta('twitter:description', description),
+    meta('twitter:image', image.url),
+    meta('twitter:image:alt', image.alt),
+    '</head><body>',
+    `<p><a href="${escapeHtml(shortUrl)}">${escapeHtml(title)}</a></p>`,
+    '</body></html>',
+  ].join('\n');
+}
 /* A program reading the page: an AI agent's fetcher, a coding agent's HTTP
    client, a library. Named by its own product word. */
 const AGENTS: Array<[RegExp, string]> = [
@@ -1019,6 +1115,8 @@ const BROWSERS: Array<[RegExp, string]> = [
 /** Who opened a link, as far as its User-Agent and method say. */
 export function outreachReader(userAgent: string | null | undefined, method = 'GET'): { reader: OutreachReader; client: string | null } {
   const ua = (userAgent ?? '').trim();
+  const preview = outreachPreviewApp(ua);
+  if (preview) return { reader: 'preview', client: preview };
   for (const [pattern, name] of CHECKERS) if (pattern.test(ua)) return { reader: 'check', client: name };
   for (const [pattern, name] of AGENTS) if (pattern.test(ua)) return { reader: 'agent', client: name };
   if (method === 'HEAD') return { reader: 'check', client: null };
@@ -1155,6 +1253,8 @@ export interface OutreachKnown {
   followed: { first: string; last: string; times: number; latest: { link: OutreachLink; reader: OutreachReader; client: string | null } } | null;
   /** A mail system opened a link to check it before anyone did. */
   checked: number;
+  /** A chat or social app drew a preview of a link (note #1148): it was pasted into a conversation. */
+  shared: number;
   replied: string | null;
   installed: string | null;
 }
@@ -1186,14 +1286,15 @@ export function outreachKnown(touches: OutreachTouch[]): OutreachKnown {
       };
     });
   const visits = oldestFirst.filter((touch): touch is Extract<OutreachTouch, { kind: 'visit' }> => touch.kind === 'visit');
-  const follows = visits.filter((touch) => touch.reader !== 'check');
+  const follows = visits.filter((touch) => touch.reader !== 'check' && touch.reader !== 'preview');
   const latest = follows.at(-1);
   return {
     letters,
     followed: latest
       ? { first: follows[0]!.at, last: latest.at, times: follows.length, latest: { link: latest.link, reader: latest.reader, client: latest.client } }
       : null,
-    checked: visits.length - follows.length,
+    checked: visits.filter((touch) => touch.reader === 'check').length,
+    shared: visits.filter((touch) => touch.reader === 'preview').length,
     replied: oldestFirst.find((touch) => touch.kind === 'reply' && !touch.suspicious)?.at ?? null,
     installed: oldestFirst.find((touch) => touch.kind === 'installed')?.at ?? null,
   };
