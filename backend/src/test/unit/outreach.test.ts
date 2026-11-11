@@ -216,6 +216,8 @@ describe('Outreach, the service', () => {
     expect(after.touches.some((one) => one.kind === 'sent')).toBe(true);
     expect(after.row.next).toMatchObject({ step: 'day4', due: false, dueAt: '2026-11-13T13:00:00.000Z' });
     expect((await service.list('user-adam')).firstSends).toBe(1);
+    // Note #1150: every letter that went, with its time, for the header's counts.
+    expect((await service.list('user-adam')).sends).toEqual([{ at: touch.at, step: 'first', audience: 'customer' }]);
   });
 
   it('refuses a letter with a placeholder left in it, and a second press while the first is on its way', async () => {
@@ -858,6 +860,11 @@ describe('Investors, a second audience (note #1115)', () => {
     expect((await firstOf(service, 'northwind-health')).text).toBe(batch().words!.followUps!.day4!.text);
     // Note #799's review counts customers only.
     expect((await service.list('user-adam')).firstSends).toBe(1);
+    // The header's counts (note #1150) take every letter, investors and follow-ups too, newest first.
+    const sends = (await service.list('user-adam')).sends;
+    expect(sends.every((one) => one.step === 'first')).toBe(true);
+    expect(sends.map((one) => one.audience).sort()).toEqual(['customer', 'investor']);
+    expect(sends[0]!.at >= sends[1]!.at).toBe(true);
     // A second write of the investors' words keeps the one it replaced.
     await service.write('user-adam', ADA, { targets: [], words: { audience: 'investor', source: null, generatedBy: null, generatedAt: null, template: { subject: 'New', body: 'New {first name}' } } });
     await service.write('user-adam', ADA, { targets: [], words: { audience: 'investor', source: null, generatedBy: null, generatedAt: null, template: { subject: 'New', body: 'New {first name}' } } });
