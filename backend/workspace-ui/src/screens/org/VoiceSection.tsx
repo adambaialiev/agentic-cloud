@@ -174,7 +174,7 @@ function ModelPicker({ voice, onChanged }: { voice: VoiceAnswer; onChanged: (ans
           <button className="addrow" type="button" onClick={() => setOther(true)}>Use another OpenRouter model…</button>
         )}
       </div>
-      <p className="formhint">Prices are OpenRouter’s{models?.pricesCheckedAt ? ', checked today' : ''}; ≈ marks a model billed by the word, where the price a minute is the maker’s estimate. A 30-second message costs about a tenth of a cent with the recommended model.</p>
+      <p className="formhint">Prices are OpenRouter’s{models?.pricesCheckedAt ? ', checked today' : ''}; ≈ marks a model billed by the word, where the price a minute is the maker’s estimate. A 30-second message costs about a tenth of a cent with the recommended model. The same key reads the Chief of Staff’s recaps aloud for whoever turns on its speaker: the recap’s words go to OpenRouter, about half a cent each.</p>
     </>
   );
 }

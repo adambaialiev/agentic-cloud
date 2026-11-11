@@ -159,6 +159,12 @@ const chapter: DocChapter = {
             <DocLink href="/docs/your-cloud-and-subscriptions#voice-to-text">turns it on</DocLink>,
             the microphone says it is not set up yet and records nothing.
           </p>
+          <p>
+            Your Chief of Staff can also talk back. Once voice-to-text is on, a speaker stands in its
+            header: tap it and each new <Ui>Recap</Ui> under its replies is read aloud once, and a play
+            button beside the recap replays it. On or off is remembered on each device. The recap&rsquo;s
+            words go to OpenRouter on the same key, about half a cent a recap.
+          </p>
         </>
       ),
     },
