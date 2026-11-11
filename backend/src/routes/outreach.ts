@@ -88,6 +88,24 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
     }
   });
 
+  /**
+   * Where each short link in a letter for this company really goes (note
+   * #1147): `?codes=a,b,c`, the codes as they stand in the letter. Read only:
+   * no visit is recorded and nothing is sent or written.
+   */
+  router.get(`${base}/targets/:id/links`, async (req, res) => {
+    const open = await gate(req, res);
+    if (!open) return;
+    try {
+      const codes = String(req.query.codes ?? '').split(',').map((code) => code.trim()).filter(Boolean);
+      const answer = await open.outreach.checkLinks(open.auth.userId, String(req.params.id), codes);
+      if (!answer) return res.status(404).json({ error: 'No such company in Outreach.' });
+      return res.json({ links: answer });
+    } catch (error) {
+      return failed(res, error, 'Checking the links');
+    }
+  });
+
   router.patch(`${base}/targets/:id`, async (req, res) => {
     const open = await gate(req, res);
     if (!open) return;

@@ -962,6 +962,39 @@ export function outreachLinkTarget(link: OutreachLink, targetId: string, origin 
   return url.toString();
 }
 
+/**
+ * Where a short link in a letter really goes (note #1147; Adam, 11 Nov 2026,
+ * 09:03 UTC: "I'm worried about them. I want to see extended links in the
+ * interface to be sure that the links are correct"). Read from the store the
+ * redirect itself reads (OutreachService.checkLinks, the same lookup as
+ * visit), never guessed from the text, and checked live: the destination
+ * must answer 200 and its utm_content must name the company the letter is
+ * for. Reading it records no visit.
+ */
+export interface OutreachLinkCheck {
+  code: string;
+  /** Which of the company's links the code is; null for a code no company of the owner's has. */
+  link: OutreachLink | null;
+  /** The company the code belongs to. */
+  targetId: string | null;
+  company: string | null;
+  /** Where /go/<code> redirects, with its UTM data; null for an unknown code. */
+  destination: string | null;
+  /** The destination's live answer (after its own redirects), or null when it could not be reached or was not tried. */
+  status: number | null;
+  /** What is wrong; null when the link is right. */
+  problem: 'unknown-code' | 'other-company' | 'not-found' | 'unreachable' | null;
+}
+
+/** A short link as it stands in a letter, with or without the scheme. */
+export const OUTREACH_SHORT_LINK = /(?:https?:\/\/)?(?:www\.)?agenticcloudcomputer\.com\/go\/([A-Za-z0-9_-]+)/gi;
+/** The codes in a letter, each once, in the order they stand. */
+export function outreachShortCodes(text: string | null | undefined): string[] {
+  return [...new Set([...String(text ?? '').matchAll(OUTREACH_SHORT_LINK)].map((match) => match[1]!.toLowerCase()))];
+}
+/** At most this many codes are checked in one ask. */
+export const OUTREACH_MAX_LINK_CHECKS = 20;
+
 /* A mail system that opens links to check them before the person does: its
    own words in the User-Agent. Microsoft's Safe Links and some others look
    like an ordinary browser; those are counted as a browser, which is why the

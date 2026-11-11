@@ -14,7 +14,7 @@ import { OUTREACH_MAIL_ALLOWANCE, OutreachService, type OutreachMailEventInput }
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
-  addressMatches, hostMatches, outreachLocalTime, outreachMatch, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
+  addressMatches, hostMatches, outreachLocalTime, outreachMatch, outreachShortCodes, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
 } from '../../shared/outreach.js';
 import { fixtureOutreachProfile, fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 import type { CopyPulse } from '../../shared/copy-pulse.js';
@@ -143,7 +143,7 @@ describe('Outreach words and places', () => {
   });
 });
 
-async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean; mailEvents?: boolean; noSentMail?: boolean } = {}) {
+async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sqlite?: boolean; mailEvents?: boolean; noSentMail?: boolean; pageStatus?: (url: string) => Promise<number | null> } = {}) {
   const db = openSqliteDb(':memory:');
   const mailboxes = new SqliteMailboxStorage(db);
   const messages = new SqliteMailMessageStorage(db);
@@ -158,6 +158,7 @@ async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sq
   const service = new OutreachService({
     store, outbox: () => outbox, mailboxes, now, pulses: async () => pulses, senderName: async () => 'Adam B', mailEventsConfigured: opts.mailEvents === true,
     sentMail: (userId, mailId) => (opts.noSentMail ? Promise.resolve(null) : messages.get(userId, mailId)),
+    pageStatus: opts.pageStatus ?? (async () => 200),
   });
   await service.write('user-adam', ROWAN, batch());
   return { service, outbox, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
@@ -655,6 +656,33 @@ describe('What we know about each letter (note #1112)', () => {
     expect((await service.noteMailEvent(event({ providerId: 're-unknown', subject: 'Something else', event: 'spam' }))).recorded).toBe(false);
     expect(await service.noteMailEvent(event({ providerId: 're-unknown', to: ['Mara@Northwind-Health.test'], event: 'spam' }))).toEqual({ recorded: true, company: 'Northwind Health' });
     expect((await service.detail('user-adam', 'northwind-health'))!.row.state).toBe('spam');
+  });
+
+  it('says where every short link in a letter goes, read from the store, checked live, and records no visit (note #1147)', async () => {
+    const asked: string[] = [];
+    const { service } = await world({ pageStatus: async (url) => { asked.push(url); return url.includes('/own-cloud.md') ? 404 : url.includes('/workplace.md') ? null : 200; } });
+    const mine = (await service.detail('user-adam', 'northwind-health'))!.links;
+    const theirs = (await service.detail('user-adam', 'fernhill-labs'))!.links;
+    const code = (url: string) => url.split('/').at(-1)!;
+    const letter = `The site: ${mine.home}\nFor agents: ${mine.agents}\nSetup: ${mine.install}\nWrong one: agenticcloudcomputer.com/go/${code(theirs.home)}\nMade up: https://agenticcloudcomputer.com/go/zzzzzz and /go/x`;
+    const codes = outreachShortCodes(letter);
+    expect(codes).toEqual([code(mine.home), code(mine.agents), code(mine.install!), code(theirs.home), 'zzzzzz']);
+    const checks = (await service.checkLinks('user-adam', 'northwind-health', [...codes, code(mine.home).toUpperCase(), 'not/a code']))!;
+    expect(checks.map((one) => [one.link, one.problem])).toEqual([['home', null], ['agents', 'unreachable'], ['install', 'not-found'], ['home', 'other-company'], [null, 'unknown-code'], [null, 'unknown-code']]);
+    expect(checks[0]).toMatchObject({ targetId: 'northwind-health', company: 'Northwind Health', status: 200,
+      destination: 'https://agenticcloudcomputer.com/?utm_source=outreach&utm_medium=email&utm_campaign=cold-email&utm_content=northwind-health' });
+    expect(checks[2]).toMatchObject({ status: 404, destination: expect.stringContaining('/own-cloud.md?') });
+    expect(checks[3]).toMatchObject({ targetId: 'fernhill-labs', company: 'Fernhill Labs', destination: expect.stringContaining('utm_content=fernhill-labs') });
+    // The redirect's own lookup and destination: the same as a visit would give.
+    expect((await service.visit(code(mine.agents), { userAgent: 'Mozilla/5.0' })).location).toBe(checks[1]!.destination);
+    // Asked once per page within five minutes; a check is not a visit.
+    const before = asked.length;
+    await service.checkLinks('user-adam', 'northwind-health', codes);
+    expect(asked.length).toBe(before);
+    const visits = (await service.detail('user-adam', 'northwind-health'))!.touches.filter((touch) => touch.kind === 'visit');
+    expect(visits).toHaveLength(1); // the one visit() above, none from the checks
+    expect(await service.checkLinks('user-adam', 'no-such-company', codes)).toBeNull();
+    expect(await service.checkLinks('user-eve', 'northwind-health', codes)).toBeNull();
   });
 
   it('counts a link followed by a browser or an agent, and a mail system\'s check apart', async () => {

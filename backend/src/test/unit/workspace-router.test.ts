@@ -9626,14 +9626,14 @@ describe('the workplace screens (members, seats, invites)', () => {
 
   it('Outreach (notes #1089, #1093, #1103): with the owner\'s pass, the store read live and his own letter saved; no import; no pass, a member\'s pass, the session alone or a private copy are refused', async () => {
     const { deps, userStorage } = await buildOrgDeps();
-    deps.outreach = new OutreachService({ store: new InMemoryOutreachStore(), outbox: () => undefined });
+    deps.outreach = new OutreachService({ store: new InMemoryOutreachStore(), outbox: () => undefined, pageStatus: async () => 200 });
     const passes = new OutreachPasses(new InMemoryOutreachPassStore());
     deps.outreachPasses = passes;
     const ownerPass = (await passes.mint('user-1', { sessionId: 'session-42', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
     const memberPass = (await passes.mint('user-2', { sessionId: 'session-43', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
-    const call = async (headers: Record<string, string>, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}) => {
+    const call = async (headers: Record<string, string>, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}, query: Record<string, string> = {}) => {
       const res = createMockResponse();
-      await getRouteHandler(deps, path, method)(mockRequest({ headers, body, params }), res);
+      await getRouteHandler(deps, path, method)(mockRequest({ headers, body, params, query }), res);
       return res;
     };
     const as = (pass: string) => ({ authorization: `Bearer ${pass}` });
@@ -9665,6 +9665,13 @@ describe('the workplace screens (members, seats, invites)', () => {
     expect((saved.body as { draft: { from: string; text: string } }).draft).toMatchObject({ from: 'yours', text: 'My words.' });
     expect((await call(as(ownerPass), '/api/outreach/targets/:id/letter', 'post', { action: 'shout' }, { id: 'northwind-health' })).statusCode).toBe(400);
     // The member of the same workplace sees nothing: no list, no profile, no letter, no Send.
+    // Note #1147: where a letter's short links go, behind the same pass.
+    const codes = (one.body as { links: { home: string; agents: string } }).links;
+    const checked = await call(as(ownerPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'northwind-health' }, { codes: `${codes.home.split('/').at(-1)},zzzzzz` });
+    expect(checked.statusCode).toBe(200);
+    expect((checked.body as { links: Array<{ problem: string | null; link: string | null }> }).links.map((link) => link.link)).toEqual(['home', null]);
+    expect((await call(as(ownerPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'nobody' }, { codes: 'zzzzzz' })).statusCode).toBe(404);
+    expect((await call(as(memberPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'northwind-health' }, { codes: 'zzzzzz' })).statusCode).toBe(403);
     expect((await call(as(memberPass), '/api/outreach', 'get')).statusCode).toBe(403);
     expect((await call(as(memberPass), '/api/outreach/targets/:id/letter', 'post', { action: 'save', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
     expect((await call(as(memberPass), '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);

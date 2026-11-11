@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_MAX_WORDS, OUTREACH_REVIEW_AFTER, outreachWordCount, OUTREACH_WORDS_HISTORY, addressMatches,
-  outreachAudience, outreachGraph, outreachMatch, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
+  outreachAudience, outreachGraph, outreachMatch, OUTREACH_MAX_LINK_CHECKS, type OutreachLinkCheck, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachSentLetter, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
@@ -74,6 +74,12 @@ export interface OutreachServiceDeps {
   senderName?: (userId: string) => Promise<string>;
   /** Whether the backend holds the provider's webhook signing secret, so its delivery facts can arrive (note #1112). */
   mailEventsConfigured?: boolean;
+  /**
+   * A page's live answer for the link check (note #1147): its HTTP status
+   * after its own redirects, or null when it could not be reached. Defaults
+   * to a real GET with a short timeout.
+   */
+  pageStatus?: (url: string) => Promise<number | null>;
   /** One stored letter of the person's mail, by our id: where a sent letter's words are read back (note #1130). */
   sentMail?: (userId: string, mailId: string) => Promise<MailMessageDocument | null>;
   now?: () => Date;
@@ -115,6 +121,25 @@ const OPEN_REPEAT_MS = 60 * 60_000;
 const UNTRACED_MATCH_MS = 10 * 60_000;
 
 const touchId = (at: Date) => `ot_${at.getTime().toString(36).padStart(9, '0')}${(sequence++ % 1296).toString(36).padStart(2, '0')}${randomBytes(4).toString('hex')}`;
+
+/** Which company's link a short code is, by the codes the store gave (the redirect's own lookup). */
+function codeOwner(records: OutreachTargetRecord[], code: string): { record: OutreachTargetRecord; link: OutreachLink } | null {
+  const record = records.find((one) => one.links?.home === code || one.links?.agents === code || one.links?.install === code);
+  if (!record) return null;
+  return { record, link: record.links!.home === code ? 'home' : record.links!.agents === code ? 'agents' : 'install' };
+}
+
+const PAGE_ANSWER_MS = 5 * 60_000;
+/** A real GET of a public page, following its redirects, given six seconds. */
+async function livePageStatus(url: string): Promise<number | null> {
+  try {
+    const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(6_000), headers: { 'User-Agent': 'AgenticCloud-OutreachLinkCheck/1.0', Accept: 'text/html,text/markdown,*/*' } });
+    await response.body?.cancel().catch(() => undefined);
+    return response.status;
+  } catch {
+    return null;
+  }
+}
 
 export class OutreachService {
   private readonly now: () => Date;
@@ -338,9 +363,9 @@ export class OutreachService {
     const home = `${OUTREACH_LINK_ORIGIN}/`;
     const wanted = String(code ?? '').toLowerCase();
     if (!isOutreachCode(wanted)) return { location: home, recorded: false };
-    const record = (await this.deps.store.allTargets()).find((one) => one.links?.home === wanted || one.links?.agents === wanted || one.links?.install === wanted);
-    if (!record) return { location: home, recorded: false };
-    const link: OutreachLink = record.links!.home === wanted ? 'home' : record.links!.agents === wanted ? 'agents' : 'install';
+    const found = codeOwner(await this.deps.store.allTargets(), wanted);
+    if (!found) return { location: home, recorded: false };
+    const { record, link } = found;
     const location = outreachLinkTarget(link, record.id);
     const who = outreachReader(reader.userAgent, reader.method);
     const now = this.now();
@@ -350,6 +375,43 @@ export class OutreachService {
     if (recent) return { location, recorded: false };
     await this.touch(record.userId, record.id, { kind: 'visit', link, reader: who.reader, client: who.client });
     return { location, recorded: true };
+  }
+
+  /**
+   * Where each short link in a letter for this company really goes (note
+   * #1147): the same lookup the redirect does, the destination it would
+   * send a reader to, that page's live answer, and what is wrong if
+   * anything: a code no company of the owner's has, a code of another
+   * company (its tags would name them), or a page that does not answer 200.
+   * Read only: no visit is recorded, nothing is sent or written. Null when
+   * the company is not the owner's.
+   */
+  async checkLinks(userId: string, targetId: string, codes: string[]): Promise<OutreachLinkCheck[] | null> {
+    const target = await this.deps.store.target(userId, targetId);
+    if (!target) return null;
+    const records = await this.deps.store.targets(userId);
+    const wanted = [...new Set(codes.map((code) => String(code).toLowerCase()).filter(Boolean))].slice(0, OUTREACH_MAX_LINK_CHECKS);
+    return Promise.all(wanted.map(async (code): Promise<OutreachLinkCheck> => {
+      const found = isOutreachCode(code) ? codeOwner(records, code) : null;
+      if (!found) return { code, link: null, targetId: null, company: null, destination: null, status: null, problem: 'unknown-code' };
+      const destination = outreachLinkTarget(found.link, found.record.id);
+      const status = await this.pageStatus(destination);
+      const problem = found.record.id !== targetId ? 'other-company' : status === null ? 'unreachable' : status !== 200 ? 'not-found' : null;
+      return { code, link: found.link, targetId: found.record.id, company: found.record.seed.company, destination, status, problem };
+    }));
+  }
+
+  /** A destination's answer, kept five minutes so a page of letters asks each page once. */
+  private readonly pageAnswers = new Map<string, { at: number; status: Promise<number | null> }>();
+  private pageStatus(url: string): Promise<number | null> {
+    const now = Date.now();
+    const kept = this.pageAnswers.get(url);
+    if (kept && now - kept.at < PAGE_ANSWER_MS) return kept.status;
+    const ask = this.deps.pageStatus ?? livePageStatus;
+    const status = ask(url).catch(() => null);
+    this.pageAnswers.set(url, { at: now, status });
+    if (this.pageAnswers.size > 2000) this.pageAnswers.delete(this.pageAnswers.keys().next().value!);
+    return status;
   }
 
   /** Why the profile has no Send, said plainly. */
