@@ -13,6 +13,9 @@ import { DirectMessageApprovalService, InMemoryDirectMessageApprovalStorage, Sql
 import { MailboxService } from './services/mailbox-service.js';
 import { OrgHandleService } from './services/org-handles.js';
 import { DEFAULT_BRAND_FILES_DIR, workspaceRootRoutes } from './routes/workspace-root.js';
+import { publicPages } from './routes/public-pages.js';
+import { OUTREACH_PREVIEW_IMAGE } from './shared/outreach.js';
+import { PUBLIC_ADDRESS_HOST } from './shared/handles.js';
 import { workspaceRoutePath } from './shared/workspace-routes.js';
 import { MailIngestService } from './services/mail-ingest.js';
 import { MailWakeService } from './services/mail-wake.js';
@@ -2638,8 +2641,18 @@ app.use(outreachLinkRoutes(() => outreach));
 app.use(outreachMailEventRoutes({ outreach: () => outreach, secret: () => RESEND_WEBHOOK_SECRET }));
 // Its addresses live at the root of the domain (public-addresses): the shell
 // is served there, and every old /workspace address redirects to it.
+// The public pages a crawler reads without scripts, and a real 404 at an
+// address that is nobody's (note #1153).
+const publicPage = workspaceRouter.publicPageReads
+  ? publicPages(workspaceRouter.publicPageReads, {
+    origin: WORKSPACE_ORIGIN,
+    host: PUBLIC_ADDRESS_HOST,
+    ...(PRIVATE_COPY ? {} : { image: { url: OUTREACH_PREVIEW_IMAGE.url, alt: OUTREACH_PREVIEW_IMAGE.alt } }),
+  })
+  : undefined;
 app.use(workspaceRootRoutes({
   workspaceUiDir: deps.workspaceUiDir,
+  ...(publicPage ? { publicPage } : {}),
   ...(PRIVATE_COPY ? { brandFilesDir: DEFAULT_BRAND_FILES_DIR } : {}),
   publicRepoAddress: async (publicId) => {
     const repo = await gitRepoStorage.getPublicById(publicId);

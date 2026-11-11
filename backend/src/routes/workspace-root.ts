@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { DEFAULT_WORKSPACE_UI_DIR, handleRetiredWorkspaceUiSwitch, loadWorkspaceUiShell, sendWorkspaceUiShell } from './workspace-ui.js';
 import { isReservedHandle } from '../shared/handles.js';
+import { injectPublicPage, shellEtag, type PublicPage } from './public-pages.js';
 import { WORKSPACE_BASE, parseWorkspaceRoute, workspacePublicPathPatterns, workspaceShellPathPatterns } from '../shared/workspace-routes.js';
 
 /**
@@ -69,6 +70,13 @@ export function workspaceRootRoutes(options: {
   /** Serve BRAND_FILES from this folder (a private copy only); before the
    *  public addresses, which would otherwise read `/fonts/…` as a person. */
   brandFilesDir?: string;
+  /**
+   * The public pages' head and text, written into the shell for a crawler
+   * that runs no scripts, and their status: 404 at an address that is
+   * nobody's (routes/public-pages.ts, note #1153). Null where the shell
+   * goes out as it is.
+   */
+  publicPage?: (pathname: string, query: string, req: Request) => Promise<PublicPage | null>;
 } = {}): Router {
   const router = Router();
   if (options.brandFilesDir) {
@@ -110,7 +118,20 @@ export function workspaceRootRoutes(options: {
       // 2026 a search for the domain returned /signup under that title.
       res.setHeader('X-Robots-Tag', 'noindex');
     }
-    return sendWorkspaceUiShell(res, shell);
+    const query = new URL(req.originalUrl ?? req.path ?? '/', 'http://placeholder.invalid').search;
+    const page = options.publicPage && (parseWorkspaceRoute(pathname)?.kind === 'apps' || publicAddress(pathname))
+      ? await options.publicPage(pathname, query, req).catch((error: unknown) => {
+        console.warn('[public-pages] the page could not be written:', error);
+        return null;
+      })
+      : null;
+    if (!page) return sendWorkspaceUiShell(res, shell);
+    // The same address answers a stranger and a member differently, and a
+    // crawler's copy is not a signed-in person's.
+    res.setHeader('Vary', 'Cookie');
+    res.status(page.status);
+    const html = page.head ? injectPublicPage(shell.html.toString('utf8'), page) : null;
+    return sendWorkspaceUiShell(res, html ? { html: Buffer.from(html, 'utf8'), etag: shellEtag(html) } : shell);
   };
   // The entry doors and every registered destination (shared/workspace-routes.ts)
   // serve the shell; the registry is the one list, so a route added there is
