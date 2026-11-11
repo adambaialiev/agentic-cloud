@@ -5,10 +5,21 @@ import { LANDING_FIRST_SEGMENTS as EDGE_LANDING_FIRST_SEGMENTS, onRequest, route
 import { GUEST_COUNTRY_HEADER } from '../../backend/src/shared/guest-agent.js';
 import { WORKSPACE_ENTRY_PATTERNS, WORKSPACE_LEGACY_SEGMENTS, WORKSPACE_ROUTE_DEFS } from '../../backend/src/shared/workspace-routes.js';
 import { LANDING_FIRST_SEGMENTS } from '../../backend/src/shared/handles.js';
+import { ROUTES } from '../entry-server';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
 describe('same-domain Workspace proxy', () => {
+  // Note #1154: /self-hosted-coding-agents went live as a 404, because its
+  // word was not on the edge's list and the Workspace answered it as an
+  // unknown profile. Every prerendered page stays on the landing site.
+  it('keeps every prerendered page on the landing site', () => {
+    for (const route of ROUTES) {
+      if (route.path === '/') continue;
+      expect(routesToBackend(route.path, ''), route.path).toBe(false);
+    }
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

@@ -48,8 +48,10 @@ export const VISITOR_COUNTRY_HEADER = 'x-acc-visitor-country';
 export const LANDING_FIRST_SEGMENTS = [
   'terms', 'privacy', 'claude-code-in-the-cloud', 'codex-in-the-cloud', 'ai-agents-for-your-team',
   'four-phases', 'docs', 'teams', 'og-preview', 'product', 'own-cloud', 'why-fly',
+  // The topic pages of note #1154 (/open-source was a retired redirect until then).
+  'self-hosted-coding-agents', 'open-source',
   // Retired, still redirected at the edge.
-  'pricing', 'tour', 'guides', 'refunds', 'shots', 'en', 'ru', 'open-source', 'request-access',
+  'pricing', 'tour', 'guides', 'refunds', 'shots', 'en', 'ru', 'request-access',
   'leaderboard', 'private-copy',
 ];
 
