@@ -250,6 +250,7 @@ import { CopyMailSetupError } from '../services/copy-mail-setup.js';
 import { CopyUpgradeRefused } from '../services/copy-upgrade.js';
 import type { WorkspaceCopyPulse, WorkspaceCopyMailProviderInput } from '../shared/workspace-api.js';
 import { LICENSE_FILE, detectLicense, readmeDescription } from '../shared/licenses.js';
+import { orderedTreeEntries, type PublicPageReads, type PublicRepoPageData } from './public-pages.js';
 import { orgKnowledgeShelfNamespace, type GitNamespace } from '../services/org-git.js';
 import { pickNumbered, workplaceNumberSeries, type NumberSeries } from '../services/workplace-numbers.js';
 import { WorkplaceDeletionService } from '../services/workplace-deletion.js';
@@ -1786,7 +1787,11 @@ function liveActivityFields(live: { activity?: string; startedAt?: number } | nu
   };
 }
 
-export function workspaceRoutes(deps: RouteDeps): Router {
+/** The Workspace router, and the reads the root's public pages are written
+ *  from (routes/public-pages.ts, note #1153). */
+export type WorkspaceRouter = Router & { publicPageReads?: PublicPageReads };
+
+export function workspaceRoutes(deps: RouteDeps): WorkspaceRouter {
   /** The knowledge base, or a 503 that says so. Both halves or neither: a
    *  page list with nothing behind it would be an empty knowledge base, which
    *  is a different and wrong answer. */
@@ -1804,7 +1809,7 @@ export function workspaceRoutes(deps: RouteDeps): Router {
     return { ns, service: new KnowledgeService(host, deps.knowledgeProposalStorage, deps.knowledgeShelf) };
   };
 
-  const router = Router();
+  const router: WorkspaceRouter = Router();
 
   /** One read for the workplace's durable choice; no org layer means the
    * legacy reserved Bernese, which keeps narrow route fixtures and old data
@@ -3678,22 +3683,89 @@ self.addEventListener('activate', (event) => {
    * the full repository screen — public or private. A private repository
    * is a 404 to anyone else, identical to one that does not exist.
    */
+  const findRepoByAddress = async (
+    handle: string,
+    name: string,
+    req: Request,
+    { membersToo = false } = {},
+  ): Promise<{ repo: GitRepoDocument } | { member: { orgId: string } } | null> => {
+    if (handleProblem(handle) || !name || !deps.orgStorage || !deps.gitRepoStorage || !deps.gitHostClient) return null;
+    const org = await deps.orgStorage.getOrgByHandle(handle).catch(() => null);
+    if (!org) return null;
+    const repo = await deps.gitRepoStorage.getLiveByNameIn(await workplaceNamespaces(org), name);
+    if (!repo) return null;
+    const session = await publicViewer(req);
+    const member = session ? await deps.orgStorage.getMembership(org.orgId, session.userId).catch(() => null) : null;
+    if (member && !membersToo) return { member: { orgId: org.orgId } };
+    if (!repo.publicAccess) return null;
+    return { repo };
+  };
   const repoByAddress = async (req: Request, res: Response, { membersToo = false } = {}): Promise<GitRepoDocument | null> => {
     publicHeaders(res);
     if (typeof res.setHeader === 'function') res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
-    const handle = String(req.params.handle ?? '');
-    const name = String(req.params.repo ?? '');
-    if (handleProblem(handle) || !name || !deps.orgStorage || !deps.gitRepoStorage || !deps.gitHostClient) { nothingHere(res); return null; }
-    const org = await deps.orgStorage.getOrgByHandle(handle).catch(() => null);
-    if (!org) { nothingHere(res); return null; }
-    const repo = await deps.gitRepoStorage.getLiveByNameIn(await workplaceNamespaces(org), name);
-    if (!repo) { nothingHere(res); return null; }
-    const session = await publicViewer(req);
-    const member = session ? await deps.orgStorage.getMembership(org.orgId, session.userId).catch(() => null) : null;
-    if (member && !membersToo) { res.json({ member: { orgId: org.orgId } }); return null; }
-    if (!repo.publicAccess) { nothingHere(res); return null; }
-    return repo;
+    const found = await findRepoByAddress(String(req.params.handle ?? ''), String(req.params.repo ?? ''), req, { membersToo });
+    if (!found) { nothingHere(res); return null; }
+    if ('member' in found) { res.json({ member: found.member }); return null; }
+    return found.repo;
   };
+
+  /**
+   * A public repository as its page shows a stranger, for the HTML the
+   * server writes at its address (note #1153): the top of the tree, the
+   * README whole, the licence's name, the latest commit. The same host
+   * reads the tree, file and About doors make; a part the host cannot give
+   * is left out rather than failing the page.
+   */
+  const publicRepoPageData = async (repo: GitRepoDocument, handle: string): Promise<PublicRepoPageData> => {
+    const host = await gitHostFor(repo.orgId);
+    const page: PublicRepoPageData = {
+      name: repo.name, handle, cloneUrl: host.cloneUrl(repo.userId, repo.name), branch: repo.defaultBranch ?? null, entries: [],
+    };
+    try {
+      const root = await host.tree(repo.userId, repo.name, '');
+      page.branch = root.branch;
+      page.entries = orderedTreeEntries(root.entries).map((entry) => ({ name: entry.name, type: entry.type }));
+      const licenseEntry = root.entries.find((entry) => entry.type === 'file' && (entry.sizeBytes ?? 0) > 0 && LICENSE_FILE.test(entry.name));
+      if (licenseEntry) {
+        const file = await host.file(repo.userId, repo.name, licenseEntry.name).catch(() => null);
+        page.license = file?.content ? detectLicense(file.content) : null;
+      }
+      const readmes = root.entries.filter((entry) => entry.type === 'file' && /^readme(\.(md|markdown|mdown|mkd|txt|rst))?$/i.test(entry.name));
+      const readme = readmes.find((entry) => /\.(md|markdown|mdown|mkd)$/i.test(entry.name)) ?? readmes[0];
+      if (readme) {
+        const file = await host.file(repo.userId, repo.name, readme.name).catch(() => null);
+        if (file?.content && !file.binary && !file.tooLarge) {
+          page.readme = { name: readme.name, content: file.content };
+          const description = readmeDescription(file.content);
+          if (description) page.description = description;
+        }
+      }
+    } catch { /* the page says what it has */ }
+    try {
+      const latest = (await host.log(repo.userId, repo.name, 1)).commits[0];
+      if (latest) page.latest = { subject: latest.subject, at: latest.at, authorName: latest.authorName };
+    } catch { /* no history line */ }
+    return page;
+  };
+
+  /** The reads the server's public pages are written from (note #1153):
+   *  the doors above, as a stranger or the request's own session reads them. */
+  const publicPageReads: PublicPageReads = {
+    signedIn: async (req) => Boolean(await publicViewer(req)),
+    apps: async () => (deps.privateCopy ? null : (await appCatalogue()).map((row) => row.entry)),
+    address: async (handle, req) => {
+      const person = await publicPerson(handle, req);
+      if (person) return { kind: 'person', person };
+      return (await publicWorkplace(handle, req)) ? { kind: 'workplace' } : null;
+    },
+    repo: async (handle, name, req, withPage) => {
+      const found = await findRepoByAddress(handle, name, req);
+      if (!found) return null;
+      if ('member' in found) return { kind: 'member' };
+      return withPage ? { kind: 'public', page: await publicRepoPageData(found.repo, handle) } : { kind: 'public' };
+    },
+  };
+  router.publicPageReads = publicPageReads;
 
   const answerPublicTree = async (repo: GitRepoDocument, path: string, res: Response) => {
     try {
