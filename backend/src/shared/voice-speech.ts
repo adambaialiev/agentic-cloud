@@ -15,8 +15,9 @@ import { VOICE_ERROR_CODES, type VoiceErrorCode } from './voice-transcription.js
 
 /**
  * ElevenLabs' low-latency v4 through OpenRouter: about a second for a
- * two-sentence recap, and $0.00004 a character on 11 Nov 2026 — under a cent
- * for a recap of 200 characters.
+ * two-sentence recap, and $0.00004 a character on 11 Nov 2026: a recap is
+ * written to at most 240 characters, so at most about a cent (a 224-character
+ * recap of Adam's, read in production on 11 Nov, was 0.9 cents).
  */
 export const RECAP_SPEECH_MODEL = 'elevenlabs/eleven-v4-turbo';
 /** "Sarah": ElevenLabs' calm, clear American English voice. */
@@ -26,7 +27,7 @@ export const RECAP_SPEECH_VOICE_NAME = 'Sarah';
 export const RECAP_SPEECH_FORMAT = 'mp3';
 /** USD a character, as OpenRouter listed the model on 11 Nov 2026. */
 export const RECAP_SPEECH_USD_PER_CHAR = 0.00004;
-/** A recap is two short sentences, 280 characters at most; anything far
+/** A recap is two short sentences, 240 characters at most; anything far
  *  longer is not a recap, and is never sent to be spoken. */
 export const RECAP_SPEECH_MAX_CHARS = 600;
 
