@@ -9,7 +9,7 @@ import { outreachLinkRoutes } from '../../routes/outreach-links.js';
 import { isReservedHandle } from '../../shared/handles.js';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { OUTREACH_LINK_PREVIEWS, OUTREACH_PREVIEW_IMAGE, isOutreachCode, outreachKnown, outreachLinkTarget, outreachPreviewApp, outreachReader, parseOutreachWrite, type OutreachTouch } from '../../shared/outreach.js';
+import { OUTREACH_LINK_PREVIEWS, OUTREACH_PREVIEW_IMAGE, fillOutreachLinks, isOutreachCode, outreachKnown, outreachLinkTarget, outreachPreviewApp, outreachReader, parseOutreachWrite, type OutreachLinkCodes, type OutreachTouch } from '../../shared/outreach.js';
 import { fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 
 /**
@@ -145,12 +145,13 @@ describe('The link placeholders in shared words (note #1106)', () => {
     write.targets = [{ ...write.targets.find((target) => target.company === 'Fernhill Labs')!, firstEmail: { ...write.targets.find((target) => target.company === 'Fernhill Labs')!.firstEmail!, body: 'Hi Otto,\n\nSee {home link} or have your agent read {agents link}.\n\nAdam' } }];
     await service.write('user-adam', ROWAN, write);
     const links = (await service.agentShow('user-adam', 'Fernhill Labs'))!.links;
-    const draft = (await service.detail('user-adam', 'fernhill-labs'))!.draft!;
-    expect(draft.text).toBe(`Hi Otto,\n\nSee ${links.home} or have your agent read ${links.agents}.\n\nAdam`);
-    expect(draft.text).not.toMatch(/[{}]/);
-    // Saving the filled words unchanged is not a version of his own.
-    await service.letter('user-adam', 'fernhill-labs', { action: 'save', subject: draft.subject, text: draft.text });
-    expect((await service.detail('user-adam', 'fernhill-labs'))!.draft!.from).toBe('written');
+    // Since note #1157 the Send box is empty and nothing is filled for him; the filler still turns stored words into the company's links.
+    const answer = (await service.detail('user-adam', 'fernhill-labs'))!;
+    expect(answer.draft).toMatchObject({ subject: '', text: '', from: 'blank' });
+    const record = (await (service as unknown as { deps: { store: { target(u: string, id: string): Promise<{ links?: OutreachLinkCodes }> } } }).deps.store.target('user-adam', 'fernhill-labs'));
+    const filled = fillOutreachLinks(answer.seed.firstEmail!.body, record.links);
+    expect(filled).toBe(`Hi Otto,\n\nSee ${links.home} or have your agent read ${links.agents}.\n\nAdam`);
+    expect(filled).not.toMatch(/[{}]/);
   });
 });
 
@@ -186,9 +187,11 @@ describe('The third link, the setup guide (note #1120)', () => {
     write.words = { audience: 'customer', source: null, generatedBy: null, generatedAt: null, followUps: { day4: { text: 'Setup: {install link}', wordCount: 2 } } };
     await service.write('user-adam', ROWAN, write);
     const links = (await service.agentShow('user-adam', 'Fernhill Labs'))!.links;
-    const draft = (await service.detail('user-adam', 'fernhill-labs'))!.draft!;
-    expect(draft.text).toBe(`Hi Otto,\n\nYour agent sets it up from one line: ${links.install}\n\nWhat it does: ${links.agents}\n\nAdam\n${links.home}`);
-    expect(draft.text).not.toMatch(/[{}]/);
+    const answer = (await service.detail('user-adam', 'fernhill-labs'))!;
+    const record = (await (service as unknown as { deps: { store: { target(u: string, id: string): Promise<{ links?: OutreachLinkCodes }> } } }).deps.store.target('user-adam', 'fernhill-labs'));
+    const filled = fillOutreachLinks(answer.seed.firstEmail!.body, record.links);
+    expect(filled).toBe(`Hi Otto,\n\nYour agent sets it up from one line: ${links.install}\n\nWhat it does: ${links.agents}\n\nAdam\n${links.home}`);
+    expect(filled).not.toMatch(/[{}]/);
   });
 });
 
