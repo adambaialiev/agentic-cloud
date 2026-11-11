@@ -6136,6 +6136,8 @@ export class AgentService {
         messages,
         ...(options.turnInProgress ? { turnInProgress: true } : {}),
         ...(options.chatReset ? { chatReset: true } : {}),
+        // The Chief of Staff's recap is written to its owner (note #1146).
+        ...(isWorkspaceAgent(agent) ? { addressOwner: true } : {}),
         ...(claudeOauthToken ? { claudeOauthToken } : {}),
         ...(opencodeApiKey ? { opencodeApiKey } : {})
       });

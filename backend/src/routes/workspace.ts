@@ -229,6 +229,7 @@ import { VoiceTranscriptionError, redactProviderMessage } from '../services/voic
 import { VoiceUnavailableError } from '../services/workplace-voice.js';
 import { registerVoiceRoutes } from './voice.js';
 import { VOICE_ERROR_CODES, VOICE_ERROR_SENTENCES } from '../shared/voice-transcription.js';
+import { RECAP_SPEECH_CHANGED, RECAP_SPEECH_MAX_CHARS, RECAP_SPEECH_SENTENCES, type RecapSpeechAnswer } from '../shared/voice-speech.js';
 import { getOptionalErrorMessage } from '../utils/error-message.js';
 import { OrgSpendError } from '../services/org-spend.js';
 import {
@@ -5836,6 +5837,46 @@ self.addEventListener('activate', (event) => {
       const { stopped } = await recapChat.stop(auth.userId, auth.orgId);
       return res.json({ ok: true, stopped, name: WORKSPACE_AGENT_NAME } satisfies RecapChatStopAnswer);
     } catch (error) { return recapChatError(res, error); }
+  });
+  /**
+   * The Chief of Staff's recap, read aloud (note #1146), on the workplace's
+   * own OpenRouter key — the dictation key, which never leaves the server:
+   * the page names the words it shows, and gets the audio back.
+   *
+   * It speaks only THE RECAP: the words must be the line under the reader's
+   * own Chief of Staff's latest turn, as the record holds it now. Anything
+   * else is refused, so the route is never a free voice for any text a
+   * member types; a recap rewritten since the page read it answers 409
+   * `recap_changed`, and the next read brings the new one.
+   */
+  router.post('/api/recap/speech', async (req, res) => {
+    const auth = await authenticate(req, res); if (!auth) return;
+    if (!deps.workplaceVoice || !auth.orgId) {
+      return res.status(503).json({ error: RECAP_SPEECH_SENTENCES[VOICE_ERROR_CODES.notConfigured], code: VOICE_ERROR_CODES.notConfigured });
+    }
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text || text.length > RECAP_SPEECH_MAX_CHARS) return res.status(400).json({ error: 'Name the recap to read aloud.' });
+    const record = Object.values(auth.profile.telegram?.agents ?? {})
+      .find((candidate) => candidate.orgId === auth.orgId && isWorkspaceAgent(candidate));
+    if (turnRecapOf(record)?.recap !== text) {
+      return res.status(409).json({ error: 'That recap has been replaced by a newer one.', code: RECAP_SPEECH_CHANGED });
+    }
+    try {
+      const spoken = await deps.workplaceVoice.speak(auth.orgId, text);
+      return res.json({
+        audio: spoken.audio.toString('base64'), contentType: spoken.contentType, model: spoken.model, voice: spoken.voice,
+      } satisfies RecapSpeechAnswer);
+    } catch (error) {
+      if (error instanceof VoiceUnavailableError) {
+        return res.status(503).json({ error: RECAP_SPEECH_SENTENCES[error.code], code: error.code });
+      }
+      // The provider's refusal was logged by the speech service; a fault that
+      // never reached it is logged here. Never the key, never the words.
+      if (!(error instanceof VoiceTranscriptionError)) {
+        console.warn(`[voice-speech] /api/recap/speech failed: ${JSON.stringify(redactProviderMessage(getOptionalErrorMessage(error) ?? 'unknown error'))}`);
+      }
+      return res.status(502).json({ error: RECAP_SPEECH_SENTENCES[VOICE_ERROR_CODES.failed], code: VOICE_ERROR_CODES.failed });
+    }
   });
   /**
    * A file on a Workspace Agent row, by the contract the room chat's rows

@@ -16,6 +16,8 @@ import {
   type VoiceState,
 } from '../shared/voice.js';
 import type { VoiceErrorCode } from '../shared/voice-transcription.js';
+import { createHash } from 'node:crypto';
+import { RECAP_SPEECH_FORMAT, RECAP_SPEECH_MODEL, RECAP_SPEECH_VOICE } from '../shared/voice-speech.js';
 import { OpenRouterUnavailableError, type OpenRouterAccount, type OpenRouterTranscriptionModel } from './openrouter-account.js';
 import { maskSecretPreview } from './user-secrets.js';
 
@@ -65,6 +67,28 @@ export interface VoiceTranscriber {
   transcribe(args: VoiceTranscribeArgs): Promise<VoiceTranscriberResult>;
 }
 
+export interface VoiceSpeakArgs {
+  apiKey: string;
+  model: string;
+  voice: string;
+  format: string;
+  text: string;
+}
+
+export interface VoiceSpeakerResult {
+  audio: Buffer;
+  contentType: string;
+}
+
+/** OpenRouter's text to speech (note #1146); throws as the transcriber does. */
+export interface VoiceSpeaker {
+  speak(args: VoiceSpeakArgs): Promise<VoiceSpeakerResult>;
+}
+
+/** How many spoken recaps are kept, all workplaces together: a replay, or a
+ *  second tab, plays the same audio without paying for it again. */
+export const SPOKEN_CACHE_ENTRIES = 48;
+
 /** Voice cannot run for this workplace right now, and why (no key, paused). */
 export class VoiceUnavailableError extends Error {
   constructor(readonly code: VoiceErrorCode) {
@@ -86,6 +110,8 @@ export interface WorkplaceVoiceDeps {
   orgSecrets: Pick<OrgSecretsService, 'getOrgSecret' | 'setOrgSecret' | 'deleteOrgSecret'>;
   openRouter: OpenRouterAccount;
   transcriber: VoiceTranscriber;
+  /** Reads the Chief of Staff's recap aloud (note #1146); absent → no speech. */
+  speaker?: VoiceSpeaker;
   /** Classify a transcriber failure: a reason that pauses the workplace, or null. */
   pauseReasonFor: (error: unknown) => VoicePauseReason | null;
   now?: () => number;
@@ -105,6 +131,8 @@ export class WorkplaceVoiceService {
   private modelsInFlight: Promise<OpenRouterTranscriptionModel[] | null> | null = null;
   private readonly creditCache = new Map<string, { at: number; usd: number | null }>();
   private readonly rechecks = new Map<string, Promise<void>>();
+  /** Spoken recaps by workplace, model, voice and words, newest last. */
+  private readonly spoken = new Map<string, VoiceSpeakerResult>();
 
   constructor(private readonly deps: WorkplaceVoiceDeps) {
     this.now = deps.now ?? Date.now;
@@ -392,6 +420,44 @@ export class WorkplaceVoiceService {
     }
     await this.count(orgId, result).catch(() => undefined);
     return { text: result.text, model };
+  }
+
+  /**
+   * Words read aloud on the workplace's key (note #1146): the same key, the
+   * same on/off/paused state and the same pause as a recording, because it
+   * is the same OpenRouter account. Throws {@link VoiceUnavailableError}
+   * without calling OpenRouter when there is no key or voice is paused.
+   */
+  async speak(orgId: string, text: string): Promise<VoiceSpeakerResult & { model: string; voice: string }> {
+    if (!this.deps.speaker) throw new VoiceUnavailableError(voiceErrorCodeFor('off'));
+    const { state, reason, key } = await this.state(orgId);
+    if (state !== 'on' || !key) throw new VoiceUnavailableError(voiceErrorCodeFor(state === 'on' ? 'off' : state, reason));
+    const model = RECAP_SPEECH_MODEL, voice = RECAP_SPEECH_VOICE;
+    const cacheKey = createHash('sha256').update(JSON.stringify([orgId, model, voice, text])).digest('hex');
+    const cached = this.spoken.get(cacheKey);
+    if (cached) {
+      this.spoken.delete(cacheKey);
+      this.spoken.set(cacheKey, cached);
+      return { ...cached, model, voice };
+    }
+    let result: VoiceSpeakerResult;
+    try {
+      result = await this.deps.speaker.speak({ apiKey: key, model, voice, format: RECAP_SPEECH_FORMAT, text });
+    } catch (error) {
+      const pause = this.deps.pauseReasonFor(error);
+      if (pause) {
+        const left = pause === 'out_of_credit' ? await this.deps.openRouter.creditLeft(key).catch(() => null) : null;
+        await this.deps.orgStorage.updateOrg(orgId, {
+          voicePaused: { reason: pause, at: new Date(this.now()).toISOString(), ...(left !== null ? { creditAtPause: left } : {}) },
+        });
+        this.creditCache.delete(orgId);
+        throw new VoiceUnavailableError(voiceErrorCodeFor('paused', pause));
+      }
+      throw error;
+    }
+    this.spoken.set(cacheKey, result);
+    while (this.spoken.size > SPOKEN_CACHE_ENTRIES) this.spoken.delete(this.spoken.keys().next().value!);
+    return { ...result, model, voice };
   }
 
   private async count(orgId: string, result: VoiceTranscriberResult): Promise<void> {

@@ -178,6 +178,7 @@ import { InMemoryPendingTurnStorage } from './services/pending-turn-storage.js';
 import { InMemoryStoppedUserMessageStorage } from './services/stopped-user-message-storage.js';
 import { InMemoryAgentActivityStore } from './services/agent-activity-store.js';
 import { VoiceTranscriptionService, voicePauseReasonFor } from './services/voice-transcription-service.js';
+import { VoiceSpeechService } from './services/voice-speech-service.js';
 import { WorkplaceVoiceService } from './services/workplace-voice.js';
 import { OpenRouterAccountClient } from './services/openrouter-account.js';
 import { PROCESS_SHUTDOWN_ABORT_REASON } from './agent/abort-reason.js';
@@ -2291,6 +2292,8 @@ const deps: RouteDeps = {
     orgSecrets,
     openRouter: new OpenRouterAccountClient(),
     transcriber: new VoiceTranscriptionService(),
+    // The Chief of Staff's recap read aloud (note #1146), same key.
+    speaker: new VoiceSpeechService(),
     pauseReasonFor: voicePauseReasonFor,
   }),
   // The knowledge gate's two halves, and they travel together: the ask that

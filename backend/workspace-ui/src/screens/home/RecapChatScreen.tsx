@@ -67,6 +67,7 @@ import {
 } from './recap-chat-cache.js';
 import { markRecapChatRead, recapChatPath, recapChatWantsWhole, wholeRecapAnswer } from './recap-chat-delta.js';
 import { RecapRuntimePicker } from './RecapRuntimePicker.js';
+import { useRecapVoice } from './useRecapVoice.js';
 import { recalledRuntime } from '../agent/runtime-memory.js';
 import { AttentionLine, DidLine, NoticedLine, RemoveAgentCard, UnfinishedLine, UnfinishedMark } from './RecapRows.js';
 import { HomeChrome } from './HomeTabs.js';
@@ -658,6 +659,9 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
     ...(shownMessages.length ? { last: shownMessages.at(-1)! } : {}),
     ...(() => { const reply = shownMessages.findLast((message) => message.role === 'assistant'); return reply ? { lastReplyAt: reply.at } : {}; })(),
   });
+  // The recap read aloud (note #1146): the header's speaker, and the
+  // recap's play button while it is on.
+  const voice = useRecapVoice(api, answer?.lastTurn, recapShown, Boolean(answer));
   let lastDay = '';
   return <>
     {picking ? <RecapRuntimePicker orgId={orgId} seed={settings} target="agent" onClose={() => { setPicking(false); readSettings(); }} /> : null}
@@ -719,6 +723,24 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
                 be displayed text that auto merge is on as yellow colored
                 text"): their agents' proposals merge without them reading. */}
             {workspace?.org?.autoMerge?.on ? <span className="sub automergeon" id="recapAutoMerge">Auto-merge on</span> : null}
+            {/* Read the recaps aloud (note #1146; Adam, 11 Nov 2026: "In header
+                there should be button to toggles between voice output mode
+                on/off"). Only where the workplace has an OpenRouter key. */}
+            {voice.available
+              ? (
+                <button
+                  className={voice.on ? 'recapvoice on' : 'recapvoice'}
+                  id="recapChatVoice"
+                  type="button"
+                  aria-pressed={voice.on}
+                  aria-label="Read recaps aloud"
+                  title={voice.on ? 'Recaps are read aloud. Tap to stop.' : 'Read recaps aloud'}
+                  onClick={voice.toggle}
+                >
+                  <Svg name={voice.on ? 'speaker' : 'speakeroff'} size={16} />
+                </button>
+              )
+              : null}
           </div>
         </div>
         {home ? <HomeChrome /> : null}
@@ -780,7 +802,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
         {/* Under the latest completed request, once it is over (note #945),
             with whose answers it is still collecting where an agent's says
             what it left running. */}
-        {recapShown && answer?.lastTurn ? <TurnRecap id="recapChatRecap" turn={answer.lastTurn} waiting={answer.waiting} /> : null}
+        {recapShown && answer?.lastTurn ? <TurnRecap id="recapChatRecap" turn={answer.lastTurn} waiting={answer.waiting} {...((voice.on && voice.available) || voice.error ? { voice: { state: voice.state, onPlay: voice.play, error: voice.error } } : {})} /> : null}
         {/* Visible only while a request runs: the typing bubble carries the
             phase the machine reports — Thinking…, the rare first-time
             setup, Stopping… (never the machine waking, note #633; a room

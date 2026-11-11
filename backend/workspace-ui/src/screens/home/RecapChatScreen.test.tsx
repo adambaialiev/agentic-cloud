@@ -10,6 +10,9 @@ import { POLL_MISSES_BEFORE_BANNER } from '../messages/useMessagePoll.js';
 import { forgetRecapChats, heldRecapChat } from './recap-chat-cache.js';
 import { forgetAgents } from '../agent/agent-cache.js';
 import { CHAT_TOUCH_QUERY } from '../chat/chat-compose.js';
+import { forgetVoiceStatus } from '../../voice/voice-status.js';
+import { forgetRecapPlayer, RECAP_VOICE_KEY } from './recap-voice.js';
+import { RECAP_SPEECH_SENTENCES } from '../../../../src/shared/voice-speech.js';
 
 const state = emptyState({
   org: { orgId: 'o1', name: 'Studio', role: 'admin', members: 1, seats: 0, seatProviders: [] },
@@ -1814,5 +1817,117 @@ describe('the Chief of Staff\'s conversation read as deltas (note #1071)', () =>
     bad = false; await tick();
     expect(banner()).toBeNull();
     expect(screen.getByText('Done while you were away.')).toBeTruthy();
+  });
+});
+
+/**
+ * Note #1146: the recap read aloud. The speaker stands in the header only
+ * where the workplace has an OpenRouter key; with it on, a NEW recap plays
+ * once by itself, and the play button replays it.
+ */
+describe('the recap read aloud (note #1146)', () => {
+  const endedA = new Date(Date.now() - 60_000).toISOString();
+  const talk: RecapChatAnswer = {
+    orgId: 'o1', working: false, waiting: [],
+    messages: [
+      { id: 'v1', role: 'owner', text: 'Ship the pricing page', at: new Date(Date.now() - 90_000).toISOString() },
+      { id: 'v2', role: 'assistant', text: 'Proposed it.', at: new Date(Date.now() - 61_000).toISOString() },
+    ],
+    lastTurn: { startedAt: new Date(Date.now() - 90_000).toISOString(), endedAt: endedA, recap: 'I proposed the pricing page. It is waiting on you.' },
+  };
+  const speaker = () => document.getElementById('recapChatVoice');
+  const voiceOn = { state: 'on', model: { id: 'openai/gpt-4o-mini-transcribe', name: 'GPT-4o mini' }, admins: ['Saddam'], canChange: true };
+  let played: string[];
+
+  beforeEach(() => {
+    forgetVoiceStatus();
+    forgetRecapPlayer();
+    localStorage.removeItem(RECAP_VOICE_KEY);
+    played = [];
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) { played.push(this.src); return Promise.resolve(); });
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
+    let n = 0;
+    (URL as unknown as { createObjectURL: (blob: Blob) => string }).createObjectURL = () => `blob:recap-${++n}`;
+    (URL as unknown as { revokeObjectURL: (url: string) => void }).revokeObjectURL = () => undefined;
+  });
+  afterEach(() => { vi.restoreAllMocks(); localStorage.removeItem(RECAP_VOICE_KEY); });
+
+  it('has no speaker where the workplace has no key, nor where nobody could say', async () => {
+    mount(talk, undefined, { 'GET api/voice': () => ({ ...voiceOn, state: 'off' }) });
+    await screen.findByText('Ship the pricing page');
+    await waitFor(() => expect(document.getElementById('recapChatRecap')).toBeTruthy());
+    expect(speaker()).toBeNull();
+    expect(document.getElementById('recapChatRecapPlay')).toBeNull();
+    cleanup();
+    forgetVoiceStatus();
+    mount(talk);
+    await screen.findByText('Ship the pricing page');
+    expect(speaker()).toBeNull();
+  });
+
+  it('stands in the header with a key, beside the runtime line, and remembers on and off on this device', async () => {
+    mount(talk, undefined, { 'GET api/voice': () => voiceOn });
+    await waitFor(() => expect(speaker()).toBeTruthy());
+    expect(speaker()!.closest('.chatsubline')).toBe(document.getElementById('recapChatRuntime')!.closest('.chatsubline'));
+    expect(speaker()!.getAttribute('aria-pressed')).toBe('false');
+    // Off: the recap looks as it always has.
+    expect(document.getElementById('recapChatRecapPlay')).toBeNull();
+    await act(async () => fireEvent.click(speaker()!));
+    expect(speaker()!.getAttribute('aria-pressed')).toBe('true');
+    expect(localStorage.getItem(RECAP_VOICE_KEY)).toBe('on');
+    // The tap itself unlocks the player (iPhone Safari): silence, at once.
+    expect(played).toHaveLength(1);
+    expect(played[0]).toMatch(/^data:audio\/wav;base64,/);
+    // The recap that stood when the screen opened is history: no autoplay.
+    expect(document.getElementById('recapChatRecapPlay')).toBeTruthy();
+    await act(async () => fireEvent.click(speaker()!));
+    expect(localStorage.getItem(RECAP_VOICE_KEY)).toBeNull();
+  });
+
+  it('plays only a recap that arrives while the screen is open, once, and replays it from the play button', async () => {
+    localStorage.setItem(RECAP_VOICE_KEY, 'on');
+    let answer: RecapChatAnswer = talk;
+    const speech = vi.fn((call: { init?: RequestInit }) => ({
+      audio: btoa('mp3'), contentType: 'audio/mpeg', model: 'elevenlabs/eleven-v4-turbo', voice: 'sarah', asked: JSON.parse(String(call.init?.body)),
+    }));
+    const { calls } = mount(answer, undefined, { 'GET api/voice': () => voiceOn, 'GET api/recap/chat': () => answer, 'POST api/recap/speech': speech });
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')).toBeTruthy());
+    // The standing recap is not read out by itself.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    expect(speech).not.toHaveBeenCalled();
+
+    const fresh = 'I merged the pricing page. Have a look on your phone.';
+    answer = {
+      ...talk,
+      messages: [...talk.messages, { id: 'v3', role: 'owner', text: 'Merge it', at: new Date().toISOString() }, { id: 'v4', role: 'assistant', text: 'Merged.', at: new Date().toISOString() }],
+      lastTurn: { startedAt: new Date().toISOString(), endedAt: new Date(Date.now() + 1).toISOString(), recap: fresh },
+    };
+    await waitFor(() => expect(speech).toHaveBeenCalledTimes(1), { timeout: 6000 });
+    expect(JSON.parse(String(calls.find((c) => c.path === 'api/recap/speech')!.init!.body))).toEqual({ text: fresh });
+    await waitFor(() => expect(played.at(-1)).toBe('blob:recap-1'));
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')!.dataset.state).toBe('playing'));
+    // The next poll brings the same recap: it is not read a second time.
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    expect(speech).toHaveBeenCalledTimes(1);
+
+    // Stop, then play again: the same audio, not a second request.
+    await act(async () => fireEvent.click(document.getElementById('recapChatRecapPlay')!));
+    expect(document.getElementById('recapChatRecapPlay')!.dataset.state).toBe('idle');
+    await act(async () => fireEvent.click(document.getElementById('recapChatRecapPlay')!));
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')!.dataset.state).toBe('playing'));
+    expect(speech).toHaveBeenCalledTimes(1);
+    expect(played.at(-1)).toBe('blob:recap-1');
+  }, 20_000);
+
+  it('says in one plain line when the recap cannot be read aloud, and keeps the recap as it is', async () => {
+    localStorage.setItem(RECAP_VOICE_KEY, 'on');
+    mount(talk, undefined, {
+      'GET api/voice': () => voiceOn,
+      'POST api/recap/speech': () => { throw new WorkspaceApiError(RECAP_SPEECH_SENTENCES.voice_out_of_credit, 503, { error: RECAP_SPEECH_SENTENCES.voice_out_of_credit, code: 'voice_out_of_credit' }); },
+    });
+    await waitFor(() => expect(document.getElementById('recapChatRecapPlay')).toBeTruthy());
+    await act(async () => fireEvent.click(document.getElementById('recapChatRecapPlay')!));
+    await waitFor(() => expect(document.getElementById('recapChatRecapVoiceError')?.textContent).toBe(RECAP_SPEECH_SENTENCES.voice_out_of_credit));
+    expect(document.querySelector('#recapChatRecap .turnrecaptext')!.textContent).toContain('I proposed the pricing page.');
   });
 });

@@ -59,6 +59,7 @@ import { DEFAULT_VOICE_MODEL } from '../../shared/voice.js';
 
 const VOICE_TEST_KEY = 'sk-or-v1-0123456789abcdef0123456789abcdef0123456789abcdef01234567';
 import { VOICE_ERROR_SENTENCES } from '../../shared/voice-transcription.js';
+import { RECAP_SPEECH_CHANGED, RECAP_SPEECH_MODEL, RECAP_SPEECH_SENTENCES, RECAP_SPEECH_VOICE } from '../../shared/voice-speech.js';
 import {
   InMemoryWorkspaceWebAuthStorage,
   WorkspaceWebAuthService,
@@ -463,6 +464,106 @@ describe('telegram mini app routes', () => {
     await getRouteHandler(deps, '/api/transcribe', 'post')(recording(), res);
     expect(res.statusCode).toBe(502);
     expect(res.body).toEqual({ error: VOICE_ERROR_SENTENCES.voice_failed, code: 'voice_failed' });
+  });
+
+  // Note #1146: the Chief of Staff's recap read aloud on the same key. The
+  // route speaks only the recap on record, the key never leaves the server,
+  // and a failure is one sentence with dictation's codes.
+  async function withRecap(userStorage: InMemoryUserStorage, orgId: string, recap = 'I proposed the pricing page. It is waiting on you to approve it.') {
+    const profile = await userStorage.getProfile('user-1');
+    await userStorage.updateProfile('user-1', {
+      telegram: {
+        ...profile!.telegram!,
+        agents: {
+          ...profile!.telegram!.agents,
+          'cos-1': {
+            id: 'cos-1', name: 'Workspace Agent', cli: 'claude', agentbuiltTokenHash: 'x', purpose: 'workspace-recap', orgId,
+            lastTurnStartedAt: '2026-11-11T08:00:00.000Z', lastTurnEndedAt: '2026-11-11T08:00:30.000Z',
+            recap: { text: recap, at: '2026-11-11T08:00:40.000Z' },
+          } as never,
+        },
+      } as never,
+    });
+    return recap;
+  }
+  const speechRequest = (text: string) => mockRequest({ headers: authHeader(42), body: { text } });
+
+  it('reads the Chief of Staff\u2019s recap aloud on the workplace key, and never hands the key to the page', async () => {
+    const { deps, userStorage } = await buildDeps();
+    const voice = await withVoice(deps, { key: true });
+    const speak = vi.fn().mockResolvedValue({ audio: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' });
+    deps.workplaceVoice = new WorkplaceVoiceService({
+      orgStorage: voice.orgStorage, orgSecrets: voice.orgSecrets,
+      openRouter: { checkKey: vi.fn() as never, creditLeft: vi.fn().mockResolvedValue(3), transcriptionModels: vi.fn().mockResolvedValue([]) },
+      transcriber: { transcribe: vi.fn() as never }, speaker: { speak }, pauseReasonFor: voicePauseReasonFor,
+    });
+    const recap = await withRecap(userStorage, voice.orgId);
+
+    const res = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(` ${recap} `), res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ audio: Buffer.from('mp3-bytes').toString('base64'), contentType: 'audio/mpeg', model: RECAP_SPEECH_MODEL, voice: RECAP_SPEECH_VOICE });
+    expect(speak).toHaveBeenCalledWith({ apiKey: VOICE_TEST_KEY, model: RECAP_SPEECH_MODEL, voice: RECAP_SPEECH_VOICE, format: 'mp3', text: recap });
+    expect(JSON.stringify(res.body)).not.toContain(VOICE_TEST_KEY);
+    expect(JSON.stringify(res.body)).not.toContain(VOICE_TEST_KEY.slice(-6));
+
+    // A replay is the same audio, not a second bill.
+    const again = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(recap), again);
+    expect(again.statusCode).toBe(200);
+    expect(speak).toHaveBeenCalledTimes(1);
+
+    // Never any other words: not a free voice for whatever a member types.
+    const other = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest('Read this out instead.'), other);
+    expect(other.statusCode).toBe(409);
+    expect(other.body).toMatchObject({ code: RECAP_SPEECH_CHANGED });
+    const empty = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(''), empty);
+    expect(empty.statusCode).toBe(400);
+    expect(speak).toHaveBeenCalledTimes(1);
+
+    const unauthenticated = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(mockRequest({ body: { text: recap } }), unauthenticated);
+    expect(unauthenticated.statusCode).toBe(401);
+  });
+
+  it('says plainly why a recap cannot be read aloud: no key, out of credit, a passing fault', async () => {
+    const { deps, userStorage } = await buildDeps();
+    const voice = await withVoice(deps);
+    const speak = vi.fn()
+      .mockRejectedValueOnce(new VoiceTranscriptionError('OpenRouter speech request failed: 503', 'upstream_error', 502, 503))
+      .mockRejectedValueOnce(new VoiceTranscriptionError('OpenRouter speech request failed: no credit', 'out_of_credit', 503, 402));
+    deps.workplaceVoice = new WorkplaceVoiceService({
+      orgStorage: voice.orgStorage, orgSecrets: voice.orgSecrets,
+      openRouter: { checkKey: vi.fn() as never, creditLeft: vi.fn().mockResolvedValue(0.2), transcriptionModels: vi.fn().mockResolvedValue([]) },
+      transcriber: { transcribe: vi.fn() as never }, speaker: { speak }, pauseReasonFor: voicePauseReasonFor,
+    });
+    const recap = await withRecap(userStorage, voice.orgId);
+
+    const noKey = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(recap), noKey);
+    expect(noKey.statusCode).toBe(503);
+    expect(noKey.body).toEqual({ error: RECAP_SPEECH_SENTENCES.voice_not_configured, code: 'voice_not_configured' });
+    expect(speak).not.toHaveBeenCalled();
+
+    await voice.orgSecrets.setOrgSecret(voice.orgId, VOICE_KEY_SECRET_NAME, VOICE_TEST_KEY, 'test');
+    const passing = createMockResponse();
+    await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(recap), passing);
+    expect(passing.statusCode).toBe(502);
+    expect(passing.body).toEqual({ error: RECAP_SPEECH_SENTENCES.voice_failed, code: 'voice_failed' });
+
+    // Out of credit is the same account dictation pays from: it pauses voice
+    // for the workplace, and the next ask is refused without calling OpenRouter.
+    for (let i = 0; i < 2; i++) {
+      const res = createMockResponse();
+      await getRouteHandler(deps, '/api/recap/speech', 'post')(speechRequest(recap), res);
+      expect(res.statusCode).toBe(503);
+      expect(res.body).toEqual({ error: RECAP_SPEECH_SENTENCES.voice_out_of_credit, code: 'voice_out_of_credit' });
+      expect(JSON.stringify(res.body)).not.toMatch(/OpenRouter speech|402/);
+    }
+    expect(speak).toHaveBeenCalledTimes(2);
+    expect((await voice.orgStorage.getOrg(voice.orgId))?.voicePaused?.reason).toBe('out_of_credit');
   });
 
   it('shows a member who pays and who can change voice-to-text, and refuses their changes', async () => {

@@ -324,6 +324,24 @@ describe('buildAgentRecapPrompt', () => {
     expect(ordinary).not.toContain('CONVERSATION WAS CLEARED');
     expect(ordinary).toContain('The conversation turn to fold in:');
   });
+
+  /**
+   * Note #1146: the Chief of Staff's recap may be read aloud to its owner,
+   * so it is written TO them ("I proposed …; waiting on you to …"), never
+   * about them ("Proposed … for Adam"). Only for the Chief of Staff.
+   */
+  it('writes the Chief of Staff\u2019s recap to its owner, in the second person', () => {
+    const messages = [{ role: 'agent' as const, text: 'I proposed the pricing page for Adam.' }];
+    const toOwner = buildAgentRecapPrompt({ previousRecap: 'Proposed the pricing page for Adam.', messages, addressOwner: true });
+    expect(toOwner).toContain('write it TO the owner');
+    expect(toOwner).toContain('"I" for the agent, "you" for the owner');
+    expect(toOwner).toContain('Never write about the owner in the third person');
+    expect(toOwner).toContain('READ ALOUD');
+    expect(toOwner).toContain('No URLs, file paths, code or symbols.');
+    const ordinary = buildAgentRecapPrompt({ previousRecap: undefined, messages });
+    expect(ordinary).not.toContain('TO the owner');
+    expect(ordinary).not.toContain('READ ALOUD');
+  });
 });
 
 describe('runAgentRecapSummarizer', () => {
