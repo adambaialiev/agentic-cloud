@@ -123,10 +123,28 @@ export async function tapByText(page, scope, text, selector = 'button, [role="bu
 /** The title every screen portals into its header: the persistent one, or
  *  — for a screen opened inside the agents picker, as a page of it (note
  *  #722) — the head of the page on top. */
+const HEADER_TITLE = '#pageHead #pageId h1, #agentSwitchSheet .windowpage:not([hidden]) .windowhead h1';
 export async function headerTitle(page) {
-  const title = '#pageHead #pageId h1, #agentSwitchSheet .windowpage:not([hidden]) .windowhead h1';
-  await waitVisible(page, title);
-  return normalizedText(await page.$eval(title, (node) => node.textContent));
+  await waitVisible(page, HEADER_TITLE);
+  return normalizedText(await page.$eval(HEADER_TITLE, (node) => node.textContent));
+}
+
+/**
+ * The header's title once it says `expected`, or what it says when the wait
+ * runs out, for the assertion to name. For a screen whose title arrives with
+ * its read: a note opened right after saving says the bare word "Note" until
+ * the note is in hand (NoteScreen's heldTitle), and reading the header the
+ * moment the screen shows raced that read on a busy CI machine.
+ */
+export async function waitForHeaderTitle(page, expected, timeout = 10_000) {
+  await waitVisible(page, HEADER_TITLE);
+  try {
+    await page.waitForFunction((selector, wanted) => {
+      const node = document.querySelector(selector);
+      return Boolean(node) && String(node.textContent || '').replace(/\s+/g, ' ').trim() === wanted;
+    }, { timeout }, HEADER_TITLE, expected);
+  } catch { /* fall through: the assertion says what it read instead */ }
+  return headerTitle(page);
 }
 
 /**

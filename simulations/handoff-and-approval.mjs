@@ -29,7 +29,7 @@ import {
   waitForText,
   waitVisible,
 } from './support/browser-simulation.mjs';
-import { assertFaces, headerTitle, open, openAgents, openWorkplace, signIn, tapByText, waitForAll } from './support/team-steps.mjs';
+import { assertFaces, open, openAgents, openWorkplace, signIn, tapByText, waitForAll, waitForHeaderTitle } from './support/team-steps.mjs';
 
 const slug = 'handoff-and-approval';
 const app = await startMockWorkspace(repoRoot, { world: 'team', stage: 'joined' });
@@ -71,7 +71,7 @@ await runBrowserScenario({
     await page.click('#saveNoteBtn');
     // Saving opens the note itself, unclaimed, ready to be handed over.
     await waitVisible(page, '#screenNote');
-    assert.equal(await headerTitle(page), newNote.title);
+    assert.equal(await waitForHeaderTitle(page, newNote.title), newNote.title);
     await waitForAll(page, '#screenNote', [`Note #${newNote.number}`, 'Unclaimed']);
     assert.deepEqual(app.world.snapshot().notes.find((row) => row.number === newNote.number).work, { state: 'unclaimed' });
 
