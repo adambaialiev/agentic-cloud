@@ -21,6 +21,9 @@ RUN cd backend && npm ci --no-audit --no-fund
 COPY backend/ backend/
 COPY cli/agentbuilt/agentbuilt.mjs cli/agentbuilt/agentbuilt.mjs
 COPY infra/ci-runner/runner-agent.sh infra/ci-runner/runner-agent.sh
+# The words around a check, shared with our own dispatcher (note #1161):
+# the backend build copies it beside dist, so it must be in the context.
+COPY infra/ci-runner/ci-verdicts.mjs infra/ci-runner/ci-verdicts.mjs
 # The Workspace bundles one picture from the public site's folder.
 COPY public/logo-bw.png public/logo-bw.png
 RUN cd backend && npm run build && npm prune --omit=dev --no-audit --no-fund
