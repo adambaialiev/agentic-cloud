@@ -12,6 +12,7 @@
 !backend/scripts
 !cli/agentbuilt/agentbuilt.mjs
 !infra/ci-runner/runner-agent.sh
+!infra/ci-runner/ci-verdicts.mjs
 !infra/copy-installer/install.mjs
 !infra/backend-fly
 !infra/ci-runner/ia-rollback.sh
