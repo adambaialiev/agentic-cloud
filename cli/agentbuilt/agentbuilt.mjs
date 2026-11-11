@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.78.0';
+const VERSION = '1.79.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -5041,16 +5041,23 @@ async function briefing(args) {
  * hear "not yours". The knowledge page outreach-app is where agents learn it.
  */
 const OUTREACH_USAGE = `usage:
-  agentbuilt outreach list [--json]
-  agentbuilt outreach show <company> [--json]   (also its three short links for letters)
+  agentbuilt outreach list [--json]             (each contact's id first)
+  agentbuilt outreach show <id or company> [--json]   (also its three short links)
   agentbuilt outreach set --file <file.json>
 
-set takes ONE company (an object with "company", "fit", and any of the facts,
-"profile" and "firstEmail") or a batch in the shape of outreach-targets.json
-("targets", and/or "template", and/or "followUps"). Every write is signed with
-your name and the time, and the words it replaces stay on the company's
-timeline. The owner's own letter is never replaced: your new one waits beside
-his until he picks. A letter that has gone cannot be rewritten. Nothing here
+Outreach holds profiles and match information, not letters (note #1157). The
+owner pastes each letter himself: when he gives you a contact's id and a
+direction, read the contact with \`outreach show <id>\` and give him the subject
+and the body in the chat, with the contact's short links written out in full.
+His site's Send box starts empty and sends exactly what he pasted. Follow-ups
+the same way. Do not write letters into the store: the site never shows them.
+
+set takes ONE company (an object with "company", "fit", and any of the facts
+and "profile") or a batch in the shape of outreach-targets.json ("targets").
+"firstEmail": null empties a stored letter; "template": null and
+"followUps": null empty the stored words (each keeps its history). Every write
+is signed with your name and the time, and what it replaces stays on the
+company's timeline. A letter that has gone cannot be rewritten. Nothing here
 sends: a letter leaves only when the owner presses Send on his site.`;
 
 async function outreach(args) {
@@ -5063,13 +5070,14 @@ async function outreach(args) {
       const { targets } = await api('GET', 'api/agent-cli/outreach');
       if (rest.includes('--json')) { console.log(JSON.stringify(targets, null, 2)); return; }
       if (!targets.length) { console.log('Outreach holds no company yet. Write one with `agentbuilt outreach set --file <file.json>`.'); return; }
-      const rows = targets.map((t) => [t.firstBatchOrder ?? '', t.company, t.fit === 'fit' ? t.state : 'not a fit', t.letter ? 'yes' : '-', t.profile ? 'yes' : '-',
-        t.firstLetterGone ? 'gone' : t.ownerEdited ? 'his own' : '', t.writtenBy ? `${t.writtenBy}, ${when(t.writtenAt)}` : '-']);
-      const heads = ['#', 'COMPANY', 'STATE', 'LETTER', 'PROFILE', 'FIRST LETTER', 'LAST WRITTEN'];
+      // The id first (note #1157): what the owner gives the Chief of Staff to ask for a letter.
+      const rows = targets.map((t) => [t.id, t.company, t.fit === 'fit' ? t.state : 'not a fit', t.profile ? 'yes' : '-',
+        t.firstLetterGone ? 'gone' : t.letter ? 'kept, not shown' : '-', t.writtenBy ? `${t.writtenBy}, ${when(t.writtenAt)}` : '-']);
+      const heads = ['ID', 'COMPANY', 'STATE', 'PROFILE', 'FIRST LETTER', 'LAST WRITTEN'];
       const widths = heads.map((head, i) => Math.max(head.length, ...rows.map((row) => String(row[i]).length)));
       const line = (cells) => cells.map((cell, i) => String(cell).padEnd(widths[i])).join('  ').trimEnd();
       console.log([line(heads), ...rows.map(line)].join('\n'));
-      console.log(`\n${targets.length} companies. "his own" = the owner edited the first letter: a new one from you waits beside his. "gone" = sent; its words, address and fit are fixed.`);
+      console.log(`\n${targets.length} companies. "gone" = sent; its words, address and fit are fixed. "kept, not shown" = an old stored letter the site no longer draws (empty it with "firstEmail": null). The owner pastes every letter himself.`);
       return;
     }
     case 'show': {
@@ -5077,7 +5085,9 @@ async function outreach(args) {
       if (!which) fail(OUTREACH_USAGE);
       const { target } = await api('GET', `api/agent-cli/outreach/targets/${encodeURIComponent(which)}`);
       if (rest.includes('--json')) { console.log(JSON.stringify(target, null, 2)); return; }
-      console.log(`${target.company} (${target.id}) · ${target.fit === 'fit' ? target.state : 'not a fit'}${target.firstLetterGone ? ' · first letter gone' : ''}${target.ownerEdited ? ' · the owner has his own first letter' : ''}`);
+      console.log(`${target.company} · id ${target.id} · ${target.fit === 'fit' ? target.state : 'not a fit'}${target.firstLetterGone ? ' · first letter gone' : ''}`);
+      // Note #1157: no letter waits in Outreach; the owner pastes the words he gets in the chat.
+      console.log(target.firstLetterGone ? 'Its first letter went; follow-ups are pasted by the owner too.' : 'No letter waits here: give the owner the subject and body in the chat, links written out in full, and he pastes them.');
       if (target.links) {
         // Note #1106: this company's own two short links, for its letters. A visit is a touch on its timeline.
         // Note #1120: and the setup guide for an agent ({install link}).

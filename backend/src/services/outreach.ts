@@ -436,12 +436,7 @@ export class OutreachService {
       return `The letter did not arrive${bounce?.detail ? ` (${bounce.detail.replace(/[.\s]+$/, '')})` : ''}. Nothing more goes to this address.`;
     }
     if (row.state === 'sent' && !row.next) return 'The first letter and both follow-ups have gone. Note #799 says: then stop.';
-    if (row.next?.step === 'first') {
-      return outreachAudience(record.seed) === 'investor'
-        ? 'No letter is written for this investor yet, and there is no investor template. An agent writes it here with agentbuilt outreach set.'
-        : 'No letter is written for this company yet. An agent writes it here with agentbuilt outreach set.';
-    }
-    if (row.next) return `The ${stepWords(row.next.step)} is not written yet. An agent writes it here with agentbuilt outreach set.`;
+    if (row.next) return `The ${stepWords(row.next.step)} has nowhere to go yet.`;
     return 'Nothing to send.';
   }
 
@@ -512,8 +507,9 @@ export class OutreachService {
     if (write.audience === 'investor') return this.writeInvestorWords(userId, by, write, at);
     const kept = await this.deps.store.words(userId);
     const before = kept?.words ?? null;
-    const template = write.template ?? before?.template ?? null;
-    const followUps = {
+    // null empties (note #1157); absent keeps what is there.
+    const template = write.template === null ? null : write.template ?? before?.template ?? null;
+    const followUps = write.followUps === null ? { day4: null, day11: null } : {
       day4: write.followUps?.day4 ?? before?.followUps.day4 ?? null,
       day11: write.followUps?.day11 ?? before?.followUps.day11 ?? null,
     };
@@ -543,8 +539,9 @@ export class OutreachService {
     const kept = await this.deps.store.words(userId);
     const base: OutreachWords = kept?.words ?? { source: 'written by the agents', generatedBy: null, generatedAt: null, template: null, followUps: { day4: null, day11: null }, writtenBy: null, previous: [] };
     const before = base.investors ?? null;
-    const template = write.template ?? before?.template ?? null;
-    const followUps = {
+    // null empties (note #1157); absent keeps what is there.
+    const template = write.template === null ? null : write.template ?? before?.template ?? null;
+    const followUps = write.followUps === null ? { day4: null, day11: null } : {
       day4: write.followUps?.day4 ?? before?.followUps.day4 ?? null,
       day11: write.followUps?.day11 ?? before?.followUps.day11 ?? null,
     };

@@ -169,7 +169,12 @@ describe('agentbuilt outreach, the real CLI against the real routes', () => {
     expect(set.stdout).toContain('Nothing was sent.');
     const list = await run(apiUrl, rowan, ['list']);
     expect(list.status).toBe(0);
-    expect(list.stdout).toMatch(/1\s+Northwind Health\s+not-contacted\s+yes\s+yes\s+Rowan, 20/);
+    // The id first (note #1157), and a stored letter said to be kept, not shown.
+    expect(list.stdout).toMatch(/^ID\s+COMPANY\s+STATE\s+PROFILE\s+FIRST LETTER\s+LAST WRITTEN/);
+    expect(list.stdout).toMatch(/northwind-health\s+Northwind Health\s+not-contacted\s+yes\s+kept, not shown\s+Rowan, 20/);
+    const plain = await run(apiUrl, rowan, ['show', 'northwind-health']);
+    expect(plain.stdout).toContain('Northwind Health · id northwind-health · not-contacted');
+    expect(plain.stdout).toContain('No letter waits here: give the owner the subject and body in the chat');
     const show = await run(apiUrl, rowan, ['show', 'northwind-health', '--json']);
     expect(JSON.parse(show.stdout)).toMatchObject({ company: 'Northwind Health', written: { profile: { builds: expect.any(String) } } });
     // A letter that has gone cannot be rewritten: refused, said, exit 1.

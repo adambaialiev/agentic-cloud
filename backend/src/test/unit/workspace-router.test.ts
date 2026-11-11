@@ -9830,7 +9830,8 @@ describe('the workplace screens (members, seats, invites)', () => {
     // His own letter, saved through his pass.
     const saved = await call(as(ownerPass), '/api/outreach/targets/:id/letter', 'post', { action: 'save', subject: 'Mine', text: 'My words.' }, { id: 'northwind-health' });
     expect(saved.statusCode).toBe(200);
-    expect((saved.body as { draft: { from: string; text: string } }).draft).toMatchObject({ from: 'yours', text: 'My words.' });
+    // Kept in the record; the Send box itself is empty since note #1157, for him to paste into.
+    expect((saved.body as { draft: { from: string; text: string } }).draft).toMatchObject({ from: 'blank', text: '' });
     expect((await call(as(ownerPass), '/api/outreach/targets/:id/letter', 'post', { action: 'shout' }, { id: 'northwind-health' })).statusCode).toBe(400);
     // The member of the same workplace sees nothing: no list, no profile, no letter, no Send.
     // Note #1147: where a letter's short links go, behind the same pass.

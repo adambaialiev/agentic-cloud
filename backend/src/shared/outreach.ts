@@ -633,8 +633,10 @@ export interface OutreachWrite {
     source: string | null;
     generatedBy: string | null;
     generatedAt: string | null;
-    template?: { subject: string; body: string };
-    followUps?: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>>;
+    /** null empties it (note #1157: no ready words in Outreach; the old ones stay in its history). */
+    template?: { subject: string; body: string } | null;
+    /** null empties both follow-ups (note #1157). */
+    followUps?: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>> | null;
   } | null;
 }
 
@@ -829,16 +831,18 @@ export function parseOutreachWrite(json: unknown): { ok: true; write: OutreachWr
       targets.push(one.value);
     }
   }
-  let template: { subject: string; body: string } | undefined;
-  if (doc.template !== undefined) {
+  let template: { subject: string; body: string } | null | undefined;
+  if (doc.template === null) template = null;
+  else if (doc.template !== undefined) {
     const raw = doc.template as Record<string, unknown> | null;
     const subject = text(raw?.subject, 200);
     const body = words(raw?.body);
     if (!subject || !body) return { ok: false, error: 'template needs a subject and a body.' };
     template = { subject, body };
   }
-  let followUps: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>> | undefined;
-  if (doc.followUps !== undefined) {
+  let followUps: Partial<Record<'day4' | 'day11', { text: string; wordCount: number | null }>> | null | undefined;
+  if (doc.followUps === null) followUps = null;
+  else if (doc.followUps !== undefined) {
     const raw = doc.followUps as Record<string, Record<string, unknown> | undefined> | null;
     followUps = {};
     for (const step of ['day4', 'day11'] as const) {
@@ -849,15 +853,15 @@ export function parseOutreachWrite(json: unknown): { ok: true; write: OutreachWr
     }
     if (!followUps.day4 && !followUps.day11) return { ok: false, error: 'followUps has neither day4 nor day11.' };
   }
-  if (!targets.length && !template && !followUps) {
+  if (!targets.length && template === undefined && followUps === undefined) {
     return { ok: false, error: 'Nothing to write: give one company (an object with "company"), or "targets", "template" or "followUps".' };
   }
   return {
     ok: true,
     write: {
       targets,
-      words: template || followUps
-        ? { audience, source: text(doc.source, 600), generatedBy: text(doc.generatedBy, 200), generatedAt: text(doc.generatedAt, 40), ...(template ? { template } : {}), ...(followUps ? { followUps } : {}) }
+      words: template !== undefined || followUps !== undefined
+        ? { audience, source: text(doc.source, 600), generatedBy: text(doc.generatedBy, 200), generatedAt: text(doc.generatedAt, 40), ...(template !== undefined ? { template } : {}), ...(followUps !== undefined ? { followUps } : {}) }
         : null,
     },
   };
@@ -1478,8 +1482,9 @@ export interface OutreachDraft {
   to: string;
   subject: string;
   text: string;
-  /** Where the words came from: the owner's own version, the letter an agent wrote for this company, the template, or a follow-up. */
-  from: 'yours' | 'written' | 'template' | 'follow-up';
+  /** Where the words came from. Since note #1157 always 'blank': empty fields the owner pastes into (the
+   *  older values stay for the type's readers: his own version, an agent's letter, the template, a follow-up). */
+  from: 'blank' | 'yours' | 'written' | 'template' | 'follow-up';
   /** The agent that wrote these words, where an agent did. */
   by: string | null;
   /** The writer's own count, where it gives one. */
@@ -1603,37 +1608,31 @@ export function outreachDraft(record: OutreachTargetRecord, words: OutreachWords
   return { ...draft, subject: fill(draft.subject), text: fill(draft.text), newer: draft.newer ? { ...draft.newer, subject: fill(draft.newer.subject), text: fill(draft.newer.text) } : null };
 }
 
+/**
+ * The Send box's fields (note #1157; Adam, 11 Nov 2026, 14:07 UTC: "outreach
+ * app should keep sending emails, I will paste subject and body manually.
+ * Follow ups I will also get from you and paste manually there to send.").
+ * No ready words: a first letter is an empty subject and an empty body, a
+ * due follow-up an empty body under the thread's own subject (it goes as a
+ * reply in the same thread). The Chief of Staff gives him the words in the
+ * chat; Send sends exactly what he pasted. Words an agent once wrote into the
+ * record or the template stay in the store and its history, and are never
+ * drawn here.
+ */
 function draftWords(record: OutreachTargetRecord, all: OutreachWords | null, touches: OutreachTouch[], next: OutreachNext | null): OutreachDraft | null {
-  // An investor's letters come from the investors' words, never the customers' (note #1115).
   const words = outreachWordsFor(all, outreachAudience(record.seed));
   const to = targetEmail(record);
   if (!next || !to) return null;
-  const by = record.written?.by.name ?? null;
-  if (next.step === 'first') {
-    const written = record.seed.firstEmail;
-    const own = record.ownLetter;
-    if (own) {
-      const newer = outreachNewerDraft(record);
-      return {
-        step: 'first', to, subject: own.subject, text: own.body, from: 'yours', by: null, noteWordCount: null,
-        newer: newer ? { subject: newer.subject, text: newer.body, by, at: record.written?.at ?? null, noteWordCount: newer.wordCount } : null,
-      };
-    }
-    if (written) return { step: 'first', to, subject: written.subject, text: written.body, from: 'written', by, noteWordCount: written.wordCount, newer: null };
-    if (!words?.template) return null;
-    return { step: 'first', to, subject: words.template.subject, text: words.template.body, from: 'template', by: words.writtenBy?.name ?? null, noteWordCount: null, newer: null };
-  }
-  const followUp = words?.followUps?.[next.step];
-  if (!followUp) return null;
+  if (next.step === 'first') return { step: 'first', to, subject: '', text: '', from: 'blank', by: null, noteWordCount: null, newer: null };
   const first = touches.find((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent' && touch.step === 'first');
   return {
     step: next.step,
     to: first?.to ?? to,
     subject: followUpSubject(first?.subject ?? words?.template?.subject ?? ''),
-    text: followUp.text,
-    from: 'follow-up',
-    by: words?.writtenBy?.name ?? null,
-    noteWordCount: followUp.wordCount,
+    text: '',
+    from: 'blank',
+    by: null,
+    noteWordCount: null,
     newer: null,
   };
 }

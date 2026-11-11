@@ -14,7 +14,7 @@ import { OUTREACH_MAIL_ALLOWANCE, OutreachService, type OutreachMailEventInput }
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
-  addressMatches, hostMatches, outreachLocalTime, outreachMatch, outreachShortCodes, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
+  addressMatches, hostMatches, outreachLocalTime, outreachMatch, outreachShortCodes, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, outreachAudience, outreachWordsFor, type OutreachTouch, type OutreachWords, type OutreachWrite,
 } from '../../shared/outreach.js';
 import { fixtureOutreachProfile, fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 import type { CopyPulse } from '../../shared/copy-pulse.js';
@@ -164,7 +164,28 @@ async function world(opts: { send?: (mail: OutboundMail) => Promise<unknown>; sq
   return { service, outbox, messages, sent, sender, store, pulses, at: (iso: string) => { clock = new Date(iso); } };
 }
 
-const firstOf = async (service: OutreachService, id: string) => (await service.detail('user-adam', id))!.draft!;
+/**
+ * The Send box with the words pasted in (note #1157): the platform's fields
+ * are empty, and Adam pastes what an agent gave him in the chat. Here that is
+ * what the fixture's agents wrote: the company's letter (or the template) for
+ * a first, the follow-up's text for a later one, its short links filled.
+ */
+const blankOf = async (service: OutreachService, id: string) => (await service.detail('user-adam', id))!.draft!;
+const firstOf = async (service: OutreachService, id: string) => {
+  const answer = (await service.detail('user-adam', id))!;
+  const draft = answer.draft!;
+  const stored = await (service as unknown as { deps: { store: { words(userId: string): Promise<{ words: OutreachWords } | null> } } }).deps.store.words('user-adam');
+  const words = outreachWordsFor(stored?.words ?? null, outreachAudience(answer.seed));
+  const fill = (text: string) => text.split('{home link}').join(answer.links.home).split('{agents link}').join(answer.links.agents)
+    .split('{install link}').join(answer.links.install ?? '{install link}');
+  if (draft.step === 'first') {
+    const letter = answer.seed.firstEmail;
+    const subject = letter?.subject ?? words?.template?.subject ?? '';
+    const text = letter?.body ?? words?.template?.body ?? '';
+    return { ...draft, subject: fill(subject), text: fill(text) };
+  }
+  return { ...draft, text: fill(words?.followUps?.[draft.step]?.text ?? '') };
+};
 
 describe('Outreach, the service', () => {
   for (const sqlite of [false, true]) {
@@ -179,14 +200,35 @@ describe('Outreach, the service', () => {
     });
   }
 
-  it('opens the Send box with the letter an agent wrote, word for word and signed, and the template where none was written', async () => {
-    const { service } = await world();
-    const draft = await firstOf(service, 'northwind-health');
+  it('empties the stored template and follow-ups on a null, keeping the old words in their history (note #1157)', async () => {
+    const { service, store } = await world();
+    expect(parseOutreachWrite({ template: null, followUps: null })).toMatchObject({ ok: true, write: { targets: [], words: { template: null, followUps: null } } });
+    expect(await service.write('user-adam', ADA, { targets: [], words: { audience: 'customer', source: null, generatedBy: null, generatedAt: null, template: null, followUps: null } })).toMatchObject({ words: 'written' });
+    const kept = (await store.words('user-adam'))!.words;
+    expect(kept).toMatchObject({ template: null, followUps: { day4: null, day11: null } });
+    expect(kept.previous?.[0]).toMatchObject({ template: { subject: 'Your agents need a workplace' } });
+    // A letter emptied on a contact: "firstEmail": null, the old words on its timeline.
+    const emptied = { ...company('Northwind Health'), firstEmail: null };
+    expect(await service.write('user-adam', ADA, { targets: [emptied], words: null })).toMatchObject({ updated: [{ company: 'Northwind Health', fields: ['firstEmail'] }] });
+    const after = (await service.detail('user-adam', 'northwind-health'))!;
+    expect(after.row.written).toBe(false);
+    expect(after.draft).toMatchObject({ step: 'first', subject: '', text: '' });
+  });
+
+  it('opens an empty Send box, written letter or not, and sends exactly the words pasted into it (note #1157)', async () => {
+    const { service, sent } = await world();
     const written = batch().targets[0]!.firstEmail!;
-    expect(draft).toMatchObject({ step: 'first', to: 'mara@northwind-health.test', subject: written.subject, text: written.body, from: 'written', by: 'Rowan', newer: null });
-    const template = await firstOf(service, 'kestrel-systems');
-    expect(template.from).toBe('template');
-    expect(outreachPlaceholders(template.text)).toEqual(['{first name}', '{their line}']);
+    for (const id of ['northwind-health', 'kestrel-systems']) {
+      expect(await blankOf(service, id)).toMatchObject({ step: 'first', subject: '', text: '', from: 'blank', by: null, newer: null });
+    }
+    // The words an agent once wrote stay in the record; the box never draws them.
+    expect((await service.detail('user-adam', 'northwind-health'))!.seed.firstEmail).toMatchObject({ subject: written.subject, body: written.body });
+    await expect(service.send('user-adam', 'kestrel-systems', { step: 'first', subject: '', text: 'Hi.' })).rejects.toThrow('Write a subject.');
+    const pasted = 'Hi Lena,\n\nTwo lines,\nkept as they are: https://agenticcloudcomputer.com/go/abcdef\n\n– Adam';
+    await service.send('user-adam', 'kestrel-systems', { step: 'first', subject: 'A subject he pasted', text: pasted });
+    expect(sent[0]!.subject).toBe('A subject he pasted');
+    // Plain text exactly as pasted, line breaks kept (the mail service ends it with one newline); the same words as HTML beside it.
+    expect(sent[0]!.text).toBe(`${pasted}\n`);
   });
 
   it('says why there is no Send where there is none: no address, or not a fit', async () => {
@@ -254,8 +296,9 @@ describe('Outreach, the service', () => {
     at('2026-11-12T13:00:00Z');
     await expect(service.send('user-adam', 'northwind-health', { step: 'day4', text: 'Again' })).rejects.toThrow('due 2026-11-13. Nothing sends early.');
     at('2026-11-13T13:00:01Z');
+    // Due: an empty body under the thread's own subject (note #1157); he pastes the words.
+    expect(await blankOf(service, 'northwind-health')).toMatchObject({ step: 'day4', to: 'mara@northwind-health.test', subject: 'Re: Your agents need a workplace', text: '', from: 'blank' });
     const day4 = await firstOf(service, 'northwind-health');
-    expect(day4).toMatchObject({ step: 'day4', to: 'mara@northwind-health.test', subject: 'Re: Your agents need a workplace', from: 'follow-up' });
     expect(day4.text).toBe(batch().words!.followUps!.day4!.text);
     await service.send('user-adam', 'northwind-health', { step: 'day4', text: day4.text });
     expect(sent[1]).toMatchObject({ to: [{ address: 'mara@northwind-health.test' }], subject: 'Re: Your agents need a workplace' });
@@ -417,8 +460,8 @@ describe('Outreach, the service', () => {
     // He edits the letter on the site; it is his from now on.
     await service.letter('user-adam', 'northwind-health', { action: 'save', subject: agents.subject, text: `${agents.text}\nP.S. Mine.` });
     await service.letter('user-adam', 'northwind-health', { action: 'save', subject: agents.subject, text: `${agents.text}\nP.S. Mine, again.` });
-    let draft = await firstOf(service, 'northwind-health');
-    expect(draft).toMatchObject({ from: 'yours', text: `${agents.text}\nP.S. Mine, again.`, newer: null });
+    // Since note #1157 the box is empty whatever is kept: his edit and Rowan's letters are history in the record.
+    expect(await blankOf(service, 'northwind-health')).toMatchObject({ from: 'blank', subject: '', text: '', newer: null });
     let detail = (await service.detail('user-adam', 'northwind-health'))!;
     expect(detail.touches.filter((one) => one.kind === 'letter')).toEqual([expect.objectContaining({ action: 'saved', subject: agents.subject, body: agents.text })]);
     // Rowan writes a new letter: his stays in the box, Rowan's waits beside it.
@@ -426,29 +469,27 @@ describe('Outreach, the service', () => {
     const rewritten = company('Northwind Health');
     rewritten.firstEmail!.body = 'Rowan\'s second try.';
     await service.write('user-adam', ROWAN, { targets: [rewritten], words: null });
-    draft = await firstOf(service, 'northwind-health');
-    expect(draft).toMatchObject({ from: 'yours', text: `${agents.text}\nP.S. Mine, again.`, newer: { text: 'Rowan\'s second try.', by: 'Rowan', at: '2026-11-09T15:00:00.000Z' } });
+    expect(await blankOf(service, 'northwind-health')).toMatchObject({ from: 'blank', newer: null });
     expect((await service.list('user-adam')).rows.find((row) => row.id === 'northwind-health')).toMatchObject({ yours: true, newerDraft: true, match: 'matches' });
     // He keeps his: Rowan's is set aside, on the timeline.
     await service.letter('user-adam', 'northwind-health', { action: 'keep' });
-    draft = await firstOf(service, 'northwind-health');
-    expect(draft).toMatchObject({ from: 'yours', newer: null });
+    expect(await blankOf(service, 'northwind-health')).toMatchObject({ from: 'blank', newer: null });
     detail = (await service.detail('user-adam', 'northwind-health'))!;
     expect(detail.touches[0]).toMatchObject({ kind: 'letter', action: 'kept', body: 'Rowan\'s second try.', by: 'Rowan' });
     // A third try waits again; this time he takes it.
     rewritten.firstEmail!.body = 'Rowan\'s third try.';
     await service.write('user-adam', ROWAN, { targets: [rewritten], words: null });
-    expect((await firstOf(service, 'northwind-health')).newer?.text).toBe('Rowan\'s third try.');
+    expect((await service.list('user-adam')).rows.find((row) => row.id === 'northwind-health')).toMatchObject({ newerDraft: true });
     await service.letter('user-adam', 'northwind-health', { action: 'take' });
-    draft = await firstOf(service, 'northwind-health');
-    expect(draft).toMatchObject({ from: 'written', text: 'Rowan\'s third try.', by: 'Rowan', newer: null });
+    expect(await blankOf(service, 'northwind-health')).toMatchObject({ from: 'blank', text: '' });
     detail = (await service.detail('user-adam', 'northwind-health'))!;
     expect(detail.touches[0]).toMatchObject({ kind: 'letter', action: 'took', body: `${agents.text}\nP.S. Mine, again.` });
     // Where he never touched it, a new letter simply replaces the draft.
     const fernhill = company('Fernhill Labs');
     fernhill.firstEmail!.body = 'Fresh words.';
     await service.write('user-adam', ROWAN, { targets: [fernhill], words: null });
-    expect(await firstOf(service, 'fernhill-labs')).toMatchObject({ from: 'written', text: 'Fresh words.', newer: null });
+    expect(await blankOf(service, 'fernhill-labs')).toMatchObject({ from: 'blank', text: '' });
+    expect((await service.detail('user-adam', 'fernhill-labs'))!.seed.firstEmail?.body).toBe('Fresh words.');
   });
 
   it('holds a first letter to 200 words, subject in (note #1128): 200 goes in and sends, 201 is refused at the write and at Send', async () => {
@@ -524,7 +565,7 @@ describe('Outreach, the service', () => {
       const { service } = await world({ sqlite });
       expect((await service.detail('user-adam', 'northwind-health'))!.seed.profile).toEqual(fixtureOutreachProfile());
       await service.letter('user-adam', 'northwind-health', { action: 'save', subject: 'Mine', text: 'My words.' });
-      expect(await firstOf(service, 'northwind-health')).toMatchObject({ from: 'yours', subject: 'Mine', text: 'My words.' });
+      expect((await service.detail('user-adam', 'northwind-health'))!.touches.find((one) => one.kind === 'letter')).toMatchObject({ action: 'saved' });
     });
   }
 
@@ -551,8 +592,7 @@ describe('Outreach, the service', () => {
     // Day 4: the follow-ups of the whole list fall due together; more than the inbox's 20 replies an hour go.
     at('2026-11-13T14:00:02Z');
     for (let n = 0; n < 25; n += 1) {
-      const draft = (await service.detail('user-adam', `made-up-${n}`))!.draft!;
-      await service.send('user-adam', `made-up-${n}`, { step: 'day4', text: draft.text });
+      await service.send('user-adam', `made-up-${n}`, { step: 'day4', text: `Following up, ${n}.` });
     }
     expect(sent).toHaveLength(85);
   });
@@ -827,11 +867,10 @@ describe('Investors, a second audience (note #1115)', () => {
     expect(after.rows.filter((row) => row.audience === 'investor').map((row) => [row.company, row.thesis, row.fit])).toEqual([
       ['Example Angels', 'partly', 'fit'], ['Made Up Ventures', 'thesis match', 'fit'], ['Quiet Capital', 'no public thesis', 'not a fit']]);
     const made = (await service.detail('user-adam', 'made-up-ventures'))!;
-    expect(made.draft).toBeNull();
-    expect(made.noSend).toBe('No letter is written for this investor yet, and there is no investor template. An agent writes it here with agentbuilt outreach set.');
+    // An empty box, as for every contact since note #1157: he pastes the words.
+    expect(made.draft).toMatchObject({ step: 'first', subject: '', text: '', from: 'blank' });
+    expect(made.noSend).toBeNull();
     expect((await service.detail('user-adam', 'quiet-capital'))!.noSend).toBe('No public thesis we match: no public thesis found. Kept so it is not added again.');
-    // The customers' template still serves the customers.
-    expect((await firstOf(service, 'kestrel-systems')).from).toBe('template');
     const shown = (await service.agentList('user-adam')).find((row) => row.id === 'made-up-ventures');
     expect(shown).toMatchObject({ audience: 'investor', thesis: 'thesis match' });
   });
@@ -848,7 +887,7 @@ describe('Investors, a second audience (note #1115)', () => {
     expect(list.lastWrite).toEqual({ at: '2026-11-09T14:00:00.000Z', by: 'Ada' });
     expect(customersBefore!.by).toBe('Rowan');
     const draft = await firstOf(service, 'made-up-ventures');
-    expect(draft).toMatchObject({ from: 'template', by: 'Ada', subject: 'Your thesis, our workplace' });
+    expect(draft).toMatchObject({ from: 'blank', subject: 'Your thesis, our workplace' });
     expect(outreachPlaceholders(draft.text)).toEqual(['{first name}', '{their thesis}']);
     expect(draft.text).toMatch(/agenticcloudcomputer\.com\/go\/[a-z2-9]{6}$/);
     await expect(service.send('user-adam', 'made-up-ventures', { step: 'first', subject: draft.subject, text: draft.text })).rejects.toThrow('Fill in {first name} and {their thesis} first.');
