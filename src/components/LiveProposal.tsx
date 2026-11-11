@@ -10,6 +10,7 @@ import { agentSignature, approveHint, runtimeLine, statusPill } from '../../back
 import { relative, useNow } from '../../backend/workspace-ui/src/ui/time';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, HOUR, MINUTE, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A proposal, live: the top of the proposal screen as the app draws it —
@@ -70,7 +71,7 @@ function Panel() {
       <div className="landing-page-head">
         <div className="phead">
           <div className="pname">
-            <h1 id="prTitle">{PR.title}</h1>
+            <PanelTitle id="prTitle">{PR.title}</PanelTitle>
             <ProposalEyebrow repoName={PR.repoName} repoTo={null} number={PR.number} notes={[{ number: 57 }]} />
           </div>
         </div>

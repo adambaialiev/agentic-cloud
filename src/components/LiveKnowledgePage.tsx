@@ -6,6 +6,7 @@ import { MarginThread } from '../../backend/workspace-ui/src/screens/decisions/M
 import { HandRow } from '../../backend/workspace-ui/src/ui/HandRow';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { DAY, FACES, HOUR, ago } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A knowledge page, live: the page screen's own pieces — the page through the
@@ -72,7 +73,7 @@ function Panel({ close }: { close: boolean }) {
       <div className="landing-page-head">
         <div className="phead">
           <div className="pname">
-            <h1 id="kpageTitle">{page.title}</h1>
+            <PanelTitle id="kpageTitle">{page.title}</PanelTitle>
             <div className="sub" id="kpageSub">{page.description}</div>
           </div>
         </div>

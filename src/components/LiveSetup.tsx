@@ -7,7 +7,8 @@ import {
   firstRunSeatReceipt,
 } from '../../backend/src/shared/first-run';
 import type { HomeAgent } from '../../backend/workspace-ui/src/workspace/live';
-import { AuthShell, EmailPanel } from '../../backend/workspace-ui/src/auth/AuthGate';
+import { EmailPanel } from '../../backend/workspace-ui/src/auth/AuthGate';
+import { SetupHead } from '../../backend/workspace-ui/src/onboarding/SetupHead';
 import { chatDayLabel } from '../../backend/workspace-ui/src/screens/chat/chat-notice';
 import { ChatMessageRow } from '../../backend/workspace-ui/src/screens/chat/ChatMessageRow';
 import { ChiefOfStaffEmpty, FirstRunSignIn, TeamArrivingCard } from '../../backend/workspace-ui/src/screens/home/FirstRun';
@@ -17,6 +18,7 @@ import { CHIEF_OF_STAFF } from '../../backend/workspace-ui/src/ui/chief-of-staff
 import { ContextRing } from '../../backend/workspace-ui/src/ui/ContextRing';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FLEET, ORG, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * The screens a person meets first — sign-up, sign-in, and the first run
@@ -62,7 +64,12 @@ export const DOCS_MAIL_DOMAIN = 'agents.northstar.com';
 function SignUpForm({ creating }: { creating: boolean }) {
   const { api } = useSession();
   return (
-    <AuthShell title={creating ? 'Create your Workspace.' : 'Your Workspace, anywhere.'}>
+    /* AuthShell's own three lines (auth/AuthGate.tsx), copied so its title
+       is a PanelTitle and not a second h1 on a documentation page (note
+       #1149). */
+    <section id="authGate" className="authplates" aria-labelledby="authTitle">
+      <SetupHead home />
+      <div className="authhero"><PanelTitle id="authTitle">{creating ? 'Create your Workspace.' : 'Your Workspace, anywhere.'}</PanelTitle></div>
       <EmailPanel
         api={api}
         email=""
@@ -77,7 +84,7 @@ function SignUpForm({ creating }: { creating: boolean }) {
         privateCopy
         mailDomain={DOCS_MAIL_DOMAIN}
       />
-    </AuthShell>
+    </section>
   );
 }
 
@@ -127,7 +134,7 @@ function ChiefOfStaffChat({ rows: build, runtime, under, activity, agents = FLEE
               <ContextRing context={undefined}><AgentFace agent={{ avatarUrl: CHIEF_FACE }} /></ContextRing>
             </span>
             <div className="chatwho">
-              <h1 id="recapChatTitle">{CHIEF_OF_STAFF}</h1>
+              <PanelTitle id="recapChatTitle">{CHIEF_OF_STAFF}</PanelTitle>
               <div className="sub chatruntime" id="recapChatRuntime"><span>{runtime}</span></div>
             </div>
           </div>
@@ -266,7 +273,7 @@ export function LiveClaudeSignIn({ className = '' }: { className?: string }) {
     <LivePanel size="wide" className={className} says="Claude's sign-in page: step one, Open and approve, with the Open the Claude sign-in button, a copyable link and a line saying you sign in on Anthropic's own page; step two, Paste the code it gives you, with the code field; then Cancel and Finish sign-in.">
       <LiveWorkspace>
         <div className="screen" id="screenSeatSignIn">
-          <div className="phead"><div className="pname"><h1 id="seatSignInTitle">Sign in to Claude</h1></div></div>
+          <div className="phead"><div className="pname"><PanelTitle id="seatSignInTitle">Sign in to Claude</PanelTitle></div></div>
           <div className="card">
             <div id="seatSignInBody">
               <div className="signinstep">

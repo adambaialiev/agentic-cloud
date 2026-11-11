@@ -5,6 +5,7 @@ import { ProposalRow } from '../../backend/workspace-ui/src/screens/home/Decisio
 import { Icon } from '../../backend/workspace-ui/src/ui/icons';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { DAY, FACES, HOUR, MINUTE, ago } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A repository, live: the repository screen's Overview over northstar-routing —
@@ -107,7 +108,7 @@ export default function LiveRepo({ className = '' }: { className?: string }) {
       <LiveWorkspace prs={prs}>
         <div className="screen">
           <div className="phead">
-            <div className="pname"><h1>{REPO}</h1></div>
+            <div className="pname"><PanelTitle>{REPO}</PanelTitle></div>
           </div>
           <div className="segtabs" role="tablist" aria-label="Repository view">
             <button className="segtab" type="button" role="tab" aria-selected tabIndex={0}>Overview</button>

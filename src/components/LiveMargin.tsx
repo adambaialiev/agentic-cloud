@@ -5,6 +5,7 @@ import { useNoteRefs } from '../../backend/workspace-ui/src/render/useNoteRefs';
 import { MarginThread } from '../../backend/workspace-ui/src/screens/decisions/MarginThread';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, HOUR, MINUTE, ago } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A page's margin, live, with people in it: the knowledge page on how a
@@ -69,7 +70,7 @@ function Panel() {
       <div className="landing-page-head">
         <div className="phead">
           <div className="pname">
-            <h1 id="bpageTitle">{PAGE.title}</h1>
+            <PanelTitle id="bpageTitle">{PAGE.title}</PanelTitle>
             <div className="sub" id="bpageSub">{PAGE.description}</div>
           </div>
         </div>

@@ -125,7 +125,7 @@ const ROWS: { need: string; fly: Cell; aws: Cell; gcp: Cell; vercel: Cell }[] = 
 
 /* The questions an engineering lead's team asks before a yes (the owner,
    07:06 UTC), answered plainly. */
-const QUESTIONS: { q: string; a: string; cite: SourceId[] }[] = [
+export const QUESTIONS: { q: string; a: string; cite: SourceId[] }[] = [
   {
     q: 'Is Fly one more vendor to approve?',
     a: 'Yes, one. Fly has a SOC 2 Type II report and a HIPAA package with a signed BAA. Everything sits in one Fly account of yours, with one bill.',

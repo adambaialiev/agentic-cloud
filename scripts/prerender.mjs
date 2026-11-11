@@ -19,11 +19,12 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { nofollowDemoLinks, pageFingerprint } from './prerender-lib.mjs';
 
 const root = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const distDir = join(root, 'dist');
 
-const { ROUTES, DOCS, render } = await import(join(root, 'dist-ssr/entry-server.js'));
+const { ROUTES, DOCS, APP_PAGES, render, structuredData } = await import(join(root, 'dist-ssr/entry-server.js'));
 
 const SITE_ORIGIN = 'https://agenticcloudcomputer.com';
 
@@ -45,6 +46,28 @@ function replaceMeta(html, pattern, replacement) {
   return html.replace(pattern, replacement);
 }
 
+// The JSON-LD blocks of a route (src/lib/structured-data.ts, note #1149),
+// written into its <head>. `<` is escaped so no string in the data can close
+// the script element early.
+function structuredDataTags(path) {
+  return structuredData(path)
+    .map((block) => `    <script type="application/ld+json">${JSON.stringify(block).replace(/</g, '\\u003c')}</script>\n`)
+    .join('');
+}
+
+// When each page last changed, for the sitemap's <lastmod> (note #1149). The
+// build machine has no history to ask (it fetches one commit), and stamping
+// every page with the build's own date teaches a search engine to ignore the
+// field. So the dates are recorded: src/lib/sitemap-lastmod.json holds, per
+// route, a fingerprint of the page's words and the day they last changed. A
+// page whose words still match keeps its recorded day; a page that changed
+// since is dated today, which is the day it ships. `npm run sitemap:dates`
+// (this script with UPDATE_LASTMOD=1) records the new fingerprints, so the
+// changed pages keep that day on later builds.
+const lastmodPath = join(root, 'src/lib/sitemap-lastmod.json');
+const recordedLastmod = JSON.parse(await readFile(lastmodPath, 'utf8').catch(() => '{}'));
+const today = new Date().toISOString().slice(0, 10);
+const lastmod = {};
 const template = await readFile(join(distDir, 'index.html'), 'utf8');
 
 if (!template.includes('<div id="root"></div>')) {
@@ -52,7 +75,12 @@ if (!template.includes('<div id="root"></div>')) {
 }
 
 for (const route of ROUTES) {
-  const markup = await render(route.path);
+  const markup = nofollowDemoLinks(await render(route.path));
+  const fingerprint = pageFingerprint(route, markup);
+  const recorded = recordedLastmod[route.path];
+  lastmod[route.path] = recorded && recorded.fingerprint === fingerprint
+    ? recorded
+    : { fingerprint, lastmod: today };
   const canonicalPath = route.canonicalPath ?? route.path;
   const canonical = `${SITE_ORIGIN}${canonicalPath === '/' ? '/' : canonicalPath}`;
   const title = escapeAttribute(route.title);
@@ -60,6 +88,9 @@ for (const route of ROUTES) {
   // preview a shorter one (the home page since note #1004).
   const shareTitle = escapeAttribute(route.shareTitle ?? route.title);
   const description = escapeAttribute(route.description);
+  // The card's description: the page's own, unless the route gives its share
+  // preview different words (the home page since note #1149).
+  const shareDescription = escapeAttribute(route.shareDescription ?? route.description);
 
   let html = template;
   html = replaceMeta(html, /<title>[\s\S]*?<\/title>/, `<title>${title}</title>`);
@@ -98,12 +129,12 @@ for (const route of ROUTES) {
   html = replaceMeta(
     html,
     /<meta property="og:description" content="[^"]*" \/>/,
-    `<meta property="og:description" content="${description}" />`,
+    `<meta property="og:description" content="${shareDescription}" />`,
   );
   html = replaceMeta(
     html,
     /<meta name="twitter:description" content="[^"]*" \/>/,
-    `<meta name="twitter:description" content="${description}" />`,
+    `<meta name="twitter:description" content="${shareDescription}" />`,
   );
   // A page about something an agent can do for its person points at the
   // guide written for that agent (note #829): agents that read a page's head
@@ -120,6 +151,11 @@ for (const route of ROUTES) {
       /<meta name="robots" content="[^"]*" \/>/,
       '<meta name="robots" content="noindex, nofollow" />',
     );
+  }
+
+  if (!route.noindex) {
+    const tags = structuredDataTags(route.path);
+    if (tags) html = html.replace('</head>', `${tags}  </head>`);
   }
 
   html = html.replace('<div id="root"></div>', `<div id="root">${markup}</div>`);
@@ -141,6 +177,22 @@ for (const route of ROUTES) {
   console.log(`prerendered ${route.path.padEnd(12)} (${(html.length / 1024).toFixed(1)} kB)`);
 }
 
+// An address under /docs that is no chapter answered 200 with a copy of the
+// home page: Pages serves index.html for any path it has no file for, unless
+// a 404.html stands in that folder or above it (note #1144, finding 3). This
+// one stands in /docs alone, so only the documentation's unknown addresses
+// change: they answer 404 with the contents page, which is where the app
+// sends an unknown chapter anyway (DocsChapterRoute).
+{
+  let html = template;
+  html = replaceMeta(html, /<title>[\s\S]*?<\/title>/, '<title>Page not found — Docs — Agentic Cloud Computer</title>');
+  html = replaceMeta(html, /<meta name="robots" content="[^"]*" \/>/, '<meta name="robots" content="noindex, follow" />');
+  html = replaceMeta(html, /<link rel="canonical" href="[^"]*" \/>/, `<link rel="canonical" href="${SITE_ORIGIN}/docs" />`);
+  html = html.replace('<div id="root"></div>', `<div id="root">${nofollowDemoLinks(await render('/docs'))}</div>`);
+  await writeFile(join(distDir, 'docs', '404.html'), html);
+  console.log('wrote docs/404.html');
+}
+
 // robots.txt, sitemap.xml and llms.txt are generated here rather than kept in
 // public/ so they cannot drift from ROUTES: a page added there is a page in
 // the sitemap, and a page marked noindex is left out of both without anyone
@@ -149,12 +201,29 @@ for (const route of ROUTES) {
 // robots.txt was handed a webpage and told it was fine.
 const indexable = ROUTES.filter((route) => !route.noindex);
 
+if (process.env.UPDATE_LASTMOD === '1') {
+  const kept = Object.fromEntries(ROUTES.filter((route) => !route.noindex).map((route) => [route.path, lastmod[route.path]]));
+  await writeFile(lastmodPath, `${JSON.stringify(kept, null, 2)}\n`);
+  console.log(`recorded the pages' dates in src/lib/sitemap-lastmod.json`);
+}
+const redated = indexable.filter((route) => recordedLastmod[route.path]?.fingerprint !== lastmod[route.path].fingerprint);
+console.log(
+  `sitemap dates: ${indexable.length - redated.length} of ${indexable.length} pages keep their recorded day`
+    + (redated.length ? `; changed since and dated ${today}: ${redated.map((route) => route.path).join(' ')}` : ''),
+);
+
+// The pages the Workspace draws (the app catalogue, the open-source
+// repository) change with every deploy and every push, so their day is the
+// build's.
 await writeFile(
   join(distDir, 'sitemap.xml'),
   `<?xml version="1.0" encoding="UTF-8"?>\n`
     + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
     + indexable
-      .map((route) => `  <url><loc>${SITE_ORIGIN}${route.path === '/' ? '/' : route.path}</loc></url>\n`)
+      .map((route) => `  <url><loc>${SITE_ORIGIN}${route.path === '/' ? '/' : route.path}</loc><lastmod>${lastmod[route.path].lastmod}</lastmod></url>\n`)
+      .join('')
+    + APP_PAGES
+      .map((page) => `  <url><loc>${SITE_ORIGIN}${page.path}</loc><lastmod>${today}</lastmod></url>\n`)
       .join('')
     + `</urlset>\n`,
 );
@@ -227,7 +296,8 @@ await writeFile(
   join(distDir, 'llms.txt'),
   `# Agentic Cloud Computer
 
-> Your agents are great engineers. Give them a workplace. Claude Code and
+> The self-hosted, open-source workplace for Claude Code, Codex and OpenCode
+> agents. Your agents are great engineers. Give them a workplace. Claude Code and
 > Codex agents get what every engineer gets on day one: a team that sees their
 > work, a memory, the keys, a computer of their own and a lead who hands out
 > the jobs, with git and CI/CD, hosting, email and notes built in. And all of
@@ -235,7 +305,8 @@ await writeFile(
 
 ## Your own Agentic Cloud
 
-A company runs the whole platform in its own cloud account, on a domain of its
+Agentic Cloud Computer is self-hosted: a company runs the whole platform in its
+own cloud account, on a domain of its
 own: the Workspace, the agents' machines, git with CI/CD, hosting, storage and
 email. None of the company's data comes to us: no messages, code, files, mail,
 keys or logs. Once a day it sends us a short report of counts and the contact
@@ -261,6 +332,15 @@ verify each step and how to finish.
 Why it runs on Fly and not AWS, Google Cloud or Vercel, need by need with the
 vendors' own sources, and the questions a team asks first:
 https://agenticcloudcomputer.com/why-fly.
+
+## Open source
+
+The whole platform is open source under the AGPL-3.0, the installer included.
+The code, its history and its proposals are public at
+${SITE_ORIGIN}/acc/agentic-cloud, and the licence is
+${SITE_ORIGIN}/acc/agentic-cloud?path=LICENSE&file=1. A modified version run as
+a service must offer its source. The name and the logo are not under that
+licence.
 
 ## What it is
 
@@ -289,6 +369,8 @@ becomes their own email address on its domain.
 
 - Git with CI/CD, hosting, storage, email, Drive, notes and memory built in: nothing to
   set up before the first job.
+- Self-hosted in the customer's own cloud account, and open source under the
+  AGPL-3.0.
 - Claude Code, Codex and OpenCode agents in one Workspace, on the same
   repositories.
 - Parallel work with shared notes, knowledge and repository context.
@@ -326,9 +408,10 @@ ${DOCS.map((chapter) => `- ${SITE_ORIGIN}/docs/${chapter.slug} — ${chapter.tit
 ## Links
 
 ${indexable.map((route) => `- [${route.title}](${SITE_ORIGIN}${route.path}): ${route.description}`).join('\n')}
+${APP_PAGES.map((page) => `- [${page.title}](${SITE_ORIGIN}${page.path}): ${page.description}`).join('\n')}
 - [Everything a workplace does, for agents](${SITE_ORIGIN}/workplace.md): every part of a workplace and how an agent uses it, on one page in plain Markdown
 - [Setup guide for AI agents](${SITE_ORIGIN}/own-cloud.md): the steps an agent follows to set up your own Agentic Cloud, and where it stops to ask its person
 `,
 );
 
-console.log(`wrote robots.txt, sitemap.xml (${indexable.length} urls) and llms.txt`);
+console.log(`wrote robots.txt, sitemap.xml (${indexable.length + APP_PAGES.length} urls) and llms.txt`);

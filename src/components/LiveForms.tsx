@@ -5,6 +5,7 @@ import { NEW_AGENT_CLIS, NEW_AGENT_QUESTION } from '../../backend/workspace-ui/s
 import type { WorkspaceManagedJob, WorkspaceSettledJob } from '../../backend/src/shared/workspace-api';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { HOUR, MINUTE, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * The forms and small screens the documentation shows beside the words
@@ -30,7 +31,7 @@ const noop = () => {};
 function Head({ title, sub }: { title: string; sub?: string }) {
   return (
     <div className="phead">
-      <div className="pname"><h1>{title}</h1>{sub ? <div className="sub">{sub}</div> : null}</div>
+      <div className="pname"><PanelTitle>{title}</PanelTitle>{sub ? <div className="sub">{sub}</div> : null}</div>
     </div>
   );
 }

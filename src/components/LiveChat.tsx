@@ -9,6 +9,7 @@ import { ContextRing } from '../../backend/workspace-ui/src/ui/ContextRing';
 import type { HomeAgent } from '../../backend/workspace-ui/src/workspace/live';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, FLEET, HOUR, MINUTE, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A conversation with an agent, live: the app's own `ChatMessageRow` for
@@ -113,7 +114,7 @@ function Conversation({ agent, rows: build, activity, says, className }: {
               <ContextRing context={agent.context}><AgentFace agent={agent} /></ContextRing>
             </div>
             <div className="chatwho">
-              <h1 id="agentChatTitle"><AgentName agent={agent} /></h1>
+              <PanelTitle id="agentChatTitle"><AgentName agent={agent} /></PanelTitle>
               <div className="sub chatruntime" id="agentChatStatus"><span>{agentRuntimeLine(agent)}</span></div>
             </div>
           </div>

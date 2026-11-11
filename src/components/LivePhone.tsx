@@ -12,6 +12,7 @@ import { agentSwitchStack } from '../../backend/workspace-ui/src/screens/chat/ag
 import { RUBY, RUBY_ROWS } from './LiveChat';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { HERO_FLEET, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * The same Workspace, in your pocket: ONE phone, at a phone's real width,
@@ -102,7 +103,7 @@ function Screen() {
         </div>
         <div className="chatwho">
           <div className="chatnamedoor">
-            <h1 id="agentChatTitle"><AgentName agent={RUBY} /></h1>
+            <PanelTitle id="agentChatTitle"><AgentName agent={RUBY} /></PanelTitle>
           </div>
           <div className="sub chatruntime" id="agentChatStatus"><span>{agentRuntimeLine(RUBY)}</span></div>
         </div>

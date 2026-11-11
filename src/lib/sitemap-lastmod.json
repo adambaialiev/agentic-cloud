@@ -1,0 +1,82 @@
+{
+  "/": {
+    "fingerprint": "aafbd813661b13c7",
+    "lastmod": "2026-11-11"
+  },
+  "/product": {
+    "fingerprint": "86b012aa46566c3c",
+    "lastmod": "2026-11-11"
+  },
+  "/terms": {
+    "fingerprint": "92a6c8d12abdf1d9",
+    "lastmod": "2026-11-11"
+  },
+  "/privacy": {
+    "fingerprint": "410b2b81d9ee46bf",
+    "lastmod": "2026-11-11"
+  },
+  "/claude-code-in-the-cloud": {
+    "fingerprint": "33bdd49cab8623f2",
+    "lastmod": "2026-11-11"
+  },
+  "/codex-in-the-cloud": {
+    "fingerprint": "3b41054998c76b09",
+    "lastmod": "2026-11-11"
+  },
+  "/ai-agents-for-your-team": {
+    "fingerprint": "f825df133a67fa1a",
+    "lastmod": "2026-11-11"
+  },
+  "/four-phases": {
+    "fingerprint": "93c0188bb0dbca7e",
+    "lastmod": "2026-11-11"
+  },
+  "/why-fly": {
+    "fingerprint": "4a6cae12f5e5f71a",
+    "lastmod": "2026-11-11"
+  },
+  "/docs": {
+    "fingerprint": "fecf34057bb4b174",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/getting-started": {
+    "fingerprint": "e14007cee7a22e9c",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/agents": {
+    "fingerprint": "c620cd26f606d600",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/talking-to-agents": {
+    "fingerprint": "8f8771ba28d9440f",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/notes-knowledge-drive": {
+    "fingerprint": "2ee07c2939232e36",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/repositories-and-proposals": {
+    "fingerprint": "99cda2b87314f7d7",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/sites-and-domains": {
+    "fingerprint": "a2153edc489800df",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/secrets": {
+    "fingerprint": "4aaba71c4ea9d7c1",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/email": {
+    "fingerprint": "7a5d36f457e706de",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/workplace-and-people": {
+    "fingerprint": "34eed9684618c9c7",
+    "lastmod": "2026-11-11"
+  },
+  "/docs/your-cloud-and-subscriptions": {
+    "fingerprint": "90c83d16f2105155",
+    "lastmod": "2026-11-11"
+  }
+}

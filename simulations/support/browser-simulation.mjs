@@ -96,7 +96,7 @@ export const normalizedText = (value) => String(value || '').replace(/\s+/g, ' '
  * on line 32 for days, which nothing anywhere reported, because these
  * harnesses are not in CI's browser lane. One copy is one thing to update.
  */
-export const LANDING_HEADLINE = /Your agents are great engineers\. Give them a workplace\./;
+export const LANDING_HEADLINE = /The self-hosted, open-source workplace for Claude Code, Codex and OpenCode agents\./;
 /** The shell draws only the panel that is showing, where the old page kept the
  *  others hidden in the document; "not showing" is either. */
 export const hiddenOrAbsent = (page, selector) => page.$eval(selector, (node) => node.hidden).catch(() => true);

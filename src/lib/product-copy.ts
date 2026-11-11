@@ -161,6 +161,9 @@ export const PRODUCT_HEADLINE = 'Everything an agent needs to finish the job.';
    2026-10-28): only the private copy is offered, and a copy was then free
    only in its one-month trial or for a design partner, so the line says where
    it runs instead. Since note #935 (2026-11-01) your own Agentic Cloud is free
-   for now, with no licence and no key (claims-we-never-make). */
+   for now, with no licence and no key (claims-we-never-make).
+   Since note #1149 (Adam, 11 Nov 2026, agreeing to the search fixes of note
+   #1144) the second sentence opens on "Self-hosted": the word people search
+   for, which no page of the site said. */
 export const BUILT_IN_LINE =
-  'Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for.';
+  'Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. Self-hosted in your own cloud account, on the plan you already pay for.';

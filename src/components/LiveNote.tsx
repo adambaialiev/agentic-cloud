@@ -8,6 +8,7 @@ import { HandRow } from '../../backend/workspace-ui/src/ui/HandRow';
 import { useNow } from '../../backend/workspace-ui/src/ui/time';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, MINUTE, NOTE_HANDOFF_FLEET, ago } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A note, live: the note screen's own pieces — the words through the app's
@@ -43,7 +44,7 @@ function Panel() {
     <div className="screen" id="screenNote">
       <div className="phead">
         <div className="pname">
-          <h1 id="noteTitle" className="clamped">{NOTE.title}</h1>
+          <PanelTitle id="noteTitle" className="clamped">{NOTE.title}</PanelTitle>
         </div>
       </div>
       <div className="sub who" id="noteSub">

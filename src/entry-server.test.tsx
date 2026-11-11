@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { ROUTES, render } from './entry-server';
+import { APP_PAGES, ROUTES, render, structuredData } from './entry-server';
+// @ts-expect-error a plain Node module of the build, with no types of its own
+import { nofollowDemoLinks, pageFingerprint } from '../scripts/prerender-lib.mjs';
 import { CHAPTERS } from './docs/chapters';
 
 // The prerender is only worth anything if the HTML it produces actually
@@ -40,6 +42,90 @@ describe('prerendered routes', () => {
     expect(ROUTES.find((route) => route.path === '/og-preview')?.noindex).toBe(true);
   });
 
+  // Note #1149, from the search report on note #1144: 7 of 20 titles ran past
+  // what a search result shows (one was 108 characters) and 8 descriptions
+  // past 160. A title is about 60 characters, 66 at most; a description 160.
+  it('keeps every title and description inside what a search result shows', () => {
+    for (const route of ROUTES.filter((entry) => !entry.noindex)) {
+      expect(route.title.length, `${route.path} title: ${route.title}`).toBeLessThanOrEqual(66);
+      expect(route.description.length, `${route.path} description`).toBeLessThanOrEqual(160);
+    }
+  });
+
+  // The report counted 12 of 20 pages with more than one h1, because every
+  // live panel brought its screen's own ("Chief of Staff", "Ruby", "Milo").
+  // A panel's title is a PanelTitle now, so each page has exactly its own.
+  it('draws exactly one h1 on every page', async () => {
+    for (const route of ROUTES.filter((entry) => !entry.noindex)) {
+      const html = await render(route.path);
+      expect(html.match(/<h1[\s>]/g) ?? [], route.path).toHaveLength(1);
+    }
+  }, 60_000);
+
+  it('says who we are and what each page is in structured data', async () => {
+    const types = (path: string) => structuredData(path).map((block) => (block as { '@type': string })['@type']);
+    expect(types('/')).toEqual(['Organization', 'WebSite']);
+    const organization = structuredData('/')[0] as { name: string; sameAs: string[]; logo: { url: string } };
+    expect(organization.name).toBe('Agentic Cloud Computer');
+    expect(organization.sameAs).toEqual(['https://agenticcloudcomputer.com/acc/agentic-cloud', 'https://x.com/AgenticCloud']);
+    expect(organization.logo.url).toBe('https://agenticcloudcomputer.com/android-chrome-512x512.png');
+    expect(types('/product')).toEqual(['SoftwareApplication']);
+    // The price is the sentence on claims-we-never-make, "for now" included.
+    const software = structuredData('/product')[0] as { offers: { price: string; description: string } };
+    expect(software.offers.price).toBe('0');
+    expect(software.offers.description).toMatch(/free for now: no licence, no key and no charge from us/);
+    expect(JSON.stringify(structuredData('/product'))).not.toMatch(/free forever|always free/i);
+    // A FAQ block only where the page draws the questions, and only the
+    // words it draws.
+    for (const path of ['/claude-code-in-the-cloud', '/codex-in-the-cloud', '/why-fly']) {
+      expect(types(path), path).toEqual(['FAQPage']);
+      const text = (await render(path)).replace(/<[^>]*>/g, '').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
+      const page = structuredData(path)[0] as { mainEntity: { name: string; acceptedAnswer: { text: string } }[] };
+      expect(page.mainEntity.length, path).toBeGreaterThanOrEqual(3);
+      for (const entry of page.mainEntity) {
+        expect(text, `${path}: ${entry.name}`).toContain(entry.name);
+        expect(text, `${path}: answer to ${entry.name}`).toContain(entry.acceptedAnswer.text.slice(0, 60));
+      }
+    }
+    expect(types('/ai-agents-for-your-team')).toEqual([]);
+    expect(types('/docs')).toEqual(['BreadcrumbList']);
+    for (const chapter of CHAPTERS) {
+      const [crumbs] = structuredData(`/docs/${chapter.slug}`) as { itemListElement: { name: string; item: string }[] }[];
+      expect(crumbs.itemListElement.map((item) => item.name)).toEqual(['Agentic Cloud Computer', 'Documentation', chapter.title]);
+      expect(crumbs.itemListElement[2].item).toBe(`https://agenticcloudcomputer.com/docs/${chapter.slug}`);
+    }
+  }, 60_000);
+
+  it('lists the app catalogue and the open-source repository for the sitemap', () => {
+    expect(APP_PAGES.map((page) => page.path)).toEqual(['/apps', '/acc/agentic-cloud']);
+  });
+
+  // The demo panels' rows are real links a crawler can follow: into the demo
+  // workplace, and to Northstar's made-up addresses on a domain that is
+  // somebody else's. The build marks each one nofollow and touches no other.
+  it('marks the demo panels’ links nofollow on the way out, and no other link', async () => {
+    expect(nofollowDemoLinks('<a class="row" href="/notes/57?org=org_northstar">x</a>')).toBe('<a rel="nofollow" class="row" href="/notes/57?org=org_northstar">x</a>');
+    expect(nofollowDemoLinks('<a href="/drive/files/drive_1?a=1&amp;org=org_northstar">x</a>')).toContain('rel="nofollow"');
+    expect(nofollowDemoLinks('<a href="https://track.agents.northstar.com" target="_blank" rel="noopener">x</a>')).toBe('<a href="https://track.agents.northstar.com" target="_blank" rel="noopener nofollow">x</a>');
+    for (const kept of ['<a href="/product">x</a>', '<a href="/login">x</a>', '<a href="https://agenticcloudcomputer.com/acc/agentic-cloud" rel="noopener noreferrer">x</a>', '<a href="https://notnorthstar.com/">x</a>']) {
+      expect(nofollowDemoLinks(kept)).toBe(kept);
+    }
+    // Every link a panel draws is one of the two kinds: nothing inside a
+    // fence leads anywhere else that a crawler could follow.
+    for (const route of ROUTES.filter((entry) => !entry.noindex)) {
+      const html = nofollowDemoLinks(await render(route.path));
+      const followed = (html.match(/<a\s[^>]*>/g) ?? []).filter((tag: string) => !/rel="[^"]*nofollow/.test(tag) && /href="\/(notes|drive|agents|knowledge|repos|proposals|secrets|sites|workplace|mail|chief)\b/.test(tag));
+      expect(followed, route.path).toEqual([]);
+    }
+  }, 60_000);
+
+  it('fingerprints a page by its words, not its markup', () => {
+    const route = { title: 'T', description: 'D' };
+    expect(pageFingerprint(route, '<p class="a">One  two</p>')).toBe(pageFingerprint(route, '<div><span>One</span> two</div>'));
+    expect(pageFingerprint(route, '<p>One two</p>')).not.toBe(pageFingerprint(route, '<p>One three</p>'));
+    expect(pageFingerprint({ title: 'T2', description: 'D' }, '<p>One two</p>')).not.toBe(pageFingerprint(route, '<p>One two</p>'));
+  });
+
   it('carries the product page’s headline and what is built in into its public metadata', () => {
     const home = ROUTES.find((route) => route.path === '/');
 
@@ -53,11 +139,16 @@ describe('prerendered routes', () => {
     // preview's title is the same words without the name; the description
     // opens on the film's closing words ("Your cloud." says where it runs)
     // and names what is built in.
-    expect(home?.title).toBe('One workplace for Claude Code, Codex and OpenCode agents — Agentic Cloud Computer');
+    // Since note #1149 (Adam, 11 Nov 2026, agreeing to the search fixes of
+    // note #1144) the <title> a search result shows leads with the words
+    // people type; the share preview keeps the title of note #1004.
+    expect(home?.title).toBe('Self-hosted Claude Code and Codex agents — Agentic Cloud Computer');
     expect(home?.shareTitle).toBe('One workplace for Claude Code, Codex and OpenCode agents');
     // Since note #1137 (10 Nov 2026) the description says what the title
-    // does not, and never names the three agents again.
-    expect(home?.description).toBe('Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.');
+    // does not, and never names the three agents again. The share preview
+    // carries those words alone; the search result's opens on "Open source."
+    expect(home?.shareDescription).toBe('Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.');
+    expect(home?.description).toBe(`Open source. ${home?.shareDescription}`);
     expect(home?.description).not.toMatch(/Claude Code|Codex|OpenCode|daily report/);
     expect(home?.description).not.toMatch(/second brain/);
     expect(home?.description).not.toMatch(/cloud computer|laptop|a cloud to work in/i);
@@ -193,9 +284,9 @@ describe('prerendered routes', () => {
   it.each([
     // The front page is the team pitch since 2026-08-29; the needle is the
     // beat that exists nowhere else on the site.
-    // The headline (note #835; note #830's "What makes your agents good stays
-    // yours." until then).
-    ['/', 'Give them a workplace.'],
+    // The page's h1, which says what the product is since note #1149 (note
+    // #835's "Give them a workplace." until then).
+    ['/', 'The self-hosted, open-source workplace for Claude Code, Codex and OpenCode agents.'],
     ['/product', 'Everything an agent needs to finish the job.'],
     ['/terms', 'Terms of Service'],
     ['/privacy', 'Privacy Policy'],

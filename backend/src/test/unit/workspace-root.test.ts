@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import express, { type Request, type Response } from 'express';
-import { BRAND_FILES, DEFAULT_BRAND_FILES_DIR, publicAddress, workspaceRootRoutes } from '../../routes/workspace-root.js';
+import { BRAND_FILES, DEFAULT_BRAND_FILES_DIR, indexableShellAddress, publicAddress, workspaceRootRoutes } from '../../routes/workspace-root.js';
 
 const SHELL_HTML = '<!doctype html><html><head><script type="module" src="/workspace/app/assets/index.js"></script></head><body><div id="root"></div></body></html>';
 
@@ -62,6 +62,23 @@ describe('the Workspace at the root of the domain', () => {
     const home = mockResponse();
     await handlerFor(shellDir, '/')({ originalUrl: '/', path: '/', query: {} } as unknown as Partial<Request>, home as unknown as Partial<Response>);
     expect(home.headers['x-robots-tag']).toBeUndefined();
+  });
+
+  it('keeps the doors and the signed-in screens out of search, and leaves the public pages in (note #1149)', async () => {
+    for (const [routePath, url] of [['/login', '/login'], ['/signup', '/signup'], ['/notes/:id', '/notes/57?org=org_northstar'], ['/invite/:token', '/invite/abc']] as const) {
+      const res = mockResponse();
+      await handlerFor(shellDir, routePath)({ originalUrl: url, path: url.split('?')[0], query: {} } as unknown as Partial<Request>, res as unknown as Partial<Response>);
+      expect(res.statusCode, routePath).toBe(200);
+      expect(res.headers['x-robots-tag'], routePath).toBe('noindex');
+    }
+    const apps = mockResponse();
+    await handlerFor(shellDir, '/apps')({ originalUrl: '/apps', path: '/apps', query: {} } as unknown as Partial<Request>, apps as unknown as Partial<Response>);
+    expect(apps.statusCode).toBe(200);
+    expect(apps.headers['x-robots-tag']).toBeUndefined();
+    expect(indexableShellAddress('/adam')).toBe(true);
+    expect(indexableShellAddress('/acc/agentic-cloud')).toBe(true);
+    expect(indexableShellAddress('/drive/files/drive_1')).toBe(false);
+    expect(indexableShellAddress('/login')).toBe(false);
   });
 
   it('brings the cloud screen’s oldest address up to date', async () => {

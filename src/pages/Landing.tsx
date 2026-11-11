@@ -7,6 +7,7 @@ import { FOOTER_PITCH } from '../lib/product-copy';
 import ProductPitch from '../components/ProductPitch';
 import { ChapterDivider, H2, LEAD, PrimaryLink } from '../components/landing-kit';
 import { PRIVATE_COPY_DOOR, PRIVATE_COPY_URL } from '../lib/workspace-link';
+import { LICENSE_URL, SOURCE_URL } from '../lib/source-links';
 /**
  * The front page.
  *
@@ -54,7 +55,11 @@ export default function Landing() {
         <div className="max-w-[640px]">
           <h2 className={H2}>Your own Agentic Cloud.</h2>
           <p className={`mt-5 [text-wrap:pretty] ${LEAD}`}>
-            Everything on this page runs in your company’s own cloud account, on a domain of yours.
+            Everything on this page runs in your company’s own cloud account, on a domain of yours,
+            and the whole platform is{' '}
+            <a href={SOURCE_URL} className="underline decoration-white/30 underline-offset-2 hover:decoration-white/60">open source</a>{' '}
+            under the{' '}
+            <a href={LICENSE_URL} className="underline decoration-white/30 underline-offset-2 hover:decoration-white/60">AGPL-3.0</a>.
             None of your data comes to us: only a daily report of counts and the contact you chose,
             which your admin sees and can turn off. One command installs it, one upgrades it. Send
             this to your engineer.

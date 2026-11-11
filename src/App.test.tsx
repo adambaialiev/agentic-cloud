@@ -164,7 +164,7 @@ describe('App routes', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Your agents are great engineers. Give them a workplace.' }, { timeout: 10_000 })).toBeTruthy()
+    expect(await screen.findByRole('heading', { level: 1, name: 'The self-hosted, open-source workplace for Claude Code, Codex and OpenCode agents.' }, { timeout: 10_000 })).toBeTruthy()
     expect(screen.getByRole('heading', { level: 3, name: 'Give this to your agent' })).toBeTruthy()
   })
 

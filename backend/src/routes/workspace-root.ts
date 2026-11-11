@@ -19,6 +19,19 @@ export function publicAddress(pathname: string): boolean {
 }
 
 /**
+ * Whether a search engine may list the shell at this address (note #1149).
+ * Only what a signed-out stranger can read: the root, the app catalogue
+ * (`/apps`), and a public address: a person's page or a public repository.
+ * Sign-in, sign-up, the invite and recovery doors and every signed-in screen
+ * answer with `X-Robots-Tag: noindex`.
+ */
+export function indexableShellAddress(pathname: string): boolean {
+  if (pathname === '/' || pathname === '') return true;
+  if (parseWorkspaceRoute(pathname)?.kind === 'apps') return true;
+  return publicAddress(pathname);
+}
+
+/**
  * What a browser asks the root of the domain for by itself: the font the
  * shell's stylesheet names, the tab icon and the home-screen icon. On our
  * platform the public site answers these (public/_routes.json) and the
@@ -88,8 +101,14 @@ export function workspaceRootRoutes(options: {
     // Link-only means exactly that: the page works for whoever receives its
     // opaque address, but search engines are not invited to turn it into a
     // public directory by crawling shared links.
-    if (String(req.path ?? '').startsWith('/public/repositories/')) {
+    const pathname = String(req.path ?? '');
+    if (pathname.startsWith('/public/repositories/')) {
       res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    } else if (!indexableShellAddress(pathname)) {
+      // Every other door and signed-in screen (note #1149): the shell there
+      // is an empty page titled "Your workspace" to a crawler, and on 10 Nov
+      // 2026 a search for the domain returned /signup under that title.
+      res.setHeader('X-Robots-Tag', 'noindex');
     }
     return sendWorkspaceUiShell(res, shell);
   };

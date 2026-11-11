@@ -10,6 +10,7 @@ import { TypeIcon } from '../../backend/workspace-ui/src/ui/icons';
 import { elapsed, useNow } from '../../backend/workspace-ui/src/ui/time';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FLEET, MINUTE, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * One agent, and the computer it owns — the top of the agent's own screen,
@@ -66,7 +67,7 @@ export default function LiveAgent({
               <ContextRing context={RUBY.context}><AgentFace agent={RUBY} /></ContextRing>
             </div>
             <div className="pname">
-              <h1 id="agentInfoTitle"><AgentName agent={RUBY} /></h1>
+              <PanelTitle id="agentInfoTitle"><AgentName agent={RUBY} /></PanelTitle>
               <div className="sub" id="agentInfoSub">{agentRuntimeLine(RUBY)}</div>
               <div className="sub" id="agentInfoMachine"><span>{machineSizeWords(RUBY.machineSize!)}</span></div>
             </div>

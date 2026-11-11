@@ -11,6 +11,7 @@
     "prepare": "node scripts/setup-git-hooks.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
+    "sitemap:dates": "UPDATE_LASTMOD=1 npm run build",
     "test:frontend": "backend/node_modules/.bin/vitest run --config vitest.frontend.config.ts",
     "test:frontend:coverage": "backend/node_modules/.bin/vitest run --coverage --config vitest.frontend.config.ts",
     "simulate": "node simulations/all.mjs",

@@ -28,7 +28,7 @@ describe('Landing', () => {
     const first = document.querySelector('main > section')!;
     expect(first.id).toBe('built-in');
     expect(h1.closest('section')).toBe(first);
-    expect(first.textContent).toContain('Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. In your own cloud account, on the plan you already pay for.');
+    expect(first.textContent).toContain('Git with CI/CD, hosting, storage, email, Drive, notes and memory, built in for Claude Code, Codex and OpenCode agents. Self-hosted in your own cloud account, on the plan you already pay for.');
     expect(first.textContent).toMatch(/they stop at a pull\s+request/);
     expect(document.querySelector('.landing-marquee')).toBeNull();
     expect(screen.queryAllByRole('link', { name: 'Start free' })).toEqual([]);
@@ -111,8 +111,15 @@ describe('Landing', () => {
     const section = document.querySelector('#private-copy')!;
     expect(section.querySelector('h2')?.textContent).toBe('Your own Agentic Cloud.');
     expect(section.textContent).toMatch(/Everything on this page runs in your company’s own cloud account/);
-    expect(section.querySelector('a')?.textContent).toMatch(/^Build your own Agentic Cloud/);
-    expect([...section.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual(['/#give-your-agent']);
+    // Note #1149: the paragraph says the platform is open source under the
+    // AGPL-3.0, with the repository and its LICENSE linked (landing-copy-rules).
+    expect(section.textContent).toMatch(/the whole platform is open source under the AGPL-3\.0\./);
+    expect(section.querySelector('a[href="/#give-your-agent"]')?.textContent).toMatch(/^Build your own Agentic Cloud/);
+    expect([...section.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual([
+      'https://agenticcloudcomputer.com/acc/agentic-cloud',
+      'https://agenticcloudcomputer.com/acc/agentic-cloud?path=LICENSE&file=1',
+      '/#give-your-agent',
+    ]);
     expect(document.querySelector('main > footer')?.previousElementSibling).toBe(section);
   });
 
@@ -378,7 +385,9 @@ describe('Landing', () => {
     expect(lede).toContain('CI/CD');
     expect(lede).toContain('nothing merges until you say so or turn on auto-merge');
     const panel = git.querySelector('.ws-live')!;
-    expect(panel.querySelector('h1')?.textContent).toBe('northstar-routing');
+    // A panel's title is not an h1 on this page (PanelTitle, note #1149).
+    expect(panel.querySelector('.ws-h1')?.textContent).toBe('northstar-routing');
+    expect(document.querySelectorAll('.ws-live h1')).toHaveLength(0);
     // No ids on this panel: it is composed so that it can stand beside the
     // files tile, which carries the repository screen's (see LiveRepo).
     expect(panel.querySelector('[id]')).toBeNull();
@@ -399,7 +408,7 @@ describe('Landing', () => {
     expect(section.querySelectorAll('.ws-live').length).toBe(1);
     const phone = section.querySelector('.ws-phone')!;
     expect(phone.querySelector('.chathead .back')).toBeTruthy();
-    expect(phone.querySelector('.chathead h1')?.textContent).toBe('Ruby');
+    expect(phone.querySelector('.chathead .ws-h1')?.textContent).toBe('Ruby');
     expect(phone.querySelector('.chatbar textarea')?.getAttribute('placeholder')).toBe('Message');
     expect(phone.querySelector('.chatsend')).toBeTruthy();
     expect(section.textContent).not.toMatch(/Open it on your phone and it is the same place/);

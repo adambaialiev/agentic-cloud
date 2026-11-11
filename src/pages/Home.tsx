@@ -33,11 +33,15 @@ import ValueSection from '../components/ValueSection';
  * page its length; /adam still has it.
  */
 
-/* Written from the owner's phrase "coding agents are great engineers with no
-   workplace around them" (note #835), never as it (landing-copy-rules). */
-const HEADLINE_FIRST = 'Your agents are great engineers.';
-const HEADLINE_SECOND = 'Give them a workplace.';
-export const HOME_HEADLINE = `${HEADLINE_FIRST} ${HEADLINE_SECOND}`;
+/* The page's one h1. It is not drawn (note #984 took its screen off), so it
+   is read by a screen reader and by a crawler, and since note #1149 it says
+   what the product is in the words people search for: until then it was the
+   retired headline "Your agents are great engineers. Give them a workplace."
+   (note #835), which named neither the product nor its kind. The line is the
+   share card's own ("The all-in-one workplace for Claude Code, Codex and
+   OpenCode agents.", note #1004) with "self-hosted, open-source" for
+   "all-in-one". Drawing it on the first screen is Adam's call. */
+export const HOME_HEADLINE = 'The self-hosted, open-source workplace for Claude Code, Codex and OpenCode agents.';
 
 /* The product moving (note #951, the landing piece of the growth note #950).
    Since note #956 (the owner, 3 Nov 2026, 05:40 UTC: "I'm not interested in

@@ -3,6 +3,7 @@ import { ProfileScreen } from '../../backend/workspace-ui/src/screens/profile/Pr
 import type { WorkspaceMailWakeAnswer } from '../../backend/src/shared/workspace-mail';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FLEET } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * The Settings screen, live: James's name and picture, his own address on
@@ -47,7 +48,7 @@ export default function LiveSettings({ className = '' }: { className?: string })
       <LiveWorkspace user={JAMES} answers={{ 'api/mail/wake': WAKE }}>
         <ConfirmContext.Provider value={async () => false}>
           <div className="phead">
-            <div className="pname"><h1>Settings</h1><div className="sub">James</div></div>
+            <div className="pname"><PanelTitle>Settings</PanelTitle><div className="sub">James</div></div>
           </div>
           <ProfileScreen />
         </ConfirmContext.Provider>

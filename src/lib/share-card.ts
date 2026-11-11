@@ -12,9 +12,21 @@ export const SHARE_HEADLINE = 'Your team. Your agents. Your cloud. Your rules.';
 export const SHARE_LINE = 'The all-in-one workplace for Claude Code, Codex and OpenCode agents.';
 /** og:title and twitter:title of the home page (56 characters). */
 export const SHARE_TITLE = 'One workplace for Claude Code, Codex and OpenCode agents';
-/** The home page's <title>: the share title, then the name (81). */
-export const HOME_TITLE = `${SHARE_TITLE} — Agentic Cloud Computer`;
-/** The meta, og and twitter description of the home page (134). Since note
+/** The home page's <title>, for a search result (65). Until note #1149 it
+ *  was the share title and the name (81, cut off in a result). Adam agreed
+ *  on 11 Nov 2026 to the search fixes of note #1144: the words people type
+ *  ("self-hosted", "Claude Code", "Codex") lead, the name closes. The share
+ *  preview keeps SHARE_TITLE. */
+export const HOME_TITLE = 'Self-hosted Claude Code and Codex agents — Agentic Cloud Computer';
+/** The home page's meta description, for a search result (147; note #1149):
+ *  Adam's share description of note #1137, word for word, opened by the one
+ *  thing a searcher types that neither it nor the title says. By his rule it
+ *  still says what the title does not and names no agent again. The share
+ *  preview (og and twitter) keeps SHARE_DESCRIPTION itself. */
+export const HOME_SEARCH_DESCRIPTION =
+  'Open source. Each agent works on a computer of its own in your company’s cloud. None of your data comes to us. Git, hosting and email are built in.';
+/** The og and twitter description of the home page (134; its meta
+ *  description is HOME_SEARCH_DESCRIPTION since note #1149). Since note
  *  #1137 (Adam, 10 Nov 2026, 15:33 UTC, "Fix all") it says what the title
  *  does not, instead of naming the three agents a second time: where each
  *  agent works, that none of the data comes to us (the daily report is

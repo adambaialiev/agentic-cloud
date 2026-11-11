@@ -5,6 +5,7 @@ import { bytes, fileIcon } from '../../backend/workspace-ui/src/ui/file-kind';
 import { Icon, TypeIcon } from '../../backend/workspace-ui/src/ui/icons';
 import { CheckRow } from '../../backend/workspace-ui/src/screens/decisions/Checks';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * A repository's files, live: the repository screen's Content tab — its two
@@ -55,7 +56,7 @@ export default function LiveRepoFiles({ className = '' }: { className?: string }
       <LiveWorkspace>
         <div className="screen" id="screenRepo">
           <div className="phead">
-            <div className="pname"><h1 id="repoTitle">{REPO}</h1></div>
+            <div className="pname"><PanelTitle id="repoTitle">{REPO}</PanelTitle></div>
           </div>
           <div className="segtabs" id="repoTabs" role="tablist" aria-label="Repository view">
             <button className="segtab" type="button" role="tab" aria-selected={false} tabIndex={-1}>Overview</button>

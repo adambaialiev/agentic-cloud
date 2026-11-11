@@ -4,7 +4,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import OgPreview, { SQUARE_SAFE } from './OgPreview';
-import { HOME_TITLE, SHARE_DESCRIPTION, SHARE_HEADLINE, SHARE_IMAGE_ALT, SHARE_IMAGE_VERSION, SHARE_LINE, SHARE_TITLE } from '../lib/share-card';
+import { HOME_SEARCH_DESCRIPTION, HOME_TITLE, SHARE_DESCRIPTION, SHARE_HEADLINE, SHARE_IMAGE_ALT, SHARE_IMAGE_VERSION, SHARE_LINE, SHARE_TITLE } from '../lib/share-card';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const indexHtml = readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -54,7 +54,9 @@ describe('The share card (note #1004)', () => {
     expect(SHARE_TITLE.length).toBeLessThanOrEqual(60);
     expect(SHARE_DESCRIPTION.length).toBeLessThan(150);
     expect(indexHtml).toContain(`<title>${HOME_TITLE}</title>`);
-    expect(meta('description')).toBe(SHARE_DESCRIPTION);
+    // The search result's description since note #1149; the card keeps its own.
+    expect(meta('description')).toBe(HOME_SEARCH_DESCRIPTION);
+    expect(HOME_SEARCH_DESCRIPTION.length).toBeLessThanOrEqual(160);
     expect(meta('og:title')).toBe(SHARE_TITLE);
     expect(meta('og:description')).toBe(SHARE_DESCRIPTION);
     expect(meta('twitter:title')).toBe(SHARE_TITLE);

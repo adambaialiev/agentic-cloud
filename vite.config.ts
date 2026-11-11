@@ -24,6 +24,9 @@ import postcss from 'postcss'
  * that the app can change freely and the panel follows.
  */
 const WS_SCOPE = '.ws-live'
+/** `h1` as a type selector: at the start, or after a combinator, a comma or
+ *  an opening bracket, and not the start of a longer word. */
+const H1_TYPE = /(^|[\s>+~,(])h1(?![\w-])/g
 
 function scopeWorkspaceCss(): Plugin {
   return {
@@ -39,7 +42,12 @@ function scopeWorkspaceCss(): Plugin {
           const s = selector.trim()
           if (s === ':root') return [WS_SCOPE]
           if (/^(html|body)(\b|$)/.test(s)) return []
-          return [`${WS_SCOPE} ${s}`]
+          // A panel's own title is not an <h1> on the landing (PanelTitle,
+          // note #1149): it is a block with the class `ws-h1`, and every
+          // rule written for `h1` is repeated for it here, so it looks as
+          // the app's title does and follows the app when that changes.
+          const twin = s.replace(H1_TYPE, '$1.ws-h1')
+          return twin === s ? [`${WS_SCOPE} ${s}`] : [`${WS_SCOPE} ${s}`, `${WS_SCOPE} ${twin}`]
         })
         if (selectors.length === 0) rule.remove()
         else rule.selectors = selectors

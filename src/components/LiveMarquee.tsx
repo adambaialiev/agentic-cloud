@@ -22,6 +22,7 @@ import { useNow } from '../../backend/workspace-ui/src/ui/time';
 import type { HomeAgent } from '../../backend/workspace-ui/src/workspace/live';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { DAY, FACES, HERO_FLEET_BEYOND, HOUR, JAMES, MINUTE, ago, useHydrated, useRunningFleet } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * The hero's picture since note #185 (the owner, 2026-10-08): one row of
@@ -174,7 +175,7 @@ function Exchange({ agent: to }: { agent: HomeAgent }) {
           <ContextRing context={to.context}><AgentFace agent={to} /></ContextRing>
         </div>
         <div className="chatwho">
-          <h1><AgentName agent={to} /></h1>
+          <PanelTitle><AgentName agent={to} /></PanelTitle>
           <div className="sub chatruntime"><span>{agentRuntimeLine(to)}</span></div>
         </div>
       </div>

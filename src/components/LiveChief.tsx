@@ -12,6 +12,7 @@ import { Svg } from '../../backend/workspace-ui/src/ui/icons';
 import { RoomFaces } from '../../backend/workspace-ui/src/ui/RoomFaces';
 import { LivePanel, LiveWorkspace } from './live/LiveWorkspace';
 import { FACES, HERO_FLEET, HOUR, MINUTE, ago, useHydrated } from './live/fixture';
+import { PanelTitle } from './live/PanelTitle';
 
 /**
  * Home, live: the Chief of Staff's conversation (note #715), drawn with the
@@ -118,7 +119,7 @@ function Screen() {
           <ContextRing context={CONTEXT}><AgentFace agent={CHIEF} /></ContextRing>
         </span>
         <div className="chatwho">
-          <h1 id="recapChatTitle">{CHIEF_OF_STAFF}</h1>
+          <PanelTitle id="recapChatTitle">{CHIEF_OF_STAFF}</PanelTitle>
           <div className="sub chatruntime" id="recapChatRuntime"><span>opus · high</span></div>
         </div>
       </div>

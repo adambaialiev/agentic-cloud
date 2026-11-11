@@ -1,6 +1,7 @@
 import { HOME_COLUMN } from './landing-kit';
 import { NEW_TAB, useNewTab } from '../lib/new-tab';
 import BrandMark from './BrandMark';
+import { SOURCE_URL } from '../lib/source-links';
 
 export const CONTACT_EMAIL = 'hello@agenticcloudcomputer.com';
 /** The footer's Contact door goes to the founder, the one address the home
@@ -95,6 +96,14 @@ export default function SiteFooter({ pitch, tone = 'light', wide = false, mark =
             <li>
               <FooterLink href="/product" tone={tone}>Product</FooterLink>
             </li>
+            {/* The app catalogue and the open-source repository (note #1149):
+                the Workspace draws both, so no page here linked the first
+                and only two linked the second, and neither was in the
+                sitemap. A footer link on every page is how a crawler and a
+                reader find them. */}
+            <li>
+              <FooterLink href="/apps" tone={tone}>Apps built here</FooterLink>
+            </li>
             <li>
               <FooterLink href="/claude-code-in-the-cloud" tone={tone}>Claude Code in the cloud</FooterLink>
             </li>
@@ -112,6 +121,9 @@ export default function SiteFooter({ pitch, tone = 'light', wide = false, mark =
             </li>
             <li>
               <FooterLink href="/docs" tone={tone}>Documentation</FooterLink>
+            </li>
+            <li>
+              <FooterLink href={SOURCE_URL} tone={tone}>Source code</FooterLink>
             </li>
             <li>
               <FooterLink href={`mailto:${FOOTER_CONTACT_EMAIL}`} tone={tone}>Contact</FooterLink>
