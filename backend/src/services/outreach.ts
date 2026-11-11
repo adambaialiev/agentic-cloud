@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   OUTREACH_CODE_ALPHABET, OUTREACH_CODE_LENGTH, OUTREACH_LINK_ORIGIN, OUTREACH_MAX_WORDS, OUTREACH_REVIEW_AFTER, outreachWordCount, OUTREACH_WORDS_HISTORY, addressMatches,
-  outreachAudience, outreachGraph, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
+  outreachAudience, outreachGraph, outreachMatch, type OutreachGraph, outreachGlance, outreachKnown, outreachStateFrom, type OutreachAudienceWords, type OutreachMailEvent, type OutreachMailFacts, type OutreachPastState,
   fillOutreachLinks, isOutreachCode, outreachLinkTarget, outreachLinks, outreachReader, type OutreachLink, type OutreachLinkCodes, hostMatches, outreachDraft, outreachNewerDraft, outreachNext,
   outreachPlaceholders, outreachTargetId, outreachZone, sortOutreachRows, targetCity, targetEmail, targetPerson,
   type OutreachAgentRow, type OutreachSentLetter, type OutreachAgentTarget, type OutreachEdits, type OutreachListAnswer, type OutreachRow, type OutreachSeedTarget,
@@ -144,6 +144,7 @@ export class OutreachService {
       person: targetPerson(record),
       email: targetEmail(record),
       verification: record.seed.verification,
+      match: outreachMatch(record.seed),
       state,
       stateAt: state === 'not-contacted' ? null : settled,
       glance: outreachGlance(outreachKnown(touches)),

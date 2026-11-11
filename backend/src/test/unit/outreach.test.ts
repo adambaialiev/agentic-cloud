@@ -14,7 +14,7 @@ import { OUTREACH_MAIL_ALLOWANCE, OutreachService, type OutreachMailEventInput }
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { SqliteOutreachStore } from '../../services/sqlite/sqlite-outreach-storage.js';
 import {
-  addressMatches, hostMatches, outreachLocalTime, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
+  addressMatches, hostMatches, outreachLocalTime, outreachMatch, outreachMailHtml, outreachPlaceholders, outreachWordCount, parseOutreachWrite, sameSite, type OutreachTouch, type OutreachWrite,
 } from '../../shared/outreach.js';
 import { fixtureOutreachProfile, fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
 import type { CopyPulse } from '../../shared/copy-pulse.js';
@@ -84,7 +84,19 @@ describe('Outreach words and places', () => {
     expect(outreachLocalTime('Indianapolis', at)).toBe('Mon 08:00');
     expect(outreachLocalTime('Honolulu', at)).toBe('Mon 03:00');
     expect(outreachLocalTime('Carpentras', at)).toBe('Mon 14:00');
+    // Note #1145: the two eligible cities that had no clock.
+    expect(outreachLocalTime('Angers', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Wrocław', at)).toBe('Mon 14:00');
+    expect(outreachLocalTime('Łódź', at)).toBe('Mon 14:00');
     for (const unknown of ['US', 'US remote', '', null, 'Richmond']) expect(outreachLocalTime(unknown, at)).toBeNull();
+  });
+
+  it('reads a record\'s match as the research wrote it: the profile\'s, else the letter\'s, else none (note #1145)', () => {
+    const letter = (painMatch: string | null) => ({ to: null, recipient: null, wherePrinted: null, note: null, subject: 's', body: 'b', wordCount: null, opensOn: null, painMatch });
+    expect(outreachMatch({ profile: { match: 'matches' }, firstEmail: letter('partly') })).toBe('matches');
+    expect(outreachMatch({ profile: { match: '  ' }, firstEmail: letter('matches, but they built their own') })).toBe('matches, but they built their own');
+    expect(outreachMatch({ profile: null, firstEmail: letter('thesis match') })).toBe('thesis match');
+    expect(outreachMatch({ profile: { builds: 'x' }, firstEmail: null })).toBeNull();
   });
 
   it('matches a reply by the address, or by the company\'s own domain — never by a shared mail service', () => {
@@ -413,7 +425,7 @@ describe('Outreach, the service', () => {
     await service.write('user-adam', ROWAN, { targets: [rewritten], words: null });
     draft = await firstOf(service, 'northwind-health');
     expect(draft).toMatchObject({ from: 'yours', text: `${agents.text}\nP.S. Mine, again.`, newer: { text: 'Rowan\'s second try.', by: 'Rowan', at: '2026-11-09T15:00:00.000Z' } });
-    expect((await service.list('user-adam')).rows.find((row) => row.id === 'northwind-health')).toMatchObject({ yours: true, newerDraft: true });
+    expect((await service.list('user-adam')).rows.find((row) => row.id === 'northwind-health')).toMatchObject({ yours: true, newerDraft: true, match: 'matches' });
     // He keeps his: Rowan's is set aside, on the timeline.
     await service.letter('user-adam', 'northwind-health', { action: 'keep' });
     draft = await firstOf(service, 'northwind-health');

@@ -239,6 +239,7 @@ const ZONES: Record<string, string> = {
   marseille: 'Europe/Paris',
   toulouse: 'Europe/Paris',
   nantes: 'Europe/Paris',
+  angers: 'Europe/Paris',
   bordeaux: 'Europe/Paris',
   lille: 'Europe/Paris',
   grenoble: 'Europe/Paris',
@@ -374,7 +375,8 @@ export const OUTREACH_KNOWN_PLACES = [
 ];
 
 export function outreachZone(city: string | null | undefined): string | null {
-  const key = (city ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+  // ł has no decomposition (Wrocław, Łódź): folded by hand.
+  const key = (city ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/ł/gi, 'l').trim().toLowerCase().replace(/\s+/g, ' ');
   return key ? ZONES[key] ?? null : null;
 }
 
@@ -497,6 +499,18 @@ export type OutreachThesis = (typeof OUTREACH_THESIS)[number];
 
 /** A record's audience: absent means customer. */
 export const outreachAudience = (seed: Pick<OutreachSeedTarget, 'audience'> | null | undefined): OutreachAudience => (seed?.audience === 'investor' ? 'investor' : 'customer');
+
+/**
+ * How well a record matches, as the research wrote it (note #1145): the
+ * profile's `match`, else the first letter's `painMatch`. Kept as written
+ * ("matches", "matches, but they built their own", "partly", "no sourced
+ * pain", "thesis match"); the site turns it into a level. Null where neither
+ * is written.
+ */
+export function outreachMatch(seed: Pick<OutreachSeedTarget, 'profile' | 'firstEmail'>): string | null {
+  const said = [seed.profile?.match, seed.firstEmail?.painMatch].find((value) => typeof value === 'string' && value.trim());
+  return typeof said === 'string' ? said.trim() : null;
+}
 
 /** One company (or investor) as the agents have it. Every field is theirs, never the site's. */
 export interface OutreachSeedTarget {
@@ -1274,6 +1288,12 @@ export interface OutreachRow {
   person: string | null;
   email: string | null;
   verification: string | null;
+  /**
+   * How well they match, in the research's own words (note #1145): the
+   * profile's `match`, else the first letter's `painMatch`; null where neither
+   * is written. The site's Next view ranks by it.
+   */
+  match: string | null;
   /** What happened, read off the timeline (note #1112). */
   state: OutreachState;
   stateAt: string | null;
