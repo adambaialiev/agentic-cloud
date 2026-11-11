@@ -202,6 +202,10 @@ export class OutreachService {
       rows: sortOutreachRows(rows, new Map(records.map((record) => [record.id, record.seed.number]))),
       firstSends: touches.filter((touch) => touch.kind === 'sent' && touch.step === 'first' && !investors.has(touch.targetId)).length,
       reviewAfter: OUTREACH_REVIEW_AFTER,
+      // Every letter that went (note #1150): the header counts today and the last hour from these, in his own time zone.
+      sends: touches.filter((touch): touch is Extract<OutreachTouch, { kind: 'sent' }> => touch.kind === 'sent')
+        .map((touch) => ({ at: touch.at, step: touch.step, audience: investors.has(touch.targetId) ? 'investor' as const : 'customer' as const }))
+        .sort((a, b) => b.at.localeCompare(a.at)),
     };
   }
 

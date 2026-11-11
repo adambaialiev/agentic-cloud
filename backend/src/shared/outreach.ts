@@ -1461,6 +1461,15 @@ export interface OutreachListAnswer {
   /** First letters sent so far, for the review reminder. */
   firstSends: number;
   reviewAfter: number;
+  /**
+   * Every letter that has gone, newest first (note #1150; Adam, 11 Nov 2026:
+   * "in the header I want to see how much emails I've already sent today and
+   * last hour"): when, which letter, and to whom by audience. Read off the
+   * sent touches, the same facts as the timeline and firstSends. The site
+   * counts "today" in his own browser's time zone and "last hour" as the
+   * last 60 minutes.
+   */
+  sends: Array<{ at: string; step: OutreachStep; audience: OutreachAudience }>;
 }
 
 /** The letter the Send box opens with. */
