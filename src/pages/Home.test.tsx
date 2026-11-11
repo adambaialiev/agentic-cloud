@@ -40,7 +40,10 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(masthead.querySelector('[aria-hidden="true"]')).toBeTruthy();
     expect(masthead.closest('[data-film-box]')).toBeNull();
     expect(masthead.compareDocumentPosition(film.querySelector('[data-film-box]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(film.querySelector('h1, h2, h3')).toBeNull();
+    // Since note #1149 (option A, Adam, 11 Nov 2026) the page's h1 is drawn
+    // under the name: the one heading on this screen, outside the masthead.
+    expect([...film.querySelectorAll('h1, h2, h3')].map((node) => node.tagName)).toEqual(['H1']);
+    expect(masthead.querySelector('h1')).toBeNull();
     const name = document.querySelector('footer [data-footer-name]')!;
     expect(name.textContent?.trim()).toBe('Agentic Cloud Computer');
     expect(name.querySelector('[aria-hidden="true"]')).toBeTruthy();
@@ -85,8 +88,20 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(document.querySelector('#ask')).toBeNull();
     // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
     // screens: the film, the workplace drawing, the own cloud, how to build
-    // yours, the footer. The headline is the page's one h1, not drawn.
-    expect(document.querySelector('main h1')!.className).toMatch(/\bsr-only\b/);
+    // yours, the footer. The headline was the page's one h1, not drawn,
+    // until note #1149: Adam picked option A of its mock-ups (11 Nov 2026,
+    // 10:51 UTC, "I like option A"), one quiet line under the name on the
+    // first screen. Regular weight, the secondary grey, the body size on a
+    // phone and one step up from sm; on the film's own width, so it starts
+    // at the film's left edge.
+    const headline = document.querySelector('main h1')!;
+    expect(headline.textContent).toBe(HOME_HEADLINE);
+    expect(headline.className).not.toMatch(/\bsr-only\b/);
+    expect(headline.className.split(/\s+/)).toEqual(expect.arrayContaining(['type-base', 'sm:type-md-sm', 'font-normal', 'text-hint', HOME_COLUMN]));
+    expect(headline.className).not.toMatch(/font-(semibold|bold|medium)/);
+    expect(headline.closest('#film')).toBeTruthy();
+    expect(headline.previousElementSibling).toBe(document.querySelector('#film [data-masthead]'));
+    expect(headline.nextElementSibling).toBe(document.querySelector('#film [data-film-box]'));
     for (const id of ['#home-top', '#team', '#memory', '#keys', '#computers', '#work', '#for-your-team', '#contact']) expect(document.querySelector(id), id).toBeNull();
     expect([...document.querySelectorAll('h1')].filter((node) => !node.closest('.ws-live'))).toHaveLength(1);
     for (const gone of ['#proof', '#homeFounder', '#home-context', '#built-in', '#subscriptions', '#apps', '#home-close']) expect(document.querySelector(gone), gone).toBeNull();
@@ -296,11 +311,14 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     if (!PRODUCT_FILM) return;
     const film = document.querySelector('#film')!;
     expect(document.querySelector('main section')).toBe(film);
-    // The first screen; the page's h1 (not drawn, note #984) precedes it.
+    // The first screen, and the first thing in the page since the h1 is
+    // drawn inside it (note #1149).
     expect(film.nextElementSibling?.id).toBe('value');
-    expect(film.previousElementSibling?.tagName).toBe('H1');
-    // No heading, paragraph or caption around it; one link, to the site.
-    expect(film.querySelectorAll('h1, h2, h3, p, figcaption')).toHaveLength(0);
+    expect(film.previousElementSibling).toBeNull();
+    // One heading, the h1 under the name; no paragraph or caption around
+    // the film; one link, to the site.
+    expect(film.querySelectorAll('h2, h3, p, figcaption')).toHaveLength(0);
+    expect(film.querySelectorAll('h1')).toHaveLength(1);
     expect(screen.queryByText('Watch it work, start to finish.')).toBeNull();
     const links = [...film.querySelectorAll('a')].map((a) => [a.getAttribute('href'), (a.textContent ?? '').trim()]);
     expect(links).toEqual(BOOKFACE_URL ? [[BOOKFACE_URL, `${BOOKFACE_LINK} (opens in a new tab)`]] : []);
@@ -539,11 +557,17 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     // screen allows, unless that is taller than min(screen, 900 px) leaves.
     const box = document.querySelector('#film [data-film-box]')!;
     // Since note #1003 the room left also holds the masthead above the
-    // film (211 px on a phone, 300 px from sm up), which takes the same width.
-    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_211px\)\*4\/5\)\)\]/);
-    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_300px\)\*16\/9\)\)\]/);
+    // film (211 px on a phone, 300 px from sm up), which takes the same
+    // width; since note #1149 the headline under the masthead too (275 px
+    // and 344 px), on that width as well.
+    expect(box.className).toMatch(/w-\[min\(100%,calc\(\(100svh_-_275px\)\*4\/5\)\)\]/);
+    expect(box.className).toMatch(/sm:w-\[min\(100%,calc\(\(min\(100svh,900px\)_-_344px\)\*16\/9\)\)\]/);
     const masthead = document.querySelector('#film [data-masthead]')!;
-    for (const width of box.className.split(' ').filter((c) => c.includes('w-[min('))) expect(masthead.className.split(' ')).toContain(width);
+    const headline = document.querySelector('#film [data-home-headline]')!;
+    for (const width of box.className.split(' ').filter((c) => c.includes('w-[min('))) {
+      expect(masthead.className.split(' ')).toContain(width);
+      expect(headline.className.split(' ')).toContain(width);
+    }
     expect(box.querySelector('[data-film-timeline]')).toBeTruthy();
     expect(box.querySelector('#film-site a')).toBeTruthy();
   });
@@ -557,7 +581,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
   it('puts the film, every screen below it and the footer on one column', () => {
     answer();
     draw();
-    expect(HOME_COLUMN).toBe('sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]');
+    expect(HOME_COLUMN).toBe('sm:w-[min(100%,calc((min(100svh,900px)_-_344px)*16/9))]');
     const onColumn = (node: Element) => node.className.split(/\s+/).includes(HOME_COLUMN);
     expect(onColumn(document.querySelector('#film [data-film-box]')!)).toBe(true);
     expect(onColumn(document.querySelector('#film [data-masthead]')!)).toBe(true);

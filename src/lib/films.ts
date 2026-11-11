@@ -90,6 +90,6 @@ export const PRODUCT_FILM_PATH = 'films/bookface-2006-home-film-tenth-1280x720.m
    captions and timings in a 4:5 frame, 1080x1350 master in Drive, encoded
    the same way at 864x1080: 1:19, 5.3 MB (5,310,320 bytes, SSIM 0.998
    against the master); no poster; background unchanged. At 4:5 the film
-   fills a phone's column (Home.tsx's phone rule is (100svh - 211px) x 4/5).
+   fills a phone's column (Home.tsx's phone rule is (100svh - 275px) x 4/5).
    The eleventh's web file is deleted from the bucket. */
 export const PRODUCT_FILM_TALL_PATH = 'films/bookface-2006-home-film-vertical-twelfth-864x1080.mp4';

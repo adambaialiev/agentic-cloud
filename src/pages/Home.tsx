@@ -33,14 +33,15 @@ import ValueSection from '../components/ValueSection';
  * page its length; /adam still has it.
  */
 
-/* The page's one h1. It is not drawn (note #984 took its screen off), so it
-   is read by a screen reader and by a crawler, and since note #1149 it says
-   what the product is in the words people search for: until then it was the
-   retired headline "Your agents are great engineers. Give them a workplace."
-   (note #835), which named neither the product nor its kind. The line is the
-   share card's own ("The all-in-one workplace for Claude Code, Codex and
-   OpenCode agents.", note #1004) with "self-hosted, open-source" for
-   "all-in-one". Drawing it on the first screen is Adam's call. */
+/* The page's one h1. Since note #1149 it says what the product is in the
+   words people search for: until then it was the retired headline "Your
+   agents are great engineers. Give them a workplace." (note #835), which
+   named neither the product nor its kind. The line is the share card's own
+   ("The all-in-one workplace for Claude Code, Codex and OpenCode agents.",
+   note #1004) with "self-hosted, open-source" for "all-in-one". It was not
+   drawn from note #984 until Adam picked option A of the mock-ups on note
+   #1149 (11 Nov 2026, 10:51 UTC: "I like option A"): one quiet line under
+   the name on the first screen (HomeHeadline below). */
 export const HOME_HEADLINE = 'The self-hosted, open-source workplace for Claude Code, Codex and OpenCode agents.';
 
 /* The product moving (note #951, the landing piece of the growth note #950).
@@ -159,7 +160,7 @@ export const PRODUCT_FILM: Film | null = {
 /* Since note #1092 the phone's film is the twelfth vertical cut, 4:5: the
    same scenes and timings, so its crossfades settle on the same frames as
    the eleventh's (read frame by frame: 18.87 and 50.60 s), and the starts
-   stay 0 / 18.9 / 50.6 s. Its box on a phone is (100svh - 211px) x 4/5,
+   stay 0 / 18.9 / 50.6 s. Its box on a phone is (100svh - 275px) x 4/5,
    capped by the column, so it is as wide as the sections below it on any
    phone at least about 650 px tall. */
 export const PRODUCT_FILM_TALL: Film | null = {
@@ -212,19 +213,43 @@ function SiteLink({ href, children }: { href: string; children: string }) {
    box), on a phone too: where the tall film takes the phone's width that is
    the content edge, and where the screen is short and the film narrower
    (430x744) it stays over the film, its timeline and its link rather than
-   45 px to their left. Not a link, no tagline, not a heading: the page's h1
-   is the headline. */
+   45 px to their left. Not a link and not a heading: the page's h1 is the
+   line under it since note #1149 (HomeHeadline). */
+/* The first screen's width on a phone: the tall film's own rule, which the
+   name and the headline above it share so all three keep one left edge. */
+const FILM_PHONE_WIDTH = 'w-[min(100%,calc((100svh_-_275px)*4/5))]';
+
 function Masthead() {
   return (
     <div
       data-masthead
-      className={`mx-auto mb-3 flex w-[min(100%,calc((100svh_-_211px)*4/5))] items-center gap-2 sm:mb-4 ${HOME_COLUMN}`}
+      className={`mx-auto mb-1.5 flex ${FILM_PHONE_WIDTH} items-center gap-2 sm:mb-2 ${HOME_COLUMN}`}
     >
       {/* The wave fills the middle 76% of its square file, so the square is
           pulled 3 px left to put the wave's own edge on the film's. */}
       <BrandMark className="-ml-[3px] h-6 w-6 shrink-0" tint="var(--color-white)" label="" />
       <span className="type-sm font-semibold leading-6 tracking-[-0.01em] text-white sm:type-base sm:leading-6">Agentic Cloud Computer</span>
     </div>
+  );
+}
+
+/* The page's h1, drawn (note #1149, option A, Adam, 11 Nov 2026): one quiet
+   line under the name, on the film's own width so it starts at the film's
+   left edge, in the secondary grey and regular weight, never bold. On a phone
+   it is the body size and runs to two lines; from sm up it is one line, one
+   step larger. The film's sizing rule keeps room for it, so the name, the
+   line, the film, its timeline and its link are still one screen: 64 px
+   more on a phone (211 to 275), 44 px more from sm up (300 to 344, the
+   page's one column, HOME_COLUMN). The mock-up drew it at 17 and 20 px; the
+   type scale has neither, so it is type-base (16) and type-md-sm (18). */
+function HomeHeadline() {
+  return (
+    <h1
+      data-home-headline
+      className={`mx-auto mb-3.5 ${FILM_PHONE_WIDTH} [text-wrap:balance] type-base font-normal text-hint sm:mb-4 sm:type-md-sm ${HOME_COLUMN}`}
+    >
+      {HOME_HEADLINE}
+    </h1>
   );
 }
 
@@ -243,9 +268,10 @@ export default function Home() {
           note #924, and /login still answers); the footer carries the name.
           Every other page keeps its header. */}
 
-      {/* The page's one h1, for a screen reader and the document outline,
-          not drawn since note #984 took its screen off. */}
-      <h1 className="sr-only">{HOME_HEADLINE}</h1>
+      {/* The page's one h1 is drawn on the first screen, under the name
+          (HomeHeadline, note #1149). With no film there is no first screen,
+          so it stays in the outline, not drawn. */}
+      {PRODUCT_FILM ? null : <h1 className="sr-only">{HOME_HEADLINE}</h1>}
 
       {/* ── The film, first (note #965) ───────────────────────────────── */}
       {/* The owner, 3 Nov 2026, 18:45 UTC: "ok this video should be central
@@ -268,11 +294,14 @@ export default function Home() {
               film leaves for its timeline and link: 175 px on a phone,
               260 px from sm up (250 until the 44 px link of note #981).
               Since note #1003 it also leaves room for the masthead above
-              it: 36 px more on a phone (211), 40 px more from sm up (300). */}
+              it: 36 px more on a phone (211), 40 px more from sm up (300).
+              Since note #1149 for the headline under the masthead too: 275
+              on a phone, 344 from sm up. */}
           <Masthead />
+          <HomeHeadline />
           <div
             data-film-box
-            className={`mx-auto w-[min(100%,calc((100svh_-_211px)*4/5))] ${HOME_COLUMN}`}
+            className={`mx-auto ${FILM_PHONE_WIDTH} ${HOME_COLUMN}`}
           >
             <HomeFilm
               wide={PRODUCT_FILM}

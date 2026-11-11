@@ -93,11 +93,14 @@ await runBrowserScenario({
     assert.equal(normalizedText(await textOf(page, '#value h2')), 'Your agents. Your cloud. Your data.');
     // Since note #1088 the page is one column, the film's width: at 1440x900
     // the film, every heading below it, the footer and the workplace
-    // drawing's walls share the same two edges (186.7 and 1,253.3 px), and
-    // "You" stands outside the walls to the left with nothing scrolling
-    // sideways. Measured, never assumed.
+    // drawing's walls share the same two edges, and "You" stands outside the
+    // walls to the left with nothing scrolling sideways. Measured, never
+    // assumed. The edges were 186.7 and 1,253.3 px until note #1149 drew the
+    // page's h1 under the name: the film leaves 44 px more for it, so the
+    // column is 988.4 px wide there, from 225.8 to 1,214.2 px, and the h1
+    // starts on its left edge.
     await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
-    await page.waitForFunction(() => document.querySelector('#film [data-film-box]')?.getBoundingClientRect().width > 1000, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector('#film [data-film-box]')?.getBoundingClientRect().width > 950, { timeout: 10_000 });
     const column = await page.evaluate(() => {
       const edges = (node) => { const box = node.getBoundingClientRect(); return [box.left, box.right]; };
       const plan = [...document.querySelectorAll('#workplace svg')].find((svg) => svg.getBoundingClientRect().width > 0);
@@ -105,6 +108,7 @@ await runBrowserScenario({
       const you = [...plan.querySelectorAll('text')].find((text) => text.textContent.trim() === 'You').getBoundingClientRect();
       return {
         film: edges(document.querySelector('#film [data-film-box]')),
+        headline: edges(document.querySelector('#film h1')),
         headings: [...document.querySelectorAll('main > section h2:not(.sr-only)')].map((h2) => h2.getBoundingClientRect().left),
         footer: edges(document.querySelector('footer .grid')),
         walls: [box.left + (box.width * 110) / 1088, box.left + (box.width * 1086) / 1088],
@@ -113,7 +117,8 @@ await runBrowserScenario({
       };
     });
     const near = (a, b, what) => assert.ok(Math.abs(a - b) < 1, `${what}: ${a} is not on the column edge ${b}`);
-    assert.ok(Math.abs(column.film[0] - 186.7) < 1 && Math.abs(column.film[1] - 1253.3) < 1, `the film moved: ${column.film}`);
+    assert.ok(Math.abs(column.film[0] - 225.8) < 1 && Math.abs(column.film[1] - 1214.2) < 1, `the film moved: ${column.film}`);
+    near(column.headline[0], column.film[0], 'the headline'); near(column.headline[1], column.film[1], 'the headline');
     for (const left of column.headings) near(left, column.film[0], 'a heading');
     near(column.footer[0], column.film[0], 'the footer'); near(column.footer[1], column.film[1], 'the footer');
     near(column.walls[0], column.film[0], 'the drawing\'s left wall'); near(column.walls[1], column.film[1], 'the drawing\'s right wall');

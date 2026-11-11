@@ -43,16 +43,17 @@ export const HOME_SECTION = 'w-full px-5 sm:px-8 lg:px-12';
    UTC: keep the film's width and put every section below it, the footer
    too, on that same column). From sm up the column is the film's own width
    rule: as wide as the content box allows, unless that makes the 16:9 film
-   taller than min(screen, 900 px) leaves after the 300 px kept for the
-   masthead, the timeline and its link. It follows the window's height, so
-   it is a rule and never a number: 1,067 px at 1440x900, 889 px at
+   taller than min(screen, 900 px) leaves after the 344 px kept for the
+   masthead, the headline under it, the timeline and its link (300 px until
+   the headline was drawn, note #1149). It follows the window's height, so
+   it is a rule and never a number: 988 px at 1440x900, 811 px at
    1440x800. The film, the masthead, every Screen's content and the home
    footer read this one class; a phone keeps the full width (the film has
    its own tall rule there). */
-export const HOME_COLUMN = 'sm:w-[min(100%,calc((min(100svh,900px)_-_300px)*16/9))]';
+export const HOME_COLUMN = 'sm:w-[min(100%,calc((min(100svh,900px)_-_344px)*16/9))]';
 /* The same width as a CSS value, for a drawing that is placed by it rather
    than sized to it (WorkplaceArt, note #1088). 100% is the content box. */
-export const HOME_COLUMN_WIDTH = 'min(100%, calc((min(100svh, 900px) - 300px) * 16 / 9))';
+export const HOME_COLUMN_WIDTH = 'min(100%, calc((min(100svh, 900px) - 344px) * 16 / 9))';
 
 export const SCREEN_MAX_WIDTH = 1280;
 export const SCREEN_MAX_HEIGHT = 900;

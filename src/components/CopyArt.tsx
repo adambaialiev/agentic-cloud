@@ -341,8 +341,9 @@ function SidesWide() {
      the update service); the gap between the sides only as wide as
      "Releases," over "free to download"; the dashed line's label the
      phone's own short words; the pills 30 units under their cards, not 62.
-     At 1440x900 it is 1,067 px wide, the column's width, at 1.02 px a unit
-     (0.93 before). Until #1096: three columns, viewBox 1150 x 540, 14-unit
+     At 1440x900 it was 1,067 px wide, the column's width, at 1.02 px a unit
+     (0.93 before); since the headline of note #1149 the column there is
+     988 px, 0.95 px a unit. Until #1096: three columns, viewBox 1150 x 540, 14-unit
      titles. */
   const PAD = 20;
   const GAP = 12;
