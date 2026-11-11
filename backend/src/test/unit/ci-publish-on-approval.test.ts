@@ -211,6 +211,30 @@ describe('POST /repos/:name/publish — linked at once, the owner is told (note 
     expect(w.asks).toHaveLength(0);
   });
 
+  it('in an own cloud, refuses a link plainly and records nothing; off still works (note #1161)', async () => {
+    const w = await world();
+    w.deps.orgCi = { runsChecksFor: async () => true } as never;
+    const res = await ask(w.deps, w.junoToken, 'ship-it', { site: 'startup-game' });
+    expect(res.statusCode).toBe(409);
+    expect(String((res.body as { error: string }).error)).toContain('Not available in your own Agentic Cloud yet');
+    expect(String((res.body as { error: string }).error)).toContain('nothing was linked');
+    expect((await w.gitRepoStorage.get(w.repo.id))?.publishTo).toBeUndefined();
+    expect(w.asks).toHaveLength(0);
+
+    await w.link();
+    const off = await ask(w.deps, w.leoToken, 'ship-it', { off: true });
+    expect(off.statusCode).toBe(200);
+    expect((await w.gitRepoStorage.get(w.repo.id))?.publishTo).toBeUndefined();
+  });
+
+  it('links as before where our own lane runs the checks', async () => {
+    const w = await world();
+    w.deps.orgCi = { runsChecksFor: async () => false } as never;
+    const res = await ask(w.deps, w.junoToken, 'ship-it', { site: 'startup-game' });
+    expect(res.statusCode).toBe(200);
+    expect((await w.gitRepoStorage.get(w.repo.id))?.publishTo?.siteId).toBe(w.site.id);
+  });
+
   it('turning it off is applied at once, by any agent', async () => {
     const w = await world();
     await w.link();

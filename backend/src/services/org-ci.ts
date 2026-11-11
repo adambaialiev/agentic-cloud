@@ -110,6 +110,29 @@ export class OrgCiService {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
+  private async orgOfNamespace(namespaceId: string) {
+    return await this.deps.orgStorage.getOrgByNamespace(namespaceId) ?? await this.deps.orgStorage.getOrg(namespaceId);
+  }
+
+  /** The one rule for "this workplace's checks run here, in its own cloud":
+   *  a private copy (every workplace), or a workplace with a git host of its
+   *  own (the dormant BYO path). Everywhere else our own lane runs them. */
+  private runsInOrg(org: { git?: { host?: unknown } | null }): boolean {
+    return Boolean(org.git?.host) || Boolean(this.deps.privateCopyCentralHost);
+  }
+
+  /**
+   * Whether a repository in this namespace has its checks run by THIS
+   * service rather than by our own lane (note #1161). The routes that hand
+   * CI something (secrets, a publish link) ask it, because this service does
+   * not yet carry either.
+   */
+  async runsChecksFor(namespaceId: string): Promise<boolean> {
+    if (!this.enabled) return false;
+    const org = await this.orgOfNamespace(namespaceId).catch(() => null);
+    return Boolean(org && this.runsInOrg(org));
+  }
+
   /** A verified push delivery. Decides whether a job runs and queues it. */
   async handlePush(payload: {
     ref?: string; after?: string; deleted?: boolean;
@@ -127,9 +150,9 @@ export class OrgCiService {
     // rooms' (note #843), where repositories made then still live. The org
     // behind either is one reverse lookup away. Missing that lookup would
     // silently end CI for those repositories.
-    const org = await this.deps.orgStorage.getOrgByNamespace(owner) ?? await this.deps.orgStorage.getOrg(owner);
+    const org = await this.orgOfNamespace(owner);
     if (!org) return { queued: false, reason: 'owner is not a workplace' };
-    if (!org.git?.host && !this.deps.privateCopyCentralHost) {
+    if (!this.runsInOrg(org)) {
       return { queued: false, reason: 'owner is not an org with its own git host' };
     }
     const repo = await this.deps.gitRepoStorage.getByName(owner, name);

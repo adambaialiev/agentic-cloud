@@ -268,5 +268,14 @@ describe('OrgCiService in a private copy', () => {
       ciStatusSecret: 's', machineImage: 'img', backendUrl: 'https://b', region: 'ams', runnerScriptB64: 'eA==',
     });
     expect(await service.handlePush(push(org.orgId))).toEqual({ queued: false, reason: 'owner is not an org with its own git host' });
+    // The same rule answers the routes that hand CI something (note #1161):
+    // a hosted workplace's checks are our own lane's, never this service's.
+    expect(await service.runsChecksFor(org.orgId)).toBe(false);
+  });
+
+  it('says a copy\'s workplace has its checks run here, by the same rule handlePush uses (note #1161)', async () => {
+    const { service, org } = await buildCopy();
+    expect(await service.runsChecksFor(org.orgId)).toBe(true);
+    expect(await service.runsChecksFor('nobody')).toBe(false);
   });
 });

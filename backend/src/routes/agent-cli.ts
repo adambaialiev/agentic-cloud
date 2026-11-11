@@ -1746,6 +1746,22 @@ export function agentCliRoutes(deps: RouteDeps): Router {
    *   secret away from CI narrows exposure — a thing an agent may always say,
    *   like protection.
    */
+  /**
+   * A stopgap (note #1161): in an own cloud, checks run on OrgCiService,
+   * which does not yet give a run its granted secrets or publish a site, so
+   * a grant or a link there would answer "Granted"/"Linked" and then do
+   * nothing. Refused plainly instead, until that service carries both.
+   * Taking a grant back and turning publishing off stay allowed. Our own
+   * lane (every repository on our platform) is untouched.
+   */
+  const checksRunInOwnCloud = async (repo: { userId: string }): Promise<boolean> => (
+    Boolean(await deps.orgCi?.runsChecksFor(repo.userId).catch(() => false))
+  );
+  const OWN_CLOUD_CI_SECRETS_REFUSAL = 'Not available in your own Agentic Cloud yet: checks here do not receive granted secrets, so nothing was granted.'
+    + ' Until a release turns it on, a check here cannot read a workplace secret.';
+  const OWN_CLOUD_PUBLISH_REFUSAL = 'Not available in your own Agentic Cloud yet: approving a change here does not publish a site, so nothing was linked.'
+    + ' Until a release turns it on, publish by hand after a merge (agentbuilt deploy).';
+
   router.post('/repos/:name/ci-secrets', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;
@@ -1775,6 +1791,9 @@ export function agentCliRoutes(deps: RouteDeps): Router {
         ciSecrets: kept,
         message: 'Removed. CI runs of this repo stop receiving them from the next job.',
       });
+    }
+    if (await checksRunInOwnCloud(repo)) {
+      return res.status(409).json({ error: OWN_CLOUD_CI_SECRETS_REFUSAL, code: 'not_in_own_cloud_yet' });
     }
     if (auth.orgId && auth.orgRole !== 'admin') {
       return res.status(403).json({
@@ -1896,6 +1915,9 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     const siteName = typeof body.site === 'string' ? body.site.trim() : '';
     if (!siteName) {
       return res.status(400).json({ error: 'Pass the site, e.g. {"site":"my-game"} — or {"off":true} to stop publishing.' });
+    }
+    if (await checksRunInOwnCloud(repo)) {
+      return res.status(409).json({ error: OWN_CLOUD_PUBLISH_REFUSAL, code: 'not_in_own_cloud_yet' });
     }
     if (auth.orgId && auth.orgRole !== 'admin') {
       return res.status(403).json({
