@@ -31,6 +31,7 @@ import { MAIL_UPLOAD_MAX_BYTES, readMailUpload } from '../services/mail-upload.j
 import { MAIL_UPLOAD_CONTENT_TYPE } from '../shared/workspace-mail.js';
 import { agentbuiltTokenMatches, parseAgentbuiltToken } from '../services/agentbuilt-token.js';
 import { looksLikeCiDeployToken, mintCiDeployToken, verifyCiDeployToken } from '../services/ci-deploy-token.js';
+import { ciRunGrant, CiProtectionUnknownError, type CiRunGrant } from '../services/ci-run-grant.js';
 import { previousRecaps } from '../services/workspace-recap.js';
 import { HOSTED_SITE_LIMIT, ORG_DEPLOYMENT_LIMIT, isAdminAccount } from '../config/access.js';
 import { ObjectStorageError } from '../services/object-storage.js';
@@ -1746,22 +1747,6 @@ export function agentCliRoutes(deps: RouteDeps): Router {
    *   secret away from CI narrows exposure — a thing an agent may always say,
    *   like protection.
    */
-  /**
-   * A stopgap (note #1161): in an own cloud, checks run on OrgCiService,
-   * which does not yet give a run its granted secrets or publish a site, so
-   * a grant or a link there would answer "Granted"/"Linked" and then do
-   * nothing. Refused plainly instead, until that service carries both.
-   * Taking a grant back and turning publishing off stay allowed. Our own
-   * lane (every repository on our platform) is untouched.
-   */
-  const checksRunInOwnCloud = async (repo: { userId: string }): Promise<boolean> => (
-    Boolean(await deps.orgCi?.runsChecksFor(repo.userId).catch(() => false))
-  );
-  const OWN_CLOUD_CI_SECRETS_REFUSAL = 'Not available in your own Agentic Cloud yet: checks here do not receive granted secrets, so nothing was granted.'
-    + ' Until a release turns it on, a check here cannot read a workplace secret.';
-  const OWN_CLOUD_PUBLISH_REFUSAL = 'Not available in your own Agentic Cloud yet: approving a change here does not publish a site, so nothing was linked.'
-    + ' Until a release turns it on, publish by hand after a merge (agentbuilt deploy).';
-
   router.post('/repos/:name/ci-secrets', async (req, res) => {
     const auth = await authenticate(req, res);
     if (!auth) return;
@@ -1791,9 +1776,6 @@ export function agentCliRoutes(deps: RouteDeps): Router {
         ciSecrets: kept,
         message: 'Removed. CI runs of this repo stop receiving them from the next job.',
       });
-    }
-    if (await checksRunInOwnCloud(repo)) {
-      return res.status(409).json({ error: OWN_CLOUD_CI_SECRETS_REFUSAL, code: 'not_in_own_cloud_yet' });
     }
     if (auth.orgId && auth.orgRole !== 'admin') {
       return res.status(403).json({
@@ -1915,9 +1897,6 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     const siteName = typeof body.site === 'string' ? body.site.trim() : '';
     if (!siteName) {
       return res.status(400).json({ error: 'Pass the site, e.g. {"site":"my-game"} — or {"off":true} to stop publishing.' });
-    }
-    if (await checksRunInOwnCloud(repo)) {
-      return res.status(409).json({ error: OWN_CLOUD_PUBLISH_REFUSAL, code: 'not_in_own_cloud_yet' });
     }
     if (auth.orgId && auth.orgRole !== 'admin') {
       return res.status(403).json({
@@ -5179,51 +5158,27 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     if (!doc) {
       return res.status(404).json({ error: 'No such repo' });
     }
-    const granted = doc.ciSecrets ?? [];
-    // A publish key needs the commit it publishes (a runner from before this
-    // field sends none, and so publishes nothing) and the public address the
-    // job's CLI will call.
-    const publishes = Boolean(doc.publishTo && deps.agentbuiltApiUrl && /^[0-9a-f]{40}$/.test(sha));
-    if ((granted.length === 0 && !publishes) || !ref) {
-      return res.json({ secrets: {} });
-    }
-    // Protection is the host's fact, asked fresh per job — a stale copy here
-    // would keep paying secrets into a branch someone just unprotected. No
-    // answer means no secrets: this fails closed.
-    let protectedBranches: string[];
+    // What this run gets — the one rule both controllers use (note #1161):
+    // granted shared secrets and, for a linked repository, a one-hour key
+    // for its site, both only on a branch the host calls protected right now.
+    let grant: CiRunGrant;
     try {
-      protectedBranches = (await (await gitHostFor(doc.orgId)).statRepo(owner, name)).protectedBranches ?? [];
-    } catch {
-      return res.status(502).json({ error: 'Could not confirm branch protection with the git host' });
-    }
-    if (!protectedBranches.includes(ref)) {
-      return res.json({ secrets: {} });
-    }
-    // The grant names the namespace it was asked from. Secrets are the
-    // workplace's (note #783; the store maps the namespace) — the same set
-    // `ci-secrets` validated the names against, so what was granted and what
-    // the job receives are one list.
-    const secrets: Record<string, string> = {};
-    if (granted.length > 0) {
-      const env = await new UserSecretsService(deps.secretStorage)
-        .getSecretEnv(repoCiSecretsNamespaceId(doc), undefined, { ownerIsAdmin: true });
-      for (const key of granted) {
-        if (env[key] !== undefined && !/^CI_/i.test(key)) secrets[key] = env[key];
+      grant = await ciRunGrant({
+        doc, ref, sha,
+        secretStorage: deps.secretStorage,
+        ...(deps.deploymentStorage ? { deploymentStorage: deps.deploymentStorage } : {}),
+        ciStatusSecret: deps.ciStatusSecret,
+        ...(deps.agentbuiltApiUrl ? { agentbuiltApiUrl: deps.agentbuiltApiUrl } : {}),
+        protectedBranches: async () => (await (await gitHostFor(doc.orgId)).statRepo(owner, name)).protectedBranches ?? [],
+      });
+    } catch (error) {
+      if (error instanceof CiProtectionUnknownError) {
+        // No answer means no secrets: this fails closed.
+        return res.status(502).json({ error: 'Could not confirm branch protection with the git host' });
       }
+      throw error;
     }
-    // Publishing on approval (`repo publish`): a key for this ONE job, this
-    // site and this commit, dead within the hour. The runner hands it only to
-    // the publish step after ci.sh passes; `/deploy` re-checks the link when
-    // it is used. The site's CURRENT name, because a rename keeps the link.
-    const site = publishes ? await deps.deploymentStorage?.get(doc.publishTo!.siteId).catch(() => null) : null;
-    if (!publishes || !site || site.status === 'destroyed') {
-      return res.json({ secrets });
-    }
-    const minted = mintCiDeployToken(deps.ciStatusSecret, { repoId: doc.id, siteId: site.id, sha });
-    return res.json({
-      secrets,
-      publish: { site: site.name, token: minted.token, apiUrl: deps.agentbuiltApiUrl, expiresAt: minted.expiresAt },
-    });
+    return res.json(grant.publish ? { secrets: grant.secrets, publish: grant.publish } : { secrets: grant.secrets });
   });
 
   /**

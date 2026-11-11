@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "rm -rf dist && tsc -b && cp ../cli/agentbuilt/agentbuilt.mjs dist/agentbuilt-cli.mjs && cp src/ops-miniapp.html dist/ops-miniapp.html && cp ../infra/ci-runner/runner-agent.sh dist/ci-runner-agent.sh && npm run build:workspace-ui",
+    "build": "rm -rf dist && tsc -b && cp ../cli/agentbuilt/agentbuilt.mjs dist/agentbuilt-cli.mjs && cp src/ops-miniapp.html dist/ops-miniapp.html && cp ../infra/ci-runner/runner-agent.sh dist/ci-runner-agent.sh && cp ../infra/ci-runner/ci-verdicts.mjs dist/ci-verdicts.mjs && npm run build:workspace-ui",
     "build:workspace-ui": "tsc -p workspace-ui && vite build --config workspace-ui/vite.config.ts",
     "dev:workspace-ui": "vite build --watch --config workspace-ui/vite.config.ts",
     "start": "node dist/index.js",

@@ -1058,6 +1058,9 @@ const orgCiService = CI_STATUS_SECRET
       orgGitHost: orgGitHostService,
       gitRepoStorage,
       gitCommitStatusStorage,
+      // What a run receives, by the rule our own lane uses (note #1161).
+      secretStorage,
+      deploymentStorage,
       ciStatusSecret: CI_STATUS_SECRET,
       ...(FLY_MACHINE_IMAGE ? { machineImage: FLY_MACHINE_IMAGE } : {}),
       ...(AGENTBUILT_API_URL ? { backendUrl: AGENTBUILT_API_URL } : {}),

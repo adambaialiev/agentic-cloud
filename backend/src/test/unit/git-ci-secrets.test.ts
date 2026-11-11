@@ -302,54 +302,6 @@ describe('POST /repos/:name/ci-secrets — granted at once, the owner is told (n
   });
 });
 
-describe('POST /repos/:name/ci-secrets in an own cloud — refused until its checks carry secrets (note #1161)', () => {
-  it('refuses a grant plainly and records nothing', async () => {
-    const { deps, token, repo, gitRepoStorage, asks } = await buildDeps();
-    deps.orgCi = { runsChecksFor: async () => true } as never;
-    const handler = getRouteHandler(deps, '/repos/:name/ci-secrets', 'post');
-    const res = createMockResponse();
-
-    await handler(mockRequest({
-      headers: authHeader(token), params: { name: 'site' }, body: { names: ['CF_TOKEN'] },
-    }), res);
-
-    expect(res.statusCode).toBe(409);
-    expect((res.body as { error: string }).error).toContain('Not available in your own Agentic Cloud yet');
-    expect((res.body as { error: string }).error).toContain('nothing was granted');
-    expect((await gitRepoStorage.get(repo.id))?.ciSecrets).toBeUndefined();
-    expect(asks).toHaveLength(0);
-  });
-
-  it('still lets any agent take a name back', async () => {
-    const { deps, token, repo, gitRepoStorage } = await buildDeps();
-    deps.orgCi = { runsChecksFor: async () => true } as never;
-    await gitRepoStorage.update(repo.id, { ciSecrets: ['CF_TOKEN'] });
-    const handler = getRouteHandler(deps, '/repos/:name/ci-secrets', 'post');
-    const res = createMockResponse();
-
-    await handler(mockRequest({
-      headers: authHeader(token), params: { name: 'site' }, body: { names: ['CF_TOKEN'], remove: true },
-    }), res);
-
-    expect(res.statusCode).toBe(200);
-    expect((await gitRepoStorage.get(repo.id))?.ciSecrets).toEqual([]);
-  });
-
-  it('grants as before where our own lane runs the checks', async () => {
-    const { deps, token, repo, gitRepoStorage } = await buildDeps();
-    deps.orgCi = { runsChecksFor: async () => false } as never;
-    const handler = getRouteHandler(deps, '/repos/:name/ci-secrets', 'post');
-    const res = createMockResponse();
-
-    await handler(mockRequest({
-      headers: authHeader(token), params: { name: 'site' }, body: { names: ['CF_TOKEN'] },
-    }), res);
-
-    expect(res.statusCode).toBe(200);
-    expect((await gitRepoStorage.get(repo.id))?.ciSecrets).toEqual(['CF_TOKEN']);
-  });
-});
-
 describe('POST /git/ci-secrets — what the dispatcher is told', () => {
   const call = async (deps: Partial<RouteDeps>, body: unknown, secret = CI_SECRET) => {
     const handler = getRouteHandler(deps, '/git/ci-secrets', 'post');

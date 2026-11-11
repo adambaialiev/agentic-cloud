@@ -4,6 +4,10 @@ import { InMemoryOrgStorage } from '../../services/org-storage.js';
 import { InMemoryGitRepoStorage } from '../../services/git-repo-storage.js';
 import { InMemoryGitCommitStatusStorage } from '../../services/git-commit-status-storage.js';
 import { OrgCiService, ORG_CI_CONTEXT } from '../../services/org-ci.js';
+import { InMemorySecretStorage } from '../../services/secret-storage.js';
+import { InMemoryDeploymentStorage } from '../../services/deployment-storage.js';
+import { SHARED_USER_SECRET_SCOPE, UserSecretsService } from '../../services/user-secrets.js';
+import { verifyCiDeployToken } from '../../services/ci-deploy-token.js';
 
 /**
  * CI in the client's org (byo-git slice 5): the webhook authenticates as the
@@ -14,7 +18,7 @@ import { OrgCiService, ORG_CI_CONTEXT } from '../../services/org-ci.js';
 
 const SHA = 'a'.repeat(40);
 
-async function build(args?: { ci?: boolean; protectedBranch?: string }) {
+async function build(args?: { ci?: boolean; protectedBranch?: string; publish?: boolean; statFails?: boolean }) {
   const orgStorage = new InMemoryOrgStorage();
   const org = await orgStorage.createOrg({ name: 'Acme', createdByUserId: 'admin-1' });
   await orgStorage.updateOrg(org.orgId, {
@@ -27,6 +31,21 @@ async function build(args?: { ci?: boolean; protectedBranch?: string }) {
     ...(args?.ci !== false ? { ci: true } : {}),
     ciSecrets: ['DEPLOY_KEY'],
   } as never);
+  // The workplace's own shared secret: what `repo ci-secrets` grants from
+  // (note #1161). The operator store below holds a DIFFERENT value under the
+  // same name, so a test can tell which store a run was given.
+  const secretStorage = new InMemorySecretStorage();
+  await new UserSecretsService(secretStorage)
+    .setSecret(org.orgId, 'DEPLOY_KEY', 'dk-workplace-value', SHARED_USER_SECRET_SCOPE, 'Deploy key');
+  const deploymentStorage = new InMemoryDeploymentStorage();
+  const site = await deploymentStorage.create({
+    userId: org.orgId, orgId: org.orgId, agentId: 'a1', name: 'docs-site', preset: 'static', status: 'live',
+  } as never);
+  if (args?.publish) {
+    await gitRepoStorage.update(repo.id, {
+      publishTo: { siteId: site.id, site: 'docs-site', byAgentId: 'a1', byUserId: 'admin-1', at: 't' },
+    });
+  }
   const statuses = new InMemoryGitCommitStatusStorage();
   const machines: unknown[] = [];
   const deleted: string[] = [];
@@ -41,7 +60,7 @@ async function build(args?: { ci?: boolean; protectedBranch?: string }) {
   };
   const secrets = new Map<string, string>([
     [`${org.orgId}:GIT_HOST_SECRET`, 'org-host-secret'],
-    [`${org.orgId}:DEPLOY_KEY`, 'dk-value'],
+    [`${org.orgId}:DEPLOY_KEY`, 'dk-operator-value'],
   ]);
   const service = new OrgCiService({
     orgStorage,
@@ -50,11 +69,16 @@ async function build(args?: { ci?: boolean; protectedBranch?: string }) {
     orgGitHost: {
       resolveContext: async () => ({ source: 'org' as const, baseUrl: 'http://[fdaa::7]:8080', controlUrl: 'http://[fdaa::7]:8080', secret: 's' }),
       clientFor: async () => ({
-        statRepo: async () => ({ exists: true, sizeBytes: 0, protectedBranches: [args?.protectedBranch ?? 'main'] }),
+        statRepo: async () => {
+          if (args?.statFails) throw new Error('host down');
+          return { exists: true, sizeBytes: 0, protectedBranches: [args?.protectedBranch ?? 'main'] };
+        },
       }),
     } as never,
     gitRepoStorage,
     gitCommitStatusStorage: statuses,
+    secretStorage,
+    deploymentStorage,
     ciStatusSecret: 'status-secret',
     machineImage: 'ghcr.io/example/images:sha-agent',
     backendUrl: 'https://api.example.test',
@@ -62,7 +86,7 @@ async function build(args?: { ci?: boolean; protectedBranch?: string }) {
     runnerScriptB64: Buffer.from('#!/bin/bash\necho hi\n').toString('base64'),
     makeFlyClient: () => fly as never,
   });
-  return { service, org, repo, statuses, fly, machines, deleted, orgStorage, gitRepoStorage };
+  return { service, org, repo, site, statuses, fly, machines, deleted, orgStorage, gitRepoStorage };
 }
 
 function push(orgId: string, over?: Record<string, unknown>) {
@@ -107,13 +131,25 @@ describe('OrgCiService.handlePush', () => {
     expect(pending?.state).toBe('pending');
   });
 
-  it('hands granted org secrets ONLY to a protected branch', async () => {
+  it('hands the WORKPLACE secret that was granted, ONLY to a protected branch (note #1161)', async () => {
     const { service, org, machines } = await build({ protectedBranch: 'work' });
     await service.handlePush(push(org.orgId));
     await vi.waitFor(() => { expect(machines.length).toBe(1); });
     const config = machines[0] as { env: Record<string, string> };
-    expect(config.env.DEPLOY_KEY).toBe('dk-value');
+    // The shared secret `repo ci-secrets` checked the name against — never
+    // the operator store, which is what the run got before (confirmed live
+    // on 11 Nov: "SECRET NOT PRESENT" on main).
+    expect(config.env.DEPLOY_KEY).toBe('dk-workplace-value');
     expect(config.env.CI_SECRET_NAMES).toBe('DEPLOY_KEY');
+  });
+
+  it('runs without secrets or a key when protection cannot be confirmed — fails closed, still runs', async () => {
+    const { service, org, machines } = await build({ protectedBranch: 'work', publish: true, statFails: true });
+    await service.handlePush(push(org.orgId));
+    await vi.waitFor(() => { expect(machines.length).toBe(1); });
+    const config = machines[0] as { env: Record<string, string> };
+    expect(config.env.DEPLOY_KEY).toBeUndefined();
+    expect(config.env.CI_PUBLISH_TOKEN).toBeUndefined();
   });
 
   it('a push from an old room\'s namespace still finds its org and runs (notes #85, #843)', async () => {
@@ -268,14 +304,68 @@ describe('OrgCiService in a private copy', () => {
       ciStatusSecret: 's', machineImage: 'img', backendUrl: 'https://b', region: 'ams', runnerScriptB64: 'eA==',
     });
     expect(await service.handlePush(push(org.orgId))).toEqual({ queued: false, reason: 'owner is not an org with its own git host' });
-    // The same rule answers the routes that hand CI something (note #1161):
-    // a hosted workplace's checks are our own lane's, never this service's.
-    expect(await service.runsChecksFor(org.orgId)).toBe(false);
   });
 
-  it('says a copy\'s workplace has its checks run here, by the same rule handlePush uses (note #1161)', async () => {
-    const { service, org } = await buildCopy();
-    expect(await service.runsChecksFor(org.orgId)).toBe(true);
-    expect(await service.runsChecksFor('nobody')).toBe(false);
+});
+
+describe('OrgCiService publishing on approval (note #1161)', () => {
+  async function linked(args?: { protectedBranch?: string }) {
+    const built = await build({ protectedBranch: args?.protectedBranch ?? 'work', publish: true });
+    await built.service.handlePush(push(built.org.orgId));
+    await vi.waitFor(() => { expect(built.machines.length).toBe(1); });
+    const env = (built.machines[0] as { env: Record<string, string> }).env;
+    return { ...built, env };
+  }
+  const report = (jobId: string, body: Record<string, unknown>) => Buffer.from(JSON.stringify({ jobId, totalSeconds: 9, ...body }));
+
+  it('a protected-branch run of a linked repo carries a one-hour key for that site and commit, and files deploy/<site> pending', async () => {
+    const { env, repo, site, statuses } = await linked();
+    expect(env.CI_PUBLISH_SITE).toBe('docs-site');
+    expect(env.CI_PUBLISH_API_URL).toBe('https://api.example.test');
+    const scope = verifyCiDeployToken('status-secret', env.CI_PUBLISH_TOKEN);
+    expect(scope).toMatchObject({ repoId: repo.id, siteId: site.id, sha: SHA });
+    const pending = await statuses.get(repo.id, SHA, 'deploy/docs-site');
+    expect(pending?.state).toBe('pending');
+    expect(pending?.description).toContain('once the checks pass');
+    // Its minutes are priced once, on the run's own check.
+    expect(pending?.machine).toBeUndefined();
+  });
+
+  it('no key on a branch that is not protected', async () => {
+    const { env, repo, statuses } = await linked({ protectedBranch: 'main' });
+    expect(env.CI_PUBLISH_TOKEN).toBeUndefined();
+    expect(await statuses.get(repo.id, SHA, 'deploy/docs-site')).toBeNull();
+  });
+
+  it('settles deploy/<site> from the runner\'s publish step, in our own lane\'s words, before ci/checks', async () => {
+    const { service, env, repo, statuses } = await linked();
+    const body = report(env.CI_JOB_ID, {
+      exitCode: 0,
+      publish: { exitCode: 0, logTailB64: Buffer.from('Live at https://docs-site.example').toString('base64') },
+    });
+    expect((await service.handleResult(body, sign(env.CI_JOB_TOKEN, body))).ok).toBe(true);
+    const published = await statuses.get(repo.id, SHA, 'deploy/docs-site');
+    expect(published?.state).toBe('success');
+    expect(published?.description).toBe('Published docs-site');
+    expect(published?.logTail).toContain('Live at');
+    expect((await statuses.get(repo.id, SHA, ORG_CI_CONTEXT))?.state).toBe('success');
+  });
+
+  it('says why a site was not published: red checks, no deploy.sh, a failed deploy, a lost step', async () => {
+    const cases: Array<[Record<string, unknown>, string, string]> = [
+      [{ exitCode: 1 }, 'skipped', 'the checks did not pass'],
+      [{ exitCode: 0, publish: { exitCode: 78, logTailB64: '' } }, 'skipped', 'commit a .agentbuilt/deploy.sh'],
+      [{ exitCode: 0, publish: { exitCode: 2, logTailB64: '' } }, 'failure', 'failed (exit 2)'],
+      [{ exitCode: 0 }, 'error', 'did not report'],
+    ];
+    for (const [result, state, words] of cases) {
+      const { service, env, repo, statuses } = await linked();
+      const body = report(env.CI_JOB_ID, result);
+      await service.handleResult(body, sign(env.CI_JOB_TOKEN, body));
+      const doc = await statuses.get(repo.id, SHA, 'deploy/docs-site');
+      expect(doc?.state, JSON.stringify(result)).toBe(state);
+      expect(doc?.description).toContain(words);
+    }
   });
 });
+
