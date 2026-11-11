@@ -31,8 +31,20 @@
 
 import type { WorkspaceTurnRecap } from '../../../../src/shared/turn-recap.js';
 import { recapSentences, turnFacts } from './turn-recap-words.js';
+import { Svg } from '../../ui/icons.js';
 
-export function TurnRecap({ id, turn, jobs, waiting }: { id: string; turn: WorkspaceTurnRecap; jobs?: number; waiting?: string[] }) {
+/**
+ * The Chief of Staff's recap read aloud (note #1146): a play button beside
+ * the RECAP chip while its speaker is on, and one plain line when reading
+ * aloud failed. Absent everywhere else — an agent's chat never speaks.
+ */
+export interface TurnRecapVoice {
+  state: 'idle' | 'loading' | 'playing';
+  onPlay: () => void;
+  error?: string;
+}
+
+export function TurnRecap({ id, turn, jobs, waiting, voice }: { id: string; turn: WorkspaceTurnRecap; jobs?: number; waiting?: string[]; voice?: TurnRecapVoice }) {
   const facts = turnFacts(turn, { jobs, waiting });
   return (
     <div className="turnrecap" id={id} data-recap={turn.recap ? 'arrived' : 'none'}>
@@ -41,6 +53,22 @@ export function TurnRecap({ id, turn, jobs, waiting }: { id: string; turn: Works
           <p className="turnfacts">
             {/* The label once there is something it labels: never over a missing recap. */}
             {turn.recap ? <span className="recaptag">Recap</span> : null}
+            {turn.recap && voice
+              ? (
+                <button
+                  className="recapplay"
+                  id={`${id}Play`}
+                  type="button"
+                  data-state={voice.state}
+                  aria-busy={voice.state === 'loading' || undefined}
+                  aria-label={voice.state === 'idle' ? 'Read the recap aloud' : 'Stop reading the recap'}
+                  title={voice.state === 'idle' ? 'Read aloud' : 'Stop'}
+                  onClick={voice.onPlay}
+                >
+                  <Svg name={voice.state === 'idle' ? 'play' : 'stopcircle'} size={16} />
+                </button>
+              )
+              : null}
             {facts ? <span className="turnfactswords">{facts}</span> : null}
           </p>
         )
@@ -53,6 +81,7 @@ export function TurnRecap({ id, turn, jobs, waiting }: { id: string; turn: Works
           </div>
         )
         : null}
+      {turn.recap && voice?.error ? <p className="recapvoiceerror" id={`${id}VoiceError`} role="status">{voice.error}</p> : null}
     </div>
   );
 }

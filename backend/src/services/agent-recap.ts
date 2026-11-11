@@ -148,6 +148,16 @@ export function buildAgentRecapPrompt(args: {
    * different transcript.
    */
   chatReset?: boolean;
+  /**
+   * The owner's own Chief of Staff (note #1146). Its recap is read by one
+   * person only, under its reply in their private conversation, and may be
+   * read ALOUD to them — so it is written to them, in the agent's voice
+   * ("I proposed …; it's waiting on you to …"), never about them ("Proposed
+   * … for Adam"). Always, not only while their speaker is on: the recap is
+   * written at the turn's end, before any page could say whether it will be
+   * heard, and the second person reads as well as it sounds.
+   */
+  addressOwner?: boolean;
 }): string {
   const transcript = capAgentRecapMessages(args.messages)
     .map((m) => `[${m.role}] ${m.text}`)
@@ -168,6 +178,12 @@ export function buildAgentRecapPrompt(args: {
     '- Avoid vague references such as "it", "this", "the task", "the fix", or "the change" unless the concrete subject appears in the same sentence.',
     '- Mention an approval, decision, reply, or blocker only when it is actually waiting. Never say that nothing is waiting.',
     '- Write in the language the owner writes in.',
+    ...(args.addressOwner
+      ? [
+        '- THIS AGENT IS THE OWNER\'S OWN CHIEF OF STAFF. Its recap is shown under its reply in their private conversation and may be READ ALOUD to them, so write it TO the owner, in the agent\'s voice: "I" for the agent, "you" for the owner. "I proposed the pricing page; it\'s waiting on you to approve it." is right. Never write about the owner in the third person: "Proposed the pricing page for Adam." and "The owner must approve it." are wrong. Other people and agents are still named.',
+        '- It is heard as well as read: plain words that sound natural spoken aloud. No URLs, file paths, code or symbols.',
+      ]
+      : []),
     '- The previous recap is context, not a prefix. Replace it when this turn has a newer useful state. If nothing meaningful changed, return the previous recap, tightened if needed so it follows every rule above.',
     ...(args.turnInProgress
       ? ['- This turn is STILL RUNNING. Say what the agent is doing or has done so far, true as of right now; never present unfinished work as finished.']
@@ -351,6 +367,8 @@ export async function runAgentRecapSummarizer(args: {
   turnInProgress?: boolean;
   /** This turn ended in a fresh chat — see `buildAgentRecapPrompt`. */
   chatReset?: boolean;
+  /** The owner's Chief of Staff: written to them — see `buildAgentRecapPrompt`. */
+  addressOwner?: boolean;
   claudeOauthToken?: string;
   /** An OpenCode agent's seat key, for its own summarizer run. */
   opencodeApiKey?: string;
@@ -363,6 +381,7 @@ export async function runAgentRecapSummarizer(args: {
     messages: args.messages,
     ...(args.turnInProgress ? { turnInProgress: true } : {}),
     ...(args.chatReset ? { chatReset: true } : {}),
+    ...(args.addressOwner ? { addressOwner: true } : {}),
   });
   const command = args.cli === 'claude'
     ? buildClaudeRecapCommand(prompt, args.claudeOauthToken)

@@ -100,6 +100,10 @@ const GLYPHS = {
   play: <><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16" /></>,
   /* Its opposite, in the same circle: what a paused recap card leads with
      (note #505), so the state is legible before a word of it is read. */
+  // The Chief of Staff's speaker (note #1146): on, off, and the recap's stop.
+  speaker: <><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /><path d="M16 9a5 5 0 0 1 0 6" /><path d="M19.364 18.364a9 9 0 0 0 0-12.728" /></>,
+  speakeroff: <><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" /><line x1="22" x2="16" y1="9" y2="15" /><line x1="16" x2="22" y1="9" y2="15" /></>,
+  stopcircle: <><circle cx="12" cy="12" r="10" /><rect x="9" y="9" width="6" height="6" rx="1" /></>,
   pause: <><circle cx="12" cy="12" r="10" /><path d="M10 9v6" /><path d="M14 9v6" /></>,
   image: (
     <>

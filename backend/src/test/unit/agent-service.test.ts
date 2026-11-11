@@ -751,6 +751,15 @@ describe('AgentService', () => {
       expect(record?.lastTurnStartedAt).toBe(startedAt);
       expect(Date.parse(record?.lastTurnEndedAt ?? '')).toBeGreaterThan(Date.parse(startedAt));
       expect(heard).not.toContain('recap-written');
+      // Written to its owner, who may hear it read aloud (note #1146).
+      expect(String(execSync.mock.calls[0]![1])).toContain('write it TO the owner');
+
+      // An ordinary agent's row recap is still about the work, not to anyone.
+      const room = await setup();
+      room.svc.appendAgentRecapMessage('user-1', 'agent-a', 'owner', 'fix the backup');
+      room.svc.queueTelegramAgentRecap('user-1', 'agent-a');
+      await room.settle();
+      expect(String(room.execSync.mock.calls[0]![1])).not.toContain('TO the owner');
     });
 
     it('no seat means silence', async () => {
