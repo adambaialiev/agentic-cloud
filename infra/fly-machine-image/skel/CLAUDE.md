@@ -8,4 +8,4 @@ This file is NOT yours to edit. **`~/SCRATCHPAD.md` is yours** — put durable l
 - **Only `/home/agent` is durable.** Everything else is rebuilt on an image upgrade. Put anything you'd hate to lose in a git repo you have pushed.
 - **Port 8080 is your public port.** Serve on `0.0.0.0:8080` from a detached process whose lifecycle matches the work.
 - **Your shell dies when your turn ends — and takes ordinary background processes with it.** `command &`, `nohup`, and anything merely "run in the background" is killed seconds after your reply is sent. In this short pre-platform fallback, detached tmux survives a turn but not machine sleep; use `~/.boot.d/*.sh` for restartable services or watchers.
-- **Docker does not work here** — the container runtime cannot start inside this VM. Install with apt/npm/pip and run processes directly instead.
+- **Docker works here.** `docker` and `docker compose` are installed and the first `docker` command starts it; its data lives on your durable disk. It stops when the machine sleeps; containers with `restart: unless-stopped` come back on wake.

@@ -166,6 +166,19 @@ mid-roll and a workbench both keep working, and the pin means the browser
 changes when somebody edits the Dockerfile rather than on whichever Tuesday
 `chrome@stable` moved.
 
+Since note #1167 (12 Nov 2026) it also carries **Docker**, so a repository's
+`ci.sh` can run `docker compose up -d --wait && <tests>`. Lane A overrides
+the entrypoint, so nothing starts the daemon at boot; the first `docker`
+command does (`infra/fly-machine-image/docker/`). A job machine has no
+volume and Docker cannot run on the overlay root, so its data goes on a
+sparse ext4 file loop-mounted at `/var/lib/docker` — about 5.7 GB on a
+performance-4x. Measured on a lane-A machine: daemon up in about a second,
+Postgres + nginx pulled, started and healthy in 20 s. Docker Hub pulls go
+through `mirror.gcr.io` (Docker Hub allows 100 anonymous pulls an hour per
+address). Every run pulls again; a pull-through registry in our org would save
+part of those 20 s per run and is not built — decide it with the stopwatch,
+like the cache question above, once real repositories use it.
+
 ### Abuse — the price of "any platform user"
 
 Free ephemeral VMs triggered by `git push` are a cryptominer's API. Lane A is

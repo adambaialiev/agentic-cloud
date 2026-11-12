@@ -1116,7 +1116,12 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v196 (note #1166): CLI 1.80.0 — `agentbuilt repo checks --logs` prints
 // every run's output, passed ones too; help says so.
 // v197 (note #1166): CLI 1.81.0 — no help reminder in a publish run.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 197;
+// v198 (note #1167): Docker works on agent machines — the image bakes it in
+// and starts it on first use; the Essentials line and the machine paragraph
+// say how (data on the volume, a sleep stops it, restart policies bring
+// containers back). CLI 1.82.0 — `agentbuilt help docker` holds the rest
+// (socket clients, disk and prune, memory, jobs, CI, a missing `docker`).
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 198;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -1255,7 +1260,7 @@ export function buildTelegramAgentPlatformDocs(): string {
     '- **Only `/home/agent` is durable.** Everything else is rebuilt on an image upgrade. Put anything you\'d hate to lose in a git repo you have pushed.',
     '- **Port 8080 is your public port.** Serve on `0.0.0.0:8080` from a detached process whose lifecycle matches the work.',
     '- **Your shell dies when your turn ends — and takes ordinary background processes with it.** `command &`, `nohup`, and anything merely "run in the background" is killed seconds after your reply is sent. A detached tmux session survives the turn but does not by itself keep an idle machine awake; follow the lifecycle guidance below, and use `~/.boot.d` for restartable services and watchers.',
-    '- **Docker does not work here** — the container runtime cannot start inside this VM. Install with apt/npm/pip and run processes directly instead.',
+    '- **Docker works here** — the first `docker` command starts it; a sleep stops it.',
   ].join('\n');
 }
 
@@ -8255,7 +8260,14 @@ export class AgentService {
           'The one lever you do have: the machine sleeps about three quiet minutes after its last turn, so opening the link yourself right before your user shows it to someone hands them a warm machine that answers immediately. Three minutes is SHORT — a link you handed over an hour ago is cold again, and warming it once buys nothing later.',
         ]
         : []),
-      'Docker does not work here and never will: this machine is already an isolated VM and the container runtime cannot start inside it — attempting it wastes a long setup and then fails anyway. If a project\'s README says `docker compose up`, read its Dockerfile/compose file and run what the containers would have run, directly.',
+      // Note #1167 (12 Nov 2026): Docker is baked into the image, started on
+      // first use by /usr/local/bin/docker, data on the volume, back on wake
+      // only for restart-policy containers (infra/fly-machine-image). Until
+      // then this paragraph said Docker could never work here, and no agent
+      // tried. The last sentence covers the roll: this text reaches an awake
+      // machine before the image that carries Docker does.
+      'DOCKER WORKS HERE: `docker` and `docker compose` are installed, the first `docker` command starts it, and its data lives on your durable disk (`/data/docker`). A sleep stops every container; only those with `restart: unless-stopped` come back on wake, and a running container does not keep the machine awake.',
+      ...(this.deps.agentbuilt ? ['Disk, memory, long test runs, a missing `docker`: `agentbuilt help docker`, BEFORE your first use of it.'] : []),
       ...(this.deps.agentbuilt ? [
         '## Production hosting',
         `Your preview URL rides your workbench machine and sleeps with it. When your user wants a site or app always-on at a real address, put it into production: \`agentbuilt deploy <dir> --name <name> --preset static|service|service-pro\` puts it at \`https://<name>.${this.deps.agentbuilt.appsDomain}\`; the service presets run a \`run.sh\` listening on port 8080, and a key the app needs while it runs rides \`--secret NAME\` (never a file). **Hosting is included: there is no price per site, no plan tiers and no checkout link** — NEVER quote a monthly price or send a payment link for one.`,

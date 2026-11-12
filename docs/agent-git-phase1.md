@@ -236,7 +236,7 @@ belongs to the platform (`~/SCRATCHPAD.md` is the agent's), and four essentials 
 keep a machine safe to work on before its block lands (only `/home/agent` is
 durable, 8080 is the public port, ordinary backgrounding dies with the turn,
 tmux is only a turn-lifetime fallback, restartable work uses `~/.boot.d`, and
-docker does not run here). It names no CLI command and no policy. `machine-skel-docs.test.ts`
+Docker works but stops on sleep — until note #1167 this said it did not run). It names no CLI command and no policy. `machine-skel-docs.test.ts`
 fails if maintained text reappears there. Since #995 there is no frozen half to
 repair: the identity pass replaces everything below the machine-facts block, and
 creates the file itself if the machine somehow has none.

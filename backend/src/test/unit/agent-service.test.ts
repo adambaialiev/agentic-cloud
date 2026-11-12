@@ -967,7 +967,8 @@ describe('AgentService', () => {
     const block = Buffer.from(encoded ?? '', 'base64').toString('utf8');
     expect(block).toContain('Work that must outlive your turn');
     expect(block).toContain('tmux new-session -d');
-    expect(block).toContain('Docker does not work here');
+    expect(block).toContain('DOCKER WORKS HERE');
+    expect(block).not.toContain('Docker does not work here');
   });
 
   it('pins the identity template and shared agentbuilt CLI to their delivery version — change one, change the other', () => {
@@ -1027,11 +1028,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 197,
-      templateHash: 'b27943e7ccbc5ac0',
-      templateHashWithoutUrl: 'baa05b2eea814313',
-      platformDocsHash: '06741ec0c2d5f37c',
-      agentbuiltCliHash: '4c0f12a8670a6ea4',
+      version: 198,
+      templateHash: '4e8675e830003500',
+      templateHashWithoutUrl: '09cc2c789632a972',
+      platformDocsHash: '9d977f08075d74e6',
+      agentbuiltCliHash: 'ebf426c82c871a9b',
     });
   });
 

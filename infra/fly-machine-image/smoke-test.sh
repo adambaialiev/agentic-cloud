@@ -162,6 +162,18 @@ pass "the baked browser runs"
 ssh_agent 'bash -lc "node --version; git --version; tmux -V; rg --version | head -1; gh --version | head -1"' \
   && pass "node/git/tmux/rg/gh present" || fail "a baseline tool is missing"
 
+# DOCKER (note #1167): installed, reached through the starter shim, the agent
+# in the docker group, a config dockerd will accept. The daemon itself is not
+# started here — this container is not privileged — the real start is proven
+# on an agent machine and on a lane-A CI machine (docs in the image README).
+ssh_agent 'bash -lc "[ \"\$(command -v docker)\" = /usr/local/bin/docker ] && /usr/bin/docker --version && docker compose version && docker buildx version"' \
+  && pass "docker, compose and buildx present; \`docker\` is the starter shim" \
+  || fail "docker is missing, or \`docker\` does not resolve to /usr/local/bin/docker"
+ssh_agent 'id -nG | tr " " "\n" | grep -qx docker' \
+  && pass "agent is in the docker group" || fail "agent is not in the docker group"
+ssh_agent 'jq -e ".\"registry-mirrors\" and .\"log-driver\" == \"local\"" /etc/docker/daemon.json >/dev/null && test -x /usr/local/sbin/agentbuilt-dockerd' \
+  && pass "/etc/docker/daemon.json and the starter are in place" || fail "docker daemon.json or agentbuilt-dockerd missing"
+
 info "Checking seeded CLI settings and unfinished-shell hooks ..."
 ssh_agent 'jq -e ".includeCoAuthoredBy == false and .attribution.includeCoAuthoredBy == false and .env.DISABLE_AUTOUPDATER == \"1\" and ([.hooks[][]?.hooks[]?.command] | flatten | any(. == \"/usr/local/bin/agentbuilt __harness-hook claude\"))" ~/.claude/settings.json >/dev/null' \
   && pass "~/.claude/settings.json seeded with operator defaults" \

@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# Start Docker's daemon if it is not already answering, and wait until it does.
+# Idempotent and safe to call from many shells at once. Runs as root (the
+# `docker` shim beside it calls it through sudo; the boot entrypoint calls it
+# directly). Note #1167.
+#
+# Why this exists instead of a service: the machine has no init system (PID 1
+# is our entrypoint, then sshd), and an idle agent should not pay ~100 MB of
+# memory for a daemon it never uses. So nothing starts dockerd at boot unless a
+# container asked to come back (see the entrypoint), and the first `docker`
+# command starts it here.
+#
+# WHERE ITS DATA LIVES. Not on `/`: the root is an overlay that is rebuilt on
+# every image roll, and overlay-on-overlay cannot mount a container's layers
+# at all ("failed to mount … err: invalid argument", measured 12 Nov 2026).
+#   - An agent machine has its volume at /data, ext4 and durable: images,
+#     volumes and containers live in /data/docker and survive sleep and image
+#     rolls. The volume grows by itself at 80% full (fly-sandbox-client.ts).
+#   - A machine with no volume (a CI lane-A machine, a local `docker run` of
+#     the image) gets a sparse ext4 file on the root, loop-mounted. Throwaway,
+#     like the machine itself.
+# DOCKER_DATA_ROOT overrides both.
+#
+# The daemon is detached into its own session (setsid), as root, so the end of
+# an agent's turn — which takes the turn's own processes with it — leaves it
+# running. It stops when the machine sleeps, like everything else.
+
+set -euo pipefail
+
+SOCK=/var/run/docker.sock
+LOG=/var/log/agentbuilt-dockerd.log
+LOCK=/run/agentbuilt-dockerd.lock
+WAIT_SECONDS="${DOCKERD_WAIT_SECONDS:-60}"
+
+say() { printf 'agentbuilt-dockerd: %s\n' "$*" >&2; }
+
+answering() {
+  curl -fsS --max-time 2 --unix-socket "${SOCK}" http://docker/_ping >/dev/null 2>&1
+}
+
+if [ "$(id -u)" != 0 ]; then
+  exec sudo -n "$0" "$@"
+fi
+
+answering && exit 0
+
+exec 9>"${LOCK}"
+flock 9
+# Somebody else may have started it while we waited for the lock.
+answering && exit 0
+
+data_root() {
+  if [ -n "${DOCKER_DATA_ROOT:-}" ]; then
+    printf '%s' "${DOCKER_DATA_ROOT}"
+    return 0
+  fi
+  if mountpoint -q /data 2>/dev/null; then
+    printf '/data/docker'
+    return 0
+  fi
+  # No volume: a sparse ext4 file on the root, sized to what the root can
+  # actually hold (minus 1 GB of headroom for everything else), loop-mounted.
+  local img=/var/lib/docker-disk.img mnt=/var/lib/docker
+  if ! mountpoint -q "${mnt}"; then
+    if [ ! -f "${img}" ]; then
+      local avail_kb size_kb
+      avail_kb="$(df -Pk /var/lib | awk 'NR==2 {print $4}')"
+      size_kb=$(( avail_kb - 1048576 ))
+      [ "${size_kb}" -gt 1048576 ] || { say "not enough room on / for Docker's disk"; return 1; }
+      truncate -s "${size_kb}K" "${img}"
+      mkfs.ext4 -q -F -m 0 "${img}"
+    fi
+    mkdir -p "${mnt}"
+    mount -o loop,noatime "${img}" "${mnt}"
+  fi
+  printf '%s' "${mnt}"
+}
+
+root="$(data_root)"
+mkdir -p "${root}"
+
+if command -v agentbuilt >/dev/null 2>&1; then
+  say "starting Docker (data in ${root}; how it behaves across sleep: agentbuilt help docker)"
+else
+  say "starting Docker (data in ${root})"
+fi
+# The log lives on the root, which survives a sleep: keep it bounded, and
+# remember where this start begins so a failure shows only its own lines.
+touch "${LOG}"
+[ "$(stat -c %s "${LOG}")" -lt 5242880 ] || : >"${LOG}"
+printf '=== %s agentbuilt-dockerd: starting, data in %s\n' "$(date -u +%FT%TZ)" "${root}" >>"${LOG}"
+from=$(( $(wc -l <"${LOG}") + 1 ))
+recent() { tail -n "+${from}" "${LOG}" | tail -n 20 >&2 || true; }
+
+# Close our lock fd in the daemon so the next caller is not blocked behind it.
+setsid -f dockerd --data-root "${root}" >>"${LOG}" 2>&1 </dev/null 9>&-
+
+for i in $(seq 1 "$(( WAIT_SECONDS * 2 ))"); do
+  if answering; then
+    # The socket is root:docker 0660 by default; the agent user is in the
+    # docker group (Dockerfile), so no sudo is needed from here on.
+    exit 0
+  fi
+  # A daemon that has already exited will never answer: say so now rather
+  # than after the whole wait (an unprivileged container, a bad config).
+  if [ "${i}" -gt 4 ] && ! pgrep -x dockerd >/dev/null 2>&1; then
+    say "Docker exited while starting; its log (${LOG}) says:"
+    recent
+    exit 1
+  fi
+  sleep 0.5
+done
+
+say "Docker did not answer within ${WAIT_SECONDS}s; its log (${LOG}) says:"
+recent
+exit 1

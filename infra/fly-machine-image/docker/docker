@@ -1,0 +1,27 @@
+#!/bin/sh
+# The `docker` command, with one addition: when Docker's daemon is not running
+# yet, start it first (agentbuilt-dockerd), so `docker compose up` works on a
+# machine that has just woken with nothing started. Everything else is the
+# real CLI, untouched. Note #1167.
+#
+# Not for commands that never talk to the daemon (`--version`, help, `compose
+# config`, …): those must stay instant, and must work where no daemon can run
+# at all (the image's own smoke test). Skipped too when DOCKER_HOST points
+# somewhere else — that daemon is not ours to start.
+#
+# If the start fails, the reason is printed and the real command still runs,
+# so the caller also sees Docker's own "cannot connect" error and exit code.
+needs_daemon=yes
+case "${1:-}" in
+  ''|-v|--version|-h|--help|help|context|login|logout|completion) needs_daemon=no ;;
+  compose|buildx)
+    case "${2:-}" in
+      ''|version|--version|-h|--help|help|config|ls) needs_daemon=no ;;
+    esac
+    ;;
+esac
+if [ "${needs_daemon}" = yes ] && [ -z "${DOCKER_HOST:-}" ] \
+   && ! curl -fsS --max-time 2 --unix-socket /var/run/docker.sock http://docker/_ping >/dev/null 2>&1; then
+  sudo -n /usr/local/sbin/agentbuilt-dockerd || true
+fi
+exec /usr/bin/docker "$@"

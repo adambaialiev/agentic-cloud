@@ -46,7 +46,7 @@ describe('agentbuilt help <topic>', () => {
     expect(stdout).toContain('agentbuilt help repos');
     expect(stdout).toContain('agentbuilt help knowledge');
     expect(stdout).toContain('agentbuilt help notes');
-    for (const topic of ['hosting', 'mail', 'secrets', 'agents', 'chat']) expect(stdout).toContain(`agentbuilt help ${topic}`);
+    for (const topic of ['hosting', 'mail', 'secrets', 'agents', 'chat', 'docker']) expect(stdout).toContain(`agentbuilt help ${topic}`);
     // Read before the first command of that area, not after a refusal.
     expect(stdout).toContain('read BEFORE your first command of that area');
     expect(stdout.indexOf('agentbuilt help repos')).toBeLessThan(stdout.indexOf('Commands:'));
@@ -56,7 +56,21 @@ describe('agentbuilt help <topic>', () => {
     const { status, stderr } = await runCli(['help', 'drive']);
     expect(status).toBe(1);
     expect(stderr).toContain('no help topic "drive"');
-    expect(stderr).toContain('repos, knowledge, notes, hosting, mail, secrets, agents, chat');
+    expect(stderr).toContain('repos, knowledge, notes, hosting, mail, secrets, agents, chat, docker');
+  });
+
+  it('docker: started on first use, data on the volume, a sleep stops it, policies bring it back (note #1167)', async () => {
+    const { status, stdout } = await runCli(['help', 'docker']);
+    expect(status).toBe(0);
+    expect(stdout).toContain('agentbuilt help docker — Docker on this machine');
+    expect(stdout).toContain('the first `docker` command starts the daemon');
+    expect(stdout).toContain('run `docker info` once first');
+    expect(stdout).toContain('`/data/docker`');
+    expect(stdout).toContain('A SLEEP IS A POWER CUT');
+    expect(stdout).toContain('restart: unless-stopped');
+    expect(stdout).toContain('A RUNNING CONTAINER DOES NOT KEEP THE MACHINE AWAKE');
+    expect(stdout).toContain('docker system prune');
+    expect(stdout).toContain('Do not install Docker yourself');
   });
 
   it('repos: the proposal gates, in the words that were written after each failure', async () => {

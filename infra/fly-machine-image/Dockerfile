@@ -170,6 +170,46 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
+# DOCKER, BAKED — installed, not started (note #1167).
+#
+# Agents' projects bring their stack up with `docker compose up` (Postgres,
+# Redis, the app), and an agent that cannot do that cannot test its own work.
+# Ubuntu's own packages: Docker 29 + the Compose and Buildx plugins, proven on
+# an agent machine (kernel 6.12, cgroup v1) on 12 Nov 2026.
+#
+# Nothing starts the daemon at boot — it costs ~135 MB and most agents never
+# use it. /usr/local/bin/docker (ahead of /usr/bin on PATH) starts it on first
+# use through /usr/local/sbin/agentbuilt-dockerd, which also decides where its
+# data lives (the volume's /data/docker; never the overlay root, where no
+# container can even mount). The entrypoint starts it at boot only when a
+# container with a restart policy is waiting to come back.
+#
+# daemon.json: the classic overlay2 store (a third less disk than the
+# containerd store for the same images — 347 vs 480 MB for postgres +
+# nginx — on a volume that starts at 5 GB); the `local` log driver, which
+# rotates, so a chatty container cannot fill the disk; and Google's Docker
+# Hub mirror, because Docker Hub allows 100 anonymous pulls an hour per
+# address and a Fly host's machines share one. A miss there falls through to
+# Docker Hub by itself.
+# ---------------------------------------------------------------------------
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        docker.io \
+        docker-compose-v2 \
+        docker-buildx \
+        iptables; \
+    rm -rf /var/lib/apt/lists/*; \
+    docker --version; \
+    docker compose version; \
+    docker buildx version
+COPY docker/daemon.json /etc/docker/daemon.json
+COPY docker/agentbuilt-dockerd /usr/local/sbin/agentbuilt-dockerd
+COPY docker/docker /usr/local/bin/docker
+RUN chmod 0644 /etc/docker/daemon.json; \
+    chmod 0755 /usr/local/sbin/agentbuilt-dockerd /usr/local/bin/docker
+
+# ---------------------------------------------------------------------------
 # Users.
 #
 # server-bootstrap.ts connects as `root` for admin and creates a non-root
@@ -180,6 +220,9 @@ RUN set -eux; \
 # ---------------------------------------------------------------------------
 RUN set -eux; \
     useradd -m -s /bin/bash agent; \
+    # The docker group owns Docker's socket, so the agent runs `docker`
+    # without sudo once the daemon is up (the group comes with docker.io).
+    usermod -aG docker agent; \
     # Passwordless sudo mirrors the "root for admin, agent for dev" split while
     # letting agent sessions self-serve apt installs without a second SSH user.
     echo 'agent ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/agent; \

@@ -1,0 +1,5 @@
+{
+  "features": { "containerd-snapshotter": false },
+  "log-driver": "local",
+  "registry-mirrors": ["https://mirror.gcr.io"]
+}

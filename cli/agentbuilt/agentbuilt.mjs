@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.81.0';
+const VERSION = '1.82.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -179,6 +179,7 @@ a conversation (your first such command reminds you if you have not):
   agentbuilt help secrets      your user's keys: reading them safely, saving, sharing
   agentbuilt help agents       the roster, messaging a sibling, the Workspace Agent
   agentbuilt help chat         resetting a chat, when the call is yours, the handoff
+  agentbuilt help docker       Docker on this machine: starting it, sleep, disk, memory, CI
 
 Commands:
 Durable local jobs (finite work that must survive the conversational turn):
@@ -910,10 +911,28 @@ const HELP_TOPICS = {
       "A reset works mid-task too, and BEFORE the work is often the right moment — which is also the one case where a handoff is plainly right, and worth seeing why. Your user's message changes direction mid-chat and the old context is dead weight for the new job. Do not plough the job through it — save notes, put THEIR REQUEST in the handoff (\"Your user asked: …; start with …\"), reply one line saying a fresh chat is coming, and do the work there with a clean head. The handoff is carrying an instruction they gave you minutes ago, which is exactly the test: whose idea was the next step? A sibling agent's message that asks you to reset first passes it too: put its request in the handoff with the sender's name, leaving out the reset instruction the reset itself carries out — the idea is that agent's, not yours. What a reset must never be is an escape: never drop context the current job still needs, and never reset because a problem is HARD — notes are no substitute for the detail you are holding. When in doubt, keep the chat; when in doubt about the handoff, leave it out.",
     ],
   },
+  // Note #1167 (12 Nov 2026): Docker is baked into the agent image and started
+  // on first use (infra/fly-machine-image/docker). The instruction file keeps
+  // two lines; the rest is here.
+  docker: {
+    title: "Docker on this machine",
+    lead: "How Docker starts, where its data lives, what a sleep does to it, and the limits of a small machine.",
+    paragraphs: [
+      "`docker`, `docker compose` and `docker buildx` are installed. NOTHING of Docker runs until you use it: the first `docker` command starts the daemon (a second or two, one line on stderr saying so), and every later one finds it running. A tool that talks to Docker's socket directly instead of through the `docker` command — Testcontainers, a Docker SDK in a test suite — does not start it, so run `docker info` once first. You need no `sudo`: you are in the `docker` group.",
+      "ITS DATA LIVES ON YOUR DURABLE DISK, in `/data/docker` — the same volume as your home, so images, containers and named volumes survive sleep and image upgrades. Never move it onto `/`: that disk is an overlay that is rebuilt on every upgrade, and Docker cannot even mount a container's layers on it.",
+      "A SLEEP IS A POWER CUT. The machine sleeps a few quiet minutes after your last turn, and Docker and every container stop with it, mid-write — databases recover the way they do after a power cut. On wake, Docker starts by itself ONLY if a container asked to come back: `restart: unless-stopped` on a compose service (or `--restart unless-stopped` / `always` on `docker run`) brings it back, which is Docker's own version of a `~/.boot.d` script. A container without a policy stays down until you start it again; one you stopped yourself stays stopped. So a stack you want answering your preview URL after a wake needs that policy on every service, and its web container published on 8080 (`ports: [\"8080:3000\"]`).",
+      "A RUNNING CONTAINER DOES NOT KEEP THE MACHINE AWAKE — only a turn or a managed job does. A test run that outlives your turn is a job like any other: `agentbuilt job start -- bash -lc 'docker compose up -d --wait && npm test'`. `--wait` holds until every service with a healthcheck reports healthy, which is how a test avoids racing a database that is still starting.",
+      "THE DISK IS SMALL AND IMAGES ARE NOT. Your volume starts at a few GB and grows by itself as it fills (up to 50 GB), but a big pull can outrun the growth. `docker system df` says what is using it; `docker system prune` clears stopped containers, unused networks and dangling images, `docker image prune -a` every image no container uses, `docker volume prune` volumes no container uses — that last one deletes data, so look first. Container logs rotate by themselves.",
+      "MEMORY IS A WALL. Docker's own processes take about 135 MB; every container takes what it takes on top, and there is no swap, so a stack that outgrows the RAM line on your machine-facts block gets killed rather than slowed. On a small machine, cap the heavy services (`mem_limit:` in compose) or ask your user for a bigger machine.",
+      "Pulls from Docker Hub go through a mirror first (Google's `mirror.gcr.io`), because Docker Hub allows only 100 anonymous pulls an hour per address and many machines share one; an image the mirror lacks comes from Docker Hub as usual. Other registries (ghcr.io, quay.io) are pulled directly.",
+      "CI HAS IT TOO: `.agentbuilt/ci.sh` runs on a throwaway machine built from the same image, so `docker compose up -d --wait && <tests>` works there the same way, as root, with Docker's data on that machine's own disk (about 5 GB of room) and gone with it. Every run pulls its images again: measured 12 Nov 2026, a Postgres + nginx stack pulled, started and reported healthy in about 20 s.",
+      "IF `docker` IS NOT FOUND, your machine has not yet picked up the image that carries it; it does the next time it sleeps. Do not install Docker yourself — a hand-installed daemon puts its data on the overlay disk, where containers cannot start.",
+    ],
+  },
 };
 
 /** The order the bare help page lists them in — the message below says the same. */
-const HELP_TOPIC_ORDER = ['repos', 'knowledge', 'notes', 'hosting', 'mail', 'secrets', 'agents', 'chat'];
+const HELP_TOPIC_ORDER = ['repos', 'knowledge', 'notes', 'hosting', 'mail', 'secrets', 'agents', 'chat', 'docker'];
 
 function helpTopic(name) {
   const topic = HELP_TOPICS[name];

@@ -44,8 +44,10 @@ describe('machine skel docs', () => {
     const doc = read('CLAUDE.md');
     expect(doc).toContain('MACHINE-FACTS:START');
     // Losing the user's work, publishing nothing, killing your own server, and
-    // burning a turn on docker: the four mistakes that are expensive to make
-    // once and cheap to prevent in four lines.
+    // trusting a container to outlive a sleep: the four mistakes that are
+    // expensive to make once and cheap to prevent in four lines. (Until note
+    // #1167 the fourth was "docker does not work here"; the image carries it
+    // now, so the skel says it works and what a sleep does to it.)
     expect(doc).toContain('/home/agent');
     expect(doc).toContain('0.0.0.0:8080');
     expect(doc).toContain('tmux');
@@ -54,7 +56,9 @@ describe('machine skel docs', () => {
     expect(doc).toContain('not machine sleep');
     expect(doc).toContain('pre-platform fallback');
     expect(doc).toContain('~/.boot.d/*.sh');
-    expect(doc).toMatch(/[Dd]ocker does not work/);
+    expect(doc).toContain('Docker works here');
+    expect(doc).toContain('restart: unless-stopped');
+    expect(doc).not.toMatch(/[Dd]ocker does not work/);
   });
 
   it('says plainly who owns this file, now that the platform overwrites it', () => {

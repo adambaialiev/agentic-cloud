@@ -494,6 +494,68 @@ EOF
 apply_machine_firewall
 
 # ---------------------------------------------------------------------------
+# 7b. Docker comes back only when a container asked to (note #1167).
+#
+# Docker is baked into the image but its daemon is NOT started at boot: it
+# costs ~135 MB of memory (dockerd + containerd, measured 12 Nov 2026), and
+# most agents never use it. The first `docker` command starts it
+# (/usr/local/sbin/agentbuilt-dockerd, data in ${DATA_DIR}/docker).
+#
+# A sleep is a power cut for Docker: the daemon and every container die with
+# the machine. So on boot, if any container on the volume carries a restart
+# policy that Docker itself honours at daemon start — `always`, or
+# `unless-stopped` that nobody stopped by hand — start the daemon now, and
+# Docker brings those containers back on its own. That is Docker's analogue
+# of ~/.boot.d, and it is what `restart: unless-stopped` in a compose file
+# already means on any laptop. A container without a policy stays down, as it
+# would after any reboot.
+#
+# The rootfs persists across a stop/start (rootfs persist: restart), so the
+# previous boot's pid file, socket and exec-root are still in /run: nothing of
+# Docker's is running yet, so they are stale by definition. Clear them, or a
+# reused pid in docker.pid makes dockerd refuse to start.
+#
+# Detached and never waited on: sshd must not start later because a pull is
+# slow. Any failure only shows in /var/log/agentbuilt-dockerd.log.
+# ---------------------------------------------------------------------------
+start_docker_if_asked() {
+  # The overrides exist for the unit test (fly-machine-image-entrypoint
+  # .test.ts), which runs this function against a scratch directory.
+  local root="${DATA_DIR}/docker" dir policy
+  local run="${DOCKER_RUN_DIR:-/var/run}"
+  local starter="${DOCKERD_STARTER:-/usr/local/sbin/agentbuilt-dockerd}"
+  # Nothing reaches this machine before this step in production (sshd starts
+  # after it), but a `fly machine exec` can: a daemon already running owns
+  # those files, and clearing them would orphan it. Measured on the n1167
+  # probe machine, 12 Nov 2026.
+  if pgrep -x "${DOCKERD_PROCESS:-dockerd}" >/dev/null 2>&1; then
+    log "docker: already running; leaving it be."
+    return 0
+  fi
+  rm -rf "${run}/docker.pid" "${run}/docker.sock" "${run}/docker" \
+    "${run}/agentbuilt-dockerd.lock" 2>/dev/null || true
+  [ -x "${starter}" ] || return 0
+  [ -d "${root}/containers" ] || return 0
+  for dir in "${root}"/containers/*/; do
+    [ -f "${dir}hostconfig.json" ] || continue
+    policy="$(jq -r '.RestartPolicy.Name // ""' "${dir}hostconfig.json" 2>/dev/null || true)"
+    case "${policy}" in
+      always) ;;
+      unless-stopped)
+        [ "$(jq -r '.HasBeenManuallyStopped // false' "${dir}config.v2.json" 2>/dev/null || true)" = "true" ] \
+          && continue
+        ;;
+      *) continue ;;
+    esac
+    log "docker: container $(basename "${dir}" | cut -c1-12) restarts ${policy}; starting Docker."
+    setsid -f "${starter}" >/dev/null 2>&1 </dev/null || true
+    return 0
+  done
+  log "docker: no container asks to come back; Docker starts on first use."
+}
+start_docker_if_asked
+
+# ---------------------------------------------------------------------------
 # 8. Agent boot hooks: every ~/.boot.d/*.sh runs (as the agent) on each boot.
 #
 # The idle reaper stops machines when their user goes idle, and anything the

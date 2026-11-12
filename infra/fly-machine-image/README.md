@@ -32,6 +32,7 @@ Base: `ubuntu:24.04` (matches the current Hetzner `ubuntu-24.04` sandbox image).
 | `curl`, `unzip`, `jq`, `ripgrep` (`rg`) | | baseline tooling the harness/prompts assume |
 | `build-essential`, `python3`, `make`, `g++` | | native module builds |
 | `rsync`, `sudo`, `locales` (en_US.UTF-8) | | first-boot seeding, agent self-serve apt, UTF-8 TUIs |
+| Docker | Ubuntu's `docker.io` (29) + `docker-compose-v2` + `docker-buildx`, **not started at boot** — see [Docker](#docker-note-1167) | agents bring their project's stack up with `docker compose`, and CI runs the same image |
 | Chrome | **pinned via `CHROME_VERSION`**, under `/opt/puppeteer` (root's `~/.cache/puppeteer` links to it, `$CHROME`/`$CHROME_PATH` name it for everyone else), plus its shared libraries and `fonts-liberation` | CI's browser stage is 37 checks that all need it, and it was downloading ~500 MB per run; agents taking screenshots get the libraries that used to vanish on every image roll |
 
 ### Parity with `server-bootstrap.ts`
@@ -410,6 +411,76 @@ from `exposed-ports`); the allocated shared IPv4 is left in place (free and
 harmless). The runtime nft add/delete and the persist-file edits run as `agent`
 via passwordless `sudo`, and tolerate the `fly_fw` table being absent (a local
 `docker run` has no 6PN firewall to punch through).
+
+## Docker (note #1167)
+
+Installed in the image since 12 Nov 2026; until then every agent was told it
+could never work here. Four pieces, all in this directory:
+
+| Piece | What it does |
+|---|---|
+| `docker/docker` → `/usr/local/bin/docker` | ahead of `/usr/bin` on PATH: when the daemon does not answer, starts it, then `exec`s the real CLI. Client-only commands (`--version`, help, `compose config`, …) pass straight through, so they stay instant and work where no daemon can run (the smoke test). Skipped when `DOCKER_HOST` is set. |
+| `docker/agentbuilt-dockerd` → `/usr/local/sbin/` | idempotent "start it if it is not answering": picks the data root, `setsid -f dockerd`, waits for `/_ping`, fails fast with the daemon's own words if it exits. Logs to `/var/log/agentbuilt-dockerd.log`. |
+| `docker/daemon.json` → `/etc/docker/` | classic overlay2 store, the `local` log driver (rotates), `mirror.gcr.io` as Docker Hub mirror. |
+| entrypoint step 7b, `start_docker_if_asked` | at boot: clears the previous boot's `/run` leftovers, and starts the daemon only if a container on the volume has a restart policy Docker honours at daemon start. |
+
+**Why not at boot.** dockerd + containerd take ~135 MB (measured on a 2 GB
+agent machine), and most agents never run a container.
+
+**Where the data lives.** Never on `/`: the root is an overlay, and Docker
+cannot mount a container's layers on overlay — pulls succeed, then every
+`run` fails with `failed to mount … overlay … invalid argument` (measured).
+On an agent machine the data is `/data/docker` on the volume, so images and
+named volumes survive sleep and image rolls, and Fly's auto-extend (80% →
++5 GB, up to 50 GB) grows it. A machine with no `/data` mount (a lane-A CI
+machine, a local `docker run` of this image) gets a sparse ext4 file on the
+root, loop-mounted at `/var/lib/docker`, sized to the root's free space minus
+1 GB — about 5.7 GB on a performance-4x lane-A machine.
+
+**Sleep is a power cut.** The reaper stops the machine; nothing signals
+dockerd first, so containers die mid-write (Postgres recovers as after a
+power loss — measured with a hard kill of every Docker process). Running
+containers do not keep a machine awake: the reaper's gates are turns, live
+terminals, managed jobs and recent activity, and a container is none of those.
+On the next boot, `always` and `unless-stopped`-not-stopped-by-hand
+containers come back because step 7b starts the daemon; a container with no
+policy stays down, as on any laptop after a reboot. The rootfs survives a
+stop/start (`rootfs: { persist: 'restart' }`), so the old `docker.pid` is
+still there at boot and a reused pid in it makes dockerd refuse to start —
+that is why step 7b clears it.
+
+**Why these daemon.json choices.** overlay2 over the containerd image store:
+postgres:16-alpine + nginx:alpine took 347 MB vs 480 MB, on a volume that
+starts at 5 GB. `local` log driver: json-file never rotates, so a chatty
+container could fill the volume. `mirror.gcr.io`: Docker Hub allows 100
+anonymous pulls an hour per address (`ratelimit-limit: 100;w=3600`), Fly
+machines on a host share an egress address, and pulls through the mirror did
+not move the counter; a miss falls through to Docker Hub.
+
+**Networking.** Published ports answer on the machine's 6PN address too
+(docker-proxy binds `::`), so a container on `8080:<port>` IS the public
+preview. The `fly_fw` input chain still drops other tenants on every other
+port: for IPv6 (no container has an IPv6 address) a published port is docker-proxy, a host process, so its traffic goes through `input`.
+
+**Proven on 12 Nov 2026.** On an agent machine (1 dedicated core, 2 GB):
+first `docker compose up -d` of Postgres + nginx 11 s including pulls;
+`pg_isready`, nginx 200 on 127.0.0.1 and on the 6PN address, service-name DNS
+between containers; hard kill of every Docker process then step 7b → both
+`unless-stopped` containers back with their data; `docker compose stop` →
+step 7b leaves Docker off; next `docker` command starts it in ~1.4 s. On a
+lane-A CI machine (performance-4x, no volume): the loop disk came up, overlay2
+on extfs, Postgres + nginx pulled, started and healthy in 20 s.
+
+Then the real thing: this image built and booted as a throwaway machine in the
+scratch org (1 dedicated core, 2 GB, a volume at `/data`, `--rootfs-persist
+restart`). As `agent`, `docker compose up -d --wait` started Docker on first
+use and brought Postgres + nginx (on 8080) up healthy; a row went into
+Postgres. `fly machine stop` + `start` — the reaper's own call — and step 7b
+logged `restarts unless-stopped; starting Docker`: both containers back
+healthy, nginx 200 on 8080, the row still there. The probe also found the one
+race step 7b guards against: a `fly machine exec` that started Docker BEFORE
+the entrypoint reached step 7b had its pid file and socket cleared from under
+it, so step 7b now leaves a running daemon alone.
 
 ## Build locally
 
