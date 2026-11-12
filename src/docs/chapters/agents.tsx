@@ -167,7 +167,8 @@ const chapter: DocChapter = {
         <>
           <p>
             Each agent has a dedicated virtual computer in your company&rsquo;s cloud account, with a full shell, outbound
-            internet and git. New agents are built on <strong>2 dedicated cores and 4 GB</strong>. The
+            internet, git and Docker. With Docker Compose, an agent can run a project&rsquo;s database,
+            cache and app on its own machine and test its work against them. New agents are built on <strong>2 dedicated cores and 4 GB</strong>. The
             other sizes are in{' '}
             <DocLink href="/docs/your-cloud-and-subscriptions#machine-sizes">Machine sizes</DocLink>.
           </p>
@@ -201,6 +202,10 @@ const chapter: DocChapter = {
             Sleep is safe. Every file and every unfinished piece of work is there when it wakes.
             A running background job keeps the machine awake, as do a turn in progress, setup, an
             open terminal and an update being installed.
+          </p>
+          <p>
+            Running containers do not keep it awake. They stop when the machine sleeps, and the
+            ones set to restart come back by themselves when it wakes.
           </p>
           <p>
             A visitor can wake a machine too. A page the agent serves from its own address is

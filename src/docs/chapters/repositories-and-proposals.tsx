@@ -109,6 +109,10 @@ const chapter: DocChapter = {
             <Ui>skipped</Ui>, which means there was nothing to run.
           </p>
           <p>
+            The machine has Docker, so a script can bring the project&rsquo;s services up before
+            its tests, with <code>docker compose up -d --wait</code>: a database, a cache, the app.
+          </p>
+          <p>
             You get a card only when the checks on that version have passed. A check still running
             or failing keeps the invitation from being sent, and a check pending for 30 minutes
             fails, so a verdict always arrives. The checks can go red afterwards, because an open

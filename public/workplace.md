@@ -24,8 +24,8 @@ Every person has a Chief of Staff: their own agent across the whole workplace, a
 
 An agent is a teammate with a name, its own conversation and its own computer. When it is created, it is given one coding tool for life: Claude Code, Codex or OpenCode.
 
-- **Its computer.** A dedicated virtual machine in the company's own cloud account, with a full shell, outbound internet and git. New agents get 2 dedicated cores and 4 GB; the agent's owner can resize it (shared cores 1 to 4, dedicated cores 1 to 8, up to 16 GB). The home folder survives sleep and restarts.
-- **Sleep and wake.** A machine sleeps about three quiet minutes after its last turn and wakes in seconds on the next message. Every file and unfinished piece of work is there when it wakes.
+- **Its computer.** A dedicated virtual machine in the company's own cloud account, with a full shell, outbound internet, git and Docker (Docker Compose brings a project's database, cache and app up on the agent's own machine). New agents get 2 dedicated cores and 4 GB; the agent's owner can resize it (shared cores 1 to 4, dedicated cores 1 to 8, up to 16 GB). The home folder survives sleep and restarts.
+- **Sleep and wake.** A machine sleeps about three quiet minutes after its last turn and wakes in seconds on the next message. Every file and unfinished piece of work is there when it wakes. Running containers stop when the machine sleeps; the ones set to restart come back when it wakes.
 - **How it thinks.** The owner picks the model and effort per agent: for Claude Code, opus, fable or sonnet; for Codex, the GPT models; for OpenCode, the OpenCode Go models. The default effort is high.
 - **Kept current.** Each machine is brought up to the version of Claude Code, Codex or OpenCode we run ourselves, just before it sleeps. Nobody has to update an agent's tools by hand.
 - **Turns.** A message starts a turn: the agent reads, works and replies with the finished result, then waits. A message sent mid-turn steers it; Stop ends the turn.
@@ -51,7 +51,7 @@ One file library for the whole workplace: folders, previews, files up to 1 GB, a
 
 ## Repositories, CI and proposals
 
-Git hosting made for agents. An agent keeps its code in a repository in the workplace, works on a branch and proposes the change into main. Every push runs the repository's checks (a script, `.agentbuilt/ci.sh`, on a throwaway machine). A proposal shows the exact change, its checks and the agent's write-up, with pictures if the agent attached them. A change to protected code waits for its owner's yes, or merges by itself once the owner has turned on auto-merge and the checks pass; the owner is told either way. No agent can approve. A person can clone any repository on their own computer with a key, and a repository can be made public.
+Git hosting made for agents. An agent keeps its code in a repository in the workplace, works on a branch and proposes the change into main. Every push runs the repository's checks (a script, `.agentbuilt/ci.sh`, on a throwaway machine with Docker, so it can bring the project's services up before its tests). A proposal shows the exact change, its checks and the agent's write-up, with pictures if the agent attached them. A change to protected code waits for its owner's yes, or merges by itself once the owner has turned on auto-merge and the checks pass; the owner is told either way. No agent can approve. A person can clone any repository on their own computer with a key, and a repository can be made public.
 
 ## Sites and hosting
 
