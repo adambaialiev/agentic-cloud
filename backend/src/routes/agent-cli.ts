@@ -982,7 +982,13 @@ export function agentCliRoutes(deps: RouteDeps): Router {
     '/deployments/:name/listing/picture',
     raw({ type: () => true, limit: LISTING_PICTURE_MAX_BYTES + 1024 }),
     async (req, res) => {
-      const auth = await authenticate(req, res);
+      // A publish run redeploys the site and then retakes its picture, as any
+      // redeploy does (note #1166): its one-hour key is good here too, for
+      // the one site its link names, so the catalogue does not keep showing
+      // the version before the approved change.
+      const ciPublish = await ciPublishAuth(req, res);
+      if (ciPublish === null) return;
+      const auth = ciPublish ? ciPublish.auth : await authenticate(req, res);
       if (!auth) return;
       const configured = requireDeployments(res);
       if (!configured) return;
@@ -991,6 +997,9 @@ export function agentCliRoutes(deps: RouteDeps): Router {
       }
       const doc = await ownedByName(auth, configured.storage, req.params.name, res);
       if (!doc) return;
+      if (ciPublish && doc.id !== ciPublish.siteId) {
+        return res.status(403).json({ error: 'A publish key reaches only the site its repository publishes. No picture was saved.' });
+      }
       const data = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
       if (data.length < PNG_SIGNATURE.length || !data.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
         return res.status(400).json({ error: 'A catalogue picture is a PNG (the CLI takes one at 1280×800 with `agentbuilt listing <name> --retake`).' });
@@ -1020,8 +1029,8 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   );
 
   /**
-   * A CI run's publish key (`ci-deploy-token.ts`), on `/deploy` — the only
-   * route that accepts one. `undefined` when the bearer is not such a key (an
+   * A CI run's publish key (`ci-deploy-token.ts`), on `/deploy` and on its
+   * site's catalogue picture (note #1166) — the only routes that accept one. `undefined` when the bearer is not such a key (an
    * agent's own token follows), `null` once a refusal has been sent. Nothing
    * here touches an agent record: a refused key is not an agent's, so it must
    * never trip the stale-token flag that forces a rotation.

@@ -1115,7 +1115,8 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // written into the store, and how to empty a stored letter or the template.
 // v196 (note #1166): CLI 1.80.0 — `agentbuilt repo checks --logs` prints
 // every run's output, passed ones too; help says so.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 196;
+// v197 (note #1166): CLI 1.81.0 — no help reminder in a publish run.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 197;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

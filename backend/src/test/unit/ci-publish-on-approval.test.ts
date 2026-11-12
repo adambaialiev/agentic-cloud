@@ -264,6 +264,45 @@ describe('POST /git/ci-secrets — the one-job publish key', () => {
   });
 });
 
+describe('POST /deployments/:name/listing/picture with a publish key (note #1166)', () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('site after the approved change')]);
+  const picture = async (deps: Partial<RouteDeps>, token: string, name: string) => {
+    const res = createMockResponse();
+    await handler(deps, '/deployments/:name/listing/picture', 'post')({
+      ...request({ headers: { Authorization: `Bearer ${token}` }, params: { name } }),
+      body: PNG,
+    }, res);
+    return res;
+  };
+
+  it('saves the redeployed site\'s picture, for the one site its link names and no other', async () => {
+    const w = await world();
+    await w.link();
+    const objects = new Map<string, Buffer>();
+    w.deps.mediaStorage = {
+      uploadObject: async ({ storagePath, data }: { storagePath: string; data: Buffer }) => { objects.set(storagePath, data); },
+      deleteObject: async () => {},
+    } as never;
+    const key = mintCiDeployToken(CI_SECRET, { repoId: w.repo.id, siteId: w.site.id, sha: SHA }).token;
+
+    const own = await picture(w.deps, key, 'startup-game');
+    expect(own.statusCode).toBe(200);
+    expect((await w.deploymentStorage.get(w.site.id))?.listing?.picture).toBeTruthy();
+    expect([...objects.values()]).toContainEqual(PNG);
+
+    const elsewhere = await picture(w.deps, key, 'blog');
+    expect(elsewhere.statusCode).toBe(403);
+    expect((await w.deploymentStorage.get(w.other.id))?.listing?.picture).toBeFalsy();
+  });
+
+  it('refuses a key whose link was taken off, like /deploy does', async () => {
+    const w = await world();
+    w.deps.mediaStorage = { uploadObject: async () => {}, deleteObject: async () => {} } as never;
+    const key = mintCiDeployToken(CI_SECRET, { repoId: w.repo.id, siteId: w.site.id, sha: SHA }).token;
+    expect((await picture(w.deps, key, 'startup-game')).statusCode).toBe(403);
+  });
+});
+
 describe('POST /deploy with a publish key — one redeploy, one site, as the linking agent', () => {
   const keyFor = (w: Awaited<ReturnType<typeof world>>, siteId = w.site.id) => (
     mintCiDeployToken(CI_SECRET, { repoId: w.repo.id, siteId, sha: SHA }).token

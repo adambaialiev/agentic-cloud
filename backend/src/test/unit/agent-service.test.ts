@@ -1027,11 +1027,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 196,
+      version: 197,
       templateHash: 'b27943e7ccbc5ac0',
       templateHashWithoutUrl: 'baa05b2eea814313',
-      platformDocsHash: 'd721c93098023f5a',
-      agentbuiltCliHash: 'e50ee859e6cdd7a5',
+      platformDocsHash: '06741ec0c2d5f37c',
+      agentbuiltCliHash: '4c0f12a8670a6ea4',
     });
   });
 

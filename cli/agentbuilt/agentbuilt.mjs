@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.80.0';
+const VERSION = '1.81.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -969,6 +969,10 @@ function rememberTopicRead(name) {
 function remindTopicUnread(command) {
   const topic = TOPIC_OF_COMMAND[command];
   if (!topic || !HELP_TOPICS[topic]) return;
+  // A publish run's deploy.sh (note #1166) is a check machine holding a
+  // one-hour publish key, not an agent: there is nobody to read the rules,
+  // and the line only cluttered the deploy/<site> log.
+  if ((process.env.AGENTBUILT_TOKEN ?? '').startsWith('cdt1.')) return;
   try {
     if (!statSync(os.homedir()).isDirectory()) return;
   } catch {

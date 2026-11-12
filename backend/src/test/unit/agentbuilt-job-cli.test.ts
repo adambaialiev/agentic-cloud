@@ -727,6 +727,30 @@ describe('standalone agentbuilt job CLI', () => {
     }
   });
 
+  // Note #1166: a publish run's deploy.sh holds a one-hour publish key, not
+  // an agent's token; the "read the rules first" line only cluttered its log.
+  it('prints no help reminder when it runs with a publish key', async () => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ ci: true, settled: true, commitKnown: true, runs: [] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const agent = await runCliAsync(['repo', 'checks', 'infinite-agents', '--sha', 'd'.repeat(40)], {
+        env: { AGENTBUILT_API_URL: apiUrl, AGENTBUILT_TOKEN: 'agb1.x.y' },
+      });
+      const publish = await runCliAsync(['repo', 'checks', 'infinite-agents', '--sha', 'd'.repeat(40)], {
+        env: { AGENTBUILT_API_URL: apiUrl, AGENTBUILT_TOKEN: 'cdt1.x.y' },
+      });
+      expect(publish.stderr).not.toContain('read the rules for this area');
+      // The reminder itself still reaches an agent that has not read them.
+      expect(agent.stderr).toContain('read the rules for this area');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   // Every other verb: silence is now one line and an exit code, where it used
   // to be a command that sat until the turn ended.
   it('says so and exits when the backend does not answer an ordinary call', async () => {
