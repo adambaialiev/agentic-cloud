@@ -694,6 +694,39 @@ describe('standalone agentbuilt job CLI', () => {
     }
   });
 
+  // Note #1166: a passed run's output (a deploy's "Live at", a probe's line)
+  // was readable in the Workspace alone. It is still not printed unasked,
+  // but the reader is told it exists, and --logs prints every run's.
+  it('prints a passed run\'s output with --logs, and says it is there without', async () => {
+    const server = createServer((_req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({
+        ci: true, settled: true, commitKnown: true,
+        runs: [
+          { context: 'ci/checks', state: 'success', completedAt: '2026-11-12T09:00:00.000Z', description: 'Passed', logTail: 'SECRET ARRIVED len=32' },
+          { context: 'deploy/docs', state: 'success', completedAt: '2026-11-12T09:00:01.000Z', description: 'Published docs', logTail: 'Live at https://docs.example' },
+        ],
+      }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const env = { AGENTBUILT_API_URL: apiUrl, AGENTBUILT_TOKEN: 'test-token' };
+    try {
+      const plain = await runCliAsync(['repo', 'checks', 'infinite-agents', '--sha', 'c'.repeat(40)], { env });
+      expect(plain.status, `${plain.stdout}\n${plain.stderr}`).toBe(0);
+      expect(plain.stdout).not.toContain('SECRET ARRIVED');
+      expect(plain.stdout).toContain('add --logs to read it');
+
+      const logs = await runCliAsync(['repo', 'checks', 'infinite-agents', '--sha', 'c'.repeat(40), '--logs'], { env });
+      expect(logs.status, `${logs.stdout}\n${logs.stderr}`).toBe(0);
+      expect(logs.stdout).toContain('--- ci/checks log tail ---\nSECRET ARRIVED len=32');
+      expect(logs.stdout).toContain('--- deploy/docs log tail ---\nLive at https://docs.example');
+      expect(logs.stdout).not.toContain('add --logs');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   // Every other verb: silence is now one line and an exit code, where it used
   // to be a command that sat until the turn ended.
   it('says so and exits when the backend does not answer an ordinary call', async () => {

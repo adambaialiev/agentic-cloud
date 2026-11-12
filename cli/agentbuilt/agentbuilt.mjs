@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.79.0';
+const VERSION = '1.80.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -315,8 +315,10 @@ the workplace: every agent in it lists, clones and pushes them all):
   agentbuilt repo clone <name> [dir]
   agentbuilt repo protect <name> [<branch>...] [--require-checks]   protect more branches / require green CI (add-only)
   agentbuilt repo ci enable|disable <name>   run this repo's committed .agentbuilt/ci.sh on every push
-  agentbuilt repo checks [<name>] [--sha <40-hex>] [--wait [seconds]]
-      The CI verdict for a commit — defaults to this clone's HEAD. \`--wait\`
+  agentbuilt repo checks [<name>] [--sha <40-hex>] [--wait [seconds]] [--logs]
+      The CI verdict for a commit — defaults to this clone's HEAD. A failed
+      run's output is printed; \`--logs\` prints every run's, passed ones too
+      (what ci.sh or deploy.sh echoed, secrets masked). \`--wait\`
       blocks until every check settles — however long the suite takes; the
       host itself fails any check still pending after 30 min, so the wait
       always ends — and exits non-zero if any failed, so you can gate on it.
@@ -769,7 +771,7 @@ const HELP_TOPICS = {
       "A NEW PROTECTED REPO'S `main` EXISTS FROM THE START, EMPTY (note #759): one commit, \"Nothing approved yet\", written by the platform. Nobody can push to it, you included; it fills when your user approves your first proposal, which lands your branch whole whether or not it grew from that commit. So the first proposal is like any other — push your work to a branch and `pr create` it, with `--note` when it came from a note. A clone lands on that empty `main`: your work is on its branch (`git checkout <branch>`), and once the first proposal is approved, start the next branch from `origin/main`.",
       "WHEN THE CHANGE CAME FROM A NOTE, add `--note <n>` to `pr create` (repeat it if one proposal implements several notes). THE FLAG IS THE ONLY LINK: writing \"note #12\" in a title, body or commit message links nothing — it is ordinary prose, safe for examples and cross-references — and a proposal you forget the flag on is invisible to the note, whose state never advances past Working and whose readers conclude the request was ignored. The link is an enforcement gate, not a label: the command fetches current main, rereads the note, checks open and merged proposals and recent commits for its number, and stops with a warning when newer main overlaps the branch. The backend refuses the proposal unless your current claim still matches the note you read. Never omit the link to get around a refusal — another implementation already exists, another agent owns it, the request changed and must be reread, or the branch needs rebasing and its checks rerun.",
       "WAIT FOR CHECKS BEFORE YOU PROPOSE, on a repo that runs them. `pr ready` is a MESSAGE TO YOUR USER: the card appears in their chat the instant you run it, and it is the notification that pulls them back to their phone. Send it while CI is still running and you have summoned them to a decision they cannot make — the pip spins, the approve button is not yet a safe thing to press, and they either sit there waiting or wander off and forget. The backend refuses `pr ready` on a sha whose checks are pending or red, but do not lean on the refusal: push first, THEN gate, THEN record, THEN invite: `git push origin HEAD:my-change && agentbuilt repo checks --wait && agentbuilt pr create --from my-change --title \"...\" --body \"...\" && agentbuilt pr ready`. With no number, `pr ready` finds the quiet proposal from the branch you are on; put `agentbuilt pr attach <n> <file>` between the last two steps when the change has a look to it. `repo checks --wait` promotes its poll to a managed job, then blocks until every check settles and exits non-zero if any failed, so a red build stops the chain and the card is never sent. It is durable from the moment it prints `Started job j_…` — a backend that does not answer within 30 s no longer holds that back; the wait is made durable at once and the job does the asking. If its following shell or turn is torn down after that line, the check keeps running and its finish starts a turn of yours: recover its command, status and partial output with `agentbuilt job list` / `status` / `logs` / `wait`. Nothing is lost by waiting — the push is already safe on the host, and the wait leaves its own durable receipt.",
-      "If the checks go red, do NOT propose and then explain. Fix it and re-push, or tell your user what broke and why you are stopping — but a card that says \"please approve\" over a failing build asks them to rubber-stamp something you already know is broken. `agentbuilt repo checks` prints the failing job's log tail; read that before you decide which of the two you are doing.",
+      "If the checks go red, do NOT propose and then explain. Fix it and re-push, or tell your user what broke and why you are stopping — but a card that says \"please approve\" over a failing build asks them to rubber-stamp something you already know is broken. `agentbuilt repo checks` prints the failing job's log tail; read that before you decide which of the two you are doing. Add `--logs` to read a PASSED run's output too — what ci.sh or deploy.sh echoed, secrets masked — e.g. to confirm a deploy's \"Live at\" line.",
       "When there is nothing to wait FOR, do not wait: `repo checks` says `CI is off` on a repo with checks disabled, and a repo with no committed `.agentbuilt/ci.sh` reports \"skipped\", never red. In both cases propose immediately — the wait is for a verdict that is coming, not a ritual.",
       "`repo create <name> --unprotected` makes a repo with NO approval gate — PERMANENTLY; nothing can protect it afterwards. EVERY agent in the workplace can push straight to it. Use it only for stores nobody reviews (backups, snapshots, exports). Anything your user will read or run, or another agent will build on, stays protected — the card in their chat is the point.",
       "Housekeeping on those repos: `agentbuilt repo show <name>` is everything about one (protection, CI, granted secrets, dates), and `repo rename <old> <new>` keeps the history while changing the clone URL — every existing clone then needs `git remote set-url`. **You cannot delete a repo.** A workplace admin's agent may run `repo delete <name>` to ASK; only that agent's owner may decide. It flags the repo in their Workspace, where they remove it themselves — and nothing notifies them, so TELL THEM in your reply, then end your turn (you are messaged when they decide). A deleted repo is recoverable with `repo restore <name>` for 14 days; after that it is really gone, and saying so plainly beats promising a backup you cannot reach.",
@@ -3580,7 +3582,7 @@ async function job(args) {
  * rather than an inline duplicate. A refusal before any id exists (normally
  * the four-job concurrency cap) falls back to the old inline wait, loudly.
  */
-async function followRepoChecksAsManagedJob(name, sha, budgetMs, { bare = false } = {}) {
+async function followRepoChecksAsManagedJob(name, sha, budgetMs, { bare = false, logs = false } = {}) {
   const cliPath = realpathSync(process.argv[1]);
   const jobTimeoutMs = Math.min(MAX_JOB_TIMEOUT_MS, Math.max(100, budgetMs + 60_000));
   // Resolve the implicit repo/HEAD in the caller, before crossing the process
@@ -3592,7 +3594,7 @@ async function followRepoChecksAsManagedJob(name, sha, budgetMs, { bare = false 
   // itself rather than inheriting a fallback it would then call "your own
   // limit". The job's runtime is still bounded by `budgetMs`, the outside
   // ceiling the worker's own wait can never exceed.
-  const checksArgs = [name, ...(sha ? ['--sha', sha] : []), '--wait', ...(bare ? [] : [String(budgetMs / 1000)])];
+  const checksArgs = [name, ...(sha ? ['--sha', sha] : []), '--wait', ...(bare ? [] : [String(budgetMs / 1000)]), ...(logs ? ['--logs'] : [])];
   const launched = launchManagedJob([
     '--cwd', process.cwd(),
     '--timeout', formatJobDuration(jobTimeoutMs),
@@ -4437,7 +4439,11 @@ async function repo(args) {
       const waitSeconds = waitRaw !== undefined && /^\d+$/.test(waitRaw) ? Number(waitRaw) : null;
       const name = positionals(rest, waitSeconds === null ? ['--sha'] : ['--sha', '--wait'])[0]
         ?? currentRepoName();
-      if (!name) fail('usage: agentbuilt repo checks [<name>] [--sha <40-hex>] [--wait [seconds]]   (run inside a clone, or name the repo)');
+      if (!name) fail('usage: agentbuilt repo checks [<name>] [--sha <40-hex>] [--wait [seconds]] [--logs]   (run inside a clone, or name the repo)');
+      // Every run's output, passed ones too (note #1166): a check that only
+      // prints a line — "SECRET ARRIVED", a deploy's "Live at" — passes, and
+      // its line used to be readable in the Workspace alone.
+      const showLogs = rest.includes('--logs');
       const sha = argValue(rest, '--sha') ?? headSha();
       const waiting = rest.includes('--wait');
       const query = sha ? `?sha=${encodeURIComponent(sha)}` : '';
@@ -4485,7 +4491,7 @@ async function repo(args) {
           // job's own ceiling is the fallback horizon: the longest any honest
           // wait can be, never the worker's announced budget.
           const ceilingMs = budgetMs ?? horizonMs(undefined);
-          if (await followRepoChecksAsManagedJob(name, sha, ceilingMs, { bare: budgetMs === null })) break;
+          if (await followRepoChecksAsManagedJob(name, sha, ceilingMs, { bare: budgetMs === null, logs: showLogs })) break;
         } else {
           const pending = result.ci && !result.settled && result.commitKnown !== false;
           if (pending) {
@@ -4495,7 +4501,7 @@ async function repo(args) {
             if (budgetMs === null) budgetMs = horizonMs(result.settlesWithinSeconds);
             console.log(describeChecksWait(result, budgetMs));
             announced = true;
-            if (await followRepoChecksAsManagedJob(name, sha, budgetMs)) break;
+            if (await followRepoChecksAsManagedJob(name, sha, budgetMs, { logs: showLogs })) break;
           }
         }
       }
@@ -4590,10 +4596,13 @@ async function repo(args) {
           + ' Check the branch tip instead: `agentbuilt repo checks --sha $(git rev-parse HEAD)`.');
       }
       const failed = result.runs.filter((run) => run.state === 'failure' || run.state === 'error');
+      for (const run of showLogs ? result.runs : failed) {
+        if (run.logTail) console.log(`\n--- ${run.context} log tail ---\n${run.logTail}`);
+      }
+      if (!showLogs && result.runs.some((run) => run.logTail && !failed.includes(run))) {
+        console.log('\nPassed runs kept their output too: add --logs to read it.');
+      }
       if (failed.length) {
-        for (const run of failed) {
-          if (run.logTail) console.log(`\n--- ${run.context} log tail ---\n${run.logTail}`);
-        }
         // Non-zero so `agentbuilt repo checks … --wait && agentbuilt pr create …`
         // does the right thing in one line.
         process.exitCode = 1;

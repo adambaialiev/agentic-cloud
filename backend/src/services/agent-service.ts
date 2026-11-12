@@ -1113,7 +1113,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v195 (note #1157): CLI 1.79.0 — `agentbuilt outreach list` prints each
 // contact's id first; its usage says letters are pasted by the owner, not
 // written into the store, and how to empty a stored letter or the template.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 195;
+// v196 (note #1166): CLI 1.80.0 — `agentbuilt repo checks --logs` prints
+// every run's output, passed ones too; help says so.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 196;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
