@@ -1174,18 +1174,49 @@ REMOTE
       echo "PLATFORM_REPO unset — mirroring is armed only after the source-of-truth flip"
       exit 78
     fi
-    # Off by the owner's choice (note #936): once the platform repo is the
-    # public agentic-cloud, there is no GitHub copy to keep. The old mirror
-    # holds the PRIVATE infinite-agents history, and pushing the new
-    # repository at it with --prune --force would replace that history.
+    # The kill switch. Off from 1 Nov (note #936) until the public copy of
+    # note #1174 had its own named target and token; still the one setting
+    # that stops the job whatever else is set.
     if [ "${GITHUB_MIRROR:-on}" = "off" ]; then
       echo "GITHUB_MIRROR=off in /etc/ia-ci/env — no GitHub copy is kept"
       exit 78
     fi
+    # The public GitHub copy of agentic-cloud (note #1174, Adam 12 Nov 2026:
+    # "bring back github mirror"). Three rules, each a guard below:
+    #  1. The target is NAMED by GITHUB_MIRROR_REPO and nothing else. The
+    #     daemon's REPO setting, which once named the private infinite-agents
+    #     mirror, is never read here, so no leftover can aim a force-push at it.
+    #  2. Only a PUBLIC repository is ever pushed to: GitHub is asked first,
+    #     and a private one, or one we cannot read, gets nothing. The private
+    #     history lives in a private repository; that is the line it cannot cross.
+    #  3. Its own token, GITHUB_MIRROR_TOKEN (fine-grained, Contents read and
+    #     write on that one repository). Never the owner's broad GH_TOKEN.
+    # main and tags only: GitHub visitors see the approved code, not every
+    # agent's work branch.
+    GITHUB_WEB=https://github.com
+    GITHUB_API=https://api.github.com
+    TARGET="${GITHUB_MIRROR_REPO:-}"
+    if [ -z "$TARGET" ]; then
+      echo "GITHUB_MIRROR_REPO unset — no GitHub copy is named, so nothing is pushed"
+      exit 78
+    fi
+    if ! [[ "$TARGET" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
+      echo "GITHUB_MIRROR_REPO='$TARGET' is not owner/name — refusing"
+      exit 1
+    fi
+    case "${TARGET,,}" in
+      */infinite-agents|*/retired-github-mirror)
+        echo "GITHUB_MIRROR_REPO names the old private mirror ($TARGET) — refusing; it holds history that must never be replaced"
+        exit 1
+        ;;
+    esac
+    : "${GITHUB_MIRROR_TOKEN:?GITHUB_MIRROR_TOKEN unset — the GitHub copy is pushed only with its own one-repository token}"
     : "${RECOVERY_GIT_TOKEN:?RECOVERY_GIT_TOKEN unset in /etc/ia-ci/env — the mirror fetches with the break-glass token}"
     PLATFORM_GIT_BASE="${PLATFORM_GIT_BASE:-https://git.agentbuilt.app}"
     INTERNAL_URL="$PLATFORM_GIT_BASE/$PLATFORM_REPO.git"
-    MIRROR_DIR="$WORKDIR/platform-mirror.git"
+    # A new directory, not the old platform-mirror.git: that one fetched every
+    # head, and anything left in it must not be what we compare against.
+    MIRROR_DIR="$WORKDIR/github-mirror.git"
 
     # Credentials as DATA in a private netrc under a throwaway HOME — both
     # tokens would otherwise ride argv, where ps and git's own error messages
@@ -1195,25 +1226,42 @@ REMOTE
     ( umask 077
       {
         printf 'machine %s login x-access-token password %s\n' "${PLATFORM_GIT_BASE#https://}" "$RECOVERY_GIT_TOKEN"
-        printf 'machine github.com login x-access-token password %s\n' "$GH_TOKEN"
+        printf 'machine github.com login x-access-token password %s\n' "$GITHUB_MIRROR_TOKEN"
+        printf 'machine api.github.com login x-access-token password %s\n' "$GITHUB_MIRROR_TOKEN"
       } > "$MIRROR_HOME/.netrc"
     )
+
+    # Rule 2: ask GitHub what the target is before touching it. full_name is
+    # compared too, because the API follows a renamed repository to wherever
+    # it lives now.
+    if ! meta="$(curl -fsS --max-time 20 --netrc-file "$MIRROR_HOME/.netrc" \
+           -H 'Accept: application/vnd.github+json' "$GITHUB_API/repos/$TARGET")"; then
+      echo "could not read github.com/$TARGET with GITHUB_MIRROR_TOKEN — nothing pushed"
+      exit 1
+    fi
+    visibility="$(printf '%s' "$meta" | jq -r 'if .private == false then "public" else "private" end')"
+    full_name="$(printf '%s' "$meta" | jq -r '.full_name // ""')"
+    if [ "${full_name,,}" != "${TARGET,,}" ]; then
+      echo "github.com/$TARGET answers as '$full_name' — refusing to push to a repository we did not name"
+      exit 1
+    fi
+    if [ "$visibility" != public ]; then
+      echo "github.com/$TARGET is private — the mirror only ever pushes to a public repository; nothing pushed"
+      exit 1
+    fi
 
     if [ ! -d "$MIRROR_DIR" ]; then
       git init -q --bare "$MIRROR_DIR"
     fi
-    # Heads and tags only, pruned both ways: agents' work branches and the
-    # occasional force-push must arrive as deletions and rewrites, or the
-    # mirror slowly stops being one. refs/pull and other decorations do not
-    # travel — GitHub owns those on its own side.
+    # main and tags, pruned: a deleted tag disappears on GitHub too.
     HOME="$MIRROR_HOME" git --git-dir "$MIRROR_DIR" fetch --quiet --prune "$INTERNAL_URL" \
-      '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
-    GITHUB_URL="https://github.com/$REPO.git"
+      '+refs/heads/main:refs/heads/main' '+refs/tags/*:refs/tags/*'
+    GITHUB_URL="$GITHUB_WEB/$TARGET.git"
     # Both sides printed the same way — ls-remote against a local directory
     # advertises exactly what it advertises over the wire, peeled tags and all,
     # so the two listings are comparable line for line.
     mirror_refs() {
-      HOME="$MIRROR_HOME" git --git-dir "$MIRROR_DIR" ls-remote --heads --tags "$1" | sort
+      HOME="$MIRROR_HOME" git --git-dir "$MIRROR_DIR" ls-remote "$1" refs/heads/main 'refs/tags/*' | sort
     }
 
     # GitHub answers a push with a 500 now and then, and it has been seen to
@@ -1228,7 +1276,7 @@ REMOTE
     pushed=
     for attempt in 1 2 3; do
       if HOME="$MIRROR_HOME" git --git-dir "$MIRROR_DIR" push --quiet --prune --force "$GITHUB_URL" \
-           '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'; then
+           '+refs/heads/main:refs/heads/main' '+refs/tags/*:refs/tags/*'; then
         pushed=yes
         [ "$attempt" = 1 ] || echo "push succeeded on attempt $attempt"
         break
@@ -1243,16 +1291,16 @@ REMOTE
       mirror_refs "$MIRROR_DIR" > "$MIRROR_HOME/ours.refs" \
         || { echo "could not list our own mirror's refs"; exit 1; }
       mirror_refs "$GITHUB_URL" > "$MIRROR_HOME/theirs.refs" \
-        || { echo "could not read github.com/$REPO's refs after 3 failed push attempts"; exit 1; }
+        || { echo "could not read github.com/$TARGET's refs after 3 failed push attempts"; exit 1; }
       if diff -q "$MIRROR_HOME/ours.refs" "$MIRROR_HOME/theirs.refs" > /dev/null; then
-        echo "the push reported an error, but every ref on GitHub already matches ours — mirrored"
+        echo "the push reported an error, but main and every tag on GitHub already match ours — mirrored"
       else
-        echo "github.com/$REPO still differs from $INTERNAL_URL after 3 push attempts:"
+        echo "github.com/$TARGET still differs from $INTERNAL_URL after 3 push attempts:"
         diff "$MIRROR_HOME/ours.refs" "$MIRROR_HOME/theirs.refs" | head -20 || true
         exit 1
       fi
     fi
-    echo "mirrored $INTERNAL_URL -> github.com/$REPO ($(git --git-dir "$MIRROR_DIR" rev-parse --short refs/heads/main 2>/dev/null || echo '?') on main)"
+    echo "mirrored $INTERNAL_URL main + tags -> github.com/$TARGET ($(git --git-dir "$MIRROR_DIR" rev-parse --short refs/heads/main 2>/dev/null || echo '?') on main)"
     ;;
 
   self-update)

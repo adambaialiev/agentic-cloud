@@ -130,12 +130,12 @@ describe('a transient GitHub error does not make the mirror lie', () => {
     // The status rides the sha whose push triggered the run, so a stale red
     // paints a failing pip on whatever proposal that sha heads and makes the
     // backend refuse its `pr ready`. Matching refs mean the copy is the copy.
-    expect(section()).toContain('ls-remote --heads --tags');
+    expect(section()).toContain("ls-remote \"$1\" refs/heads/main 'refs/tags/*'");
     expect(section()).toMatch(/diff -q "\$MIRROR_HOME\/ours\.refs" "\$MIRROR_HOME\/theirs\.refs"/);
   });
 
   it('a listing it cannot read is a failure, never a false all-clear', () => {
-    expect(section()).toContain("could not read github.com/$REPO's refs after 3 failed push attempts");
+    expect(section()).toContain("could not read github.com/$TARGET's refs after 3 failed push attempts");
     expect(section()).toMatch(/still differs from \$INTERNAL_URL after 3 push attempts/);
   });
 });

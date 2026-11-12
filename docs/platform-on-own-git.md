@@ -198,6 +198,18 @@ The mirror FETCHES from our host with the recovery token (read-only, one
 repo — so every mirror run also drives the escape road) and pushes heads and
 tags to GitHub pruned and forced, the honest shape for a read-only copy.*
 
+*Changed 2026-11-12 (note #1174). Off from 1 Nov (note #936), because the
+platform repo became the public agentic-cloud while the GitHub copy, then
+`adambaialiev/infinite-agents`, holds the PRIVATE old history that a forced
+push would replace. It came back as a public copy for the Show HN, under
+three rules the job enforces: the target is named only by
+`GITHUB_MIRROR_REPO` (the daemon's `REPO` is never read), GitHub is asked
+first and a private repository (or a renamed one, or one it cannot read)
+gets nothing, and it pushes with its own one-repository
+`GITHUB_MIRROR_TOKEN`, never `GH_TOKEN`. It pushes main and tags only, not
+agents' work branches. `GITHUB_MIRROR=off` still stops it.
+`ci-github-mirror.test.ts` runs the real job against a fake GitHub.*
+
 ## Slice 6 became a blocker
 
 Only agent tokens and CI clone tokens can touch a repo today; a person with
