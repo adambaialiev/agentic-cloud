@@ -129,6 +129,9 @@ holds **no platform credentials**: only a clone token for the one repo and a
 single-use HMAC key for reporting its own result. Full argument:
 [`docs/ci-two-lane-runner.md`](../../docs/ci-two-lane-runner.md).
 
+- `ci-verdicts.mjs` — the words around a publish check (`usablePublish`,
+  `publishVerdict`), shared with an own cloud's backend (`OrgCiService`,
+  which loads it from its dist). Installed beside `lane-a.mjs` (note #1166).
 - `lane-a.mjs` — dispatcher side: creates the machine (no volume, no services,
   `auto_destroy`), injects `runner-agent.sh` via a base64 env var (`init.exec`
   decodes and runs it — no CI-specific image build), waits for the signed
@@ -330,7 +333,7 @@ printf 'GH_TOKEN=...\nWEBHOOK_SECRET=...\nREPO=<owner>/infinite-agents\n' > /etc
 chmod 600 /etc/ia-ci/env
 # Stable daemon code — NOT run from the mutable work checkout:
 install -d -o runner /opt/ia-ci
-install -o runner -m 755 /home/runner/ci-work/repo/infra/ci-runner/{daemon.mjs,lane-a.mjs,run-job.sh,runner-agent.sh} /opt/ia-ci/
+install -o runner -m 755 /home/runner/ci-work/repo/infra/ci-runner/{daemon.mjs,ci-verdicts.mjs,lane-a.mjs,run-job.sh,runner-agent.sh} /opt/ia-ci/
 cp /home/runner/ci-work/repo/infra/ci-runner/ia-ci-daemon.service /etc/systemd/system/
 systemctl enable --now ia-ci-daemon
 ```
@@ -360,8 +363,23 @@ How it avoids the two ways this goes wrong:
   is idle and exits cleanly, and `Restart=always` brings it back on the new
   code three seconds later. Nothing runs as root, and no job is dropped.
 
-The previous copies are kept as `daemon.mjs.previous` / `run-job.sh.previous`
-for a manual rollback.
+The previous copies are kept as `<file>.previous` (`daemon.mjs.previous`,
+`run-job.sh.previous`, …) for a manual rollback: move it back over the file,
+then `touch /opt/ia-ci/.restart-requested` unless it was `run-job.sh`. A file
+the box did not have before is installed with no previous copy; rolling it
+back is deleting it. On Fly (ia-ci) there is no systemd: the entrypoint's loop
+brings the daemon back three seconds after it exits.
+
+**Adding a file to what the daemon loads takes two main pushes.** The job
+runs the `run-job.sh` ALREADY installed, so the push that adds a name to
+`SELF_FILES` is installed by the old list, which does not know it: only
+`run-job.sh` itself changes on the box. The NEXT push that touches
+`infra/ci-runner/` runs the new list and installs the file. So: add the name
+to `SELF_FILES` (and the image seed in `infra/ci-fly/Dockerfile`), let it
+reach the box, check the file is in `/opt/ia-ci`, and only then import it —
+a daemon restarting on an import it cannot find crash-loops with no CI left
+to fix it. `ci-self-update.test.ts` fails when a file the daemon loads is not
+on the list. `ci-verdicts.mjs` went in this way on 12 Nov 2026 (note #1166).
 
 Still needed by hand for the FIRST install on a new box, or to recover from a
 daemon that will not start:
@@ -369,7 +387,7 @@ daemon that will not start:
 ```sh
 sudo -u runner git -C /home/runner/ci-work/repo fetch -q origin
 sudo -u runner git -C /home/runner/ci-work/repo checkout -qf origin/main   # or dev
-install -o runner -m 755 /home/runner/ci-work/repo/infra/ci-runner/{daemon.mjs,lane-a.mjs,run-job.sh,runner-agent.sh} /opt/ia-ci/
+install -o runner -m 755 /home/runner/ci-work/repo/infra/ci-runner/{daemon.mjs,ci-verdicts.mjs,lane-a.mjs,run-job.sh,runner-agent.sh} /opt/ia-ci/
 systemctl restart ia-ci-daemon
 ```
 
