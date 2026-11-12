@@ -1,9 +1,10 @@
 # Agentic Cloud Computer
 
-**A few people, a fleet of agents, huge output.** Agentic Cloud Computer is a shared Workspace in
-the browser where a small team works with a fleet of persistent AI agents. Each agent has a name, a job
-and its own cloud computer. The agents work in parallel, share the company's notes, knowledge
-pages, repositories and files, and ask a person before anything important ships.
+**Everything an agent needs to finish the job.** Agentic Cloud Computer is an open-source
+workplace for a team of coding agents (Claude Code, Codex and OpenCode) that a company runs in its
+own Fly.io account, on its own domain. Each agent has a name, a job and a machine of its own. Git
+hosting with checks, hosting for sites and apps, object storage, email, Drive, notes and knowledge
+pages are built in, so the work ends as something live rather than as a pull request.
 
 This repository is the whole platform: the public site, the browser Workspace, the control-plane
 backend, the `agentbuilt` CLI the agents use, the git host and CI runner, the installer for your
@@ -11,39 +12,53 @@ own Agentic Cloud, and the machine and runtime infrastructure.
 
 - Product: https://agenticcloudcomputer.com
 - Licence: [GNU AGPL-3.0](LICENSE). If you run a modified version as a service, you must offer
-  its source to the people who use it.
+  its source to the people who use it. The name and the logo are not under that licence.
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Outside contributions need a contributor
   agreement.
 
 ## Install your own Agentic Cloud
 
 Your own Agentic Cloud is the whole platform installed in your company's own Fly.io organization,
-on your own domain. One installer builds it, and nothing of yours is kept by us.
+on a domain of yours. One installer builds it. None of your data comes to us: only a daily report
+of counts and the contact you chose, which your admin sees in the Workspace and can turn off. It
+is free for now: no licence, no key and no charge from us. Fly bills your own account for the
+machines, and your AI provider bills your own plan.
 
-- For people: https://agenticcloudcomputer.com
-- For the AI agent that does the installing: [public/own-cloud.md](public/own-cloud.md), also
-  served at https://agenticcloudcomputer.com/own-cloud.md. Hand it to Claude Code, Codex or any
-  agent with a terminal and ask it to set up your Agentic Cloud.
+- Hand your terminal agent (Claude Code, Codex or any agent with a terminal) this line:
+  "Set up our own Agentic Cloud by following https://agenticcloudcomputer.com/own-cloud.md".
+  It checks your computer, shows you the plan and Fly's prices, and changes nothing until you
+  agree. The guide is also in this repository: [public/own-cloud.md](public/own-cloud.md).
+- You need a Fly.io organization with a card on file, a domain name you can add DNS records to
+  (such as `agents.yourcompany.com`), and Node 20 or newer.
 - The installer's code and tests: [infra/copy-installer/](infra/copy-installer/).
+- Why it runs on Fly and not AWS, Google Cloud or Vercel: https://agenticcloudcomputer.com/why-fly
 
 ## Product shape
 
-- Agents are created, messaged, reviewed and managed in the Workspace.
-- Each agent has a name, a job and a persistent cloud computer. Claude Code, Codex and OpenCode
-  agents can work side by side.
+- Agents are created, messaged, reviewed and managed in the Workspace, in a browser.
+- Each agent has a name, a job and a persistent machine of its own that sleeps when idle and
+  wakes when work arrives. Claude Code, Codex and OpenCode agents work side by side on the same
+  repositories, on the Claude, ChatGPT or OpenCode plans the company already pays for. Several agents can
+  share one seat.
+- Agents can run Docker: `docker compose up` brings a project's database, cache and app up on an
+  agent's machine and in checks.
 - Notes, knowledge pages, Drive, repositories and sites belong to the workplace, so every agent
-  in it works from the same context.
+  in it works from the same context: a Codex agent can pick up where a Claude Code agent left off.
 - Changes to protected code come back as proposals. A person approves one, and approving is what
   lands it, unless that person switched on auto-merge for their own agents' proposals (checks
-  must still pass). Knowledge pages change the moment an agent writes them, and the owner is told.
+  must still pass). No agent can merge or approve by itself. Knowledge pages change the moment
+  an agent writes them, and the owner is told.
 - Each person signs in to their own AI subscription on the provider's own page.
+
+Not built yet: hosting outside Fly.io, single sign-on, and an alert when an agent stalls.
 
 ## What happens during a turn
 
 1. A member opens the Workspace in a browser and messages an agent.
 2. The backend admits or steers the turn, wakes the agent's machine when necessary and runs the
    selected CLI harness over SSH.
-3. Claude Code or Codex works on the persistent machine with its normal tools and filesystem.
+3. Claude Code, Codex or OpenCode works on the persistent machine with its normal tools and
+   filesystem.
 4. The `agentbuilt` CLI gives the agent scoped access to Workspace features such as notes,
    repositories, proposals, secrets and deployments.
 5. Progress and the final reply are written back to the Workspace conversation. A proposal becomes
@@ -52,20 +67,15 @@ on your own domain. One installer builds it, and nothing of yours is kept by us.
 The backend does not drive coding models token by token. The coding CLI runs on the agent's
 machine and retains its own working session there.
 
-## Data split
+## Where things live
 
-Customer-controlled resources and platform records are deliberately separate.
+In your own Agentic Cloud, everything runs in your own Fly organization: the Workspace and its
+database, the code host and CI, the agents' machines, sites, files, backups and email. Your AI
+provider receives the prompts, code and files your agents send it, under your own plan's terms.
 
-| Customer-controlled services | Platform control plane |
-| --- | --- |
-| Agent machines and disks, where a workplace brings its own Fly organization | Workplace, membership and agent records |
-| Repositories, media and deployments when BYO integrations are configured | Notes, knowledge pages, proposal and deployment metadata |
-| Provider billing for AI access and cloud resources | Encrypted credentials and saved secrets |
-| The full coding-harness session on each agent machine | A rolling window of recent Workspace chat rows per agent |
-
-A hosted workplace's agent machines run on the platform's own Fly account unless the platform has
-marked it to bring its own. In your own Agentic Cloud, both columns live in your own Fly
-organization.
+The same code also runs our invite-only hosted Workspace. There, agent machines and sites run on
+our Fly account and the control plane keeps the records needed to run the Workspace (membership,
+notes, recent chat rows, encrypted credentials); see https://agenticcloudcomputer.com/privacy.
 
 ## Architecture
 
