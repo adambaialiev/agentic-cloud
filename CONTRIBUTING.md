@@ -5,9 +5,11 @@ GNU Affero General Public License, version 3 (see [LICENSE](LICENSE)).
 
 ## Before you send a change
 
-There is no way yet to send a change from outside. The git host has no
-issues, and it takes no pull requests from outside the project. If you want
-to contribute, write to adam@agenticcloudcomputer.com.
+Bug reports and ideas are welcome as issues on the read-only GitHub copy,
+https://github.com/adambaialiev/agentic-cloud/issues. That copy is refreshed
+from our own git host on every merge, so pull requests there are not merged,
+and there is no way yet to send a change from outside. If you want to
+contribute code, write to adam@agenticcloudcomputer.com.
 
 Outside contributions need a signed contributor agreement before they can be
 merged. The agreement lets the copyright holder, Agentic Cloud Computer, keep

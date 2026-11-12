@@ -340,7 +340,10 @@ The code, its history and its proposals are public at
 ${SITE_ORIGIN}/acc/agentic-cloud, and the licence is
 ${SITE_ORIGIN}/acc/agentic-cloud?path=LICENSE&file=1. A modified version run as
 a service must offer its source. The name and the logo are not under that
-licence.
+licence. A read-only copy of main is on GitHub at
+https://github.com/adambaialiev/agentic-cloud, refreshed on every merge; changes
+are proposed and merged on our own host, not there. Bug reports are welcome
+as GitHub issues.
 
 ## What it is
 

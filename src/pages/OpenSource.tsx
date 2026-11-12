@@ -3,7 +3,7 @@ import SiteHeader from '../components/SiteHeader';
 import SiteFooter from '../components/SiteFooter';
 import { CARD, ChapterDivider, H2, H3, LEAD, PrimaryLink, SECTION, SecondaryLink } from '../components/landing-kit';
 import { FOOTER_PITCH } from '../lib/product-copy';
-import { LICENSE_URL, SOURCE_URL } from '../lib/source-links';
+import { GITHUB_COPY_URL, LICENSE_URL, SOURCE_URL } from '../lib/source-links';
 import { AgentLine, FOUNDER_EMAIL } from './PrivateCopy';
 
 /**
@@ -94,6 +94,7 @@ export default function OpenSource() {
         <div className="mt-8 flex flex-wrap items-center gap-x-7 gap-y-4">
           <PrimaryLink href={SOURCE_URL}>Read the code</PrimaryLink>
           <SecondaryLink href={LICENSE_URL}>The AGPL-3.0 licence</SecondaryLink>
+          <SecondaryLink href={GITHUB_COPY_URL}>A read-only copy on GitHub</SecondaryLink>
         </div>
       </section>
 

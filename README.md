@@ -11,6 +11,10 @@ backend, the `agentbuilt` CLI the agents use, the git host and CI runner, the in
 own Agentic Cloud, and the machine and runtime infrastructure.
 
 - Product: https://agenticcloudcomputer.com
+- Code: https://agenticcloudcomputer.com/acc/agentic-cloud is where it lives and changes. A
+  read-only copy of main is on GitHub at https://github.com/adambaialiev/agentic-cloud,
+  refreshed on every merge. Pull requests there are not merged; bug reports as GitHub issues are
+  welcome.
 - Licence: [GNU AGPL-3.0](LICENSE). If you run a modified version as a service, you must offer
   its source to the people who use it. The name and the logo are not under that licence.
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md). Outside contributions need a contributor
@@ -216,7 +220,7 @@ Production releases keep rollback artifacts. Read
    proposal instead of asking. Knowledge is not proposed at all: since note #746
    `knowledge propose` is live the moment it returns.
 
-5. The owner approves or rejects in the Workspace (or auto-merge merges it). Do not push or merge on the GitHub mirror.
+5. The owner approves or rejects in the Workspace (or auto-merge merges it). Never push or merge on the read-only GitHub copy (github.com/adambaialiev/agentic-cloud): the next merge overwrites it.
 
 Changes requested by a quick note must use `agentbuilt note start <n>` before work and link the
 proposal with `--note <n>`.

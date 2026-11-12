@@ -6,3 +6,7 @@ export const SOURCE_URL = 'https://agenticcloudcomputer.com/acc/agentic-cloud';
 /** The LICENSE file's own view; `?path=LICENSE` alone answers "That folder
  *  is not in this repository". */
 export const LICENSE_URL = `${SOURCE_URL}?path=LICENSE&file=1`;
+/** The read-only copy on GitHub (note #1174), refreshed from our host on
+ *  every merge to main. Always named as a copy: changes are proposed and
+ *  merged on our own host, never on GitHub. */
+export const GITHUB_COPY_URL = 'https://github.com/adambaialiev/agentic-cloud';
