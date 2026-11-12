@@ -3,12 +3,12 @@
  * (note #1161): our own dispatcher (daemon.mjs + lane-a.mjs) and an own
  * cloud's OrgCiService (backend/src/services/org-ci.ts). Pure functions, no
  * imports, no environment: the backend copies this file beside its dist at
- * build (backend/package.json) and loads it there; the dispatcher still
- * carries its own identical copy in lane-a.mjs until it is switched to this
- * file in a change of its own (its self-update installs a fixed list of
- * files, so a new import there needs a two-step rollout).
- * backend/src/test/unit/ci-verdicts.test.ts fails if the two copies ever
- * answer differently.
+ * build (backend/package.json) and loads it there; the dispatcher imports it
+ * from lane-a.mjs (since note #1166), and its self-update installs it into
+ * /opt/ia-ci beside lane-a.mjs (run-job.sh SELF_FILES). Keep it free of
+ * imports: a new file it needed would have to reach the dispatcher first.
+ * backend/src/test/unit/ci-verdicts.test.ts fails if lane-a.mjs carries a
+ * copy again.
  */
 
 const PUBLISH_SITE = /^[a-z0-9][a-z0-9-]{0,62}$/;

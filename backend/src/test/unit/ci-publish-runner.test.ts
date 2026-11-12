@@ -6,40 +6,20 @@ import { fileURLToPath } from 'node:url';
  * The runner half of publishing on approval (`agentbuilt repo publish`):
  * lane-a.mjs turns the backend's publish grant into env and the run's outcome
  * into a deploy/<site> verdict, and runner-agent.sh runs the repository's
- * deploy.sh only after ci.sh passed. Same technique as ci-lane-a-artifact —
- * the functions' SOURCE is lifted out and run, so the text under test is the
- * text that ships.
+ * deploy.sh only after ci.sh passed. The two lane-a.mjs functions are
+ * imported as the daemon imports them; runner-agent.sh is read as text.
  */
-const LANE_A = fileURLToPath(new URL('../../../../infra/ci-runner/lane-a.mjs', import.meta.url));
 const RUNNER = fileURLToPath(new URL('../../../../infra/ci-runner/runner-agent.sh', import.meta.url));
 
-function grab(source: string, name: string): string {
-  const start = source.indexOf(`function ${name}(`);
-  if (start < 0) throw new Error(`${name} not found`);
-  let i = source.indexOf('(', start);
-  for (let parens = 0; i < source.length; i++) {
-    if (source[i] === '(') parens++;
-    else if (source[i] === ')' && --parens === 0) { i++; break; }
-  }
-  let depth = 0;
-  for (i = source.indexOf('{', i); i < source.length; i++) {
-    if (source[i] === '{') depth++;
-    else if (source[i] === '}' && --depth === 0) return source.slice(start, i + 1);
-  }
-  throw new Error(`unbalanced braces for ${name}`);
-}
-
-const source = readFileSync(LANE_A, 'utf8');
-const siteShape = source.match(/const PUBLISH_SITE = (\/.+\/);/)?.[1];
 type Grant = { token: string; site: string; apiUrl: string } | null;
 type Verdict = { state: string; description: string; logTail: string };
-const usablePublish = new Function('PUBLISH_SITE', `${grab(source, 'usablePublish')}; return usablePublish;`)(
-  // eslint-disable-next-line no-eval
-  eval(siteShape!),
-) as (grant: unknown) => Grant;
-const publishVerdict = new Function(`${grab(source, 'publishVerdict')}; return publishVerdict;`)() as (
-  outcome: Record<string, unknown>, site: string,
-) => Verdict;
+// Since note #1166 lane-a.mjs imports both from ci-verdicts.mjs (shared with
+// an own cloud's backend) and re-exports them; tested through lane-a.mjs, as
+// the daemon reaches them.
+const { usablePublish, publishVerdict } = await (import('../../../../infra/ci-runner/lane-a.mjs') as Promise<{
+  usablePublish: (grant: unknown) => Grant;
+  publishVerdict: (outcome: Record<string, unknown>, site: string) => Verdict;
+}>);
 
 describe('usablePublish — a daemon never trusts even a friend with env injection', () => {
   it('passes a well-formed grant through', () => {

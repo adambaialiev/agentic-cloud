@@ -5,9 +5,9 @@ import type { GitCommitStatusState } from '../types/git-commit-status.js';
 
 /**
  * The shared words around a check (infra/ci-runner/ci-verdicts.mjs, note
- * #1161), loaded from where the build puts them. Our dispatcher says the
- * same things from its own copy in lane-a.mjs; ci-verdicts.test.ts keeps
- * the two from drifting.
+ * #1161), loaded from where the build puts them. Our own dispatcher imports
+ * the same file (lane-a.mjs, since note #1166); ci-verdicts.test.ts fails if
+ * it ever carries a copy again.
  */
 export type PublishOutcome =
   | { kind: 'reported'; exitCode: number; publish?: { exitCode: number; logTail: string } }

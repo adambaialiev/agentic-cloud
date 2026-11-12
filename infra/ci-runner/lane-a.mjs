@@ -24,6 +24,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { publishVerdict, usablePublish } from './ci-verdicts.mjs';
 
 const FLY_API = 'https://api.machines.dev/v1';
 const FLY_TOKEN = process.env.FLY_API_TOKEN ?? '';
@@ -227,56 +228,12 @@ export function acceptArtifact({ jobId, computedSha256, claimedSha256, signature
   return { ok: true, status: 200, path: dest };
 }
 
-/** A site name as the backend issues them; anything else is not a publish. */
-const PUBLISH_SITE = /^[a-z0-9][a-z0-9-]{0,62}$/;
-
-/**
- * The publish key's three facts, or null when the backend sent none or
- * something malformed — a daemon must not trust even a friend with env
- * injection, and a status context is built from the site's name.
- */
-export function usablePublish(publish) {
-  if (!publish || typeof publish !== 'object') return null;
-  const { token, site, apiUrl } = publish;
-  if (typeof token !== 'string' || !token || typeof site !== 'string' || !PUBLISH_SITE.test(site)) return null;
-  if (typeof apiUrl !== 'string' || !/^https?:\/\/[^\s]+$/.test(apiUrl)) return null;
-  return { token, site, apiUrl };
-}
-
-/**
- * The deploy/<site> verdict of a run that carried a publish key. Its own
- * check, so a failed publish is never mistaken for failed tests, and a
- * passing suite is never mistaken for a site that went live.
- */
-export function publishVerdict(outcome, site) {
-  const words = (text) => text.slice(0, 140);
-  if (outcome.kind === 'reported') {
-    const step = outcome.publish;
-    if (!step) {
-      // The runner publishes only after ci.sh exits 0, so no step means the
-      // checks did not pass (or never ran) — except a 0 with no step, which
-      // is a runner that lost it.
-      return outcome.exitCode === 0
-        ? { state: 'error', description: words(`The checks passed but the publish step did not report — ${site} was not published`), logTail: '' }
-        : { state: 'skipped', description: words(`Not published — the checks did not pass, so ${site} still serves the last approved change`), logTail: '' };
-    }
-    if (step.exitCode === 0) {
-      return { state: 'success', description: words(`Published ${site}`), logTail: step.logTail };
-    }
-    if (step.exitCode === 78) {
-      return { state: 'skipped', description: words('Not published — commit a .agentbuilt/deploy.sh to publish on approval'), logTail: step.logTail };
-    }
-    return {
-      state: 'failure',
-      description: words(`Publishing ${site} failed (exit ${step.exitCode}) — read this check's log`),
-      logTail: step.logTail,
-    };
-  }
-  if (outcome.kind === 'cancelled') {
-    return { state: 'superseded', description: words('Not published — a newer approved change publishes instead'), logTail: '' };
-  }
-  return { state: 'error', description: words(`Not published — the job ended before it could publish ${site}`), logTail: '' };
-}
+// The publish words live in ONE file, shared with an own cloud's backend
+// (note #1166): usablePublish turns the backend's grant into the three facts
+// or null, publishVerdict words the deploy/<site> check. Re-exported because
+// daemon.mjs takes usablePublish from here. self-update installs
+// ci-verdicts.mjs beside this file (run-job.sh SELF_FILES).
+export { publishVerdict, usablePublish };
 
 /**
  * Run one job on a fresh machine. Resolves (never rejects) with

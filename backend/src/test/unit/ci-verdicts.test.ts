@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { loadCiVerdicts, type PublishOutcome } from '../../services/ci-verdicts.js';
 
 /**
  * Note #1161: the words around a check live in ONE file,
  * infra/ci-runner/ci-verdicts.mjs, which an own cloud's OrgCiService loads.
- * Our own dispatcher still carries its own copy in lane-a.mjs until a change
- * of its own switches it (its self-update installs a fixed list of files).
- * Until then, this fails the build the moment the two answer differently.
+ * Since note #1166 our own dispatcher imports it too (lane-a.mjs re-exports
+ * it for daemon.mjs) instead of carrying a copy: this fails the build if a
+ * copy comes back, or if the two ever answer differently.
  */
 const laneA = () => import('../../../../infra/ci-runner/lane-a.mjs') as Promise<{
   publishVerdict: (outcome: PublishOutcome, site: string) => unknown;
@@ -38,6 +40,13 @@ describe('ci-verdicts.mjs — one set of words for both controllers', () => {
     const verdicts = await loadCiVerdicts();
     expect(verdicts.publishVerdict({ kind: 'reported', exitCode: 0, publish: { exitCode: 0, logTail: '' } }, 'docs-site'))
       .toEqual({ state: 'success', description: 'Published docs-site', logTail: '' });
+  });
+
+  it('our own dispatcher (lane-a.mjs) imports it and keeps no copy of its own', () => {
+    const source = readFileSync(fileURLToPath(new URL('../../../../infra/ci-runner/lane-a.mjs', import.meta.url)), 'utf8');
+    expect(source).toContain("import { publishVerdict, usablePublish } from './ci-verdicts.mjs';");
+    expect(source).not.toMatch(/function\s+(publishVerdict|usablePublish)\b/);
+    expect(source).not.toMatch(/PUBLISH_SITE\s*=/);
   });
 
   it('answers exactly as our own dispatcher (lane-a.mjs) does, for every outcome and grant', async () => {
