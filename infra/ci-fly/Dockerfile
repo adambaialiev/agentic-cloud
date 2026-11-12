@@ -25,8 +25,9 @@ RUN set -eux; \
 RUN useradd --no-create-home --home-dir /data/runner --shell /bin/bash runner \
     && ln -sfn /data/opt-ia-ci /opt/ia-ci \
     && mkdir -p /run/sshd
-COPY ci-runner/daemon.mjs ci-runner/lane-a.mjs ci-runner/run-job.sh ci-runner/runner-agent.sh /opt/ia-ci-seed/
+# The same files the self-update job installs (run-job.sh, SELF_FILES).
+COPY ci-runner/daemon.mjs ci-runner/ci-verdicts.mjs ci-runner/lane-a.mjs ci-runner/run-job.sh ci-runner/runner-agent.sh /opt/ia-ci-seed/
 COPY ci-fly/entrypoint.sh /entrypoint.sh
 RUN chmod 0755 /entrypoint.sh /opt/ia-ci-seed/run-job.sh /opt/ia-ci-seed/runner-agent.sh \
-    && node --check /opt/ia-ci-seed/daemon.mjs && bash -n /opt/ia-ci-seed/run-job.sh
+    && node --check /opt/ia-ci-seed/daemon.mjs && node --check /opt/ia-ci-seed/ci-verdicts.mjs && bash -n /opt/ia-ci-seed/run-job.sh
 ENTRYPOINT ["/entrypoint.sh"]

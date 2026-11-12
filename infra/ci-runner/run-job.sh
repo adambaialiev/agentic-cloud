@@ -1269,22 +1269,44 @@ REMOTE
     SRC="$REPO_DIR/infra/ci-runner"
     OPT=/opt/ia-ci
 
+    # Every file the daemon runs from /opt/ia-ci. ci-verdicts.mjs (note #1166)
+    # is the publish verdict words an own cloud's backend also loads; it sits
+    # BEFORE lane-a.mjs, which will import it, so a run that installs both
+    # never leaves lane-a.mjs beside a missing import.
+    #
+    # Adding a name here takes two main pushes to reach the dispatcher: this
+    # job runs the run-job.sh ALREADY installed, so the push that adds a name
+    # is installed by the old list (which does not know it), and only the
+    # NEXT push touching infra/ci-runner/ installs the new file. Never import
+    # a new file in the same change that adds it here
+    # (ci-self-update.test.ts checks every relative import is on this list).
+    SELF_FILES="daemon.mjs ci-verdicts.mjs lane-a.mjs run-job.sh runner-agent.sh"
+
     # Validate BEFORE replacing anything. A daemon.mjs that will not parse
     # crash-loops, and there would be no CI left to fix it with.
     node --check "$SRC/daemon.mjs"
+    node --check "$SRC/ci-verdicts.mjs"
     node --check "$SRC/lane-a.mjs"
     bash -n "$SRC/run-job.sh"
     bash -n "$SRC/runner-agent.sh"
 
     # lane-a.mjs is imported by daemon.mjs, and runner-agent.sh is read by
-    # lane-a.mjs at import — all four live in /opt/ia-ci together or the
+    # lane-a.mjs at import — they all live in /opt/ia-ci together or the
     # daemon dies on its next restart.
-    for f in daemon.mjs lane-a.mjs run-job.sh runner-agent.sh; do
+    for f in $SELF_FILES; do
       if cmp -s "$SRC/$f" "$OPT/$f"; then
         echo "$f unchanged"
         continue
       fi
-      cp -a "$OPT/$f" "$OPT/$f.previous"
+      if [ -e "$OPT/$f" ]; then
+        cp -a "$OPT/$f" "$OPT/$f.previous"
+        kept="previous kept at $OPT/$f.previous"
+      else
+        # New to this box: there is nothing to keep, and the rollback is
+        # removing it (nothing loaded the file before this install).
+        rm -f "$OPT/$f.previous"
+        kept="new here — no previous copy"
+      fi
       # Temp + atomic rename, never a write in place: bash reads a script
       # incrementally, and THIS file is the one being replaced — an in-place
       # write would make the running shell resume mid-way through new bytes.
@@ -1292,7 +1314,7 @@ REMOTE
       cp "$SRC/$f" "$OPT/$f.new"
       chmod 755 "$OPT/$f.new"
       mv -f "$OPT/$f.new" "$OPT/$f"
-      echo "installed $f (previous kept at $OPT/$f.previous)"
+      echo "installed $f ($kept)"
       # run-job.sh needs no restart: the daemon spawns it fresh per job, so the
       # next job already runs the new copy. Everything else is loaded when the
       # long-lived daemon starts (lane-a.mjs is imported, runner-agent.sh read
