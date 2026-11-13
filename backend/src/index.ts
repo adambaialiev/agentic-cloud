@@ -1517,6 +1517,10 @@ const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET?.trim() || '';
 // The app that answers the landing's /go/<code> links (note #1178), e.g.
 // https://outreach.agentbuilt.app. Unset: the platform's own Outreach answers.
 const GO_LINKS_APP = process.env.GO_LINKS_APP?.trim().replace(/\/+$/, '') || '';
+// Outreach moved into its own app (note #1178): the platform's own Outreach
+// routes answer 410 and say where it went. Its tables stay, unread by them.
+const OUTREACH_MOVED_TO = process.env.OUTREACH_MOVED_TO?.trim().replace(/\/+$/, '') || '';
+if (!PRIVATE_COPY) console.log(`[config] OUTREACH_MOVED_TO=${OUTREACH_MOVED_TO || 'off (the platform still runs Outreach)'}`);
 if (!PRIVATE_COPY) console.log(`[config] GO_LINKS_APP=${GO_LINKS_APP || 'off (the platform answers /go/ itself)'}`);
 const outreach = PRIVATE_COPY ? null : new OutreachService({
   store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
@@ -1531,6 +1535,8 @@ const outreach = PRIVATE_COPY ? null : new OutreachService({
     return [person?.firstName, person?.lastName].filter(Boolean).join(' ').trim();
   },
 });
+// Once it moved, nothing the platform sees happen is written into the old store any more.
+const outreachLive = OUTREACH_MOVED_TO ? null : outreach;
 // A workplace app's doors (note #1178): passes, agent proofs, the letters an
 // app sent and the feed of what happened. Never in a private copy.
 const appDoors = PRIVATE_COPY ? null : new AppDoors(sqliteDb ? new SqliteAppDoorStore(sqliteDb) : new InMemoryAppDoorStore());
@@ -1846,7 +1852,7 @@ if (mailIngest) {
     noteArrival: (arrival, opts) => {
       mailWake.noteArrival(arrival, opts);
       // Outreach (note #1089): a reply from a target company lands on its timeline.
-      void outreach?.noteArrival(arrival, opts).catch((error) => {
+      void outreachLive?.noteArrival(arrival, opts).catch((error) => {
         console.warn('[outreach] an arrival could not be matched:', error instanceof Error ? error.message : error);
       });
       // A workplace app's feed (note #1178): who wrote and about what, never the words.
@@ -2233,10 +2239,10 @@ const guestAgentService = new GuestAgentService({
   turnstile: guestTurnstile,
   idleStopMs: FLY_IDLE_STOP_MINUTES * 60_000,
   // A guest from one of the owner's Outreach letters names its company (note #1139).
-  outreach: outreach
+  outreach: outreachLive
     ? {
-      company: (userId, companyId) => outreach.company(userId, companyId),
-      guestStarted: async (userId, companyId, guest) => { await outreach.guestStarted(userId, companyId, guest); },
+      company: (userId, companyId) => outreachLive.company(userId, companyId),
+      guestStarted: async (userId, companyId, guest) => { await outreachLive.guestStarted(userId, companyId, guest); },
       siteOrigin: OUTREACH_SITE_ORIGIN,
     }
     : null,
@@ -2322,6 +2328,7 @@ const deps: RouteDeps = {
   ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
   ...(outreach && outreachPasses ? { outreach, outreachPasses, outreachSiteOrigin: OUTREACH_SITE_ORIGIN } : {}),
   ...(appDoors ? { appDoors, appsDomain: APPS_DOMAIN, mailFactsConfigured: Boolean(RESEND_WEBHOOK_SECRET) } : {}),
+  ...(OUTREACH_MOVED_TO ? { outreachMovedTo: OUTREACH_MOVED_TO } : {}),
   ...(copyPulse ? { copyPulse } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
@@ -2643,7 +2650,7 @@ if (copyPulses && copyPulseKeys) {
     onPulse: (pulse) => {
       deps.copyAlerts?.nudge();
       // Outreach (note #1089): a target company's own copy reporting in is an install.
-      void outreach?.notePulse(pulse).catch((error) => {
+      void outreachLive?.notePulse(pulse).catch((error) => {
         console.warn('[outreach] a pulse could not be matched:', error instanceof Error ? error.message : error);
       });
     },
@@ -2689,7 +2696,7 @@ app.use('/workspace', workspaceRouter);
 // root routes, so the word is ours and never a person's address.
 app.use(outreachLinkRoutes(() => outreach, { forwardTo: () => GO_LINKS_APP }));
 // Delivered, bounced, spam, pictures loaded: Resend's signed events on the Outreach letters (note #1112).
-app.use(outreachMailEventRoutes({ outreach: () => outreach, apps: () => appDoors, secret: () => RESEND_WEBHOOK_SECRET }));
+app.use(outreachMailEventRoutes({ outreach: () => outreachLive, apps: () => appDoors, secret: () => RESEND_WEBHOOK_SECRET }));
 // Its addresses live at the root of the domain (public-addresses): the shell
 // is served there, and every old /workspace address redirects to it.
 // The public pages a crawler reads without scripts, and a real 404 at an

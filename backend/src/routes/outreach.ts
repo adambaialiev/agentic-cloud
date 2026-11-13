@@ -34,6 +34,7 @@ export function registerOutreachRoutes<Auth extends OutreachAuth>(router: Router
   authenticate: (req: Request, res: Response) => Promise<Auth | null>,
   isOperator: (auth: Auth) => Promise<boolean>) {
   const gate = async (req: Request, res: Response) => {
+    if (outreachMoved(deps, res)) return null;
     const auth = await authenticate(req, res);
     if (!auth) return null;
     if (!deps.outreach || deps.privateCopy) { res.status(404).json({ error: 'There is no Outreach here.' }); return null; }
@@ -188,6 +189,7 @@ export function registerOutreachAgentRoutes<Auth extends OutreachAgentAuth>(rout
   const gate = async (req: Request, res: Response) => {
     const auth = await authenticate(req, res);
     if (!auth) return null;
+    if (outreachMoved(deps, res)) return null;
     if (!deps.outreach || deps.privateCopy) { res.status(404).json({ error: 'There is no Outreach here.' }); return null; }
     if (!(await isOperator(auth))) {
       res.status(403).json({ error: "Outreach is the platform operator's own: only his agents can read or write it." });
@@ -240,6 +242,24 @@ export function registerOutreachAgentRoutes<Auth extends OutreachAgentAuth>(rout
   });
 }
 
+/**
+ * Outreach moved into its own app (note #1178): with OUTREACH_MOVED_TO set,
+ * the platform's own Outreach routes, the site's and the agents', answer 410
+ * and say where it went, so nothing is written into a store nobody reads any
+ * more. The data stays where it is until the owner says it can go.
+ */
+export const OUTREACH_MOVED_COMMAND = 'curl -s https://outreach.agentbuilt.app/outreach.mjs -o /tmp/outreach.mjs && node /tmp/outreach.mjs list';
+export function outreachMoved(deps: Pick<RouteDeps, 'outreachMovedTo'>, res: Response): boolean {
+  if (!deps.outreachMovedTo) return false;
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(410).json({
+    error: `Outreach moved into its own app (note #1178): ${deps.outreachMovedTo}. Agents read and write it with its own command: ${OUTREACH_MOVED_COMMAND} (then show <id>, set --file <file>, the same file as before). Nothing was written here.`,
+    code: 'outreach_moved',
+    movedTo: deps.outreachMovedTo,
+  });
+  return true;
+}
+
 /** The site's origin by default; OUTREACH_SITE_ORIGIN overrides it (a test, a rename). */
 export const OUTREACH_SITE_ORIGIN_DEFAULT = 'https://outreach.agentbuilt.app';
 
@@ -285,6 +305,9 @@ export function registerOutreachPassDoor(router: Router, deps: RouteDeps, opts: 
       + `<body style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 20px"><h1 style="font-size:20px;font-weight:500">${title}</h1>${body}</body>`);
   };
   router.get('/api/outreach/pass', async (req, res) => {
+    if (deps.outreachMovedTo) {
+      return page(res, 410, 'Outreach has its own sign-in now', `<p>Outreach moved into its own app. Open <a href="${deps.outreachMovedTo}/">Outreach</a> and press Sign in there.</p>`);
+    }
     if (!deps.outreach || !deps.outreachPasses || deps.privateCopy) return page(res, 404, 'There is no Outreach here', '');
     const back = outreachReturnTo(req.query.return, opts.siteOrigin);
     if (!back) return page(res, 400, 'Not the Outreach site', '<p>A pass is only ever sent back to the Outreach site.</p>');

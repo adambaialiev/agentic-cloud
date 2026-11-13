@@ -121,6 +121,19 @@ describe('the Outreach pass (note #1093)', () => {
     expect(other.headers.get('access-control-allow-origin')).toBeNull();
   });
 
+  it('once Outreach moved into its own app (note #1178), the door and the routes say where it went', async () => {
+    await serve();
+    const pass = decodeURIComponent(passFrom((await door(42)).headers.get('location')));
+    deps.outreachMovedTo = 'https://outreach.agentbuilt.app';
+    const moved = await door(42);
+    expect(moved.status).toBe(410);
+    expect(moved.headers.get('location')).toBeNull();
+    expect(await moved.text()).toContain('Outreach has its own sign-in now');
+    const list = await fetch(`${origin}/workspace/api/outreach`, { headers: { authorization: `Bearer ${pass}` } });
+    expect(list.status).toBe(410);
+    expect((await list.json() as { code: string }).code).toBe('outreach_moved');
+  });
+
   it('is not there in a private copy', async () => {
     await serve({ privateCopy: true });
     expect((await door(42)).status).toBe(404);

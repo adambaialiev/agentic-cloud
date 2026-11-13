@@ -334,6 +334,8 @@ export interface RouteDeps {
   outreachPasses?: import('../services/outreach-pass.js').OutreachPasses;
   /** The one origin the pass door sends a pass to; OUTREACH_SITE_ORIGIN, else the default. */
   outreachSiteOrigin?: string;
+  /** Outreach moved into its own app (note #1178): its origin, and the platform's own Outreach routes answer 410. OUTREACH_MOVED_TO. */
+  outreachMovedTo?: string;
   /** A workplace app's doors (note #1178): passes, agent proofs, an app's mail and its feed. */
   appDoors?: import('../services/app-doors.js').AppDoors;
   /** The hosting's domain, where a site answers at `https://<site>.<appsDomain>`; APPS_DOMAIN. */

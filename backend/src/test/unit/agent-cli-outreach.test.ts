@@ -258,3 +258,18 @@ describe('agentbuilt app-proof, the real CLI against the real route (note #1178)
   });
 });
 
+
+describe('Outreach moved into its own app (note #1178)', () => {
+  it('answers 410 with the new command, and writes nothing', async () => {
+    const { deps, rowan, store } = await world();
+    Object.assign(deps, { outreachMovedTo: 'https://outreach.agentbuilt.app' });
+    const before = await store.allTargets();
+    for (const [path, method, body] of [['/outreach', 'get', undefined], ['/outreach', 'post', fixtureOutreachWrite()], ['/outreach/targets/:id', 'get', undefined]] as const) {
+      const answer = await call(deps, rowan, path, method, { body, params: { id: 'northwind-health' } });
+      expect(answer.statusCode).toBe(410);
+      expect((answer.body as { error: string; code: string }).code).toBe('outreach_moved');
+      expect((answer.body as { error: string }).error).toContain('node /tmp/outreach.mjs list');
+    }
+    expect(await store.allTargets()).toEqual(before);
+  });
+});
