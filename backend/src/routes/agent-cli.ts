@@ -8,6 +8,8 @@ import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
 import { registerOutreachAgentRoutes } from './outreach.js';
+import { appDoorsOpenFor, appSiteIsTheirs } from './app-doors.js';
+import { appSiteName } from '../services/app-doors.js';
 import { WORKSPACE_AGENT_NAME, personDisplayName, workspaceAssistantId } from '../types/user.js';
 import { DIRECT_MESSAGE_FILE_MAX_BYTES, DIRECT_MESSAGES_OFFERED, directMessageFileSize, type DirectMessageFile } from '../shared/direct-messages.js';
 import { describeDirectMessageUpload, directMessageFileIds, directMessageFileName, directMessageFileRefusal } from './direct-messages.js';
@@ -469,6 +471,32 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   // into his Outreach, which his site reads live. Drafts and facts only.
   registerOutreachAgentRoutes(router, '/outreach', deps, authenticate,
     async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
+
+  // An agent proves who it is to one of its workplace's sites (note #1178):
+  // `agentbuilt app-proof <site>` prints a 15-minute proof; the site checks it
+  // with GET /workspace/api/apps/me. Operator only for now (appDoorsOpenFor).
+  router.post('/apps/proof', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    res.setHeader('Cache-Control', 'no-store');
+    if (!deps.appDoors || deps.privateCopy) return res.status(404).json({ error: 'There are no app doors here.' });
+    const site = appSiteName((req.body as Record<string, unknown> | undefined)?.site);
+    if (!site) return res.status(400).json({ error: 'Name the site: agentbuilt app-proof <site>.' });
+    if (!appDoorsOpenFor(await deps.userStorage?.getProfile(auth.userId))) {
+      return res.status(403).json({ error: "App proofs are open to the platform operator's agents only, for now." });
+    }
+    if (!(await appSiteIsTheirs(deps, auth.userId, site))) {
+      return res.status(404).json({ error: `${site} is not a live site of your workplace. agentbuilt list names them.` });
+    }
+    try {
+      const name = auth.agents[auth.agentId]?.name?.trim() || 'An agent';
+      const proof = await deps.appDoors.mintProof(auth.userId, site, { agentId: auth.agentId, name });
+      return res.json({ proof: proof.token, site, expiresAt: proof.expiresAt });
+    } catch (error) {
+      console.warn('[apps] a proof could not be made:', error instanceof Error ? error.message : error);
+      return res.status(503).json({ error: 'The proof could not be made. Try again.' });
+    }
+  });
 
   const requireDeployments = (res: Response) => {
     if (!deps.deploymentService || !deps.deploymentStorage) {

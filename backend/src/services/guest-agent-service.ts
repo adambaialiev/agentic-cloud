@@ -160,6 +160,11 @@ export interface GuestAgentServiceDeps {
     /** The Outreach site, for the link to a company's page (`<origin>/c/<id>`). */
     siteOrigin: string;
   } | null;
+  /**
+   * A workplace app's feed (note #1178): a guest who came by a tagged link is
+   * told to the owner's apps, which match the tags themselves.
+   */
+  appFeed?: ((userId: string, guest: { agentId: string; name: string; country: string | null; utm: Record<string, string> }) => Promise<void>) | null;
 }
 
 interface LiveTurn {
@@ -1236,6 +1241,11 @@ export class GuestAgentService {
 
   /** A guest whose tags name one of the owner's Outreach companies goes on that company's timeline. Never blocks the build. */
   private tellOutreach(userId: string, row: GuestAgentRow): void {
+    const utm = Object.fromEntries(Object.entries(row.arrival?.utm ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
+    if (this.deps.appFeed && Object.keys(utm).length) {
+      this.track(this.deps.appFeed(userId, { agentId: row.agentId, name: row.transcript.name, country: row.arrival?.country ?? null, utm })
+        .catch((error) => { console.warn(`[guest] could not tell the apps about ${row.transcript.name}: ${String(error)}`); }));
+    }
     const companyId = guestOutreachCompanyId(row.arrival);
     const outreach = this.deps.outreach;
     if (!companyId || !outreach) return;

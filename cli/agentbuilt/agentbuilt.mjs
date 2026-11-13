@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.82.0';
+const VERSION = '1.83.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -5159,6 +5159,18 @@ async function outreach(args) {
  * hear "not yours". No names and no emails: each account is a five-character
  * code, the same from read to read.
  */
+// An agent proves who it is to one of its workplace's sites (note #1178):
+// prints a 15-minute proof and nothing else, so a site's own tool can run
+// `agentbuilt app-proof <site>` and send what it prints as `Authorization:
+// Bearer`. The site checks it with the platform (GET /workspace/api/apps/me).
+async function appProof(args) {
+  const [site] = positionals(args, []);
+  if (args.includes('--help') || !site) fail('usage: agentbuilt app-proof <site>   (prints a 15-minute proof of who you are, for that site of your workplace only)');
+  const answer = await api('POST', 'api/agent-cli/apps/proof', { body: { site } });
+  if (args.includes('--json')) { console.log(JSON.stringify(answer, null, 2)); return; }
+  console.log(answer.proof);
+}
+
 async function signups(args) {
   if (args.includes('--help') || positionals(args, []).length) fail('usage: agentbuilt signups [--json]');
   const funnel = await api('GET', 'api/agent-cli/platform/signups');
@@ -7157,6 +7169,7 @@ try {
     case 'briefing': case 'briefings': await briefing(rest); break;
     case 'forward': await forward(rest); break;
     case 'signups': await signups(rest); break;
+    case 'app-proof': await appProof(rest); break;
     case 'outreach': await outreach(rest); break;
     case 'knowledge': await knowledge(rest); break;
     case 'drive': await drive(rest); break;

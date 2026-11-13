@@ -115,6 +115,36 @@ CREATE TABLE IF NOT EXISTS outreach_words (
   imported_at TEXT NOT NULL,
   doc TEXT NOT NULL
 );
+-- A workplace app's doors (note #1178, services/app-doors.ts): passes and
+-- agent proofs kept as hashes, the letters an app sent from a person's
+-- mailbox, and the feed of what the platform saw happen for that person.
+CREATE TABLE IF NOT EXISTS app_credentials (
+  token_hash TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  site TEXT NOT NULL,
+  session_id TEXT,
+  agent_id TEXT,
+  agent_name TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS app_mails (
+  user_id TEXT NOT NULL,
+  mail_id TEXT NOT NULL,
+  site TEXT NOT NULL,
+  provider_id TEXT,
+  at TEXT NOT NULL,
+  PRIMARY KEY (user_id, mail_id)
+);
+CREATE INDEX IF NOT EXISTS app_mails_by_provider ON app_mails (provider_id);
+CREATE TABLE IF NOT EXISTS app_feed (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  doc TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS app_feed_by_user ON app_feed (user_id, seq);
 
 CREATE TABLE IF NOT EXISTS drive_items (
   org_id TEXT NOT NULL,

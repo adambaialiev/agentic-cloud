@@ -1121,7 +1121,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // say how (data on the volume, a sleep stops it, restart policies bring
 // containers back). CLI 1.82.0 — `agentbuilt help docker` holds the rest
 // (socket clients, disk and prune, memory, jobs, CI, a missing `docker`).
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 198;
+// v199 (note #1178): CLI 1.83.0 — `agentbuilt app-proof <site>` prints a
+// 15-minute proof an agent hands one of its workplace's sites (the Outreach
+// app's own tool is the first to use it); operator only for now.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 199;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

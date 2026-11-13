@@ -19,6 +19,7 @@ import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
 import { OUTREACH_SITE_ORIGIN_DEFAULT, registerOutreachPassDoor, registerOutreachRoutes } from './outreach.js';
 import { outreachPassFrom } from '../services/outreach-pass.js';
+import { registerAppDoors } from './app-doors.js';
 import { CopyAlertSweep, type CopyAlertRecipient } from '../services/copy-alerts.js';
 import { Router, raw, type NextFunction, type Request, type Response } from 'express';
 import QRCode from 'qrcode';
@@ -7647,6 +7648,26 @@ self.addEventListener('activate', (event) => {
     };
   };
   registerOutreachRoutes(router, '/api/outreach', deps, authenticateOutreachPass, async (auth) => isAdminAccount(auth.profile));
+
+  // A workplace app's doors (note #1178): sign-in for one site, Send from the
+  // person's own mailbox on their press, a sent letter's words, and the feed
+  // of what the platform saw happen. Operator only for now (appDoorsOpenFor).
+  if (deps.appDoors) {
+    registerAppDoors(router, '/api/apps', deps, {
+      doors: deps.appDoors,
+      appsDomain: deps.appsDomain ?? 'agentbuilt.app',
+      loginUrl: `${deps.workspaceWebOrigin ?? ''}/login`,
+      signedIn: async (req) => {
+        if (!deps.workspaceWebAuth || !deps.workspaceWebOrigin || !deps.userStorage) return null;
+        const session = await deps.workspaceWebAuth.authenticateSession(workspaceSessionToken(req, deps.workspaceWebOrigin));
+        if (!session) return null;
+        const profile = await deps.userStorage.getProfile(session.userId);
+        return profile ? { userId: session.userId, profile, session } : null;
+      },
+      sessionLive: async (userId, sessionId) => Boolean(await deps.workspaceWebAuth?.activeSession(userId, sessionId)),
+      mailFacts: () => deps.mailFactsConfigured === true,
+    });
+  }
 
   /**
    * What the user typed, as the HTML a note is stored in — or a reply and null.

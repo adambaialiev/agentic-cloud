@@ -192,3 +192,27 @@ describe('agentbuilt outreach, the real CLI against the real routes', () => {
     expect(other.stderr).toContain("platform operator's own");
   });
 });
+
+describe('agentbuilt app-proof (note #1178)', () => {
+  it('gives the operator\'s agent a proof for a live site of his, and nobody else one', async () => {
+    const { deps, rowan, stranger } = await world();
+    const { AppDoors, InMemoryAppDoorStore } = await import('../../services/app-doors.js');
+    const { InMemoryDeploymentStorage } = await import('../../services/deployment-storage.js');
+    const deployments = new InMemoryDeploymentStorage();
+    await deployments.create({ userId: 'user-adam', agentId: 'agent-rowan', name: 'outreach', status: 'live' } as never);
+    await deployments.create({ userId: 'user-other', agentId: 'agent-zed', name: 'theirs', status: 'live' } as never);
+    const doors = new AppDoors(new InMemoryAppDoorStore());
+    Object.assign(deps, { appDoors: doors, deploymentStorage: deployments });
+    const minted = await call(deps, rowan, '/apps/proof', 'post', { body: { site: 'outreach' } });
+    expect(minted.statusCode).toBe(200);
+    const proof = (minted.body as { proof: string }).proof;
+    expect(proof).toMatch(/^sp_/);
+    expect(await doors.read(proof)).toMatchObject({ kind: 'agent', userId: 'user-adam', site: 'outreach', agentId: 'agent-rowan', agentName: 'Rowan' });
+    expect((await call(deps, rowan, '/apps/proof', 'post', { body: { site: 'theirs' } })).statusCode).toBe(404);
+    expect((await call(deps, rowan, '/apps/proof', 'post', { body: {} })).statusCode).toBe(400);
+    // Not the operator's agent: the doors are shut to it (note #1178, operator first).
+    expect((await call(deps, stranger, '/apps/proof', 'post', { body: { site: 'theirs' } })).statusCode).toBe(403);
+    Object.assign(deps, { privateCopy: true });
+    expect((await call(deps, rowan, '/apps/proof', 'post', { body: { site: 'outreach' } })).statusCode).toBe(404);
+  });
+});

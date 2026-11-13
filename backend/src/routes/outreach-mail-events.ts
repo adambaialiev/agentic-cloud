@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { RESEND_OUTREACH_EVENTS } from '../shared/outreach.js';
 import type { OutreachMailEventInput, OutreachService } from '../services/outreach.js';
+import type { AppDoors } from '../services/app-doors.js';
 
 /**
  * The mail provider's word on the Outreach letters (note #1112; Adam, 9 Nov
@@ -77,6 +78,8 @@ export function readResendEvent(json: unknown, eventId: string): OutreachMailEve
 /** Mount with `express.raw` on RESEND_WEBHOOK_PATH before the JSON parser: the signature is over the exact bytes. */
 export function outreachMailEventRoutes(deps: {
   outreach: () => Pick<OutreachService, 'noteMailEvent' | 'mailHeard'> | null;
+  /** A workplace app's letters (note #1178): the same event goes to its feed when an app sent the letter. */
+  apps?: () => Pick<AppDoors, 'noteMailEvent'> | null;
   secret: () => string;
   now?: () => Date;
 }): Router {
@@ -85,7 +88,8 @@ export function outreachMailEventRoutes(deps: {
   router.post(RESEND_WEBHOOK_PATH, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
     const service = deps.outreach();
-    if (!service) return res.status(404).json({ error: 'There is no Outreach here.' });
+    const apps = deps.apps?.() ?? null;
+    if (!service && !apps) return res.status(404).json({ error: 'There is no Outreach here.' });
     const secret = deps.secret();
     if (!secret) {
       if (!unsetSaid) { unsetSaid = true; console.warn('[outreach] a Resend event arrived, but RESEND_WEBHOOK_SECRET is not set: nothing is recorded until it is.'); }
@@ -104,13 +108,15 @@ export function outreachMailEventRoutes(deps: {
     const event = readResendEvent(json, id!);
     if (!event) {
       // Signed, so the wiring works, but not an event Outreach records (a click, a send, a domain change).
-      service.mailHeard();
+      service?.mailHeard();
       return res.status(200).json({ recorded: false });
     }
     try {
-      const answer = await service.noteMailEvent(event);
+      const answer = service ? await service.noteMailEvent(event) : { recorded: false };
       if (answer.recorded) console.log(`[outreach] ${event.event} recorded for an Outreach letter`);
-      return res.status(200).json({ recorded: answer.recorded });
+      const forApp = apps ? await apps.noteMailEvent(event) : false;
+      if (forApp) console.log(`[apps] ${event.event} recorded for an app's letter`);
+      return res.status(200).json({ recorded: answer.recorded || forApp });
     } catch (error) {
       console.warn('[outreach] a Resend event could not be recorded:', error instanceof Error ? error.message : error);
       return res.status(500).json({ error: 'Not recorded. Try again.' });
