@@ -11612,19 +11612,20 @@ self.addEventListener('activate', (event) => {
       }
     }
 
-    // What the PLATFORM's own nightly jobs last managed (note #357). Every
-    // org gets the `db` line: chats, notes and proposals live here however
-    // the code is hosted. The `git` line is for an org still on the CENTRAL
+    // What the PLATFORM's own backup jobs last managed (notes #357, #1179).
+    // Every org gets the database line: chats, notes and proposals live here
+    // however the code is hosted. The code line is for an org still on the CENTRAL
     // host — those nightly bundles are literally its code's backup, and
     // without this the screen showed it nothing at all. An org with a host of
     // its own is covered by `git.backup` above and would be told, wrongly,
     // that a job touching none of its repos had backed its code up.
     let platformBackup: { code?: { at: string; ok: boolean }; workspace?: { at: string; ok: boolean } } | undefined;
-    if (deps.readBackupHeartbeat) {
-      const workspaceRun = deps.readBackupHeartbeat('db');
+    if (deps.readPlatformBackups) {
+      const runs = deps.readPlatformBackups();
+      const workspaceRun = runs.workspace;
       // An org with no git namespace at all has no code to speak for, and is
       // told only about its workspace rather than reassured about nothing.
-      const codeRun = orgDoc.git && !orgDoc.git.host ? deps.readBackupHeartbeat('git') : undefined;
+      const codeRun = orgDoc.git && !orgDoc.git.host ? runs.code : undefined;
       if (workspaceRun || codeRun) {
         platformBackup = { ...(codeRun ? { code: codeRun } : {}), ...(workspaceRun ? { workspace: workspaceRun } : {}) };
       }

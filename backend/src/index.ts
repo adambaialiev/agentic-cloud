@@ -136,6 +136,7 @@ import { InMemoryQuickNoteStorage } from './services/quick-note-storage.js';
 import { InMemoryGitPullRequestStorage } from './services/git-pr-storage.js';
 import { SqliteGitCommitStatusStorage } from './services/sqlite/sqlite-git-commit-status-storage.js';
 import { SqliteBackupHeartbeatStore } from './services/sqlite/sqlite-backup-heartbeats.js';
+import { CENTRAL_GIT_BACKUP_JOB, createPlatformBackupReader, databaseBackupJob } from './services/platform-backup-runs.js';
 import {
   BackupStalenessMonitor,
   InMemoryBackupHeartbeatStore,
@@ -1111,7 +1112,7 @@ if (sqliteDb && sqliteDbPath && dbBackupsOn) {
   const keep = parsePositiveIntEnv('DB_BACKUP_KEEP', 14);
   const keepWeekly = parseNonNegativeIntEnv('DB_BACKUP_KEEP_WEEKLY', 8);
   const lockDays = parseNonNegativeIntEnv('DB_BACKUP_LOCK_DAYS', 0);
-  const monitorJob = process.env.DB_BACKUP_MONITOR_JOB?.trim() || 'db';
+  const monitorJob = databaseBackupJob(process.env);
   new DatabaseBucketBackup({
     dbPath: sqliteDbPath,
     backup: (destination) => sqliteDb.backup(destination),
@@ -1164,8 +1165,11 @@ if (parseBoolEnv('MEDIA_MIRROR', false)) {
 // nightly went to the Storage Box. Opt-in by CENTRAL_GIT_BACKUP=on. The first
 // run of a fresh state uploads every repo and may outlive the HTTP call; seed
 // it by hand (docs/control-plane-on-fly.md), after which runs are incremental.
+// Whether it is really running, for the Workplace screen (note #1179).
+let centralGitBackupOn = false;
 if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
   if (gitHostClient && BACKUP_S3.endpoint && BACKUP_S3.name && BACKUP_S3.accessKeyId && BACKUP_S3.secretAccessKey) {
+    centralGitBackupOn = true;
     // At most one run per UTC day, remembered beside the database. A bundle's
     // key is the day (git/<ns>/<repo>/<day>.bundle), and the R2 bucket's lock
     // refuses to overwrite it: a second run on the same day, which every
@@ -1186,12 +1190,12 @@ if (parseBoolEnv('CENTRAL_GIT_BACKUP', false)) {
         const detail = `${r.repos} repos, ${r.uploaded} uploaded (${r.uploadedBytes} bytes), ${r.unchanged} unchanged, ${r.pruned} pruned`
           + (r.failed.length ? `, ${r.failed.length} failed (first: ${r.failed[0]!.repo}: ${r.failed[0]!.error.slice(0, 120)})` : '');
         console.log(`[CentralGitBackup] ${detail}`);
-        backupMonitor?.record('git-r2', r.failed.length || r.repos === 0 ? 'fail' : 'ok', detail);
+        backupMonitor?.record(CENTRAL_GIT_BACKUP_JOB, r.failed.length || r.repos === 0 ? 'fail' : 'ok', detail);
         if (centralGitStamp && r.repos > 0) await writeFileNode(centralGitStamp, `${today}\n`).catch(() => undefined);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`[CentralGitBackup] failed: ${message}`);
-        backupMonitor?.record('git-r2', 'fail', message);
+        backupMonitor?.record(CENTRAL_GIT_BACKUP_JOB, 'fail', message);
       }
     };
     // Checked hourly; the stamp keeps it to one run a day.
@@ -2314,11 +2318,14 @@ const deps: RouteDeps = {
   // Reading is not writing: the store is always there, so the org screen can
   // report what a backup job last managed even on a backend with no ops bot
   // to alert. A job that has never reported reads as absent, not as fine.
-  readBackupHeartbeat: (job: string) => {
-    const beat = backupHeartbeatStore.get(job);
-    if (!beat?.lastReportAt) return undefined;
-    return { at: beat.lastReportAt, ok: beat.lastStatus !== 'fail' };
-  },
+  // The jobs this backend really runs, by the names they really report
+  // under (note #1179): never a name typed into the route.
+  readPlatformBackups: createPlatformBackupReader({
+    store: backupHeartbeatStore,
+    ...(dbBackupsOn ? { databaseJob: databaseBackupJob(process.env) } : {}),
+    ...(centralGitBackupOn ? { codeJob: CENTRAL_GIT_BACKUP_JOB } : {}),
+    lastDatabaseRun: () => (lastDbBackup ? { at: lastDbBackup.at, ok: lastDbBackup.ok } : undefined),
+  }),
   // Both or neither: a secret with nothing behind it would accept heartbeats
   // and drop them, which reads as "monitored" and is not.
   ...(BACKUP_HEARTBEAT_SECRET && backupMonitor

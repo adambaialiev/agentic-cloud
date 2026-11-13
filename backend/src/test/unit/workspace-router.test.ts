@@ -1,3 +1,5 @@
+import { InMemoryBackupHeartbeatStore } from '../../services/backup-monitor.js';
+import { CENTRAL_GIT_BACKUP_JOB, createPlatformBackupReader, databaseBackupJob } from '../../services/platform-backup-runs.js';
 import { OutreachService } from '../../services/outreach.js';
 import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
 import { InMemoryOutreachPassStore, OutreachPasses } from '../../services/outreach-pass.js';
@@ -6809,8 +6811,10 @@ describe('the workplace screens (members, seats, invites)', () => {
    * all. These fix what the org record is allowed to claim on its behalf.
    */
   describe('what the org record says about backups', () => {
-    const heartbeats = (rows: Record<string, { at: string; ok: boolean }>) =>
-      (job: string) => rows[job];
+    // What the backend's jobs last managed, already read under their real
+    // names (services/platform-backup-runs.ts, which has its own tests).
+    const heartbeats = (rows: { git?: { at: string; ok: boolean }; db?: { at: string; ok: boolean } }) =>
+      () => ({ ...(rows.git ? { code: rows.git } : {}), ...(rows.db ? { workspace: rows.db } : {}) });
 
     async function readOrg(deps: Parameters<typeof getRouteHandler>[0], userId = 42) {
       const res = createMockResponse();
@@ -6822,7 +6826,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     it('tells an org on the central host that the platform holds both its code and its chats', async () => {
       const { deps, orgStorage, org } = await buildOrgDeps();
       await orgStorage.updateOrg(org.orgId, { git: { namespaceId: 'ns-1' } } as never);
-      deps.readBackupHeartbeat = heartbeats({
+      deps.readPlatformBackups = heartbeats({
         git: { at: '2026-09-06T03:40:00.000Z', ok: true },
         db: { at: '2026-09-06T03:46:00.000Z', ok: true },
       });
@@ -6840,7 +6844,7 @@ describe('the workplace screens (members, seats, invites)', () => {
       await orgStorage.updateOrg(org.orgId, {
         git: { namespaceId: 'ns-1', host: { app: 'iagit-x', volumeId: 'vol-1' } },
       } as never);
-      deps.readBackupHeartbeat = heartbeats({
+      deps.readPlatformBackups = heartbeats({
         git: { at: '2026-09-06T03:40:00.000Z', ok: true },
         db: { at: '2026-09-06T03:46:00.000Z', ok: true },
       });
@@ -6852,7 +6856,7 @@ describe('the workplace screens (members, seats, invites)', () => {
     // An org with no namespace has no code anywhere yet; its chats still do.
     it('claims nothing about the code of an org that has none', async () => {
       const { deps } = await buildOrgDeps();
-      deps.readBackupHeartbeat = heartbeats({
+      deps.readPlatformBackups = heartbeats({
         git: { at: '2026-09-06T03:40:00.000Z', ok: true },
         db: { at: '2026-09-06T03:46:00.000Z', ok: true },
       });
@@ -6863,7 +6867,7 @@ describe('the workplace screens (members, seats, invites)', () => {
 
     it('passes a failed run through rather than reporting it as a backup', async () => {
       const { deps } = await buildOrgDeps();
-      deps.readBackupHeartbeat = heartbeats({ db: { at: '2026-09-06T03:46:00.000Z', ok: false } });
+      deps.readPlatformBackups = heartbeats({ db: { at: '2026-09-06T03:46:00.000Z', ok: false } });
       expect((await readOrg(deps)).platformBackup)
         .toEqual({ workspace: { at: '2026-09-06T03:46:00.000Z', ok: false } });
     });
@@ -6873,13 +6877,49 @@ describe('the workplace screens (members, seats, invites)', () => {
     // rather than as an assurance nobody can stand behind.
     it('says nothing at all when no backup job has ever reported', async () => {
       const { deps } = await buildOrgDeps();
-      deps.readBackupHeartbeat = heartbeats({});
+      deps.readPlatformBackups = heartbeats({});
       expect(await readOrg(deps)).not.toHaveProperty('platformBackup');
+    });
+
+    // Note #1179, as production stood on 13 Nov 2026: the Storage Box jobs
+    // (`db`, `git`) last reported on 7 and 6 Nov and were then torn down,
+    // while the R2 jobs (`db-r2`, `git-r2`) ran on. The store holds all four,
+    // and the screen read the dead two — "backups stopped", when they had not.
+    it('shows the backups that really run, never a retired job’s last report (note #1179)', async () => {
+      const { deps, orgStorage, org } = await buildOrgDeps();
+      await orgStorage.updateOrg(org.orgId, { git: { namespaceId: 'ns-1' } } as never);
+      const store = new InMemoryBackupHeartbeatStore();
+      const beat = (job: string, at: string) => store.put({ job, watchingSince: '2026-08-12T09:51:20.638Z', lastReportAt: at, lastSuccessAt: at, lastStatus: 'ok' });
+      beat('db', '2026-11-07T03:59:39.295Z');
+      beat('git', '2026-11-06T15:47:17.027Z');
+      beat('db-r2', '2026-11-13T07:34:16.978Z');
+      beat('git-r2', '2026-11-13T00:34:52.292Z');
+
+      // Ours: DB_BACKUP_MONITOR_JOB=db-r2, CENTRAL_GIT_BACKUP=on.
+      deps.readPlatformBackups = createPlatformBackupReader({
+        store, databaseJob: databaseBackupJob({ DB_BACKUP_MONITOR_JOB: 'db-r2' }), codeJob: CENTRAL_GIT_BACKUP_JOB,
+      });
+      expect((await readOrg(deps)).platformBackup).toEqual({
+        code: { at: '2026-11-13T00:34:52.292Z', ok: true },
+        workspace: { at: '2026-11-13T07:34:16.978Z', ok: true },
+      });
+
+      // An own cloud (a private copy): no monitor name set, so its database
+      // job is `db`, and no ops channel, so nothing in the store — the run is
+      // the process's own record. No central bundles there, so no code line.
+      deps.readPlatformBackups = createPlatformBackupReader({
+        store: new InMemoryBackupHeartbeatStore(),
+        databaseJob: databaseBackupJob({}),
+        lastDatabaseRun: () => ({ at: '2026-11-13T04:00:00.000Z', ok: true }),
+      });
+      expect((await readOrg(deps)).platformBackup).toEqual({
+        workspace: { at: '2026-11-13T04:00:00.000Z', ok: true },
+      });
     });
 
     it('says nothing at all on a backend with no backup monitor behind it', async () => {
       const { deps } = await buildOrgDeps();
-      delete deps.readBackupHeartbeat;
+      delete deps.readPlatformBackups;
       expect(await readOrg(deps)).not.toHaveProperty('platformBackup');
     });
   });

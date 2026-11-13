@@ -28,6 +28,7 @@ import type { WorkplaceDeletionService } from '../services/workplace-deletion.js
 import type { OrgSpendService } from '../services/org-spend.js';
 import type { OrgFlyService } from '../services/org-fly.js';
 import type { OrgGitService } from '../services/org-git.js';
+import type { PlatformBackupRuns } from '../services/platform-backup-runs.js';
 import type { OrgGitHostService } from '../services/org-git-host.js';
 import type { OrgCiService } from '../services/org-ci.js';
 import type { OrgSecretsService } from '../services/org-secrets.js';
@@ -404,13 +405,15 @@ export interface RouteDeps {
    */
   recordBackupHeartbeat?: (job: string, status: 'ok' | 'fail', detail?: string) => void;
   /**
-   * Reads back what a backup job last managed, for the org screen's backups
-   * block (note #357). Separate from `recordBackupHeartbeat` on purpose: that
-   * one needs the ops notifier behind it to be worth accepting a report,
-   * while READING is useful whenever the store exists. Absent → the block
-   * says nothing rather than guessing.
+   * What the platform's own backup jobs last managed, for the org screen's
+   * backups block (notes #357, #1179): the database and the central host's
+   * repo bundles, read under the names those jobs really report as
+   * (`services/platform-backup-runs.ts`). Separate from
+   * `recordBackupHeartbeat` on purpose: that one needs the ops notifier
+   * behind it to be worth accepting a report, while READING is useful
+   * whenever a job runs. Absent → the block says nothing rather than guessing.
    */
-  readBackupHeartbeat?: (job: string) => { at: string; ok: boolean } | undefined;
+  readPlatformBackups?: () => PlatformBackupRuns;
   /**
    * Puts an Approve/Reject card in the user's chat for a proposal. Returns
    * whether it was delivered. The agent CLI can only ever ASK — the tap is
