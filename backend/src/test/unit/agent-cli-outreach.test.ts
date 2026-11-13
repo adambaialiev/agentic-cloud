@@ -216,3 +216,45 @@ describe('agentbuilt app-proof (note #1178)', () => {
     expect((await call(deps, rowan, '/apps/proof', 'post', { body: { site: 'outreach' } })).statusCode).toBe(404);
   });
 });
+
+describe('agentbuilt app-proof, the real CLI against the real route (note #1178)', () => {
+  const SOURCE_CLI = fileURLToPath(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url));
+  let server: Server | undefined;
+  afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
+
+  it('prints the proof and nothing else, for a site of his; refuses in words otherwise', async () => {
+    const { deps, rowan } = await world();
+    const { AppDoors, InMemoryAppDoorStore } = await import('../../services/app-doors.js');
+    const { InMemoryDeploymentStorage } = await import('../../services/deployment-storage.js');
+    const deployments = new InMemoryDeploymentStorage();
+    await deployments.create({ userId: 'user-adam', agentId: 'agent-rowan', name: 'outreach', status: 'live' } as never);
+    const doors = new AppDoors(new InMemoryAppDoorStore());
+    Object.assign(deps, { appDoors: doors, deploymentStorage: deployments });
+    const app = express();
+    app.use(express.json());
+    app.use('/api/agent-cli', agentCliRoutes(deps as RouteDeps));
+    server = createServer(app);
+    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const run = (args: string[]) => new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, [SOURCE_CLI, 'app-proof', ...args], {
+        env: { ...process.env, HOME: '/nonexistent-agentbuilt-app-proof-test', AGENTBUILT_API_URL: apiUrl, AGENTBUILT_TOKEN: rowan },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+      child.on('error', reject);
+      child.on('close', (status) => resolve({ status, stdout, stderr }));
+    });
+    const ok = await run(['outreach']);
+    expect(ok.stderr).toBe('');
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toMatch(/^sp_[A-Za-z0-9_-]{43}\n$/);
+    expect(await doors.read(ok.stdout.trim())).toMatchObject({ kind: 'agent', site: 'outreach', agentName: 'Rowan' });
+    const theirs = await run(['nosuchsite']);
+    expect(theirs.status).not.toBe(0);
+    expect(theirs.stderr).toContain('nosuchsite is not a live site of your workplace');
+  });
+});
+

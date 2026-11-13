@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.83.0';
+const VERSION = '1.83.1';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -5166,7 +5166,7 @@ async function outreach(args) {
 async function appProof(args) {
   const [site] = positionals(args, []);
   if (args.includes('--help') || !site) fail('usage: agentbuilt app-proof <site>   (prints a 15-minute proof of who you are, for that site of your workplace only)');
-  const answer = await api('POST', 'api/agent-cli/apps/proof', { body: { site } });
+  const answer = await api('POST', 'api/agent-cli/apps/proof', { body: JSON.stringify({ site }), headers: { 'Content-Type': 'application/json' } });
   if (args.includes('--json')) { console.log(JSON.stringify(answer, null, 2)); return; }
   console.log(answer.proof);
 }

@@ -1124,7 +1124,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v199 (note #1178): CLI 1.83.0 — `agentbuilt app-proof <site>` prints a
 // 15-minute proof an agent hands one of its workplace's sites (the Outreach
 // app's own tool is the first to use it); operator only for now.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 199;
+// v200 (note #1178): CLI 1.83.1 — `agentbuilt app-proof` sends the site's
+// name as JSON (1.83.0 sent nothing the route could read).
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 200;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
