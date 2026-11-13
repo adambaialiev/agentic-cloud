@@ -1126,7 +1126,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // app's own tool is the first to use it); operator only for now.
 // v200 (note #1178): CLI 1.83.1 — `agentbuilt app-proof` sends the site's
 // name as JSON (1.83.0 sent nothing the route could read).
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 200;
+// v201 (note #1178): CLI 1.84.0 — `agentbuilt outreach` only says that
+// Outreach moved into its own app and prints that app's own command; the
+// platform's Outreach routes are gone.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 201;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

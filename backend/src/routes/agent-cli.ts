@@ -7,7 +7,6 @@ import { agentBroughtInReceipt } from '../shared/first-run.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
-import { registerOutreachAgentRoutes } from './outreach.js';
 import { appDoorsOpenFor, appSiteIsTheirs } from './app-doors.js';
 import { appSiteName } from '../services/app-doors.js';
 import { WORKSPACE_AGENT_NAME, personDisplayName, workspaceAssistantId } from '../types/user.js';
@@ -466,12 +465,6 @@ export function agentCliRoutes(deps: RouteDeps): Router {
   // the Chief of Staff reads the copy an alert names.
   registerCopiesRoutes(router, '/platform/copies', deps, authenticate,
     async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
-  // Outreach (note #1103): the platform admin's own agents write the words —
-  // companies, profiles, letters, the template and follow-ups — straight
-  // into his Outreach, which his site reads live. Drafts and facts only.
-  registerOutreachAgentRoutes(router, '/outreach', deps, authenticate,
-    async (auth) => isAdminAccount(await deps.userStorage?.getProfile(auth.userId)));
-
   // An agent proves who it is to one of its workplace's sites (note #1178):
   // `agentbuilt app-proof <site>` prints a 15-minute proof; the site checks it
   // with GET /workspace/api/apps/me. Operator only for now (appDoorsOpenFor).

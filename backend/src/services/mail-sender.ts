@@ -35,8 +35,8 @@ export interface OutboundMail {
   subject: string;
   text: string;
   /**
-   * The same words as HTML, beside the text (note #1112: Outreach letters
-   * only, so the provider's open pixel has a place). Everything else this
+   * The same words as HTML, beside the text (notes #1112, #1178: a workplace
+   * app's letters only, so the provider's open pixel has a place). Everything else this
    * address sends is plain text alone.
    */
   html?: string;

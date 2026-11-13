@@ -12,7 +12,6 @@ import {
   APP_FEED_PAGE, APP_MAIL_ALLOWANCE, APP_PASS_HOURS, APP_PROOF_MINUTES, AppDoors, InMemoryAppDoorStore, SqliteAppDoorStore,
   appCredentialFrom, appReturnTo, appSiteName, type AppDoorStore,
 } from '../../services/app-doors.js';
-import { forwardGoLink, outreachLinkRoutes } from '../../routes/outreach-links.js';
 import { addWorkspaceTestAuth, workspaceTestHeaders } from './workspace-route-auth.js';
 
 /**
@@ -261,51 +260,4 @@ describe('the app doors\' pieces (note #1178)', () => {
       expect((await doors.feed('alice', 'outreach', 0)).events).toEqual([]);
     });
   }
-});
-
-describe('the /go/ forwarder (note #1178)', () => {
-  const answering = (status: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
-
-  it('takes a path on the landing or a preview card, and nothing else', async () => {
-    const reader = { userAgent: 'Mozilla/5.0', method: 'GET' };
-    expect(await forwardGoLink(SITE, 'abc234', reader, answering(200, { location: '/?utm_source=outreach' }))).toEqual({ location: '/?utm_source=outreach' });
-    expect(await forwardGoLink(SITE, 'abc234', reader, answering(200, { html: '<!doctype html><title>x</title>' }))).toEqual({ html: '<!doctype html><title>x</title>' });
-    for (const location of ['//evil.test/', 'https://evil.test/', '/\\evil.test', 'relative', '/a\r\nSet-Cookie: x=1']) {
-      expect(await forwardGoLink(SITE, 'abc234', reader, answering(200, { location }))).toBeNull();
-    }
-    expect(await forwardGoLink(SITE, 'abc234', reader, answering(500, { location: '/' }))).toBeNull();
-    const slow = (async (_url: string, init: RequestInit) => new Promise((_, reject) => init.signal!.addEventListener('abort', () => reject(new Error('aborted'))))) as unknown as typeof fetch;
-    expect(await forwardGoLink(SITE, 'abc234', reader, slow, 50)).toBeNull();
-  });
-
-  it('asks the app with the reader\'s word, and lands the reader on the landing, home when the app fails', async () => {
-    const asked: Array<{ url: string; headers: Record<string, string> }> = [];
-    let reply: () => Response = () => new Response(JSON.stringify({ location: '/workplace.md?utm_content=northwind' }), { status: 200 });
-    const fetchImpl = (async (url: string, init: RequestInit) => {
-      asked.push({ url, headers: init.headers as Record<string, string> });
-      return reply();
-    }) as unknown as typeof fetch;
-    const app = express();
-    app.use(outreachLinkRoutes(() => null, { forwardTo: () => SITE, fetchImpl }));
-    const server = createServer(app);
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    try {
-      const go = await fetch(`${base}/go/ABC234`, { redirect: 'manual', headers: { 'user-agent': 'Claude-User/1.0' } });
-      expect(go.status).toBe(302);
-      expect(go.headers.get('location')).toBe('https://agenticcloudcomputer.com/workplace.md?utm_content=northwind');
-      expect(go.headers.get('cache-control')).toBe('no-store');
-      expect(asked[0]).toMatchObject({ url: `${SITE}/api/go/abc234`, headers: { 'x-go-user-agent': 'Claude-User/1.0', 'x-go-method': 'GET' } });
-      reply = () => new Response(JSON.stringify({ html: '<!doctype html><title>card</title>' }), { status: 200 });
-      const card = await fetch(`${base}/go/abc234`, { redirect: 'manual' });
-      expect(card.status).toBe(200);
-      expect(await card.text()).toBe('<!doctype html><title>card</title>');
-      reply = () => new Response('down', { status: 503 });
-      const home = await fetch(`${base}/go/abc234`, { redirect: 'manual' });
-      expect(home.status).toBe(302);
-      expect(home.headers.get('location')).toBe('https://agenticcloudcomputer.com/');
-    } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
-  });
 });

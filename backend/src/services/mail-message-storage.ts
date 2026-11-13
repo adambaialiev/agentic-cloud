@@ -79,7 +79,7 @@ export interface MailMessageDocument {
   /**
    * A letter we sent: the mail provider's own id for it, as it answered the
    * send. Kept so the provider's later word on it (delivered, bounced, its
-   * pictures loaded) can be matched to it — Outreach reads it (note #1112).
+   * pictures loaded) can be matched to it — a workplace app reads it (notes #1112, #1178).
    */
   providerId?: string;
   /** Who owns the address it arrived at. The only person who may read it. */

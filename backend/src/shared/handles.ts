@@ -53,7 +53,7 @@ export const PLATFORM_FIRST_SEGMENTS: readonly string[] = [
   'explore', 'search', 'orgs', 'organizations', 'organization', 'users', 'user', 'people',
   'repositories', 'repos', 'sites', 'site', 'apps', 'app', 'dashboard', 'home', 'index',
   'sitemap', 'robots', 'favicon', 'manifest', 'well-known',
-  // The outreach letters' short links, /go/<code> (note #1106).
+  // The landing's short links, /go/<code> (notes #1106, #1178): answered by the app that made them.
   'go',
 ];
 

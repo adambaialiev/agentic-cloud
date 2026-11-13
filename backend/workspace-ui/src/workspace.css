@@ -666,7 +666,7 @@ button.chev { width: 30px; height: 30px; display: flex; align-items: center; jus
 #agentGuests .guestface { width: 20px; height: 20px; border-radius: 50%; vertical-align: -4px; margin-right: 8px; object-fit: cover; }
 #agentGuests .guestdelete { margin: 8px 0 4px; }
 #agentGuests .guestconfirm { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 4px; }
-/* Where the guest's visitor came from (note #1139): the facts under its name, the Outreach company in the accent. */
+/* Where the guest's visitor came from (notes #1139, #1178): the facts under its name, the owner's own site its tags name in the accent. */
 #agentGuests .guestarrival { margin: 6px 0 10px; line-height: 1.55; overflow-wrap: anywhere; }
 #agentGuests .guestarrival a { color: var(--accent); font-weight: 500; text-decoration: none; }
 #agentGuests > .visitrow { padding: 0; }

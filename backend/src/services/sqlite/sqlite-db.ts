@@ -79,11 +79,10 @@ CREATE TABLE IF NOT EXISTS copy_pulse_alerts (
   PRIMARY KEY (copy_id, condition)
 );
 
--- Outreach (note #1089): the owner's target companies, one row each, every
--- touch with each (letters sent from the screen, replies that arrived, notes,
--- state changes, an install), and the words the last import brought (the
--- template and the follow-ups from note #799). Per person; only the platform
--- operator's account ever writes here.
+-- Outreach's old tables (notes #1089, #1093, #1178). Outreach moved into its
+-- own app on 13 Nov 2026 (note #1178), with its own store; nothing here reads
+-- or writes these any more. They are kept, untouched, until the owner's word
+-- to delete them (planned one week after the switch, about 20 Nov 2026).
 CREATE TABLE IF NOT EXISTS outreach_targets (
   user_id TEXT NOT NULL,
   target_id TEXT NOT NULL,
@@ -99,10 +98,6 @@ CREATE TABLE IF NOT EXISTS outreach_touches (
   PRIMARY KEY (user_id, touch_id)
 );
 CREATE INDEX IF NOT EXISTS outreach_touches_by_target ON outreach_touches (user_id, target_id, at);
--- The Outreach site's passes (note #1093): a short-lived key, held only in
--- the owner's browser, that opens the Outreach routes and nothing else. Kept
--- as a hash; it dies with the sign-in it was given to, at its hour, or when
--- the site signs out.
 CREATE TABLE IF NOT EXISTS outreach_passes (
   token_hash TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,

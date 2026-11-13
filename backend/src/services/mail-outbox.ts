@@ -4,7 +4,7 @@ import type { MailAttachmentRecord, MailMessageDocument, MailMessageStorage, Mai
 import { MailSendError, type MailSender, type OutboundMailFile } from './mail-sender.js';
 import type { MediaStorage } from './media-storage.js';
 import { MAIL_DOMAIN, MAIL_MAX_CC, mailOutFileRefusal, mailOutFilesRefusal } from '../shared/workspace-mail.js';
-import { outreachMailHtml } from '../shared/outreach.js';
+import { mailHtml } from './mail-html.js';
 import { MAIL_REFS_KEPT } from './mail-threads.js';
 import { mailPlaceOf } from './mail-places.js';
 import { mailStoragePrefix } from './mail-ingest.js';
@@ -69,8 +69,8 @@ export const MAIL_NEW_PER_DAY = 30;
 /**
  * The ceilings one send is held to. Every door of the mail screens and the
  * agents' mail verbs uses `MAIL_ALLOWANCE`; a caller that is itself a narrower
- * door may pass a wider one — today only Outreach (note #1111), whose sends
- * leave only on the platform operator's own press on his own site. The count
+ * door may pass a wider one — today only a workplace app's Send (notes #1111,
+ * #1178), whose sends leave only on the person's own press on that site. The count
  * is always everything the person sent: a wider allowance raises the
  * ceiling, it never stops the cold letters being counted.
  */
@@ -589,7 +589,7 @@ export class MailOutboxService {
     body: string;
     extras: MailExtras;
     threading?: { inReplyTo?: string; references?: string[] };
-    /** Send an HTML copy of the same words beside the text (Outreach, note #1112). */
+    /** Send an HTML copy of the same words beside the text (a workplace app's letter, notes #1112, #1178). */
     withHtml?: boolean;
     failure: string;
     row: (sent: Pick<MailMessageDocument, 'from' | 'to' | 'cc' | 'attachments'>) => MailMessageDocument;
@@ -621,7 +621,7 @@ export class MailOutboxService {
         ...(preview.cc.length ? { cc: preview.cc } : {}),
         subject: preview.subject || '(no subject)',
         text: args.body,
-        ...(args.withHtml ? { html: outreachMailHtml(args.body) } : {}),
+        ...(args.withHtml ? { html: mailHtml(args.body) } : {}),
         ...(attachments.length ? { attachments } : {}),
         ...(args.threading?.inReplyTo ? { inReplyTo: args.threading.inReplyTo } : {}),
         ...(args.threading?.references?.length ? { references: args.threading.references } : {}),
@@ -668,9 +668,9 @@ export class MailOutboxService {
     userId: string; to: unknown; subject: unknown; text: string; senderName?: string; sentBy?: SentByAgent;
     /** Stable provider/message id supplied by an approval request. */
     outboundId?: string;
-    /** A narrower door's own ceilings (Outreach, note #1111); the mail screens never pass one. */
+    /** A narrower door's own ceilings (a workplace app's, notes #1111, #1178); the mail screens never pass one. */
     allowance?: MailAllowance;
-    /** An HTML copy of the same words beside the text: Outreach only (note #1112). */
+    /** An HTML copy of the same words beside the text: a workplace app's letters only (notes #1112, #1178). */
     withHtml?: boolean;
   } & MailExtras): Promise<MailMessageDocument> {
     const existing = await this.alreadySent(args.userId, args.outboundId);
@@ -756,8 +756,8 @@ export class MailOutboxService {
   }
 
   /**
-   * Write again in a thread THIS person started (note #1089, Outreach's day-4
-   * and day-11 follow-ups): a reply to one of their own sent letters, to the
+   * Write again in a thread THIS person started (note #1089: a workplace app's
+   * follow-ups, note #1178): a reply to one of their own sent letters, to the
    * person that letter went to. `reply()` refuses our own outgoing copies on
    * purpose — answering one from the inbox would write to ourselves — so this
    * is its own door, and it keeps the same rule that matters: the recipient

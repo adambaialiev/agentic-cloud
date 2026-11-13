@@ -70,8 +70,8 @@ import {
   GUEST_TURN_FINAL_STATES,
   GUEST_TURNSTILE_ACTION,
   guestGreeting,
-  guestOutreachCompanyId,
   type GuestActivity,
+  type GuestAppLink,
   type GuestArrival,
   type GuestArrivalView,
   type GuestCreateAnswer,
@@ -150,16 +150,11 @@ export interface GuestAgentServiceDeps {
    */
   buildRetryMs?: number;
   /**
-   * The owner's Outreach (note #1139): a guest whose link tags name one of
-   * the owner's Outreach companies is shown with that company, and the
-   * company's timeline says a guest was started. Absent in a private copy.
+   * The owner's own site a guest's link tags name (notes #1139, #1178): its
+   * utm_source is a live site of the owner's workplace and utm_content the
+   * id that site gave. Null when they name none.
    */
-  outreach?: {
-    company(userId: string, companyId: string): Promise<{ id: string; name: string } | null>;
-    guestStarted(userId: string, companyId: string, guest: { agentId: string; name: string; country: string | null }): Promise<void>;
-    /** The Outreach site, for the link to a company's page (`<origin>/c/<id>`). */
-    siteOrigin: string;
-  } | null;
+  appLink?: ((userId: string, utm: GuestArrival['utm']) => Promise<GuestAppLink | null>) | null;
   /**
    * A workplace app's feed (note #1178): a guest who came by a tagged link is
    * told to the owner's apps, which match the tags themselves.
@@ -562,7 +557,7 @@ export class GuestAgentService {
     };
     await this.deps.storage.put(row);
     console.log(`[guest] building ${made.name} (${made.id}) from nothing`);
-    this.tellOutreach(settings.userId, row);
+    this.tellApps(settings.userId, row);
     this.addressMade.set(address, [...this.madeToday(address, now), now]);
     const live = this.addressLive.get(address) ?? new Set<string>();
     live.add(row.agentId);
@@ -1239,37 +1234,29 @@ export class GuestAgentService {
 
   // ── Where a guest came from (note #1139) ────────────────────────────────
 
-  /** A guest whose tags name one of the owner's Outreach companies goes on that company's timeline. Never blocks the build. */
-  private tellOutreach(userId: string, row: GuestAgentRow): void {
+  /** A guest who came by a tagged link is told to the owner's apps (note #1178). Never blocks the build. */
+  private tellApps(userId: string, row: GuestAgentRow): void {
     const utm = Object.fromEntries(Object.entries(row.arrival?.utm ?? {}).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== ''));
     if (this.deps.appFeed && Object.keys(utm).length) {
       this.track(this.deps.appFeed(userId, { agentId: row.agentId, name: row.transcript.name, country: row.arrival?.country ?? null, utm })
         .catch((error) => { console.warn(`[guest] could not tell the apps about ${row.transcript.name}: ${String(error)}`); }));
     }
-    const companyId = guestOutreachCompanyId(row.arrival);
-    const outreach = this.deps.outreach;
-    if (!companyId || !outreach) return;
-    this.track(outreach.guestStarted(userId, companyId, { agentId: row.agentId, name: row.transcript.name, country: row.arrival?.country ?? null })
-      .catch((error) => { console.warn(`[guest] could not note ${row.transcript.name} on its Outreach company: ${String(error)}`); }));
   }
 
-  /** The owner's view of where each guest came from, with the Outreach company looked up once per read. */
+  /** The owner's view of where each guest came from, with the site its tags name looked up once per read. */
   private arrivalViews(): (row: GuestAgentRow) => Promise<GuestArrivalView | null> {
-    const companies = new Map<string, Promise<{ id: string; name: string } | null>>();
+    const links = new Map<string, Promise<GuestAppLink | null>>();
     return async (row) => {
       if (!row.arrival) return null;
-      const companyId = guestOutreachCompanyId(row.arrival);
-      const outreach = this.deps.outreach;
-      let company: { id: string; name: string } | null = null;
-      if (companyId && outreach) {
-        const key = `${row.userId}\u0000${companyId}`;
-        if (!companies.has(key)) companies.set(key, outreach.company(row.userId, companyId).catch(() => null));
-        company = await companies.get(key)!;
+      const { utm_source: source, utm_content: content } = row.arrival.utm;
+      const appLink = this.deps.appLink;
+      let app: GuestAppLink | null = null;
+      if (source && content && appLink) {
+        const key = `${row.userId}\u0000${source}\u0000${content}`;
+        if (!links.has(key)) links.set(key, appLink(row.userId, row.arrival.utm).catch(() => null));
+        app = await links.get(key)!;
       }
-      return {
-        ...row.arrival,
-        outreach: company && outreach ? { id: company.id, name: company.name, url: `${outreach.siteOrigin}/c/${encodeURIComponent(company.id)}` } : null,
-      };
+      return { ...row.arrival, app };
     };
   }
 

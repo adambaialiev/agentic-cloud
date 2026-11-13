@@ -14,7 +14,6 @@ import { MailboxService } from './services/mailbox-service.js';
 import { OrgHandleService } from './services/org-handles.js';
 import { DEFAULT_BRAND_FILES_DIR, workspaceRootRoutes } from './routes/workspace-root.js';
 import { publicPages } from './routes/public-pages.js';
-import { OUTREACH_PREVIEW_IMAGE } from './shared/outreach.js';
 import { PUBLIC_ADDRESS_HOST } from './shared/handles.js';
 import { workspaceRoutePath } from './shared/workspace-routes.js';
 import { MailIngestService } from './services/mail-ingest.js';
@@ -23,8 +22,9 @@ import { MailOutboxService } from './services/mail-outbox.js';
 import { ResendMailSender } from './services/mail-sender.js';
 import 'dotenv/config';
 import './lib/ai-provider.js';
-import { outreachLinkRoutes } from './routes/outreach-links.js';
-import { RESEND_WEBHOOK_PATH, outreachMailEventRoutes } from './routes/outreach-mail-events.js';
+import { RESEND_WEBHOOK_PATH, mailEventRoutes } from './routes/mail-events.js';
+import { goLinkRoutes } from './routes/go-links.js';
+import { SITE_PREVIEW_IMAGE } from './shared/site-image.js';
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
@@ -85,13 +85,8 @@ import { createCopyPulse, InMemoryCopyPulseSettingsStore, pulseUrlFrom, SqliteCo
 import { collectCopyPulseFacts } from './services/copy-pulse-facts.js';
 import { copyPulseHandler } from './routes/copy-pulse.js';
 import { SqliteCopyPulseStore } from './services/sqlite/sqlite-copy-pulse-storage.js';
-import { OutreachService } from './services/outreach.js';
 import { AppDoors, InMemoryAppDoorStore, SqliteAppDoorStore } from './services/app-doors.js';
-import { appDoorsOpenFor } from './routes/app-doors.js';
-import { InMemoryOutreachStore } from './services/outreach-storage.js';
-import { SqliteOutreachStore } from './services/sqlite/sqlite-outreach-storage.js';
-import { InMemoryOutreachPassStore, OutreachPasses, SqliteOutreachPassStore } from './services/outreach-pass.js';
-import { OUTREACH_SITE_ORIGIN_DEFAULT, outreachSiteCors } from './routes/outreach.js';
+import { appDoorsOpenFor, guestAppLink } from './routes/app-doors.js';
 import { CopyLicence, SqliteLicenceStore, InMemoryLicenceStore } from './services/copy-licence.js';
 import { readFileSync as readFileSyncNode } from 'node:fs';
 import { dirname as dirnameNode } from 'node:path';
@@ -1504,62 +1499,18 @@ let mailOutbox = RESEND_MAIL_API_KEY || smtpTransport
 let mailApprovals = mailOutbox
   ? new MailApprovalService(mailApprovalStorage, mailOutbox)
   : undefined;
-// Outreach (note #1089): the platform operator's own screen for cold
-// outreach. Never in a private copy. It sends only through the person's own
-// outbox (read through a getter: mail may be set up after boot), and only
-// when the owner presses Send.
-// Its own site (note #1093) reaches it with a pass from the pass door; the
-// one origin a pass is sent to.
-const OUTREACH_SITE_ORIGIN = process.env.OUTREACH_SITE_ORIGIN?.trim().replace(/\/+$/, '') || OUTREACH_SITE_ORIGIN_DEFAULT;
-const outreachPasses = PRIVATE_COPY ? null : new OutreachPasses(sqliteDb ? new SqliteOutreachPassStore(sqliteDb) : new InMemoryOutreachPassStore());
-// Resend's webhook signing secret for the Outreach letters' delivery facts (note #1112); without it they are off.
+// Resend's webhook signing secret for the delivery facts of the letters a
+// workplace app sends (notes #1112, #1178); without it they are off.
 const RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET?.trim() || '';
-// The app that answers the landing's /go/<code> links (note #1178), e.g.
-// https://outreach.agentbuilt.app. Unset: the platform's own Outreach answers.
+// The app that answers the landing's /go/<code> links (notes #1106, #1178),
+// e.g. https://<site>.agentbuilt.app. Unset: every /go/ link lands home.
 const GO_LINKS_APP = process.env.GO_LINKS_APP?.trim().replace(/\/+$/, '') || '';
-// Outreach moved into its own app (note #1178): the platform's own Outreach
-// routes answer 410 and say where it went. Its tables stay, unread by them.
-const OUTREACH_MOVED_TO = process.env.OUTREACH_MOVED_TO?.trim().replace(/\/+$/, '') || '';
-if (!PRIVATE_COPY) console.log(`[config] OUTREACH_MOVED_TO=${OUTREACH_MOVED_TO || 'off (the platform still runs Outreach)'}`);
-if (!PRIVATE_COPY) console.log(`[config] GO_LINKS_APP=${GO_LINKS_APP || 'off (the platform answers /go/ itself)'}`);
-const outreach = PRIVATE_COPY ? null : new OutreachService({
-  store: sqliteDb ? new SqliteOutreachStore(sqliteDb) : new InMemoryOutreachStore(),
-  mailEventsConfigured: Boolean(RESEND_WEBHOOK_SECRET),
-  // A sent letter's words, read back from his Sent (note #1130).
-  sentMail: (userId, mailId) => mailMessageStorage.get(userId, mailId),
-  outbox: () => mailOutbox,
-  mailboxes: mailboxStorage,
-  pulses: async () => (copyPulses ? (await copyPulses.list()).map((record) => record.pulse) : []),
-  senderName: async (userId) => {
-    const person = (await userStorage.getProfile(userId).catch(() => null))?.person;
-    return [person?.firstName, person?.lastName].filter(Boolean).join(' ').trim();
-  },
-});
-// Once it moved, nothing the platform sees happen is written into the old store any more.
-const outreachLive = OUTREACH_MOVED_TO ? null : outreach;
+if (!PRIVATE_COPY) console.log(`[config] GO_LINKS_APP=${GO_LINKS_APP || 'off (every /go/ link lands on the home page)'}`);
 // A workplace app's doors (note #1178): passes, agent proofs, the letters an
 // app sent and the feed of what happened. Never in a private copy.
 const appDoors = PRIVATE_COPY ? null : new AppDoors(sqliteDb ? new SqliteAppDoorStore(sqliteDb) : new InMemoryAppDoorStore());
 const appDoorsFor = async (userId: string): Promise<boolean> => appDoorsOpenFor(await userStorage.getProfile(userId).catch(() => null));
-// The letters Outreach sent before it moved into its own app (note #1178) are
-// that app's letters: their follow-ups, words and facts stay reachable after
-// the switch. Once per letter. Goes with the Outreach code (note #1178 step 5).
-if (appDoors && outreach) {
-  void (async () => {
-    const store = sqliteDb ? new SqliteOutreachStore(sqliteDb) : null;
-    if (!store) return;
-    let n = 0;
-    for (const userId of new Set((await store.allTargets()).map((record) => record.userId))) {
-      for (const touch of await store.touches(userId)) {
-        if (touch.kind !== 'sent' || !touch.mailId) continue;
-        await appDoors.sent({ userId, site: 'outreach', mailId: touch.mailId, providerId: touch.providerId ?? null, at: touch.at });
-        n += 1;
-      }
-    }
-    console.log(`[apps] ${n} Outreach letters known as the outreach site's own`);
-  })().catch((error) => { console.warn('[apps] the Outreach letters could not be registered:', error instanceof Error ? error.message : error); });
-}
-console.log(`[config] OUTREACH_MAIL_FACTS=${PRIVATE_COPY ? 'none (a private copy)' : RESEND_WEBHOOK_SECRET ? 'enabled' : 'off (set RESEND_WEBHOOK_SECRET)'}`);
+console.log(`[config] MAIL_FACTS=${PRIVATE_COPY ? 'none (a private copy)' : RESEND_WEBHOOK_SECRET ? 'enabled' : 'off (set RESEND_WEBHOOK_SECRET)'}`);
 console.log(`[config] MAIL_REPLIES=${mailOutbox
   ? (RESEND_MAIL_API_KEY ? 'enabled' : `enabled over SMTP ${SMTP_SETTINGS!.host}:${SMTP_SETTINGS!.port}`)
   : PRIVATE_COPY ? 'set up from the Workspace (Mail), note #946' : 'disabled (set RESEND_MAIL_API_KEY or SMTP_HOST)'}`);
@@ -1851,10 +1802,6 @@ if (mailIngest) {
   mailIngest.watchArrivals({
     noteArrival: (arrival, opts) => {
       mailWake.noteArrival(arrival, opts);
-      // Outreach (note #1089): a reply from a target company lands on its timeline.
-      void outreachLive?.noteArrival(arrival, opts).catch((error) => {
-        console.warn('[outreach] an arrival could not be matched:', error instanceof Error ? error.message : error);
-      });
       // A workplace app's feed (note #1178): who wrote and about what, never the words.
       if (appDoors) {
         void (async () => {
@@ -2238,14 +2185,8 @@ const guestAgentService = new GuestAgentService({
   sandboxClient: () => sessionManager.getSandboxClient(),
   turnstile: guestTurnstile,
   idleStopMs: FLY_IDLE_STOP_MINUTES * 60_000,
-  // A guest from one of the owner's Outreach letters names its company (note #1139).
-  outreach: outreachLive
-    ? {
-      company: (userId, companyId) => outreachLive.company(userId, companyId),
-      guestStarted: async (userId, companyId, guest) => { await outreachLive.guestStarted(userId, companyId, guest); },
-      siteOrigin: OUTREACH_SITE_ORIGIN,
-    }
-    : null,
+  // A guest whose link tags name one of the owner's own sites (notes #1139, #1178).
+  appLink: (userId, utm) => guestAppLink({ deploymentStorage, orgStorage }, APPS_DOMAIN, userId, utm),
   appFeed: appDoors
     ? async (userId, guest) => { if (await appDoorsFor(userId)) await appDoors.noteGuest(userId, guest); }
     : null,
@@ -2326,9 +2267,7 @@ const deps: RouteDeps = {
   ...(PRIVATE_COPY && FIRST_ACCOUNT_CODE.length >= 16 ? { firstAccountCode: FIRST_ACCOUNT_CODE } : {}),
   ...(copyHealth ? { copyHealth } : {}),
   ...(copyPulses ? { copyPulses, copyReleaseList } : {}),
-  ...(outreach && outreachPasses ? { outreach, outreachPasses, outreachSiteOrigin: OUTREACH_SITE_ORIGIN } : {}),
   ...(appDoors ? { appDoors, appsDomain: APPS_DOMAIN, mailFactsConfigured: Boolean(RESEND_WEBHOOK_SECRET) } : {}),
-  ...(OUTREACH_MOVED_TO ? { outreachMovedTo: OUTREACH_MOVED_TO } : {}),
   ...(copyPulse ? { copyPulse } : {}),
   ...(copyUpgrade ? { copyUpgrade } : {}),
   ...(copyLicence ? { copyLicence } : {}),
@@ -2554,9 +2493,6 @@ if (APPS_DOMAIN && deps.deploymentStorage) {
   app.use(siteRedirectHandler(redirectOpts));
 }
 
-// The Outreach site (note #1093), and only it, may call the Outreach routes
-// across origins; answered before the platform's own CORS layer.
-if (outreach) app.use('/workspace/api/outreach', outreachSiteCors(OUTREACH_SITE_ORIGIN));
 app.use(cors(createCorsOptions(CORS_ORIGINS)));
 // A knowledge proposal carries whole HTML pages, which the default 100 KB JSON
 // limit refuses. Mounted BEFORE the global parser and scoped to that one path:
@@ -2575,8 +2511,6 @@ app.use('/api/agent-cli/jobs', express.json({ limit: '1mb' }));
 // by, the agent CLI's and the Workspace's own, get the wider parser; the
 // route's own length check is still the one that refuses, in words.
 app.use('/api/agent-cli/notes', express.json({ limit: '1mb' }));
-// A batch of outreach companies with their profiles (note #1103) is ~100 kB today.
-app.use('/api/agent-cli/outreach', express.json({ limit: '2mb' }));
 app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 // The org-CI webhook and job result are HMAC-verified over the RAW body, so
 // they must reach their routes as bytes. Same trick as the knowledge mount:
@@ -2589,7 +2523,7 @@ app.use('/workspace/api/notes', express.json({ limit: '1mb' }));
 app.use('/api/webhooks/mail/inbound', express.raw({ type: () => true, limit: '26mb' }));
 // A copy's pulse is signed over its exact bytes (note #1057): read it raw.
 app.use('/api/copy-pulse', express.raw({ type: () => true, limit: '64kb' }));
-// The mail provider's word on the Outreach letters (note #1112) is signed over its exact bytes: read it raw.
+// The mail provider's word on an app's letters (notes #1112, #1178) is signed over its exact bytes: read it raw.
 app.use(RESEND_WEBHOOK_PATH, express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-webhook', express.raw({ type: () => true, limit: '256kb' }));
 app.use('/api/agent-cli/git/ci-result', express.raw({ type: () => true, limit: '256kb' }));
@@ -2649,10 +2583,6 @@ if (copyPulses && copyPulseKeys) {
     keys: copyPulseKeys,
     onPulse: (pulse) => {
       deps.copyAlerts?.nudge();
-      // Outreach (note #1089): a target company's own copy reporting in is an install.
-      void outreachLive?.notePulse(pulse).catch((error) => {
-        console.warn('[outreach] a pulse could not be matched:', error instanceof Error ? error.message : error);
-      });
     },
   }));
 }
@@ -2692,11 +2622,11 @@ app.use('/api/agent-cli', agentCliRoutes(deps));
 // The browser Workspace.
 const workspaceRouter = workspaceRoutes(deps);
 app.use('/workspace', workspaceRouter);
-// The outreach letters' short links, /go/<code> (note #1106): before the
+// The landing's short links, /go/<code> (notes #1106, #1178): before the
 // root routes, so the word is ours and never a person's address.
-app.use(outreachLinkRoutes(() => outreach, { forwardTo: () => GO_LINKS_APP }));
-// Delivered, bounced, spam, pictures loaded: Resend's signed events on the Outreach letters (note #1112).
-app.use(outreachMailEventRoutes({ outreach: () => outreachLive, apps: () => appDoors, secret: () => RESEND_WEBHOOK_SECRET }));
+app.use(goLinkRoutes({ forwardTo: () => GO_LINKS_APP }));
+// Delivered, bounced, spam, pictures loaded: Resend's signed events on an app's letters (notes #1112, #1178).
+app.use(mailEventRoutes({ apps: () => appDoors, secret: () => RESEND_WEBHOOK_SECRET }));
 // Its addresses live at the root of the domain (public-addresses): the shell
 // is served there, and every old /workspace address redirects to it.
 // The public pages a crawler reads without scripts, and a real 404 at an
@@ -2705,7 +2635,7 @@ const publicPage = workspaceRouter.publicPageReads
   ? publicPages(workspaceRouter.publicPageReads, {
     origin: WORKSPACE_ORIGIN,
     host: PUBLIC_ADDRESS_HOST,
-    ...(PRIVATE_COPY ? {} : { image: { url: OUTREACH_PREVIEW_IMAGE.url, alt: OUTREACH_PREVIEW_IMAGE.alt } }),
+    ...(PRIVATE_COPY ? {} : { image: { url: SITE_PREVIEW_IMAGE.url, alt: SITE_PREVIEW_IMAGE.alt } }),
   })
   : undefined;
 app.use(workspaceRootRoutes({

@@ -1,28 +1,39 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { RESEND_OUTREACH_EVENTS } from '../shared/outreach.js';
-import type { OutreachMailEventInput, OutreachService } from '../services/outreach.js';
-import type { AppDoors } from '../services/app-doors.js';
+import type { AppDoors, AppMailEventInput } from '../services/app-doors.js';
 
 /**
- * The mail provider's word on the Outreach letters (note #1112; Adam, 9 Nov
- * 2026: "I should see the state whether email was opened, whether link were
- * followed, etc what can we know").
+ * The mail provider's word on a letter a workplace app sent (notes #1112,
+ * #1178): delivered, delayed, bounced, marked as spam, its pictures loaded,
+ * refused before it left, or not sent because the address is on the
+ * provider's do-not-send list.
  *
- * Resend posts here when one of the letters is delivered, delayed, bounced,
- * marked as spam or has its pictures loaded. Resend signs every post the Svix
- * way: `svix-id`, `svix-timestamp` and `svix-signature` headers, an
+ * Resend posts here for every letter the account sends, and signs every post
+ * the Svix way: `svix-id`, `svix-timestamp` and `svix-signature` headers, an
  * HMAC-SHA256 over `<id>.<timestamp>.<raw body>` keyed with the endpoint's
- * signing secret (`whsec_` + base64). The backend reads that secret from
- * RESEND_WEBHOOK_SECRET. A post that is not signed with it, or is more than
- * five minutes old or early, is refused and changes nothing.
+ * signing secret (`whsec_` + base64), read from RESEND_WEBHOOK_SECRET. A post
+ * that is not signed with it, or is more than five minutes old or early, is
+ * refused and changes nothing.
  *
- * The provider sends events for every letter the account sends — anybody's
- * mail on our domain, the sign-in links — and only an Outreach letter is
- * recorded (OutreachService.noteMailEvent). Everything else is answered 200
- * and dropped, so the provider does not retry it; nothing about it is kept or
- * logged but a count. A store that fails answers 500, so the provider retries.
+ * Only a letter an app sent is recorded, on that app's feed
+ * (AppDoors.noteMailEvent). Everything else is answered 200 and dropped, so
+ * the provider does not retry it. A store that fails answers 500, so the
+ * provider retries.
  */
+export const MAIL_EVENTS = ['delivered', 'delayed', 'bounced', 'spam', 'opened', 'failed', 'suppressed'] as const;
+export type MailEvent = (typeof MAIL_EVENTS)[number];
+
+/** Resend's event names, as its webhook sends them, for the ones the platform records. */
+export const RESEND_MAIL_EVENTS: Record<string, MailEvent> = {
+  'email.delivered': 'delivered',
+  'email.delivery_delayed': 'delayed',
+  'email.bounced': 'bounced',
+  'email.complained': 'spam',
+  'email.opened': 'opened',
+  'email.failed': 'failed',
+  'email.suppressed': 'suppressed',
+};
+
 export const RESEND_WEBHOOK_PATH = '/api/webhooks/resend';
 const TOLERANCE_SECONDS = 5 * 60;
 
@@ -44,11 +55,11 @@ export function verifySvixSignature(secret: string, headers: { id?: string; time
   });
 }
 
-/** One Resend event, read: null when it is not one Outreach records or not of its shape. */
-export function readResendEvent(json: unknown, eventId: string): OutreachMailEventInput | null {
+/** One Resend event, read: null when it is not one the platform records or not of its shape. */
+export function readResendEvent(json: unknown, eventId: string): AppMailEventInput | null {
   if (!json || typeof json !== 'object') return null;
   const doc = json as { type?: unknown; created_at?: unknown; data?: Record<string, unknown> };
-  const event = typeof doc.type === 'string' ? RESEND_OUTREACH_EVENTS[doc.type] : undefined;
+  const event = typeof doc.type === 'string' ? RESEND_MAIL_EVENTS[doc.type] : undefined;
   const data = doc.data;
   if (!event || !data || typeof data !== 'object') return null;
   const providerId = typeof data.email_id === 'string' ? data.email_id.trim() : '';
@@ -76,10 +87,8 @@ export function readResendEvent(json: unknown, eventId: string): OutreachMailEve
 }
 
 /** Mount with `express.raw` on RESEND_WEBHOOK_PATH before the JSON parser: the signature is over the exact bytes. */
-export function outreachMailEventRoutes(deps: {
-  outreach: () => Pick<OutreachService, 'noteMailEvent' | 'mailHeard'> | null;
-  /** A workplace app's letters (note #1178): the same event goes to its feed when an app sent the letter. */
-  apps?: () => Pick<AppDoors, 'noteMailEvent'> | null;
+export function mailEventRoutes(deps: {
+  apps: () => Pick<AppDoors, 'noteMailEvent'> | null;
   secret: () => string;
   now?: () => Date;
 }): Router {
@@ -87,12 +96,11 @@ export function outreachMailEventRoutes(deps: {
   let unsetSaid = false;
   router.post(RESEND_WEBHOOK_PATH, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-store');
-    const service = deps.outreach();
-    const apps = deps.apps?.() ?? null;
-    if (!service && !apps) return res.status(404).json({ error: 'There is no Outreach here.' });
+    const apps = deps.apps();
+    if (!apps) return res.status(404).json({ error: 'Nothing here records mail events.' });
     const secret = deps.secret();
     if (!secret) {
-      if (!unsetSaid) { unsetSaid = true; console.warn('[outreach] a Resend event arrived, but RESEND_WEBHOOK_SECRET is not set: nothing is recorded until it is.'); }
+      if (!unsetSaid) { unsetSaid = true; console.warn('[mail-events] a Resend event arrived, but RESEND_WEBHOOK_SECRET is not set: nothing is recorded until it is.'); }
       return res.status(503).json({ error: 'Not set up yet.' });
     }
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.from(typeof req.body === 'string' ? req.body : '');
@@ -106,19 +114,14 @@ export function outreachMailEventRoutes(deps: {
     let json: unknown;
     try { json = JSON.parse(body.toString('utf8')); } catch { return res.status(400).json({ error: 'Not JSON.' }); }
     const event = readResendEvent(json, id!);
-    if (!event) {
-      // Signed, so the wiring works, but not an event Outreach records (a click, a send, a domain change).
-      service?.mailHeard();
-      return res.status(200).json({ recorded: false });
-    }
+    // Signed, so the wiring works, but not an event the platform records (a click, a send, a domain change).
+    if (!event) return res.status(200).json({ recorded: false });
     try {
-      const answer = service ? await service.noteMailEvent(event) : { recorded: false };
-      if (answer.recorded) console.log(`[outreach] ${event.event} recorded for an Outreach letter`);
-      const forApp = apps ? await apps.noteMailEvent(event) : false;
-      if (forApp) console.log(`[apps] ${event.event} recorded for an app's letter`);
-      return res.status(200).json({ recorded: answer.recorded || forApp });
+      const recorded = await apps.noteMailEvent(event);
+      if (recorded) console.log(`[mail-events] ${event.event} recorded for an app's letter`);
+      return res.status(200).json({ recorded });
     } catch (error) {
-      console.warn('[outreach] a Resend event could not be recorded:', error instanceof Error ? error.message : error);
+      console.warn('[mail-events] a Resend event could not be recorded:', error instanceof Error ? error.message : error);
       return res.status(500).json({ error: 'Not recorded. Try again.' });
     }
   });

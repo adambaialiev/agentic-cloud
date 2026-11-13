@@ -259,9 +259,21 @@ export interface GuestArrival {
   referrerHost: string | null;
 }
 
-/** The owner's view of an arrival: the stored facts, and the Outreach company its tags name, when there is one. */
+/**
+ * The owner's view of an arrival: the stored facts, and the owner's own site
+ * its tags name, when there is one (notes #1139, #1178): utm_source is a live
+ * site of the guest owner's workplace and utm_content the id that site gave,
+ * so the link opens that id's page there (`<site>/c/<id>`).
+ */
 export interface GuestArrivalView extends GuestArrival {
-  outreach: { id: string; name: string; url: string } | null;
+  app: GuestAppLink | null;
+}
+
+/** The site a guest's tags name, and the page there for the id they carry. */
+export interface GuestAppLink {
+  site: string;
+  id: string;
+  url: string;
 }
 
 const UTM_VALUE_DROP = /[\u0000-\u001f\u007f<>"`\\]/g;
@@ -313,15 +325,6 @@ export function cleanGuestArrival(input: unknown, country: unknown, ownHosts: re
   return { country: cleanGuestCountry(country), utm, referrerHost: host && !ownHosts.includes(host) ? host : null };
 }
 
-/**
- * The Outreach company a guest's tags name (note #1139): an Outreach letter's
- * links land on the home page with utm_source=outreach and the company's
- * record id in utm_content (outreachLinkTarget in shared/outreach.ts).
- */
-export function guestOutreachCompanyId(arrival: Pick<GuestArrival, 'utm'> | null | undefined): string | null {
-  if (!arrival || arrival.utm.utm_source !== 'outreach') return null;
-  return arrival.utm.utm_content ?? null;
-}
 
 /**
  * POST /workspace/api/public/guest — the answer. 201 with a NEW key when an

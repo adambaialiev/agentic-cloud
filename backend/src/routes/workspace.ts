@@ -17,8 +17,6 @@ import { RecapChatVersions } from '../services/recap-chat-versions.js';
 import { registerDriveRoutes } from './drive.js';
 import { registerRadioRoutes } from './radio.js';
 import { registerCopiesRoutes } from './copies.js';
-import { OUTREACH_SITE_ORIGIN_DEFAULT, registerOutreachPassDoor, registerOutreachRoutes } from './outreach.js';
-import { outreachPassFrom } from '../services/outreach-pass.js';
 import { registerAppDoors } from './app-doors.js';
 import { CopyAlertSweep, type CopyAlertRecipient } from '../services/copy-alerts.js';
 import { Router, raw, type NextFunction, type Request, type Response } from 'express';
@@ -7609,45 +7607,6 @@ self.addEventListener('activate', (event) => {
     }
     return deps.quickNoteStorage;
   };
-
-  // Outreach (notes #1089, #1093): the owner's own SITE reaches these routes
-  // with a pass, never with the Workspace session. The pass door below hands
-  // him one for his live sign-in; every other route takes nothing else.
-  const outreachSiteOrigin = deps.outreachSiteOrigin ?? OUTREACH_SITE_ORIGIN_DEFAULT;
-  registerOutreachPassDoor(router, deps, {
-    siteOrigin: outreachSiteOrigin,
-    loginUrl: `${deps.workspaceWebOrigin ?? ''}/login`,
-    signedIn: async (req) => {
-      if (!deps.workspaceWebAuth || !deps.workspaceWebOrigin || !deps.userStorage) return null;
-      const session = await deps.workspaceWebAuth.authenticateSession(workspaceSessionToken(req, deps.workspaceWebOrigin));
-      if (!session) return null;
-      const profile = await deps.userStorage.getProfile(session.userId);
-      if (!profile) return null;
-      return { userId: session.userId, isOperator: isAdminAccount(profile), session };
-    },
-  });
-  const authenticateOutreachPass = async (req: Request, res: Response): Promise<MiniAppAuth | null> => {
-    res.setHeader('Cache-Control', 'no-store');
-    const refused = () => {
-      res.status(401).json({ error: 'Sign in again: this Outreach pass has ended.', code: 'outreach_pass' });
-      return null;
-    };
-    const token = outreachPassFrom(req.get('authorization'));
-    const pass = deps.outreachPasses ? await deps.outreachPasses.read(token) : null;
-    if (!pass || !deps.workspaceWebAuth || !deps.userStorage) return refused();
-    // The pass lives no longer than the sign-in it was given to.
-    const webSession = await deps.workspaceWebAuth.activeSession(pass.userId, pass.sessionId);
-    if (!webSession) { await deps.outreachPasses!.end(token).catch(() => undefined); return refused(); }
-    const profile = await deps.userStorage.getProfile(pass.userId);
-    if (!profile) return refused();
-    const memberships = deps.orgStorage ? await deps.orgStorage.listMembershipsByUser(profile.userId).catch(() => []) : [];
-    const oldest = [...memberships].sort((a, b) => a.joinedAt.localeCompare(b.joinedAt) || a.orgId.localeCompare(b.orgId))[0] ?? null;
-    return {
-      userId: profile.userId, profile, orgId: oldest?.orgId ?? null, orgRole: oldest?.role ?? null,
-      legacyOrgId: oldest?.orgId ?? null, webSession, webSessionToken: '',
-    };
-  };
-  registerOutreachRoutes(router, '/api/outreach', deps, authenticateOutreachPass, async (auth) => isAdminAccount(auth.profile));
 
   // A workplace app's doors (note #1178): sign-in for one site, Send from the
   // person's own mailbox on their press, a sent letter's words, and the feed

@@ -1,10 +1,5 @@
 import { InMemoryBackupHeartbeatStore } from '../../services/backup-monitor.js';
 import { CENTRAL_GIT_BACKUP_JOB, createPlatformBackupReader, databaseBackupJob } from '../../services/platform-backup-runs.js';
-import { OutreachService } from '../../services/outreach.js';
-import { InMemoryOutreachStore } from '../../services/outreach-storage.js';
-import { InMemoryOutreachPassStore, OutreachPasses } from '../../services/outreach-pass.js';
-import { fixtureOutreachWrite } from '../../shared/outreach-fixtures.js';
-import { parseOutreachWrite } from '../../shared/outreach.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MemoryMediaStorage } from '../../services/memory-media-storage.js';
 import { randomBytes } from 'node:crypto';
@@ -9830,70 +9825,6 @@ describe('the workplace screens (members, seats, invites)', () => {
     );
     expect(deleted.statusCode).toBe(200);
     expect(await pinned()).toBeUndefined();
-  });
-
-  it('Outreach (notes #1089, #1093, #1103): with the owner\'s pass, the store read live and his own letter saved; no import; no pass, a member\'s pass, the session alone or a private copy are refused', async () => {
-    const { deps, userStorage } = await buildOrgDeps();
-    deps.outreach = new OutreachService({ store: new InMemoryOutreachStore(), outbox: () => undefined, pageStatus: async () => 200 });
-    const passes = new OutreachPasses(new InMemoryOutreachPassStore());
-    deps.outreachPasses = passes;
-    const ownerPass = (await passes.mint('user-1', { sessionId: 'session-42', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
-    const memberPass = (await passes.mint('user-2', { sessionId: 'session-43', absoluteExpiresAt: '2099-01-01T00:00:00.000Z' })).token;
-    const call = async (headers: Record<string, string>, path: string, method: 'get' | 'post', body: Record<string, unknown> = {}, params: Record<string, string> = {}, query: Record<string, string> = {}) => {
-      const res = createMockResponse();
-      await getRouteHandler(deps, path, method)(mockRequest({ headers, body, params, query }), res);
-      return res;
-    };
-    const as = (pass: string) => ({ authorization: `Bearer ${pass}` });
-
-    // There is no import any more: the words arrive from the agents' door.
-    expect(() => getRouteHandler(deps, '/api/outreach/import', 'post')).toThrow();
-    // The Workspace session alone opens nothing: the routes take a pass.
-    expect((await call(authHeader(42), '/api/outreach', 'get')).statusCode).toBe(401);
-    // A pass of somebody who is not the operator: refused.
-    expect((await call(as(ownerPass), '/api/outreach', 'get')).statusCode).toBe(403);
-    await userStorage.updateProfile('user-1', { roles: { admin: true } } as never);
-    // Nothing written yet: an empty list, nothing to press.
-    const empty = await call(as(ownerPass), '/api/outreach', 'get');
-    expect(empty.statusCode).toBe(200);
-    expect(empty.body).toMatchObject({ lastWrite: null, rows: [] });
-    // An agent writes; the very next read shows it, profile and all.
-    const parsed = parseOutreachWrite(fixtureOutreachWrite());
-    if (!parsed.ok) throw new Error(parsed.error);
-    await deps.outreach.write('user-1', { agentId: 'agent-rowan', name: 'Rowan' }, parsed.write);
-    const list = await call(as(ownerPass), '/api/outreach', 'get');
-    expect(list.statusCode).toBe(200);
-    expect((list.body as { lastWrite: { by: string } }).lastWrite.by).toBe('Rowan');
-    expect((list.body as { rows: Array<{ id: string; zone: string | null }> }).rows.find((row) => row.id === 'northwind-health')?.zone).toBe('America/Los_Angeles');
-    const one = await call(as(ownerPass), '/api/outreach/targets/:id', 'get', {}, { id: 'northwind-health' });
-    expect((one.body as { seed: { profile: { fundingRound: string } } }).seed.profile.fundingRound).toMatch(/Seed, 2025/);
-    // His own letter, saved through his pass.
-    const saved = await call(as(ownerPass), '/api/outreach/targets/:id/letter', 'post', { action: 'save', subject: 'Mine', text: 'My words.' }, { id: 'northwind-health' });
-    expect(saved.statusCode).toBe(200);
-    // Kept in the record; the Send box itself is empty since note #1157, for him to paste into.
-    expect((saved.body as { draft: { from: string; text: string } }).draft).toMatchObject({ from: 'blank', text: '' });
-    expect((await call(as(ownerPass), '/api/outreach/targets/:id/letter', 'post', { action: 'shout' }, { id: 'northwind-health' })).statusCode).toBe(400);
-    // The member of the same workplace sees nothing: no list, no profile, no letter, no Send.
-    // Note #1147: where a letter's short links go, behind the same pass.
-    const codes = (one.body as { links: { home: string; agents: string } }).links;
-    const checked = await call(as(ownerPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'northwind-health' }, { codes: `${codes.home.split('/').at(-1)},zzzzzz` });
-    expect(checked.statusCode).toBe(200);
-    expect((checked.body as { links: Array<{ problem: string | null; link: string | null }> }).links.map((link) => link.link)).toEqual(['home', null]);
-    expect((await call(as(ownerPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'nobody' }, { codes: 'zzzzzz' })).statusCode).toBe(404);
-    expect((await call(as(memberPass), '/api/outreach/targets/:id/links', 'get', {}, { id: 'northwind-health' }, { codes: 'zzzzzz' })).statusCode).toBe(403);
-    expect((await call(as(memberPass), '/api/outreach', 'get')).statusCode).toBe(403);
-    expect((await call(as(memberPass), '/api/outreach/targets/:id/letter', 'post', { action: 'save', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
-    expect((await call(as(memberPass), '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(403);
-    expect((await call({}, '/api/outreach', 'get')).statusCode).toBe(401);
-    // A Send with no mail service is refused, and nothing changes.
-    expect((await call(as(ownerPass), '/api/outreach/targets/:id/send', 'post', { step: 'first', subject: 's', text: 't' }, { id: 'northwind-health' })).statusCode).toBe(503);
-    // In a private copy there is no Outreach at all.
-    deps.privateCopy = true;
-    expect((await call(as(ownerPass), '/api/outreach', 'get')).statusCode).toBe(404);
-    deps.privateCopy = false;
-    // The pass dies with the sign-in it was given to.
-    await deps.workspaceWebAuth!.revokeSession('user-1', 'session-42');
-    expect((await call(as(ownerPass), '/api/outreach', 'get')).statusCode).toBe(401);
   });
 
   it('signs a note file to be DRAWN only when the Workspace can draw it', async () => {

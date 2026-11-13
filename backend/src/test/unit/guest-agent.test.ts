@@ -334,8 +334,10 @@ function world(options: {
   hold?: (command: string) => Promise<void> | undefined;
   /** A build command that fails. */
   fails?: (command: string) => boolean;
-  /** The owner's Outreach (note #1139). */
-  outreach?: ConstructorParameters<typeof GuestAgentService>[0]['outreach'];
+  /** The owner's own site a guest's tags name (notes #1139, #1178). */
+  appLink?: ConstructorParameters<typeof GuestAgentService>[0]['appLink'];
+  /** The owner's apps' feed (note #1178). */
+  appFeed?: ConstructorParameters<typeof GuestAgentService>[0]['appFeed'];
 } = {}) {
   let clock = Date.parse('2026-11-06T18:00:00Z');
   const storage = new InMemoryGuestAgentStorage();
@@ -404,7 +406,8 @@ function world(options: {
     jobsEveryMs: null,
     buildRetryMs: 0,
     limits: options.limits ?? {},
-    ...(options.outreach ? { outreach: options.outreach } : {}),
+    ...(options.appLink ? { appLink: options.appLink } : {}),
+    ...(options.appFeed ? { appFeed: options.appFeed } : {}),
   });
   if (options.enabled !== false) void service.setEnabled('owner-1', 'org-1', true);
   return {
@@ -1081,25 +1084,23 @@ describe('where a guest came from (note #1139)', () => {
     expect(cleanGuestArrival({ utm: { utm_source: 'a\u0000b\nc' } }, 'USA').utm).toEqual({ utm_source: 'abc' });
   });
 
-  it('stores the arrival with the guest, names its Outreach company for the owner, notes the guest on that company, and never shows it to the agent', async () => {
-    const started: Array<{ userId: string; companyId: string; guest: { agentId: string; name: string; country: string | null } }> = [];
+  it('stores the arrival with the guest, links the owner\'s own site its tags name, tells the owner\'s apps, and never shows it to the agent', async () => {
+    const told: Array<{ userId: string; guest: { agentId: string; name: string; country: string | null; utm: Record<string, string> } }> = [];
     const x = world({
-      outreach: {
-        company: async (_user, id) => (id === 'test-co' ? { id: 'test-co', name: 'Test Co' } : null),
-        guestStarted: async (userId, companyId, guest) => { started.push({ userId, companyId, guest }); },
-        siteOrigin: 'https://outreach.example',
-      },
+      appLink: async (_user, utm) => (utm.utm_source === 'outreach' && utm.utm_content
+        ? { site: 'outreach', id: utm.utm_content, url: `https://outreach.example/c/${utm.utm_content}` } : null),
+      appFeed: async (userId, guest) => { told.push({ userId, guest }); },
     });
     const arrival = { country: 'NL', utm: { utm_source: 'outreach', utm_medium: 'email', utm_campaign: 'cold-email', utm_content: 'test-co' }, referrerHost: 'mail.google.com' };
     const made = await x.service.create({ address: 'a', arrival });
     await x.service.idle();
     const key = (made.answer as { key: string }).key;
     expect((await x.storage.get('guest-1'))?.arrival).toEqual(arrival);
-    expect(started).toEqual([{ userId: 'owner-1', companyId: 'test-co', guest: { agentId: 'guest-1', name: 'Juno', country: 'NL' } }]);
+    expect(told).toEqual([{ userId: 'owner-1', guest: { agentId: 'guest-1', name: 'Juno', country: 'NL', utm: arrival.utm } }]);
 
     const list = await x.service.listForOwner();
-    expect(list.live[0]!.arrival).toEqual({ ...arrival, outreach: { id: 'test-co', name: 'Test Co', url: 'https://outreach.example/c/test-co' } });
-    expect((await x.service.transcriptForOwner('guest-1'))!.arrival!.outreach!.name).toBe('Test Co');
+    expect(list.live[0]!.arrival).toEqual({ ...arrival, app: { site: 'outreach', id: 'test-co', url: 'https://outreach.example/c/test-co' } });
+    expect((await x.service.transcriptForOwner('guest-1'))!.arrival!.app!.id).toBe('test-co');
 
     // The visitor's own reads carry none of it, and neither does the agent's turn.
     expect(JSON.stringify(await x.service.status(key))).not.toMatch(/outreach|cold-email|mail\.google|"NL"/);
@@ -1110,15 +1111,17 @@ describe('where a guest came from (note #1139)', () => {
     expect(JSON.stringify(x.uploads)).not.toMatch(/cold-email|test-co|mail\.google/);
   });
 
-  it('a guest with no tags shows its country only, one from an unknown company names none, and one made before shows nothing', async () => {
-    const x = world({ outreach: { company: async () => null, guestStarted: async () => undefined, siteOrigin: 'https://outreach.example' } });
+  it('a guest with no tags shows its country only and tells no app, one whose tags name no site of the owner links none, and one made before shows nothing', async () => {
+    const told: string[] = [];
+    const x = world({ appLink: async () => null, appFeed: async (_user, guest) => { told.push(guest.agentId); } });
     await x.service.create({ address: 'a', arrival: { country: 'DE', utm: {}, referrerHost: null } });
-    await x.service.create({ address: 'b', arrival: { country: null, utm: { utm_source: 'outreach', utm_content: 'nobody' }, referrerHost: null } });
+    await x.service.create({ address: 'b', arrival: { country: null, utm: { utm_source: 'elsewhere', utm_content: 'nobody' }, referrerHost: null } });
     await x.service.create({ address: 'c' });
     await x.service.idle();
     const byId = Object.fromEntries((await x.service.listForOwner()).live.map((row) => [row.agentId, row.arrival]));
-    expect(byId['guest-1']).toEqual({ country: 'DE', utm: {}, referrerHost: null, outreach: null });
-    expect(byId['guest-2']!.outreach).toBeNull();
+    expect(byId['guest-1']).toEqual({ country: 'DE', utm: {}, referrerHost: null, app: null });
+    expect(byId['guest-2']!.app).toBeNull();
     expect(byId['guest-3']).toBeNull();
+    expect(told).toEqual(['guest-2']);
   });
 });

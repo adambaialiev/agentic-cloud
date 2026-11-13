@@ -173,7 +173,7 @@ describe('ResendMailSender', () => {
     expect(body.reply_to).toEqual(['adam@agenticcloudcomputer.com']);
     expect(body.headers).toEqual({ 'In-Reply-To': '<abc-123@example.com>', References: '<abc-123@example.com>' });
     expect((calls[0]!.init.headers as Record<string, string>)['Idempotency-Key']).toBe('mm_out.k3@agenticcloudcomputer.com');
-    // Plain text alone: only an Outreach letter carries an HTML copy (note #1112).
+    // Plain text alone: only a workplace app's letter carries an HTML copy (notes #1112, #1178).
     expect(body).not.toHaveProperty('html');
     await sender.send({
       from: { address: 'adam@agenticcloudcomputer.com' }, to: [{ address: 'ada@example.com' }], subject: 'Hi', text: 'Hi.', html: '<p>Hi.</p>', idempotencyKey: 'k2',

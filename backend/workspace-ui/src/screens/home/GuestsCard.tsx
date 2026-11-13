@@ -34,12 +34,13 @@ export function countryName(code: string | null | undefined): string | null {
 }
 
 /**
- * Where a guest came from, in a few words (note #1139): the Outreach company
- * its link named, else its campaign tags, else the site that sent it.
+ * Where a guest came from, in a few words (notes #1139, #1178): the owner's
+ * own site its link named, with the id that site gave, else its campaign
+ * tags, else the site that sent it.
  */
 export function arrivalSource(arrival: GuestArrivalView | null | undefined): string | null {
   if (!arrival) return null;
-  if (arrival.outreach) return `from Outreach: ${arrival.outreach.name}`;
+  if (arrival.app) return `from ${arrival.app.site}: ${arrival.app.id}`;
   const { utm_source: source, utm_campaign: campaign } = arrival.utm;
   if (source || campaign) return `from ${[source, campaign].filter(Boolean).join(' / ')}`;
   if (arrival.referrerHost) return `from ${arrival.referrerHost}`;
@@ -59,8 +60,8 @@ function ArrivalFacts({ arrival }: { arrival: GuestArrivalView | null | undefine
   return (
     <div className="v dim guestarrival" data-guest-arrival>
       <div>{`Country: ${countryName(arrival.country) ?? 'unknown'}${arrival.country && arrival.country !== 'T1' ? ` (${arrival.country})` : ''}`}</div>
-      {arrival.outreach
-        ? <div>{'From Outreach: '}<a href={arrival.outreach.url} target="_blank" rel="noreferrer">{arrival.outreach.name}</a></div>
+      {arrival.app
+        ? <div>{`From ${arrival.app.site}: `}<a href={arrival.app.url} target="_blank" rel="noreferrer">{arrival.app.id}</a></div>
         : null}
       <div>{`Link tags: ${tags.length ? tags.join(' · ') : 'none'}`}</div>
       <div>{`Sent by: ${arrival.referrerHost ?? 'no site named'}`}</div>

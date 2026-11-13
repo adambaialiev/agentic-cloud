@@ -168,8 +168,8 @@ file as evidence. The rule, with the "is it MCP?" example, is in `guest-agent-in
 
 ## Whether it fits the visitor, and a person to write to (note #1136)
 
-The outreach letters invite a prospect to start a guest agent "to see whether
-this is what you need". So the guest has a goal, not just a topic:
+The founder's letters to prospects invited them to start a guest agent "to
+see whether this is what you need". So the guest has a goal, not just a topic:
 
 - **The greeting asks first** (`guestGreeting` in `shared/guest-agent.ts`):
   which coding agents the visitor's team uses today and where they run, and
@@ -304,21 +304,20 @@ for the owner: nothing of them reaches the guest's agent, its prompt or its
 machine, and the visitor's own status never carries them (a test holds all
 three).
 
-**Outreach.** A letter's home link already lands with `utm_source=outreach`
-and the company's record id in `utm_content` (note #1106), so letters sent
-before this change are matched too. For such a guest, the owner's read names
-the company and links to its page on the Outreach site (`<OUTREACH_SITE_ORIGIN>/c/<id>`),
-looked up on every read. When the guest is made, the company's timeline gets
-one `guest` touch (name, id, country), which the Outreach site shows as
-"Started a guest agent on the home page (Theo, from Netherlands)…". It is a
-fact, not a step: the state does not move. An id that is no company of the
-owner's records nothing. The touch does not link to the conversation
-itself: the Guests group has no address of its own yet.
+**The owner's own site its tags name** (notes #1139, #1178). When a guest's
+`utm_source` is the name of a live site of the guest owner's workplace and
+`utm_content` is set, the owner's read links that id's page there
+(`https://<site>.agentbuilt.app/c/<id>`, `guestAppLink` in
+`routes/app-doors.ts`), looked up on every read. When the guest is made, the
+owner's apps hear of it on their feed (a `guest` event with name, id, country
+and tags; services/app-doors.ts), and an app matches the tags itself. The
+platform knows nothing of what an id means.
 
 **On the Guests group**, each row starts with the country's name and the
-source: "from Outreach: Company", else the utm source and campaign, else
-"from <site>", else "no link tags". An opened guest lists country, the
-Outreach company (linked), every tag and the referring site. A guest made
+source: "from <site>: <id>" when its tags name a site of the owner's, else
+the utm source and campaign, else "from <referring site>", else "no link
+tags". An opened guest lists country, that site's page for the id (linked),
+every tag and the referring site. A guest made
 before this change says so. The Privacy Policy says it in section 3,
 "Guest agents on our home page" (effective November 10, 2026).
 

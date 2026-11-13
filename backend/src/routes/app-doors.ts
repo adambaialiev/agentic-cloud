@@ -53,6 +53,20 @@ export async function appSiteIsTheirs(deps: Pick<RouteDeps, 'deploymentStorage' 
   return memberships.some((one) => one.orgId === doc.orgId);
 }
 
+/**
+ * The owner's own site a guest's link tags name (notes #1139, #1178): when
+ * utm_source is a live site of the guest owner's workplace and utm_content is
+ * set, the page for that id there (`https://<site>.<appsDomain>/c/<id>`).
+ */
+export async function guestAppLink(deps: Pick<RouteDeps, 'deploymentStorage' | 'orgStorage'>, appsDomain: string, userId: string,
+  utm: { utm_source?: string; utm_content?: string }): Promise<{ site: string; id: string; url: string } | null> {
+  const site = appSiteName(utm.utm_source);
+  const id = utm.utm_content?.trim();
+  if (!site || !id) return null;
+  if (!(await appSiteIsTheirs(deps, userId, site))) return null;
+  return { site, id, url: `https://${site}.${appsDomain}/c/${encodeURIComponent(id)}` };
+}
+
 const page = (res: Response, status: number, title: string, body: string) => {
   res.status(status).setHeader('Cache-Control', 'no-store');
   res.setHeader('Referrer-Policy', 'no-referrer');
