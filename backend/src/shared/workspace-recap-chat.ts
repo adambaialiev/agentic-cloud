@@ -1,3 +1,4 @@
+import { isHtmlReply, type HtmlReplyAnswerState } from './agent-html.js';
 import type { WorkspaceAgentContext, WorkspaceChatFile, WorkspaceKnowledgeProposalRow, WorkspaceProposalRow } from './workspace-api.js';
 import type { WorkspaceMailApproval } from './workspace-mail.js';
 import type { DirectMessageApproval } from './direct-messages.js';
@@ -56,6 +57,9 @@ export interface RecapMessage {
   answered?: true;
   /** On an event turn's answer: it could not run. */
   failed?: true;
+  /** Note #1186: on a person's message, the id of the Chief of Staff's HTML
+   *  reply it answers — what they tapped or filled in there. */
+  answerTo?: string;
 }
 /**
  * A proposal the Chief of Staff forwarded into its conversation (note #724),
@@ -304,3 +308,16 @@ export interface RecapChatDeltaAnswer extends Omit<RecapChatAnswer, 'messages' |
 export type RecapChatRead = RecapChatAnswer | RecapChatDeltaAnswer;
 /** POST api/recap/chat/stop — the same answer a room agent's Stop gives. */
 export interface RecapChatStopAnswer { ok: true; stopped: boolean; name: string }
+
+/** Note #1186: each HTML reply's answer state, by its place in the list. */
+export function recapHtmlStates(messages: readonly RecapMessage[]): Map<number, HtmlReplyAnswerState> {
+  const answered = new Set(messages.flatMap((message) => (message.role === 'owner' && message.answerTo ? [message.answerTo] : [])));
+  let newest = -1;
+  messages.forEach((message, at) => { if (message.role === 'assistant' && !message.hidden) newest = at; });
+  const states = new Map<number, HtmlReplyAnswerState>();
+  messages.forEach((message, seq) => {
+    if (message.role !== 'assistant' || !isHtmlReply(message.text)) return;
+    states.set(seq, answered.has(message.id) ? 'answered' : seq === newest ? 'live' : 'old');
+  });
+  return states;
+}

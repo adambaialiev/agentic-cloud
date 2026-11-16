@@ -1250,6 +1250,20 @@ body.agent-chat-open .home-loading {
 .chatmsg.flat[data-time]::after { color: var(--hint); opacity: 1; margin-right: 0; }
 .chatmsg.rich.flat[data-time] { padding-bottom: 17px; }
 .chatmsg.rich.flat[data-time]::after { left: 0; right: auto; bottom: 0; }
+/* The Chief of Staff's reply when it is HTML (note #1186). Words are built
+   by the knowledge renderer, whose `.kpage` is set in the chrome scale for a
+   page on a card; in a chat it takes the reading role the Markdown reply
+   takes, with the same heading steps. The frame (interactive HTML) is a
+   window the width of the column, sized by the height its page reports. */
+.chatmsg .chathtml { white-space: normal; }
+.chatmsg .chathtmlpage.kpage { font-size: inherit; line-height: inherit; }
+.chatmsg .chathtmlpage.kpage h1 { font-size: 1.2em; line-height: 1.3; }
+.chatmsg .chathtmlpage.kpage h2 { font-size: 1.12em; line-height: 1.3; }
+.chatmsg .chathtmlpage.kpage h3 { font-size: 1.06em; line-height: 1.3; }
+.chatmsg .chathtmlpage.kpage h4, .chatmsg .chathtmlpage.kpage h5, .chatmsg .chathtmlpage.kpage h6 { font-size: 1em; }
+.chatmsg .chathtmlpage.kpage > :last-child { margin-bottom: 0; }
+.chatmsg .chathtmlframe { width: 100%; overflow: hidden; }
+.chatmsg .chathtmlframe iframe { display: block; width: 100%; border: 0; background: transparent; }
 /* A file message already stood outside the bubble (note #160); flat, it only
    has to give up the side it was pinned to and the padding that indented it
    from an edge that is no longer there. Its caption keeps its own bubble on

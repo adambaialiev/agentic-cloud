@@ -1,3 +1,4 @@
+import { replyFrameRoutes } from './reply-frame.js';
 import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
 import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
@@ -1859,6 +1860,9 @@ export function workspaceRoutes(deps: RouteDeps): WorkspaceRouter {
   // door, since the root belongs to the landing page for a visitor.
   const workspaceUiDir = deps.workspaceUiDir ?? DEFAULT_WORKSPACE_UI_DIR;
   router.use(workspaceUiAssetRoutes(workspaceUiDir));
+  // The frame an agent's interactive HTML reply runs in (note #1186): static,
+  // per-nobody, and closed off by its own policy — see reply-frame.ts.
+  router.use(replyFrameRoutes());
   const redirectToRoot = (req: Request, res: Response) => {
     if (handleRetiredWorkspaceUiSwitch(req, res)) return;
     const url = new URL(req.originalUrl, 'http://placeholder.invalid');
@@ -5806,7 +5810,7 @@ self.addEventListener('activate', (event) => {
     const auth = await authenticate(req, res); if (!auth) return;
     if (!auth.orgId) return res.status(404).json({ error: 'Choose a workplace.' });
     try {
-      const answer = await recapChat.send(auth.userId, auth.orgId, req.body?.clientId, req.body?.text);
+      const answer = await recapChat.send(auth.userId, auth.orgId, req.body?.clientId, req.body?.text, [], req.body?.answerTo);
       return res.status(202).json(await recapChatAnswer(auth, req, answer));
     } catch (error) { return recapChatError(res, error); }
   });

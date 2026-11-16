@@ -41,6 +41,8 @@ import { bytes, fileIcon, isAudio, isInlineHtml, isInlineImage, isInlinePdf, isM
 import { Icon, TypeIcon } from '../../ui/icons.js';
 import { PdfPreview } from '../../ui/PdfPreview.js';
 import { Markdown } from '../../render/Markdown.js';
+import { isHtmlReply, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
+import { HtmlReply } from './HtmlReply.js';
 import { splitNoteRefs, type NoteRefs } from '../../render/note-refs.js';
 import { useNoteRefs } from '../../render/useNoteRefs.js';
 import { useImageViewer } from '../../ui/useImageViewer.js';
@@ -683,8 +685,14 @@ function PeerReport({ from, avatarUrl, text, notes, workspaceLinks }: {
  * Everything a row is given is stable across polls — the row object itself is
  * kept by the merge, and the screen holds its callbacks — so this is free.
  */
-export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false }: {
+export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false, htmlState, onHtmlAnswer }: {
   row: TranscriptRow;
+  /** Note #1186: this reply is drawn as HTML, and whether it can still be
+   *  answered. Given only by the Chief of Staff's chat, and only for a reply
+   *  that IS HTML; every other chat leaves it out and draws Markdown. */
+  htmlState?: HtmlReplyAnswerState;
+  /** What the person tapped or filled in on that reply, as their message. */
+  onHtmlAnswer?: (seq: number, text: string) => void;
   agentId: string;
   /** A long report from another agent stands folded to two lines and opens
    *  in place (note #744) — the Chief of Staff's chat, where the reports are
@@ -854,6 +862,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpe
         })}
       </>
     );
+  } else if (role === 'agent' && htmlState && isHtmlReply(row.text)) {
+    extra = ' rich html';
+    body = <HtmlReply source={row.text} seq={row.seq} state={htmlState} notes={notes} onAnswer={onHtmlAnswer} />;
   } else if (role === 'agent') {
     extra = ' rich';
     body = <Markdown source={row.text} className="chatmarkdown" notes={notes} workspaceLinks={workspaceLinks} />;

@@ -2068,3 +2068,27 @@ describe('the recap line\'s summary (note #945)', () => {
     expect(x.turnEnded).not.toHaveBeenCalled();
   });
 });
+
+describe('Answering an HTML reply (note #1186): the person\'s tap is their message, once, on the newest reply', () => {
+  it('records the answer on the reply it names, tells the turn it came through the HTML, and refuses a second or an old one', async () => {
+    const ask = '<p>Which one?</p><button data-reply="Ship A">A</button><button data-reply="Ship B">B</button>';
+    const x = await setup([ask, '<p>Shipping A.</p>', '<p>Done.</p>']);
+    await x.chat.send('u1', x.org, 'request-0001', 'What should we ship?'); await x.done();
+    const reply = (await x.chat.read('u1', x.org)).messages.find((m) => m.role === 'assistant')!;
+    expect(reply.text).toBe(ask);
+    await x.chat.send('u1', x.org, 'request-0002', 'Ship A', [], reply.id); await x.done();
+    const after = (await x.chat.read('u1', x.org)).messages;
+    expect(after.find((m) => m.role === 'owner' && m.text === 'Ship A')).toMatchObject({ answerTo: reply.id });
+    const prompt = x.model.mock.calls[1]![2] as string;
+    expect(prompt).toContain('"text":"Ship A"');
+    expect(prompt).toContain('"via":"your-html-reply"');
+    // Its own HTML comes back to it as its words, not its tags.
+    expect(prompt).toContain('"text":"Which one?\\n[A] [B]"');
+    await expect(x.chat.send('u1', x.org, 'request-0003', 'Ship B', [], reply.id)).rejects.toMatchObject({ status: 409 });
+    await x.chat.send('u1', x.org, 'request-0004', 'Thanks'); await x.done();
+    const older = (await x.chat.read('u1', x.org)).messages.filter((m) => m.role === 'assistant')[1]!;
+    await expect(x.chat.send('u1', x.org, 'request-0005', 'Again', [], older.id)).rejects.toMatchObject({ status: 409 });
+    await expect(x.chat.send('u1', x.org, 'request-0006', 'Bad', [], 'not an id!')).rejects.toMatchObject({ status: 400 });
+    expect(x.model).toHaveBeenCalledTimes(3);
+  });
+});

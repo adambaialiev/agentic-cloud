@@ -64,7 +64,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
  * already stored with the model-invented `https://workspace` pseudo-origin
  * from note #441; `note` is the singular spelling in that real reply.
  */
-function workspaceLinkTo(raw: string): string | null {
+export function workspaceLinkTo(raw: string): string | null {
   let href = raw;
   if (href.startsWith('https://workspace/')) {
     const url = new URL(href);

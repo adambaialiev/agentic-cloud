@@ -33,7 +33,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { parseWorkspaceRoute, WORKSPACE_BASE } from '../../../../src/shared/workspace-routes.js';
 import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/workspace-recap.js';
-import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
+import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage, recapHtmlStates } from '../../../../src/shared/workspace-recap-chat.js';
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
 import { chatFilesBody } from '../chat/chat-upload.js';
@@ -504,6 +504,10 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // What each row shows (note #725): news to the person or a decision for
   // them; the rest of the platform's narration stays in the agent's record.
   const views = useMemo(() => recapRowViews(answer?.messages ?? []), [answer]);
+  // Note #1186: which of the Chief of Staff's HTML replies can still be
+  // answered. One answer per reply, and only the newest reply it wrote: an
+  // older one belongs to a turn that is over, and stands drawn but inert.
+  const htmlStates = useMemo(() => recapHtmlStates(answer?.messages ?? []), [answer]);
   // The first run (note #726): the sign-in card under the FIRST ask, for as
   // long as no plan is in — a later "I've kept that too" points up at it.
   const messages = answer?.messages ?? [];
@@ -531,7 +535,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
    * half. A send refused after all puts its words and files back in the
    * box, in front of anything typed since.
    */
-  const send = useCallback((message: string, files: File[]): boolean => {
+  const send = useCallback((message: string, files: File[], answerTo?: string): boolean => {
     const text = message.trim();
     if (!text && !files.length) return false;
     const draft = `${text}\n${files.map((file) => `${file.name}:${file.size}`).join('\n')}`;
@@ -557,7 +561,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
             headers: { 'Content-Type': 'application/vnd.agentbuilt.chat-attachments', 'x-recap-client-id': clientId },
             body: await chatFilesBody(api, WORKSPACE_AGENT_CHAT_ID, text, files, progress),
           })
-          : await api.api<unknown>(sincePath('api/recap/chat'), jsonBody({ clientId, text })));
+          : await api.api<unknown>(sincePath('api/recap/chat'), jsonBody({ clientId, text, ...(answerTo ? { answerTo } : {}) })));
         if (pendingSend.current?.clientId === clientId) pendingSend.current = null;
         following.current = true;
         // Accepted. A delta that no longer fits what this tab holds is left
@@ -582,6 +586,15 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
     })();
     return true;
   }, [api, orgId]);
+  // What the person tapped or filled in on an HTML reply (note #1186): their
+  // message, naming the reply it answers.
+  const messagesRef = useRef<RecapMessage[]>([]);
+  useEffect(() => { messagesRef.current = answer?.messages ?? []; }, [answer]);
+  const answerHtml = useCallback((seq: number, text: string) => {
+    const reply = messagesRef.current[seq];
+    if (!reply || reply.role !== 'assistant') return;
+    send(text, [], reply.id);
+  }, [send]);
   // Where a refused send's words go back to: the composer subscribes, as it
   // does to the room chat's outbox.
   const returnDraft = useRef<((draft: ReturnedDraft) => void) | null>(null);
@@ -774,7 +787,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
                           {/* The Chief of Staff's files (note #749), drawn as a room
                               agent's ATTACH: files are — the words as Markdown in
                               their own row, the files on a row of their own under it. */}
-                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} />
+                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} htmlState={htmlStates.get(row.seq)} onHtmlAnswer={answerHtml} />
                           {row.role === 'agent' && row.files?.length
                             ? <ChatMessageRow row={filesOf(row)} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} />
                             : null}

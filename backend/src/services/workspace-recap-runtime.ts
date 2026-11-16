@@ -1,3 +1,4 @@
+import { replyPlainText } from '../shared/agent-html.js';
 import { buildClaudeRecapCommand, buildCodexRecapCommand } from './agent-recap.js';
 import type { WorkspaceRecapSettings } from '../shared/workspace-recap.js';
 import {
@@ -310,7 +311,7 @@ export function readWorkspaceAgentActivity(stdout: string, cli: WorkspaceRecapSe
       if (typeof block !== 'object' || block === null) continue;
       const typed = block as { type?: unknown; text?: unknown; thinking?: unknown };
       if (typed.type === 'tool_use') return clipThought(getToolUseSummaries(event).at(-1) ?? '');
-      if (typed.type === 'text' && typeof typed.text === 'string') return clipThought(typed.text);
+      if (typed.type === 'text' && typeof typed.text === 'string') return clipThought(replyPlainText(typed.text));
       if (typed.type === 'thinking' && typeof typed.thinking === 'string') return clipThought(typed.thinking);
     }
     return undefined;
@@ -324,7 +325,7 @@ export function readWorkspaceAgentActivity(stdout: string, cli: WorkspaceRecapSe
   if (item.type === 'command_execution') return clipThought(typeof (item as { command?: unknown }).command === 'string' ? `$ ${(item as { command: string }).command}` : 'ran a command');
   if (item.type === 'reasoning' || item.type === 'agent_message') {
     const text = (item as { text?: unknown }).text;
-    return typeof text === 'string' ? clipThought(text) : undefined;
+    return typeof text === 'string' ? clipThought(replyPlainText(text)) : undefined;
   }
   return undefined;
 }
