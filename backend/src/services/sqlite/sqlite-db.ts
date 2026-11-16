@@ -79,37 +79,6 @@ CREATE TABLE IF NOT EXISTS copy_pulse_alerts (
   PRIMARY KEY (copy_id, condition)
 );
 
--- Outreach's old tables (notes #1089, #1093, #1178). Outreach moved into its
--- own app on 13 Nov 2026 (note #1178), with its own store; nothing here reads
--- or writes these any more. They are kept, untouched, until the owner's word
--- to delete them (planned one week after the switch, about 20 Nov 2026).
-CREATE TABLE IF NOT EXISTS outreach_targets (
-  user_id TEXT NOT NULL,
-  target_id TEXT NOT NULL,
-  doc TEXT NOT NULL,
-  PRIMARY KEY (user_id, target_id)
-);
-CREATE TABLE IF NOT EXISTS outreach_touches (
-  user_id TEXT NOT NULL,
-  touch_id TEXT NOT NULL,
-  target_id TEXT NOT NULL,
-  at TEXT NOT NULL,
-  doc TEXT NOT NULL,
-  PRIMARY KEY (user_id, touch_id)
-);
-CREATE INDEX IF NOT EXISTS outreach_touches_by_target ON outreach_touches (user_id, target_id, at);
-CREATE TABLE IF NOT EXISTS outreach_passes (
-  token_hash TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  session_id TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  expires_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS outreach_words (
-  user_id TEXT PRIMARY KEY,
-  imported_at TEXT NOT NULL,
-  doc TEXT NOT NULL
-);
 -- A workplace app's doors (note #1178, services/app-doors.ts): passes and
 -- agent proofs kept as hashes, the letters an app sent from a person's
 -- mailbox, and the feed of what the platform saw happen for that person.
@@ -697,6 +666,17 @@ function adoptHeldAddresses(db: SqliteDb): void {
  * hold anything are left exactly as they are and said out loud: private
  * conversations are never dropped by a schema change.
  */
+/**
+ * Outreach's old tables (notes #1089, #1093, #1178). Outreach moved into its
+ * own app with its own store on 13 Nov 2026, and its code left this
+ * repository on 16 Nov. Adam, 16 Nov 2026: "yes delete old copies". The final
+ * copy was checked equal to what the app was loaded from and is archived in
+ * the app's own private bucket. Dropped once, on the first open with this code.
+ */
+function retireOutreachTables(db: SqliteDb): void {
+  db.exec('DROP INDEX IF EXISTS outreach_touches_by_target; DROP TABLE IF EXISTS outreach_touches; DROP TABLE IF EXISTS outreach_targets; DROP TABLE IF EXISTS outreach_words; DROP TABLE IF EXISTS outreach_passes;');
+}
+
 function retireDirectMessageTables(db: SqliteDb): void {
   const exists = (name: string) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   if (!exists('direct_messages') && !exists('direct_message_threads')) return;
@@ -735,6 +715,7 @@ export function openSqliteDb(path: string): SqliteDb {
   // name and keep the outside email as the recovery address.
   adoptHeldAddresses(db);
   retireDirectMessageTables(db);
+  retireOutreachTables(db);
   // Replies (note #509 slice 4) arrived hours after the table itself, so an
   // installation that already holds mail needs the two columns added. Both
   // are read by the inbox list, which shows only what came IN.
