@@ -96,7 +96,7 @@ button,input,select,textarea{font:inherit;font-size:17px;color:inherit}
 button,input[type=submit],input[type=button]{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 14px;margin:0 6px 6px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
 button:active{opacity:.65}
 input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button]):not([type=range]),select,textarea{box-sizing:border-box;max-width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff}
-label{display:block;margin:0 0 6px}
+input[type=radio],input[type=checkbox]{width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--accent)}
 fieldset{border:1px solid var(--border);border-radius:8px;padding:8px 12px}
 :disabled{opacity:.5;cursor:default}
 html[data-reply-state=answered] [data-reply],html[data-reply-state=old] [data-reply]{cursor:default}
