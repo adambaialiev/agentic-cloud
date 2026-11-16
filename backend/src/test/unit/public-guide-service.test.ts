@@ -243,7 +243,7 @@ describe('PublicGuideService — resting on the owner\'s plan', () => {
 
   it('a turn that hits the plan\'s limit rests the guide, and that question is not counted', async () => {
     const x = world({
-      answer: () => ok([JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached|1794600000' })].join('\n')),
+      answer: () => ok([JSON.stringify({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached|4102444800' })].join('\n')),
       limits: { perVisitorPerHour: 1 },
     });
     const asked = await x.service.ask({ visitId: VISIT, question: 'q', address: 'a' }) as { questionId: string };
