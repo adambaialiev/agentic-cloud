@@ -6310,7 +6310,7 @@ describe('private workspace recap execution (note #362)', () => {
 });
 
 describe('dedicated Workspace Agent and briefing machines (notes #399, #437)', () => {
-  async function setup(orgWireGuard?: { ensureUpIfMissing: (orgId: string) => Promise<unknown> }) {
+  async function setup(orgWireGuard?: { ensureUpIfMissing: (orgId: string) => Promise<unknown> }, extra: Record<string, unknown> = {}) {
     const userStorage = new InMemoryUserStorage();
     await userStorage.createProfile('recap-owner', { email: 'owner@example.com', displayName: 'Owner' });
     const orgStorage = new InMemoryOrgStorage();
@@ -6331,7 +6331,7 @@ describe('dedicated Workspace Agent and briefing machines (notes #399, #437)', (
     const resizeSandbox = vi.fn(async () => ({ changed: true, awake: false }));
     const secretStorage = new InMemorySecretStorage();
     const orgGit = new OrgGitService({ orgStorage });
-    const service = createAgentService({userStorage,orgStorage,orgGit,secretStorage,sessionStorage:new InMemorySessionStorage(),eventEmitter:new AgentEventEmitter(),flySandboxClient:fly,platformCredentialPool:pool,agentbuilt:{apiUrl:'https://api.test'},sandboxClient:{execSync,resizeSandbox,getSandbox:vi.fn(async()=>({status:'stopped'}))},...(orgWireGuard?{orgWireGuard:orgWireGuard as never}:{})});
+    const service = createAgentService({userStorage,orgStorage,orgGit,secretStorage,sessionStorage:new InMemorySessionStorage(),eventEmitter:new AgentEventEmitter(),flySandboxClient:fly,platformCredentialPool:pool,agentbuilt:{apiUrl:'https://api.test'},sandboxClient:{execSync,resizeSandbox,getSandbox:vi.fn(async()=>({status:'stopped'}))},...(orgWireGuard?{orgWireGuard:orgWireGuard as never}:{}),...extra});
     const record = async (purpose: 'agent' | 'briefing') => (await userStorage.getProfile('recap-owner'))?.telegram?.agents?.[(purpose === 'agent' ? workspaceAssistantId : workspaceBriefingId)('recap-owner', org.orgId)];
     return {service,userStorage,org:org.orgId,orgStorage,orgGit,secretStorage,create,execSync,pool,fly,resizeSandbox,record};
   }
@@ -6363,6 +6363,23 @@ describe('dedicated Workspace Agent and briefing machines (notes #399, #437)', (
     finish();
     await run;
     expect(x.service.workspaceSeatIdsInUse('recap-owner', x.org)).toEqual([]);
+  });
+  it('waits out a CLI install in flight on its machine before it starts the CLI (exit 127, 2026-11-16)', async () => {
+    let finishInstall!: () => void;
+    const install = new Promise<void>((resolve) => { finishInstall = resolve; });
+    let inFlight = true;
+    const installInFlight = vi.fn((_sandboxId: string) => (inFlight ? install : undefined));
+    const x = await setup(undefined, { harnessCliUpdater: { updateBeforeSleep: vi.fn(), installInFlight } });
+    const run = x.service.converseWorkspaceRecap('recap-owner', x.org, 'Hi', { cli: 'claude', model: 'opus', effort: 'high' }, undefined, { act: true });
+    await vi.waitFor(() => expect(installInFlight).toHaveBeenCalled());
+    for (let i = 0; i < 20; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    const startedCli = () => x.execSync.mock.calls.some((c) => String(c[1]).includes('claude -p'));
+    expect(startedCli()).toBe(false);
+    inFlight = false;
+    finishInstall();
+    await run;
+    expect(startedCli()).toBe(true);
+    expect(installInFlight.mock.calls[0]![0]).toMatch(/ia-recap-1/);
   });
   it('ends an orphaned Workspace Agent turn on its machine, and says so honestly when there is none or the machine is silent (note #455)', async () => {
     const x = await setup();

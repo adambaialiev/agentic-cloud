@@ -5731,6 +5731,17 @@ export class AgentService {
           attachmentNote = stagedNote ?? '';
           if (attachmentNote) turnPrompt = `${turnPrompt}\n${attachmentNote}`;
         }
+        // The pre-sleep update may be replacing this very CLI: wait it out
+        // rather than start a binary that is not there yet — the same wait the
+        // room-agent harnesses have had since PR #1384. On 2026-11-16 (claude
+        // 2.1.322 → 2.1.325) a Workspace Agent turn started mid-install died
+        // with `claude: command not found`, exit 127. Before the abort check,
+        // so a Stop pressed meanwhile still ends the turn.
+        const install = this.deps.harnessCliUpdater?.installInFlight?.(sandboxId);
+        if (install) {
+          console.log(`[workspace-agent] ${userId}/${orgId}: CLI install in flight on ${sandboxId}; the turn starts when it is done`);
+          await install.catch(() => undefined);
+        }
         if (signal?.aborted) return { failure: 'interrupted' };
         // The complete recovery seed may be as large as the model window, and
         // secrets must never ride in a process argument. Stage both mode 0600
