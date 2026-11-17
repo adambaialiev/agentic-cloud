@@ -4,7 +4,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { RecapChatAnswer, RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
 import { App } from '../../App.js';
 import { emptyState, scriptedApi, workspaceScript } from '../../test/fixtures.js';
-import { linksAsWritten, REPLY_FRAME_SRC } from './html-reply-links.js';
+import { htmlReplyNeedsFrame } from '../../../../src/shared/agent-html.js';
+import { linksAsWritten, REPLY_FRAME_SRC, splitHtmlReply } from './html-reply-links.js';
+import { fireEvent } from '@testing-library/react';
 
 /**
  * Note #1186: the Chief of Staff answers in HTML, in its own chat only. Words
@@ -20,7 +22,7 @@ function Address() {
   const location = useLocation();
   return <div data-testid="address">{location.pathname}</div>;
 }
-afterEach(() => { document.body.classList.remove('agent-chat-open'); });
+afterEach(() => { document.body.classList.remove('agent-chat-open'); window.localStorage.clear(); });
 
 function mount(messages: RecapMessage[]) {
   const sent: unknown[] = [];
@@ -56,7 +58,9 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     const frame = asks!.querySelector('iframe')!;
     expect(frame.getAttribute('src')).toBe(REPLY_FRAME_SRC);
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
-    expect(asks!.textContent).not.toContain('Which one?');
+    // Since note #1188 the words a reply opens with stand on the page, and its UI in a card.
+    expect(asks!.querySelector('.chathtml')?.textContent).toContain('Which one?');
+    expect(asks!.querySelector('.chathtmlui iframe')).toBe(frame);
   });
 
   it('draws words-only HTML with the allowlisted renderer, and its Workspace link opens inside', async () => {
@@ -105,6 +109,39 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     const links = linksAsWritten('<a href="/workspace/notes/1">a</a><a href="https://x.test/">b</a><a href="#top">c</a>');
     expect(links.has(new URL('/workspace/notes/1', window.location.origin).href)).toBe(true);
     expect(links.has('https://x.test/')).toBe(true);
+  });
+});
+
+describe('the UI a reply carries sits in a card with a quiet close (note #1188)', () => {
+  it('splits the words a reply opens with from the UI it sends; a leading style keeps the whole reply as UI', () => {
+    expect(splitHtmlReply('<p>Pick one.</p><form><input name="a"><button>Go</button></form><p>Or type.</p>', htmlReplyNeedsFrame))
+      .toEqual({ words: '<p>Pick one.</p>', ui: '<form><input name="a"><button>Go</button></form><p>Or type.</p>' });
+    expect(splitHtmlReply('<p>Only words.</p>', htmlReplyNeedsFrame)).toEqual({ words: '<p>Only words.</p>', ui: '' });
+    const styled = '<style>p{color:red}</style><p>x</p><button data-reply="y">y</button>';
+    expect(splitHtmlReply(styled, htmlReplyNeedsFrame)).toEqual({ words: '', ui: styled });
+    expect(splitHtmlReply('<button data-reply="y">y</button>', htmlReplyNeedsFrame)).toEqual({ words: '', ui: '<button data-reply="y">y</button>' });
+  });
+
+  it('draws the words on the page and the UI in a card whose close mark is the Workspace\'s; closing sends nothing, Show brings it back, and it stays closed when drawn again', async () => {
+    const reply: RecapMessage = { id: 'm1', role: 'assistant', text: '<p>Pick one.</p><button data-reply="A">A</button>', at: now };
+    const first = mount([reply]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const row = document.querySelector('#recapChatLog .chatmsg.html')!;
+    await waitFor(() => expect(row.querySelector('.chathtml .kpage p')?.textContent).toBe('Pick one.'));
+    const close = row.querySelector<HTMLButtonElement>('.chathtmlui > .chathtmlclose')!;
+    expect(close.getAttribute('aria-label')).toBe('Hide this');
+    await act(async () => fireEvent.click(close));
+    expect(row.querySelector('.chathtmlui')).toBeNull();
+    expect(row.querySelector('.chathtml .kpage p')?.textContent).toBe('Pick one.');
+    expect(row.querySelector('.chathtmlhidden')?.textContent).toBe('HiddenShow');
+    expect(first.sent).toEqual([]);
+    await act(async () => fireEvent.click(row.querySelector('.chathtmlshow')!));
+    expect(row.querySelector('.chathtmlui iframe')).not.toBeNull();
+    await act(async () => fireEvent.click(row.querySelector('.chathtmlclose')!));
+    document.body.innerHTML = '';
+    mount([reply]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlhidden')).not.toBeNull());
+    expect(document.querySelector('#recapChatLog .chathtmlui')).toBeNull();
   });
 });
 

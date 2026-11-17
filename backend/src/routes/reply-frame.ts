@@ -77,11 +77,14 @@ export const REPLY_FRAME_CONTENT_SECURITY_POLICY = [
  * light paper (the Workspace's palette is fixed light, see
  * workspace-palette), controls that look like the Workspace's, and the
  * bridge. An agent's own `<style>` comes later in the document and wins.
+ * The empty float at the top right keeps the first line clear of the
+ * Workspace's close mark, which sits over that corner of the card (note #1188).
  */
 const INNER_STYLE = `
 :root{color-scheme:light;--text:#1f1e1d;--hint:#686762;--accent:#1a68d8;--card:#efefef;--border:rgba(104,103,98,.28)}
 html{font:17px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;color:var(--text);background:transparent;-webkit-text-size-adjust:100%}
 body{margin:0;overflow-wrap:anywhere}
+body::before{content:"";float:right;width:24px;height:20px}
 body>:first-child{margin-top:0}body>:last-child{margin-bottom:0}
 h1,h2,h3,h4{line-height:1.3;margin:0 0 8px;font-weight:500}
 h1{font-size:1.2em}h2{font-size:1.12em}h3{font-size:1.06em}h4{font-size:1em}

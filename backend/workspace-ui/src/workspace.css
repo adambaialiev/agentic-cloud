@@ -1264,6 +1264,28 @@ body.agent-chat-open .home-loading {
 .chatmsg .chathtmlpage.kpage > :last-child { margin-bottom: 0; }
 .chatmsg .chathtmlframe { width: 100%; overflow: hidden; }
 .chatmsg .chathtmlframe iframe { display: block; width: 100%; border: 0; background: transparent; }
+/* The UI a reply carries sits in a card of its own (note #1188): the words
+   the reply opens with stay on the page, and the form or the buttons read as
+   one piece the agent sent. The close mark is the Workspace's, outside the
+   frame, small and in the hint colour so it never competes with the form's
+   own button; the frame's page leaves its first line clear of it. */
+.chatmsg .chathtmlui {
+  position: relative; margin-top: 10px; padding: 12px 14px;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg);
+}
+.chatmsg .chathtml + .chathtmlui { margin-top: 12px; }
+.chatmsg .chathtml:only-child, .chatmsg .chathtmlui:first-child { margin-top: 0; }
+.chatmsg .chathtmlclose {
+  position: absolute; top: 4px; right: 4px; width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--hint); opacity: .7; border-radius: 999px;
+}
+.chatmsg .chathtmlclose:hover, .chatmsg .chathtmlclose:focus-visible { opacity: 1; background: color-mix(in srgb, var(--hint) 10%, transparent); }
+.chatmsg .chathtmlhidden {
+  display: flex; align-items: baseline; gap: 8px; margin-top: 8px;
+  font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
+}
+.chatmsg .chathtmlshow { color: var(--accent); padding: 4px 0; }
 /* A file message already stood outside the bubble (note #160); flat, it only
    has to give up the side it was pinned to and the padding that indented it
    from an edge that is no longer there. Its caption keeps its own bubble on

@@ -30,7 +30,8 @@ import { KnowledgeHtml } from '../../render/KnowledgeHtml.js';
 import { workspaceLinkTo } from '../../render/Markdown.js';
 import type { NoteRefs } from '../../render/note-refs.js';
 import { plainClick } from '../../ui/link-click.js';
-import { linksAsWritten, REPLY_FRAME_SRC } from './html-reply-links.js';
+import { htmlUiKey, isHtmlUiClosed, linksAsWritten, REPLY_FRAME_SRC, setHtmlUiClosed, splitHtmlReply } from './html-reply-links.js';
+import { Svg } from '../../ui/icons.js';
 
 /** What a frame stands at before it has said its height, and the most it
  *  may ask for. */
@@ -168,6 +169,43 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
   );
 }
 
+/**
+ * The UI a reply carries, in a card of its own (note #1188). Adam, 17 Nov
+ * 2026: "this UI should have some container and a close button. And the
+ * close button just hides this UI that was sent by the agent … button should
+ * be subtle". The card and its close mark are the Workspace's own, outside
+ * the locked frame, so the agent's page can neither fake nor cover them.
+ * Closing hides the card on this device and sends nothing; a quiet line in
+ * its place shows it again. Answered and older replies are cards too.
+ */
+function HtmlUi({ ui, replyKey, state, onAnswer }: {
+  ui: string;
+  replyKey: string;
+  state: HtmlReplyAnswerState;
+  onAnswer?: (text: string) => void;
+}) {
+  const key = useMemo(() => htmlUiKey(ui), [ui]);
+  const [closed, setClosed] = useState(() => isHtmlUiClosed(key));
+  const close = useCallback(() => { setHtmlUiClosed(key, true); setClosed(true); }, [key]);
+  const open = useCallback(() => { setHtmlUiClosed(key, false); setClosed(false); }, [key]);
+  if (closed) {
+    return (
+      <div className="chathtmlhidden">
+        <span>Hidden</span>
+        <button type="button" className="chathtmlshow" onClick={open}>Show</button>
+      </div>
+    );
+  }
+  return (
+    <div className={`chathtmlui${state === 'live' ? '' : ` ${state}`}`}>
+      <HtmlFrame source={ui} replyKey={replyKey} state={state} onAnswer={onAnswer} />
+      <button type="button" className="chathtmlclose" onClick={close} aria-label="Hide this" title="Hide this">
+        <Svg name="x" size={14} />
+      </button>
+    </div>
+  );
+}
+
 export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, onAnswer }: {
   source: string;
   seq: number;
@@ -176,6 +214,12 @@ export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, on
   onAnswer?: (seq: number, text: string) => void;
 }) {
   const answer = useCallback((text: string) => onAnswer?.(seq, text), [onAnswer, seq]);
-  if (!htmlReplyNeedsFrame(source)) return <HtmlWords source={source} notes={notes} />;
-  return <HtmlFrame source={source} replyKey={`${seq}:${source.length}`} state={state} onAnswer={onAnswer ? answer : undefined} />;
+  const { words, ui } = useMemo(() => splitHtmlReply(source, htmlReplyNeedsFrame), [source]);
+  if (!ui) return <HtmlWords source={source} notes={notes} />;
+  return (
+    <>
+      {words ? <HtmlWords source={words} notes={notes} /> : null}
+      <HtmlUi ui={ui} replyKey={`${seq}:${ui.length}`} state={state} onAnswer={onAnswer ? answer : undefined} />
+    </>
+  );
 });
