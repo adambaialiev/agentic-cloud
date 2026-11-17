@@ -309,15 +309,25 @@ export type RecapChatRead = RecapChatAnswer | RecapChatDeltaAnswer;
 /** POST api/recap/chat/stop — the same answer a room agent's Stop gives. */
 export interface RecapChatStopAnswer { ok: true; stopped: boolean; name: string }
 
-/** Note #1186: each HTML reply's answer state, by its place in the list. */
+/**
+ * Each HTML reply's answer state, by its place in the list.
+ *
+ * Note #1186 made only the newest reply answerable. Adam, 17 Nov 2026 (note
+ * #1189): "Yes: keep each UI usable until I answer it or close it" — so a
+ * reply stays `live` until the person answers it (once), whatever came after
+ * it, and only a FRESH CHAT ends that: a reply above the newest
+ * new-chat divider belongs to a conversation the Chief of Staff no longer
+ * holds, and is `old`. Closing a card is the screen's business and changes
+ * nothing here.
+ */
 export function recapHtmlStates(messages: readonly RecapMessage[]): Map<number, HtmlReplyAnswerState> {
   const answered = new Set(messages.flatMap((message) => (message.role === 'owner' && message.answerTo ? [message.answerTo] : [])));
-  let newest = -1;
-  messages.forEach((message, at) => { if (message.role === 'assistant' && !message.hidden) newest = at; });
+  let fresh = -1;
+  messages.forEach((message, at) => { if (message.kind === 'new-chat-divider') fresh = at; });
   const states = new Map<number, HtmlReplyAnswerState>();
   messages.forEach((message, seq) => {
     if (message.role !== 'assistant' || !isHtmlReply(message.text)) return;
-    states.set(seq, answered.has(message.id) ? 'answered' : seq === newest ? 'live' : 'old');
+    states.set(seq, answered.has(message.id) ? 'answered' : seq > fresh ? 'live' : 'old');
   });
   return states;
 }

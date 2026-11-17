@@ -68,11 +68,13 @@ describe('The reply frame (note #1186): closed off, one way out', () => {
   });
 });
 
-describe('Answer states (note #1186): one answer per reply, only the newest is live', () => {
+describe('Answer states (notes #1186, #1189): one answer per reply, live until answered or a fresh chat', () => {
   const at = '2026-11-16T22:00:00.000Z';
   const row = (id: string, role: RecapMessage['role'], text: string, extra: Partial<RecapMessage> = {}): RecapMessage => ({ id, role, text, at, ...extra });
-  it('marks the newest HTML reply live, an answered one answered, an older one old, and never a Markdown reply', () => {
+  it('keeps every unanswered HTML reply since the fresh chat live, an answered one answered, one before the fresh chat old, never a Markdown reply', () => {
     const messages = [
+      row('z', 'assistant', '<button data-reply="before">before</button>'),
+      row('y', 'action', '', { kind: 'new-chat-divider' }),
       row('a', 'owner', 'Plan the week'),
       row('b', 'assistant', '<p>Pick one</p><button data-reply="A">A</button>'),
       row('c', 'owner', 'A', { answerTo: 'b' }),
@@ -82,7 +84,7 @@ describe('Answer states (note #1186): one answer per reply, only the newest is l
       row('g', 'assistant', '<p>event</p>', { hidden: true }),
     ];
     const states = recapHtmlStates(messages);
-    expect([...states.entries()]).toEqual([[1, 'answered'], [4, 'old'], [5, 'live'], [6, 'old']]);
+    expect([...states.entries()]).toEqual([[0, 'old'], [3, 'answered'], [6, 'live'], [7, 'live'], [8, 'live']]);
   });
 });
 
@@ -93,6 +95,8 @@ describe('What the Chief of Staff is told (note #1186)', () => {
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('<button data-reply=\\"Merge it\\">Merge</button>'.replace(/\\"/g, '"'));
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('agentbuilt.reply(text)');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('via: "your-html-reply"');
+    expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('answersReply');
+    expect(WORKSPACE_AGENT_INSTRUCTIONS).not.toContain('only your newest reply can be answered');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('<a href="/workspace/...">title</a>');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('no network at all');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('stays plain words');

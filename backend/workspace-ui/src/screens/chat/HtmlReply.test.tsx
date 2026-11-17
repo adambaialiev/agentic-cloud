@@ -71,15 +71,17 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     await waitFor(() => expect(screen().textContent).toContain('/notes/12'));
   });
 
-  it('sends a tap as the person\'s message naming the reply, once; a foreign frame and an old reply are not heard', async () => {
+  it('sends a tap as the person\'s message naming the reply, once; an OLDER reply stays answerable after a newer one (note #1189); a foreign frame and a reply from before a fresh chat are not heard', async () => {
     const { sent } = mount([
-      { id: 'm1', role: 'assistant', text: '<button data-reply="Old">Old</button>', at: now },
+      { id: 'm0', role: 'assistant', text: '<button data-reply="Gone">Gone</button>', at: now },
+      { id: 'd1', role: 'action', text: '', at: now, kind: 'new-chat-divider' },
+      { id: 'm1', role: 'assistant', text: '<button data-reply="Older">Older</button>', at: now },
       { id: 'm2', role: 'owner', text: 'Next', at: now },
       { id: 'm3', role: 'assistant', text: ask, at: now },
     ]);
-    await waitFor(() => expect(document.querySelectorAll('#recapChatLog iframe')).toHaveLength(2));
-    const [old, live] = [...document.querySelectorAll<HTMLIFrameElement>('#recapChatLog iframe')];
-    await frameSays(old!, { t: 'reply', text: 'Old' });
+    await waitFor(() => expect(document.querySelectorAll('#recapChatLog iframe')).toHaveLength(3));
+    const [gone, older, live] = [...document.querySelectorAll<HTMLIFrameElement>('#recapChatLog iframe')];
+    await frameSays(gone!, { t: 'reply', text: 'Gone' });
     await act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { t: 'reply', text: 'Forged' }, source: window })); });
     await frameSays(live!, { t: 'h', h: 222 });
     expect(live!.style.height).toBe('222px');
@@ -87,6 +89,9 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     await frameSays(live!, { t: 'reply', text: 'Ship A again' });
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ text: 'Ship A', answerTo: 'm3' });
+    await frameSays(older!, { t: 'reply', text: 'Older' });
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toMatchObject({ text: 'Older', answerTo: 'm1' });
   });
 
   it('opens only links written in the HTML: a Workspace one inside, never one a script made up', async () => {

@@ -87,9 +87,13 @@ function useNear(margin: string): [(node: HTMLDivElement | null) => void, boolea
     observer.current?.disconnect();
     observer.current = null;
     if (!node || near || typeof IntersectionObserver === 'undefined') return;
+    // Against the conversation's own scrolling pane when there is one: a
+    // margin on the viewport does not reach past a scroll container's clip,
+    // so without it a frame was built only once it was already on screen.
+    const pane = node.closest('.chatpane');
     observer.current = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) { setNear(true); observer.current?.disconnect(); }
-    }, { rootMargin: margin });
+    }, { root: pane, rootMargin: margin });
     observer.current.observe(node);
   }, [margin, near]);
   return [ref, near];

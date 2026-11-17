@@ -2069,26 +2069,33 @@ describe('the recap line\'s summary (note #945)', () => {
   });
 });
 
-describe('Answering an HTML reply (note #1186): the person\'s tap is their message, once, on the newest reply', () => {
-  it('records the answer on the reply it names, tells the turn it came through the HTML, and refuses a second or an old one', async () => {
+describe('Answering an HTML reply (notes #1186, #1189): the person\'s tap is their message, once, on any reply since the fresh chat', () => {
+  it('records the answer on the reply it names, tells the turn which reply it answers even after newer ones, and refuses a second or one from before a fresh chat', async () => {
     const ask = '<p>Which one?</p><button data-reply="Ship A">A</button><button data-reply="Ship B">B</button>';
-    const x = await setup([ask, '<p>Shipping A.</p>', '<p>Done.</p>']);
+    const x = await setup([ask, '<p>Noted.</p>', '<p>Shipping A.</p>', '<p>Done.</p>']);
     await x.chat.send('u1', x.org, 'request-0001', 'What should we ship?'); await x.done();
     const reply = (await x.chat.read('u1', x.org)).messages.find((m) => m.role === 'assistant')!;
     expect(reply.text).toBe(ask);
-    await x.chat.send('u1', x.org, 'request-0002', 'Ship A', [], reply.id); await x.done();
+    // A typed message and a newer reply in between no longer lock it (note #1189).
+    await x.chat.send('u1', x.org, 'request-0002', 'One more thing first'); await x.done();
+    await x.chat.send('u1', x.org, 'request-0003', 'Ship A', [], reply.id); await x.done();
     const after = (await x.chat.read('u1', x.org)).messages;
     expect(after.find((m) => m.role === 'owner' && m.text === 'Ship A')).toMatchObject({ answerTo: reply.id });
-    const prompt = x.model.mock.calls[1]![2] as string;
+    const prompt = x.model.mock.calls[2]![2] as string;
     expect(prompt).toContain('"text":"Ship A"');
-    expect(prompt).toContain('"via":"your-html-reply"');
+    expect(prompt).toContain(`"via":"your-html-reply","answersReply":{"at":"${reply.at}","words":"Which one? [A] [B]"}`);
     // Its own HTML comes back to it as its words, not its tags.
     expect(prompt).toContain('"text":"Which one?\\n[A] [B]"');
-    await expect(x.chat.send('u1', x.org, 'request-0003', 'Ship B', [], reply.id)).rejects.toMatchObject({ status: 409 });
-    await x.chat.send('u1', x.org, 'request-0004', 'Thanks'); await x.done();
-    const older = (await x.chat.read('u1', x.org)).messages.filter((m) => m.role === 'assistant')[1]!;
-    await expect(x.chat.send('u1', x.org, 'request-0005', 'Again', [], older.id)).rejects.toMatchObject({ status: 409 });
+    await expect(x.chat.send('u1', x.org, 'request-0004', 'Ship B', [], reply.id)).rejects.toMatchObject({ status: 409 });
     await expect(x.chat.send('u1', x.org, 'request-0006', 'Bad', [], 'not an id!')).rejects.toMatchObject({ status: 400 });
+    // A fresh chat ends it: the conversation the reply belonged to is gone.
+    const noted = (await x.chat.read('u1', x.org)).messages.filter((m) => m.role === 'assistant')[1]!;
+    const state = await (x.chat as unknown as { load(u: string, o: string): Promise<{ messages: Array<Record<string, unknown>> }> }).load('u1', x.org);
+    noted.text = '<p>Noted.</p><button data-reply="ok">ok</button>';
+    state.messages = state.messages.map((m) => (m.id === noted.id ? { ...m, text: noted.text } : m));
+    state.messages.push({ id: 'divider-1', role: 'action', text: '', at: new Date().toISOString(), kind: 'new-chat-divider' });
+    await (x.chat as unknown as { save(u: string, o: string, s: unknown): Promise<void> }).save('u1', x.org, state);
+    await expect(x.chat.send('u1', x.org, 'request-0007', 'ok', [], noted.id)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('fresh chat') });
     expect(x.model).toHaveBeenCalledTimes(3);
   });
 });
