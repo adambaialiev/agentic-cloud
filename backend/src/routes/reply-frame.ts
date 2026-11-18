@@ -30,6 +30,14 @@
  *    `frame-src` allows any https page, for PDFs), could send what a person
  *    typed to any address by setting its own `location`.
  *
+ * Since note #1193 the WHOLE reply runs here whenever any part of it styles
+ * itself, runs or asks: the Workspace no longer lifts the opening words out
+ * and sets them itself. Nothing about the walls changed with that; there is
+ * only more of the reply behind them. The frame also says, once, that the
+ * person touched it (`{ t: 'touched' }`, a tap, a key or a change, and
+ * nothing about which), so the Workspace knows not to let go of a frame
+ * that holds something they typed when it is scrolled far away.
+ *
  * The way out is `postMessage`, and only to the parent. The inner frame's
  * bridge turns a tap on a `data-reply` button, a submitted form, or a call to
  * `agentbuilt.reply(text)` into `{ t: 'reply', text }`; this document checks
@@ -79,6 +87,8 @@ export const REPLY_FRAME_CONTENT_SECURITY_POLICY = [
  * bridge. An agent's own `<style>` comes later in the document and wins.
  * The empty float at the top right keeps the first line clear of the
  * Workspace's close mark, which sits over that corner of the card (note #1188).
+ * The page is transparent over the card's white, and stays inside the card's
+ * padding: a reply can colour itself, never the card's edge.
  */
 const INNER_STYLE = `
 :root{color-scheme:light;--text:#1f1e1d;--hint:#686762;--accent:#1a68d8;--card:#efefef;--border:rgba(104,103,98,.28)}
@@ -137,6 +147,8 @@ function measure(){post({t:'h',h:Math.ceil(root.getBoundingClientRect().height)}
 if(window.ResizeObserver)new ResizeObserver(measure).observe(root);
 document.addEventListener('DOMContentLoaded',measure);addEventListener('load',measure);setTimeout(measure,0);
 if(state!=='live')addEventListener('DOMContentLoaded',lock);
+var touched=false;function touch(){if(touched)return;touched=true;post({t:'touched'})}
+['pointerdown','keydown','input','change'].forEach(function(n){document.addEventListener(n,touch,true)});
 })();`;
 
 /** The outer document. It has no words of its own: it waits for the
@@ -169,7 +181,8 @@ return}
 if(!frame||e.source!==frame.contentWindow)return;
 if(d.t==='h'&&typeof d.h==='number'&&d.h>=0){var h=Math.min(20000,Math.ceil(d.h));frame.style.height=h+'px';up({t:'h',h:h})}
 else if(d.t==='reply'&&typeof d.text==='string'){up({t:'reply',text:d.text.slice(0,MAX)})}
-else if(d.t==='open'&&typeof d.href==='string'){up({t:'open',href:d.href.slice(0,4000)})}});
+else if(d.t==='open'&&typeof d.href==='string'){up({t:'open',href:d.href.slice(0,4000)})}
+else if(d.t==='touched'){up({t:'touched'})}});
 up({t:'ready'});void esc;
 })();</script></body></html>`;
 }

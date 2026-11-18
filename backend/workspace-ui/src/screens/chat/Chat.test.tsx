@@ -2889,7 +2889,8 @@ describe('an agent\'s HTML reply (note #1191)', () => {
     });
     await head();
     await waitFor(() => expect(log().querySelector('.chathtmlui iframe')).not.toBeNull());
-    await waitFor(() => expect(log().querySelector('.chathtml .kpage p')?.textContent).toBe('Six questions.'));
+    // Note #1193: the whole reply is in the card; none of it is set beside it.
+    expect(log().querySelector('.chatmsg.html .kpage')).toBeNull();
     expect(log().querySelector('strong')?.textContent).toBe('Markdown');
     const frame = log().querySelector<HTMLIFrameElement>('.chathtmlui iframe')!;
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
@@ -2898,5 +2899,27 @@ describe('an agent\'s HTML reply (note #1191)', () => {
     await says({ t: 'reply', text: 'q1: on again' });
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({ message: 'q1: on', answerTo: 1 });
+  });
+});
+
+describe('the lines an agent writes while it works (note #1193)', () => {
+  it('draws the plain lines before the turn\'s HTML reply quiet, and leaves a turn answered in Markdown as it always was', async () => {
+    const at = new Date().toISOString();
+    open(() => ({ messages: [
+      chatMessage({ seq: 1, role: 'owner', text: 'Old question', at }),
+      chatMessage({ seq: 2, role: 'agent', text: 'Looking at the old way.', at }),
+      chatMessage({ seq: 3, role: 'agent', text: 'An **old** Markdown answer.', at }),
+      chatMessage({ seq: 4, role: 'owner', text: 'Ship it', at }),
+      chatMessage({ seq: 5, role: 'agent', text: 'Reading the note first.', at }),
+      chatMessage({ seq: 6, role: 'agent', text: 'Tests pass; opening the proposal.', at }),
+      chatMessage({ seq: 7, role: 'agent', text: '<h3>Shipped</h3><p>It is live.</p>', at }),
+    ], working: false }));
+    await head();
+    await waitFor(() => expect(rows()).toHaveLength(7));
+    const quiet = [...log().querySelectorAll('.chatmsg.agent.progress')].map((row) => row.textContent);
+    expect(quiet).toEqual(['Reading the note first.', 'Tests pass; opening the proposal.']);
+    // Still words on the page, through the same renderer, with their clock.
+    expect(log().querySelector('.chatmsg.agent.progress .chatmarkdown')).not.toBeNull();
+    expect(log().querySelector('.chatmsg.agent.progress')!.getAttribute('data-time')).toBeTruthy();
   });
 });

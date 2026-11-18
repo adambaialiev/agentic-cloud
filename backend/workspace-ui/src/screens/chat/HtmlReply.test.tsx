@@ -4,8 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RecapChatAnswer, RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
 import { App } from '../../App.js';
 import { emptyState, scriptedApi, workspaceScript } from '../../test/fixtures.js';
-import { htmlReplyNeedsFrame } from '../../../../src/shared/agent-html.js';
-import { linksAsWritten, REPLY_FRAME_SRC, splitHtmlReply } from './html-reply-links.js';
+import { forgetFrameHeights, linksAsWritten, REPLY_FRAME_SRC } from './html-reply-links.js';
 import { fireEvent } from '@testing-library/react';
 
 /**
@@ -22,7 +21,7 @@ function Address() {
   const location = useLocation();
   return <div data-testid="address">{location.pathname}</div>;
 }
-afterEach(() => { document.body.classList.remove('agent-chat-open'); window.localStorage.clear(); });
+afterEach(() => { document.body.classList.remove('agent-chat-open'); window.localStorage.clear(); forgetFrameHeights(); });
 
 function mount(messages: RecapMessage[]) {
   const sent: unknown[] = [];
@@ -60,10 +59,11 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     const frame = asks!.querySelector('iframe')!;
     expect(frame.getAttribute('src')).toBe(REPLY_FRAME_SRC);
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
-    // Since note #1188 the words a reply opens with stand on the page, and its UI in a card.
-    // The words are built in an effect: wait for them, never read the first paint.
-    await waitFor(() => expect(asks!.querySelector('.chathtml')?.textContent).toContain('Which one?'));
+    // Since note #1193 the whole reply is the card: none of its words are set
+    // by the Workspace beside it.
     expect(asks!.querySelector('.chathtmlui iframe')).toBe(frame);
+    expect(asks!.querySelector('.kpage')).toBeNull();
+    expect(asks!.textContent).not.toContain('Which one?');
   });
 
   it('draws words-only HTML with the allowlisted renderer, and its Workspace link opens inside', async () => {
@@ -120,28 +120,145 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
   });
 });
 
-describe('the UI a reply carries sits in a card with a quiet close (note #1188)', () => {
-  it('splits the words a reply opens with from the UI it sends; a leading style keeps the whole reply as UI', () => {
-    expect(splitHtmlReply('<p>Pick one.</p><form><input name="a"><button>Go</button></form><p>Or type.</p>', htmlReplyNeedsFrame))
-      .toEqual({ words: '<p>Pick one.</p>', ui: '<form><input name="a"><button>Go</button></form><p>Or type.</p>' });
-    expect(splitHtmlReply('<p>Only words.</p>', htmlReplyNeedsFrame)).toEqual({ words: '<p>Only words.</p>', ui: '' });
-    const styled = '<style>p{color:red}</style><p>x</p><button data-reply="y">y</button>';
-    expect(splitHtmlReply(styled, htmlReplyNeedsFrame)).toEqual({ words: '', ui: styled });
-    expect(splitHtmlReply('<button data-reply="y">y</button>', htmlReplyNeedsFrame)).toEqual({ words: '', ui: '<button data-reply="y">y</button>' });
+/** What the frame was handed: the reply as the page inside will draw it. */
+async function handedTo(frame: HTMLIFrameElement): Promise<string[]> {
+  const shown: string[] = [];
+  frame.contentWindow!.postMessage = ((data: { t?: string; html?: string }) => { if (data.t === 'show') shown.push(data.html ?? ''); }) as never;
+  await frameSays(frame, { t: 'ready' });
+  return shown;
+}
+
+describe('a reply is one surface, drawn whole as the agent laid it out (note #1193)', () => {
+  it('hands the WHOLE reply to the frame, opening words and closing words included, and sets none of it beside the card', async () => {
+    const whole = '<p>Agreed. Theo designed the rest.</p><button data-reply="Elias">Give it to Elias now</button><button data-reply="Theo">Wait for Theo</button><p>My own chat is half full.</p>';
+    mount([{ id: 'm1', role: 'assistant', text: whole, at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const row = document.querySelector('#recapChatLog .chatmsg.html')!;
+    expect(await handedTo(row.querySelector('iframe')!)).toEqual([whole]);
+    // The row is the card and nothing else: no words by the Workspace.
+    expect([...row.children].map((child) => child.className)).toEqual(['chathtmlui']);
+    expect(row.querySelector('.kpage, .chatmarkdown')).toBeNull();
   });
 
-  it('draws the words on the page and the UI in a card whose close mark is the Workspace\'s; closing sends nothing, Show brings it back, and it stays closed when drawn again', async () => {
+  it('keeps a reply of words alone on the page, with no frame and no card; and a reply that is not HTML as words, never an empty space', async () => {
+    mount([
+      { id: 'm1', role: 'assistant', text: '<h3>Done</h3><p>It is live.</p>', at: now },
+      { id: 'm2', role: 'assistant', text: 'API Error: 529 overloaded', at: now },
+    ]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtml .kpage h3')?.textContent).toBe('Done'));
+    expect(document.querySelector('#recapChatLog iframe, #recapChatLog .chathtmlui')).toBeNull();
+    const [, plain] = [...document.querySelectorAll('#recapChatLog .chatmsg.rich')];
+    expect(plain!.classList.contains('html')).toBe(false);
+    expect(plain!.querySelector('.chatmarkdown')?.textContent).toBe('API Error: 529 overloaded');
+  });
+
+  it('draws a sentence written before the first tag at the top of the same card, and hands the frame the HTML', async () => {
+    const html = '<form><label><input type="checkbox" name="q1"> One</label><button>Send</button></form>';
+    mount([{ id: 'm1', role: 'assistant', text: `Six decisions are **open**:\n\n${html}`, at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const card = document.querySelector('#recapChatLog .chathtmlui')!;
+    expect(card.querySelector(':scope > .chathtmllead strong')?.textContent).toBe('open');
+    expect(card.firstElementChild!.classList.contains('chathtmllead')).toBe(true);
+    expect(await handedTo(card.querySelector('iframe')!)).toEqual([html]);
+    expect(card.parentElement!.children).toHaveLength(1);
+  });
+
+  it('remembers a frame\'s height on the device, so a conversation opened again holds each reply\'s place', async () => {
+    const reply: RecapMessage = { id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now };
+    mount([reply]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    await frameSays(document.querySelector<HTMLIFrameElement>('#recapChatLog iframe')!, { t: 'h', h: 310 });
+    await waitFor(() => expect(window.localStorage.getItem('acc.htmlReplyHeights')).toContain('310'), { timeout: 2000 });
+    document.body.innerHTML = '';
+    forgetFrameHeights();
+    mount([reply]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlframe')).not.toBeNull());
+    const box = document.querySelector<HTMLElement>('#recapChatLog .chathtmlframe')!;
+    // Still loading: the placeholder stands at the height the page had.
+    expect(box.classList.contains('waiting')).toBe(true);
+    expect(box.style.minHeight).toBe('310px');
+  });
+});
+
+describe('a framed reply far from the screen (note #1193)', () => {
+  type Seen = { callback: IntersectionObserverCallback; margin: string; node?: Element };
+  let seen: Seen[] = [];
+  const real = globalThis.IntersectionObserver;
+  afterEach(() => { globalThis.IntersectionObserver = real; seen = []; });
+  const says = (margin: string, isIntersecting: boolean) => act(async () => {
+    for (const observer of seen.filter((entry) => entry.margin === margin && entry.node)) {
+      observer.callback([{ isIntersecting, target: observer.node! } as IntersectionObserverEntry], {} as IntersectionObserver);
+    }
+  });
+
+  it('is built when it comes near, let go when it is far and untouched, held at its height, and kept once the person has touched it', async () => {
+    globalThis.IntersectionObserver = class {
+      private readonly entry: Seen;
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) { this.entry = { callback, margin: options?.rootMargin ?? '' }; seen.push(this.entry); }
+      observe(node: Element) { this.entry.node = node; }
+      disconnect() { this.entry.node = undefined; }
+      unobserve() { /* unused */ }
+      takeRecords() { return []; }
+    } as unknown as typeof IntersectionObserver;
+    mount([{ id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlframe')).not.toBeNull());
+    const box = document.querySelector<HTMLElement>('#recapChatLog .chathtmlframe')!;
+    // jsdom lays nothing out: say the row is on a visible screen.
+    Object.defineProperty(box, 'offsetParent', { configurable: true, get: () => document.body });
+    expect(box.querySelector('iframe')).toBeNull();
+    await says('1200px 0px', true);
+    const first = box.querySelector('iframe')!;
+    expect(first).not.toBeNull();
+    await frameSays(first, { t: 'h', h: 240 });
+    expect(box.style.height).toBe('240px');
+    // Far away, untouched: the frame goes, its place stays.
+    await says('6000px 0px', false);
+    expect(box.querySelector('iframe')).toBeNull();
+    expect(box.style.minHeight).toBe('240px');
+    // Near again: a fresh frame, loading, then shown.
+    await says('1200px 0px', true);
+    const second = box.querySelector('iframe')!;
+    expect(second).not.toBe(first);
+    expect(box.classList.contains('waiting')).toBe(true);
+    await frameSays(second, { t: 'h', h: 240 });
+    expect(box.classList.contains('waiting')).toBe(false);
+    // Touched: what the person typed lives only in this frame, so it stays.
+    await frameSays(second, { t: 'touched' });
+    await says('6000px 0px', false);
+    expect(box.querySelector('iframe')).toBe(second);
+  });
+
+  it('keeps every frame of a screen that is hidden rather than scrolled away', async () => {
+    globalThis.IntersectionObserver = class {
+      private readonly entry: Seen;
+      constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) { this.entry = { callback, margin: options?.rootMargin ?? '' }; seen.push(this.entry); }
+      observe(node: Element) { this.entry.node = node; }
+      disconnect() { this.entry.node = undefined; }
+      unobserve() { /* unused */ }
+      takeRecords() { return []; }
+    } as unknown as typeof IntersectionObserver;
+    mount([{ id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlframe')).not.toBeNull());
+    const box = document.querySelector<HTMLElement>('#recapChatLog .chathtmlframe')!;
+    await says('1200px 0px', true);
+    const frame = box.querySelector('iframe')!;
+    // jsdom's offsetParent is null, which is what a hidden screen's is.
+    await says('6000px 0px', false);
+    expect(box.querySelector('iframe')).toBe(frame);
+  });
+});
+
+describe('the card a framed reply sits in has a quiet close (note #1188)', () => {
+  it('closes the whole reply with the Workspace\'s own mark; closing sends nothing, the line left says how it began, Show brings it back, and it stays closed when drawn again', async () => {
     const reply: RecapMessage = { id: 'm1', role: 'assistant', text: '<p>Pick one.</p><button data-reply="A">A</button>', at: now };
     const first = mount([reply]);
     await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
     const row = document.querySelector('#recapChatLog .chatmsg.html')!;
-    await waitFor(() => expect(row.querySelector('.chathtml .kpage p')?.textContent).toBe('Pick one.'));
     const close = row.querySelector<HTMLButtonElement>('.chathtmlui > .chathtmlclose')!;
     expect(close.getAttribute('aria-label')).toBe('Hide this');
     await act(async () => fireEvent.click(close));
     expect(row.querySelector('.chathtmlui')).toBeNull();
-    expect(row.querySelector('.chathtml .kpage p')?.textContent).toBe('Pick one.');
-    expect(row.querySelector('.chathtmlhidden')?.textContent).toBe('HiddenShow');
+    expect([...row.querySelector('.chathtmlhidden')!.children].map((child) => child.textContent)).toEqual(['Hidden', 'Pick one. [A]', 'Show']);
     expect(first.sent).toEqual([]);
     await act(async () => fireEvent.click(row.querySelector('.chathtmlshow')!));
     expect(row.querySelector('.chathtmlui iframe')).not.toBeNull();

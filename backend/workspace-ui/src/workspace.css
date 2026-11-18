@@ -1291,16 +1291,18 @@ body.agent-chat-open .home-loading {
 }
 .chatmsg .chathtmlretry { color: var(--accent); padding: 4px 0; }
 .chatmsg .chathtmlframe iframe { display: block; width: 100%; border: 0; background: transparent; }
-/* The UI a reply carries sits in a card of its own (note #1188): the words
-   the reply opens with stay on the page, and the form or the buttons read as
-   one piece the agent sent. The close mark is the Workspace's, outside the
-   frame, small and in the hint colour so it never competes with the form's
-   own button; the frame's page leaves its first line clear of it. */
+/* A reply that styles itself, runs or asks sits WHOLE in a card of its own
+   (note #1188; whole since note #1193, when the Workspace stopped lifting
+   its opening words out and setting them beside it). The border is the
+   Workspace's and is the mark that the agent drew what is inside: nothing of
+   the platform's is ever drawn in one. The close mark is the Workspace's
+   too, outside the frame, small and in the hint colour so it never competes
+   with the form's own button; the frame's page leaves its first line clear
+   of it, and so does a sentence the agent wrote before its first tag. */
 .chatmsg .chathtmlui {
   position: relative; margin-top: 10px; padding: 12px 14px;
   background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg);
 }
-.chatmsg .chathtml + .chathtmlui { margin-top: 12px; }
 .chatmsg .chathtml:only-child, .chatmsg .chathtmlui:first-child { margin-top: 0; }
 .chatmsg .chathtmlclose {
   position: absolute; top: 4px; right: 4px; width: 32px; height: 32px;
@@ -1313,6 +1315,9 @@ body.agent-chat-open .home-loading {
   font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
 }
 .chatmsg .chathtmlshow { color: var(--accent); padding: 4px 0; }
+/* How the hidden reply began, on one line: enough to know which it was. */
+.chatmsg .chathtmlwas { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatmsg .chathtmlui > .chathtmllead { padding-right: 24px; margin-bottom: 9px; }
 /* A file message already stood outside the bubble (note #160); flat, it only
    has to give up the side it was pinned to and the padding that indented it
    from an edge that is no longer there. Its caption keeps its own bubble on

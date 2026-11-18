@@ -16,40 +16,13 @@ export function linksAsWritten(html: string): Set<string> {
 }
 
 /**
- * Note #1188: a reply's words and its UI, apart. The words the reply OPENS
- * with — every top-level node before the first one that runs or asks — are
- * drawn natively, outside the card; from that node on, everything is the UI
- * the agent sent, and runs in the locked frame inside the card. Parsed inert
- * (DOMParser runs nothing). Anything the parser lifts into <head> — a
- * leading <style>, <script>, <meta> or <link> — belongs to the whole page, so
- * then nothing is split off and the whole reply is the UI.
- */
-export function splitHtmlReply(html: string, needsFrame: (part: string) => boolean): { words: string; ui: string } {
-  if (!needsFrame(html)) return { words: html, ui: '' };
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  if (doc.head.childNodes.length) return { words: '', ui: html };
-  const nodes = Array.from(doc.body.childNodes);
-  const serialize = (node: ChildNode): string => {
-    if (node.nodeType === Node.ELEMENT_NODE) return (node as Element).outerHTML;
-    if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return '';
-  };
-  let at = 0;
-  for (; at < nodes.length; at += 1) {
-    if (needsFrame(serialize(nodes[at]!))) break;
-  }
-  const words = nodes.slice(0, at).map(serialize).join('').trim();
-  // Nothing found to split at (the asking part was in an attribute the
-  // walk serialised away, say): the whole reply stays the UI, as before.
-  if (at >= nodes.length) return { words: '', ui: html };
-  return { words, ui: nodes.slice(at).map(serialize).join('').trim() };
-}
-
-/**
- * Which replies' UI the person closed (note #1188), on this device: closing
- * only hides it — nothing is sent and no turn starts — and the reply keeps a
- * quiet way to show it again. Keyed by the UI's own words, so the same
- * reply is the same key whatever its place in the list; the newest 200 kept.
+ * Which framed replies the person closed (note #1188), on this device:
+ * closing only hides it — nothing is sent and no turn starts — and the reply
+ * keeps a quiet way to show it again. Keyed by the reply's own HTML, so the
+ * same reply is the same key whatever its place in the list; the newest 200
+ * kept. Since note #1193 the key is of the whole reply, not of the part that
+ * used to be split off as its UI, so a card closed before that change shows
+ * once more.
  */
 const CLOSED_KEY = 'acc.htmlReplyClosed';
 const CLOSED_MAX = 200;
@@ -75,4 +48,57 @@ export function setHtmlUiClosed(key: string, closed: boolean): void {
   const rest = readClosed().filter((entry) => entry !== key);
   const next = closed ? [...rest, key].slice(-CLOSED_MAX) : rest;
   try { window.localStorage.setItem(CLOSED_KEY, JSON.stringify(next)); } catch { /* private mode: closed for this view only */ }
+}
+
+/**
+ * A framed reply's last measured height, on this device (note #1193). Since
+ * every reply may be a frame, a conversation opened again would otherwise be
+ * drawn as a column of small placeholders that each grow as its frame
+ * reports in, under the reader's thumb. Keyed by the reply's own HTML and the
+ * window's width, because the same page is a different height on a phone
+ * and at a desk; the newest 300 kept, written a moment after the last change
+ * rather than on every report a resizing page sends.
+ */
+const HEIGHTS_KEY = 'acc.htmlReplyHeights';
+const HEIGHTS_MAX = 300;
+let heights: Map<string, number> | null = null;
+let heightsSave: number | undefined;
+
+function heightsHeld(): Map<string, number> {
+  if (heights) return heights;
+  heights = new Map();
+  try {
+    const raw: unknown = JSON.parse(window.localStorage.getItem(HEIGHTS_KEY) ?? '[]');
+    if (Array.isArray(raw)) {
+      for (const entry of raw) {
+        if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'number' && Number.isFinite(entry[1])) heights.set(entry[0], entry[1]);
+      }
+    }
+  } catch { /* nothing kept: frames start small, as they did */ }
+  return heights;
+}
+
+const heightKeyOf = (key: string): string => `${key}@${window.innerWidth}`;
+
+export function rememberedFrameHeight(key: string): number | undefined {
+  return heightsHeld().get(heightKeyOf(key));
+}
+
+export function rememberFrameHeight(key: string, height: number): void {
+  const held = heightsHeld();
+  const at = heightKeyOf(key);
+  if (held.get(at) === height) return;
+  // Newest last, so the oldest are the ones that leave.
+  held.delete(at);
+  held.set(at, height);
+  window.clearTimeout(heightsSave);
+  heightsSave = window.setTimeout(() => {
+    try { window.localStorage.setItem(HEIGHTS_KEY, JSON.stringify([...held].slice(-HEIGHTS_MAX))); } catch { /* private mode: held for this view only */ }
+  }, 400);
+}
+
+/** For tests: forget what this page session holds. */
+export function forgetFrameHeights(): void {
+  window.clearTimeout(heightsSave);
+  heights = null;
 }

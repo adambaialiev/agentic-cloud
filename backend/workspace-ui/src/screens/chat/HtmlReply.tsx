@@ -1,36 +1,53 @@
 /**
- * The Chief of Staff's reply when it is HTML (note #1186).
+ * An agent's reply when it is HTML (notes #1186, #1191, #1193).
  *
- * Adam, 16 Nov 2026: the Chief of Staff answers in interactive HTML, not
- * Markdown, and what the person taps or fills in goes back to it as their
- * answer — in the Chief of Staff's chat only ("chief of staff only,
- * actually"). Every other agent's chat keeps Markdown.
+ * Adam, 16 Nov 2026: the Chief of Staff answers in interactive HTML, and
+ * what the person taps or fills in goes back to it as their answer; 18 Nov,
+ * every agent may. Then, the same day, with a screenshot of one reply drawn
+ * in three layers (four paragraphs set by the Workspace, a card with two
+ * buttons and one stray sentence, a recap repeating both): "let's show agent
+ * generated interactive html only" (note #1193). So a reply is ONE surface,
+ * drawn whole as the agent laid it out. Nothing is lifted out of it and set
+ * beside it any more.
  *
- * Two ways to draw one, chosen by what the HTML asks for:
+ * Two ways to draw one, chosen by what the WHOLE reply asks for:
  *
- *  - WORDS (headings, paragraphs, lists, tables, links, a drawing): built by
- *    the Workspace's own allowlisted renderer, the one a knowledge page and a
- *    note are drawn with. No script, no style, no frame; it reads in the
- *    chat's type and costs nothing.
- *  - ANYTHING THAT RUNS OR ASKS (script, style, a form, a button, a
- *    `data-reply`): the locked frame served at /workspace/reply-frame — see
- *    backend/src/routes/reply-frame.ts for why it is two frames and what each
- *    refuses. This component is the third wall: it listens only to ITS
+ *  - WORDS (headings, paragraphs, lists, tables, links, a drawing, and no
+ *    style, script or control anywhere): built by the Workspace's own
+ *    allowlisted renderer, the one a knowledge page and a note are drawn
+ *    with. No frame, so it reads in the chat's type, selects and searches
+ *    with the page, and costs nothing. It looks as the agent wrote it,
+ *    because words are all it wrote.
+ *  - ANYTHING THAT STYLES ITSELF, RUNS OR ASKS (style, script, a form, a
+ *    button, a `data-reply`): the whole reply, opening words included, in
+ *    the locked frame served at /workspace/reply-frame — see
+ *    backend/src/routes/reply-frame.ts for why it is two frames and what
+ *    each refuses. This component is the third wall: it listens only to ITS
  *    frame, takes one answer per reply and only while the reply is live, and
  *    opens only links that were in the HTML as written.
+ *
+ * The frame always sits in a card the Workspace draws (note #1188), and that
+ * card is the safety line of this redesign, not decoration. Everything an
+ * agent can style is inside its border, on every side and at every scroll
+ * position; everything that is the platform's (a proposal card, the Send
+ * email confirmation, a stopped or fresh-chat line, an attached file, the
+ * person's own bubble) is drawn outside any such card. An agent reads mail
+ * and web pages strangers wrote, so its HTML is a stranger's: it may draw
+ * what it likes, and it cannot draw it where the platform speaks.
  *
  * A link to a Workspace screen (`/workspace/notes/12?org=…`, the path a
  * command printed) opens inside the Workspace from either way of drawing.
  */
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { htmlReplyNeedsFrame, htmlReplyParts, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
+import { htmlReplyNeedsFrame, htmlReplyParts, replyOpening, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
 import { KnowledgeHtml } from '../../render/KnowledgeHtml.js';
 import { Markdown, workspaceLinkTo } from '../../render/Markdown.js';
 import type { NoteRefs } from '../../render/note-refs.js';
 import { plainClick } from '../../ui/link-click.js';
-import { htmlUiKey, isHtmlUiClosed, linksAsWritten, REPLY_FRAME_SRC, setHtmlUiClosed, splitHtmlReply } from './html-reply-links.js';
+import { htmlUiKey, isHtmlUiClosed, linksAsWritten, rememberedFrameHeight, rememberFrameHeight, REPLY_FRAME_SRC, setHtmlUiClosed } from './html-reply-links.js';
 import { Svg } from '../../ui/icons.js';
 import { jsonBody } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
@@ -41,10 +58,10 @@ const FRAME_START_PX = 48;
 const FRAME_MAX_PX = 20_000;
 /** How far below the fold a frame is built before it is scrolled to. */
 const FRAME_NEAR_MARGIN = '1200px 0px';
-
-/** Each reply's last measured height, so a frame built again (the screen
- *  left and came back) reserves its place instead of growing into it. */
-const heights = new Map<string, number>();
+/** How far from the screen a frame nobody touched is let go again (note
+ *  #1193): since every reply may be a frame, a long conversation read to its
+ *  top would otherwise keep two documents alive per reply, on a phone. */
+const FRAME_FAR_MARGIN = '6000px 0px';
 
 /** The Workspace path a link in a reply leads to, or null when it leaves. */
 function workspacePathOf(href: string): string | null {
@@ -81,23 +98,79 @@ function HtmlWords({ source, notes }: { source: string; notes: NoteRefs }) {
   );
 }
 
-/** Built once the reply is near the screen, and kept from then on. */
-function useNear(margin: string): [(node: HTMLDivElement | null) => void, boolean] {
+/**
+ * The reader's place, held while a frame above it grows (note #1193).
+ *
+ * Every reply above the screen is first measured as it comes near, on the
+ * way up a conversation, and a frame that grows above what is being read
+ * pushes the page down under the reader's thumb. Chrome kept the place by
+ * itself here; Safari's engine did not, and a row moved by more than a
+ * screen (measured in WebKit at phone size, 120 framed replies). So the
+ * Workspace does not leave it to the browser: before a frame above the
+ * screen takes a new height, a row on screen and where it stands are noted;
+ * the height is then drawn at once (`flushSync`), and the pane is moved by
+ * exactly what that row moved, all in the one task, so no scroll of the
+ * reader's falls in between and is undone. Where the browser already held
+ * the place, the row has not moved and nothing is done.
+ */
+interface Place { pane: HTMLElement; row: Element; top: number }
+
+function placeOf(box: HTMLElement | null): Place | null {
+  const pane = box?.closest<HTMLElement>('.chatpane');
+  if (!box || !pane) return null;
+  const view = pane.getBoundingClientRect();
+  // Growing on screen or below it moves only what is under it, as any new
+  // row does; the end of the conversation is followed by the screen itself.
+  if (!view.height || box.getBoundingClientRect().top >= view.top) return null;
+  // A row on screen, near its top: a few tries, because a point may fall in
+  // the gap between two rows.
+  for (const down of [24, 64, 104, 144, 200]) {
+    if (down >= view.height) break;
+    const row = document.elementFromPoint(view.left + view.width / 2, view.top + down)?.closest('.chatmsg, .chatday');
+    if (row && pane.contains(row)) return { pane, row, top: row.getBoundingClientRect().top };
+  }
+  return null;
+}
+
+function keepPlace(place: Place): void {
+  if (!place.pane.contains(place.row)) return;
+  const moved = place.row.getBoundingClientRect().top - place.top;
+  if (Math.abs(moved) >= 1) place.pane.scrollTop += moved;
+}
+
+/**
+ * Built when the reply comes near the screen, and let go again when it is
+ * far from it and `keep` says nothing would be lost (note #1193). Its place
+ * is held at its last height meanwhile (`rememberedFrameHeight`), so the
+ * conversation does not move, and coming near again builds it afresh.
+ */
+function useNear(margin: string, farMargin: string, keep: () => boolean): [(node: HTMLDivElement | null) => void, boolean] {
   const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
-  const observer = useRef<IntersectionObserver | null>(null);
+  const observers = useRef<IntersectionObserver[]>([]);
+  const keepNow = useRef(keep);
+  useLayoutEffect(() => { keepNow.current = keep; }, [keep]);
   const ref = useCallback((node: HTMLDivElement | null) => {
-    observer.current?.disconnect();
-    observer.current = null;
-    if (!node || near || typeof IntersectionObserver === 'undefined') return;
+    for (const observer of observers.current) observer.disconnect();
+    observers.current = [];
+    if (!node || typeof IntersectionObserver === 'undefined') return;
     // Against the conversation's own scrolling pane when there is one: a
     // margin on the viewport does not reach past a scroll container's clip,
     // so without it a frame was built only once it was already on screen.
     const pane = node.closest('.chatpane');
-    observer.current = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) { setNear(true); observer.current?.disconnect(); }
+    const build = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) setNear(true);
     }, { root: pane, rootMargin: margin });
-    observer.current.observe(node);
-  }, [margin, near]);
+    const drop = new IntersectionObserver((entries) => {
+      const last = entries[entries.length - 1];
+      // A screen that is hidden (not scrolled away) intersects nothing
+      // either: that is not "far", and its frames stay.
+      if (!last || last.isIntersecting || node.offsetParent === null || keepNow.current()) return;
+      setNear(false);
+    }, { root: pane, rootMargin: farMargin });
+    build.observe(node);
+    drop.observe(node);
+    observers.current = [build, drop];
+  }, [margin, farMargin]);
   return [ref, near];
 }
 
@@ -122,17 +195,26 @@ function frameFetchTiming(): { fetch?: number; transfer?: number } {
   } catch { return {}; }
 }
 
-function HtmlFrame({ source, replyKey, state, onAnswer }: {
+function HtmlFrame({ source, state, onAnswer }: {
   source: string;
-  replyKey: string;
   state: HtmlReplyAnswerState;
   onAnswer?: (text: string) => void;
 }) {
   const navigate = useNavigate();
   const { api } = useSession();
   const frame = useRef<HTMLIFrameElement | null>(null);
-  const [height, setHeight] = useState(() => heights.get(replyKey) ?? FRAME_START_PX);
-  const [nearRef, near] = useNear(FRAME_NEAR_MARGIN);
+  // Its last measured height at this screen width, kept on the device, so a
+  // frame built again (the screen left and came back, the page reloaded, the
+  // frame let go while far away) reserves its place instead of growing into it.
+  const heightKey = useMemo(() => htmlUiKey(source), [source]);
+  const [height, setHeight] = useState(() => rememberedFrameHeight(heightKey) ?? FRAME_START_PX);
+  // Touched by the person (a tap, a key, focus inside): from then on the
+  // frame is kept wherever the conversation scrolls, because what they typed
+  // or opened in it lives nowhere else (note #1189).
+  const heightNow = useRef(height);
+  const touched = useRef(false);
+  const keep = useCallback(() => touched.current || document.activeElement === frame.current, []);
+  const [nearRef, near] = useNear(FRAME_NEAR_MARGIN, FRAME_FAR_MARGIN, keep);
   // Note #1192: nothing of the frame is shown until its page has said how
   // tall it is — until then the card holds a quiet placeholder, so a frame
   // the browser has not painted yet (black, on Adam's phone) is never seen.
@@ -202,16 +284,24 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
         show();
       } else if (message.t === 'h' && typeof message.h === 'number' && Number.isFinite(message.h)) {
         const next = Math.max(0, Math.min(FRAME_MAX_PX, Math.ceil(message.h)));
-        heights.set(replyKey, next);
-        setHeight(next);
-        if (phaseNow.current !== 'shown') {
+        rememberFrameHeight(heightKey, next);
+        const showing = phaseNow.current !== 'shown';
+        if (showing) {
           // Shown after all, late or after the card gave up: written down
           // with the step that took the time.
           const took = since();
           if (phaseNow.current === 'failed' || took > FRAME_SLOW_MS) { timing.current.reported = false; report('slow', took); }
-          setPhase('shown');
         }
+        const draw = () => { setHeight(next); if (showing) setPhase('shown'); };
+        // A frame above what is being read: its new height is drawn here and
+        // now, and the reader's place given back, before anything can scroll.
+        const place = showing || next !== heightNow.current ? placeOf(box.current) : null;
+        heightNow.current = next;
+        if (place) { flushSync(draw); keepPlace(place); } else draw();
+      } else if (message.t === 'touched') {
+        touched.current = true;
       } else if (message.t === 'reply' && typeof message.text === 'string') {
+        touched.current = true;
         // One answer per reply, and only while it is the live one: a frame
         // whose script keeps posting is heard once.
         if (live.current.answered || live.current.state !== 'live' || !live.current.onAnswer) return;
@@ -228,7 +318,20 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [near, show, replyKey, links, navigate, report, setPhase]);
+  }, [near, show, heightKey, links, navigate, report, setPhase]);
+
+  // Focus moving into the frame is the person touching it, whatever the page
+  // inside says or does not say: the window blurs with the frame as the
+  // focused element. And a frame let go while far away comes back loading.
+  useEffect(() => {
+    if (!near) { if (phaseNow.current !== 'loading') setPhase('loading'); return; }
+    const onBlur = () => { if (document.activeElement === frame.current) touched.current = true; };
+    window.addEventListener('blur', onBlur);
+    return () => window.removeEventListener('blur', onBlur);
+  }, [near, setPhase]);
+
+  const box = useRef<HTMLDivElement | null>(null);
+  const setBox = useCallback((node: HTMLDivElement | null) => { box.current = node; nearRef(node); }, [nearRef]);
 
   const onLoad = useCallback(() => {
     if (timing.current.loaded < 0 && timing.current.start) timing.current.loaded = Math.round(performance.now() - timing.current.start);
@@ -249,8 +352,8 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
   return (
     <div
       className={`chathtml chathtmlframe${state === 'live' ? '' : ` ${state}`}${shown ? '' : ' waiting'}`}
-      ref={nearRef}
-      style={shown ? { height } : { minHeight: heights.get(replyKey) ?? FRAME_START_PX }}
+      ref={setBox}
+      style={shown ? { height } : { minHeight: height }}
       aria-busy={phase === 'loading' ? true : undefined}
     >
       {phase === 'loading' ? (
@@ -285,21 +388,30 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
 }
 
 /**
- * The UI a reply carries, in a card of its own (note #1188). Adam, 17 Nov
- * 2026: "this UI should have some container and a close button. And the
- * close button just hides this UI that was sent by the agent … button should
- * be subtle". The card and its close mark are the Workspace's own, outside
- * the locked frame, so the agent's page can neither fake nor cover them.
- * Closing hides the card on this device and sends nothing; a quiet line in
- * its place shows it again. Answered and older replies are cards too.
+ * The card a framed reply sits in (note #1188), and since note #1193 the
+ * whole reply sits in it. Adam, 17 Nov 2026: "this UI should have some
+ * container and a close button. And the close button just hides this UI
+ * that was sent by the agent … button should be subtle". The card and its
+ * close mark are the Workspace's own, outside the locked frame, so the
+ * agent's page can neither fake nor cover them.
+ *
+ * Closing hides the reply on this device and sends nothing; since the whole
+ * reply is now what closes, the quiet line left in its place says how it
+ * began, and Show brings it back, still answerable. Answered and older
+ * replies are cards too.
+ *
+ * A sentence the agent wrote BEFORE its first tag (note #1191) is not HTML,
+ * so it is drawn as Markdown, at the top of the same card: one surface.
  */
-function HtmlUi({ ui, replyKey, state, onAnswer }: {
-  ui: string;
-  replyKey: string;
+function HtmlCard({ html, lead, opening, notes, state, onAnswer }: {
+  html: string;
+  lead: string;
+  opening: string;
+  notes: NoteRefs;
   state: HtmlReplyAnswerState;
   onAnswer?: (text: string) => void;
 }) {
-  const key = useMemo(() => htmlUiKey(ui), [ui]);
+  const key = useMemo(() => htmlUiKey(`${lead}\n${html}`), [lead, html]);
   const [closed, setClosed] = useState(() => isHtmlUiClosed(key));
   const close = useCallback(() => { setHtmlUiClosed(key, true); setClosed(true); }, [key]);
   const open = useCallback(() => { setHtmlUiClosed(key, false); setClosed(false); }, [key]);
@@ -307,13 +419,15 @@ function HtmlUi({ ui, replyKey, state, onAnswer }: {
     return (
       <div className="chathtmlhidden">
         <span>Hidden</span>
+        {opening ? <span className="chathtmlwas">{opening}</span> : null}
         <button type="button" className="chathtmlshow" onClick={open}>Show</button>
       </div>
     );
   }
   return (
     <div className={`chathtmlui${state === 'live' ? '' : ` ${state}`}`}>
-      <HtmlFrame source={ui} replyKey={replyKey} state={state} onAnswer={onAnswer} />
+      {lead ? <Markdown source={lead} className="chatmarkdown chathtmllead" notes={notes} workspaceLinks /> : null}
+      <HtmlFrame source={html} state={state} onAnswer={onAnswer} />
       <button type="button" className="chathtmlclose" onClick={close} aria-label="Hide this" title="Hide this">
         <Svg name="x" size={14} />
       </button>
@@ -329,16 +443,11 @@ export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, on
   onAnswer?: (seq: number, text: string) => void;
 }) {
   const answer = useCallback((text: string) => onAnswer?.(seq, text), [onAnswer, seq]);
-  // A Markdown lead-in before the HTML (note #1191) is drawn as Markdown.
   const parts = useMemo(() => htmlReplyParts(source) ?? { lead: '', html: source }, [source]);
-  const { words, ui } = useMemo(() => splitHtmlReply(parts.html, htmlReplyNeedsFrame), [parts.html]);
-  const lead = parts.lead ? <Markdown source={parts.lead} className="chatmarkdown" notes={notes} workspaceLinks /> : null;
-  if (!ui) return <>{lead}<HtmlWords source={parts.html} notes={notes} /></>;
-  return (
-    <>
-      {lead}
-      {words ? <HtmlWords source={words} notes={notes} /> : null}
-      <HtmlUi ui={ui} replyKey={`${seq}:${ui.length}`} state={state} onAnswer={onAnswer ? answer : undefined} />
-    </>
-  );
+  const opening = useMemo(() => replyOpening(source, 80), [source]);
+  // Words alone: the Workspace's own renderer, on the page. A Markdown
+  // lead-in is only ever taken before HTML that asks, so there is none here.
+  if (!htmlReplyNeedsFrame(parts.html)) return <HtmlWords source={parts.html} notes={notes} />;
+  // Anything else: the whole reply, in the locked frame, in one card.
+  return <HtmlCard html={parts.html} lead={parts.lead} opening={opening} notes={notes} state={state} onAnswer={onAnswer ? answer : undefined} />;
 });

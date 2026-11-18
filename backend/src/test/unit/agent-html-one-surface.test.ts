@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { replyFrameDocument } from '../../routes/reply-frame.js';
 import { progressLineSeqs } from '../../shared/agent-html.js';
 
 /**
@@ -44,5 +45,16 @@ describe('which plain lines were written while the agent worked (note #1193)', (
     ]);
     // 1, 3 and 5 were cut off from any HTML reply; 8 and 9 carry files.
     expect([...quiet]).toEqual([7]);
+  });
+});
+
+describe('the reply frame says when the person touched it (note #1193)', () => {
+  it('posts one word, with nothing about what was touched, and the outer frame passes only that word up', () => {
+    const page = replyFrameDocument();
+    // Inside the agent's page: the first tap, key or change, once.
+    expect(page).toContain("function touch(){if(touched)return;touched=true;post({t:'touched'})}");
+    expect(page).toContain("['pointerdown','keydown','input','change'].forEach(function(n){document.addEventListener(n,touch,true)})");
+    // The outer frame builds its own message: nothing the page added rides it.
+    expect(page).toContain("else if(d.t==='touched'){up({t:'touched'})}");
   });
 });
