@@ -685,8 +685,12 @@ function PeerReport({ from, avatarUrl, text, notes, workspaceLinks }: {
  * Everything a row is given is stable across polls — the row object itself is
  * kept by the merge, and the screen holds its callbacks — so this is free.
  */
-export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false, htmlState, onHtmlAnswer }: {
+export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false, htmlState, onHtmlAnswer, progress = false }: {
   row: TranscriptRow;
+  /** Note #1193: a plain line the agent wrote while it worked, before the
+   *  HTML reply that closed the same turn (`progressLineSeqs`). Kept, and
+   *  drawn quiet: the reply is the interface, this is the margin beside it. */
+  progress?: boolean;
   /** Note #1186: this reply is drawn as HTML, and whether it can still be
    *  answered. Given only by the Chief of Staff's chat, and only for a reply
    *  that IS HTML; every other chat leaves it out and draws Markdown. */
@@ -866,7 +870,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpe
     extra = ' rich html';
     body = <HtmlReply source={row.text} seq={row.seq} state={htmlState} notes={notes} onAnswer={onHtmlAnswer} />;
   } else if (role === 'agent') {
-    extra = ' rich';
+    extra = progress ? ' rich progress' : ' rich';
     body = <Markdown source={row.text} className="chatmarkdown" notes={notes} workspaceLinks={workspaceLinks} />;
   } else {
     // The owner's own words are not agent-authored Markdown. Preserve them

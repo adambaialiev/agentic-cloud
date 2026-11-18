@@ -1606,8 +1606,11 @@ describe('the header\'s model and effort while the chat loads (note #735)', () =
   });
 });
 
-/** Note #945: the same recap line under the Chief of Staff's latest request. */
-describe('the recap line under its latest request (note #945)', () => {
+/**
+ * Note #945 put a recap line under the Chief of Staff's latest request; note
+ * #1193 (Adam, 18 Nov 2026) took it out of every chat. It repeated the reply.
+ */
+describe('no recap block under its latest request (note #1193)', () => {
   const ended = { startedAt: new Date(Date.now() - 65_000).toISOString(), endedAt: new Date(Date.now() - 1_000).toISOString() };
   const asked: RecapChatAnswer = {
     orgId: 'o1', working: false, waiting: [],
@@ -1616,38 +1619,16 @@ describe('the recap line under its latest request (note #945)', () => {
       { id: 'a2', role: 'assistant', text: 'Asked Theo; I will tell you when it lands.', at: new Date(Date.now() - 2_000).toISOString() },
     ],
   };
-  const line = () => document.getElementById('recapChatRecap');
 
-  it('stands under the request once it is over, in the reply\'s column, saying whose answer it still waits for — the same look as an agent\'s chat (note #976)', async () => {
+  it('draws the reply and nothing of the recap: no chip, no facts line, no recap words, with the speaker off', async () => {
     mount({ ...asked, waiting: ['Theo'], lastTurn: { ...ended, recap: 'Theo is shipping the booking page. Nothing for you until he reports.' } });
-    await waitFor(() => expect(line()).toBeTruthy());
-    expect(line()!.querySelector('.turnfacts .turnfactswords')!.textContent).toMatch(/^Worked for 1m 4s · done .+ · waiting on Theo$/);
-    expect(line()!.querySelector('.turnfacts .recaptag')!.textContent).toBe('Recap');
-    expect([...line()!.querySelectorAll('.turnrecaptext p')].map((p) => p.textContent)).toEqual(['Theo is shipping the booking page.', 'Nothing for you until he reports.']);
-    expect(line()!.className).toBe('turnrecap');
-    // In the conversation's scroller, after its log: the column's own child.
-    expect(line()!.parentElement!.id).toBe('recapChatScroll');
-    expect(document.getElementById('recapChatLog')!.contains(line())).toBe(false);
-  });
-
-  it('draws no recap before it arrives, then the recap in place when it does', async () => {
-    let answer: RecapChatAnswer = { ...asked, lastTurn: ended };
-    mount(answer, undefined, { 'GET api/recap/chat': () => answer });
-    await waitFor(() => expect(line()).toBeTruthy());
-    expect(line()!.querySelector('.turnrecaptext')).toBeNull();
-    expect(line()!.querySelector('.recaptag')).toBeNull();
-    answer = { ...asked, lastTurn: { ...ended, recap: 'Theo is on it.' } };
-    await waitFor(() => expect(line()!.querySelector('.turnrecaptext')?.textContent).toBe('Theo is on it.'), { timeout: 5000 });
-  });
-
-  it('is absent while a request runs and under the person\'s own newest words', async () => {
-    let answer: RecapChatAnswer = { ...asked, working: true, phase: 'Thinking…', lastTurn: { ...ended, recap: 'Done.' } };
-    mount(answer, undefined, { 'GET api/recap/chat': () => answer });
-    await screen.findByText('Ask Theo to ship the booking page');
-    expect(line()).toBeNull();
-    answer = { ...asked, messages: [...asked.messages, { id: 'a3', role: 'owner', text: 'Thanks', at: new Date().toISOString() }], lastTurn: { ...ended, recap: 'Done.' } };
-    await screen.findByText('Thanks', undefined, { timeout: 5000 });
-    expect(line()).toBeNull();
+    await screen.findByText('Asked Theo; I will tell you when it lands.');
+    expect(document.getElementById('recapChatRecap')).toBeNull();
+    expect(document.querySelector('#recapChatScroll .turnrecap, #recapChatScroll .recaptag')).toBeNull();
+    const pane = document.getElementById('recapChatScroll')!.textContent!;
+    expect(pane).not.toContain('Theo is shipping the booking page');
+    expect(pane).not.toContain('Worked for');
+    expect(pane).not.toContain('waiting on Theo');
   });
 });
 
@@ -1855,9 +1836,10 @@ describe('the recap read aloud (note #1146)', () => {
   it('has no speaker where the workplace has no key, nor where nobody could say', async () => {
     mount(talk, undefined, { 'GET api/voice': () => ({ ...voiceOn, state: 'off' }) });
     await screen.findByText('Ship the pricing page');
-    await waitFor(() => expect(document.getElementById('recapChatRecap')).toBeTruthy());
+    await screen.findByText('Proposed it.');
     expect(speaker()).toBeNull();
-    expect(document.getElementById('recapChatRecapPlay')).toBeNull();
+    // Since note #1193 nothing stands under the reply without a speaker.
+    expect(document.getElementById('recapChatRecap')).toBeNull();
     cleanup();
     forgetVoiceStatus();
     mount(talk);
@@ -1870,8 +1852,8 @@ describe('the recap read aloud (note #1146)', () => {
     await waitFor(() => expect(speaker()).toBeTruthy());
     expect(speaker()!.closest('.chatsubline')).toBe(document.getElementById('recapChatRuntime')!.closest('.chatsubline'));
     expect(speaker()!.getAttribute('aria-pressed')).toBe('false');
-    // Off: the recap looks as it always has.
-    expect(document.getElementById('recapChatRecapPlay')).toBeNull();
+    // Off: nothing stands under the reply (note #1193).
+    expect(document.getElementById('recapChatRecap')).toBeNull();
     await act(async () => fireEvent.click(speaker()!));
     expect(speaker()!.getAttribute('aria-pressed')).toBe('true');
     expect(localStorage.getItem(RECAP_VOICE_KEY)).toBe('on');
@@ -1879,7 +1861,11 @@ describe('the recap read aloud (note #1146)', () => {
     expect(played).toHaveLength(1);
     expect(played[0]).toMatch(/^data:audio\/wav;base64,/);
     // The recap that stood when the screen opened is history: no autoplay.
+    // On: the play button, on a quiet line, and none of the recap's words
+    // (note #1193: the block that drew them left the chat).
     expect(document.getElementById('recapChatRecapPlay')).toBeTruthy();
+    expect(document.getElementById('recapChatRecap')!.textContent).toBe('Hear the recap');
+    expect(document.querySelector('#recapChatRecap .turnrecaptext, #recapChatRecap .recaptag')).toBeNull();
     await act(async () => fireEvent.click(speaker()!));
     expect(localStorage.getItem(RECAP_VOICE_KEY)).toBeNull();
   });
@@ -1932,7 +1918,7 @@ describe('the recap read aloud (note #1146)', () => {
     expect(document.getElementById('recapChatRecapVoiceError')?.textContent).toBe(words);
   });
 
-  it('says in one plain line when the recap cannot be read aloud, and keeps the recap as it is', async () => {
+  it('says in one plain line when the recap cannot be read aloud, and keeps the play button', async () => {
     localStorage.setItem(RECAP_VOICE_KEY, 'on');
     mount(talk, undefined, {
       'GET api/voice': () => voiceOn,
@@ -1941,6 +1927,7 @@ describe('the recap read aloud (note #1146)', () => {
     await waitFor(() => expect(document.getElementById('recapChatRecapPlay')).toBeTruthy());
     await act(async () => fireEvent.click(document.getElementById('recapChatRecapPlay')!));
     await waitFor(() => expect(document.getElementById('recapChatRecapVoiceError')?.textContent).toBe(RECAP_SPEECH_SENTENCES.voice_out_of_credit));
-    expect(document.querySelector('#recapChatRecap .turnrecaptext')!.textContent).toContain('I proposed the pricing page.');
+    // The line and its button stay, so the person can try again.
+    expect(document.getElementById('recapChatRecapPlay')).toBeTruthy();
   });
 });

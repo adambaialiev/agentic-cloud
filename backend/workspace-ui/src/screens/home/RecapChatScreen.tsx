@@ -33,11 +33,12 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { parseWorkspaceRoute, WORKSPACE_BASE } from '../../../../src/shared/workspace-routes.js';
 import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/workspace-recap.js';
+import { progressLineSeqs } from '../../../../src/shared/agent-html.js';
 import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage, recapHtmlStates } from '../../../../src/shared/workspace-recap-chat.js';
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
 import { chatFilesBody } from '../chat/chat-upload.js';
-import { TurnRecap } from '../chat/TurnRecap.js';
+import { RecapAloud } from '../chat/TurnRecap.js';
 import { showsTurnRecap } from '../chat/turn-recap-words.js';
 import { ANSWER_UNREADABLE_CODE, ANSWER_UNREADABLE_SENTENCE, jsonBody, WorkspaceApiError } from '../../api/client.js';
 import { recapDraftKey } from '../../chrome/draft-memory.js';
@@ -508,6 +509,9 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // answered. One answer per reply, and only the newest reply it wrote: an
   // older one belongs to a turn that is over, and stands drawn but inert.
   const htmlStates = useMemo(() => recapHtmlStates(answer?.messages ?? []), [answer]);
+  // Note #1193: plain lines written before the HTML reply of the same
+  // request are kept and drawn quiet, as in an agent's chat.
+  const progressLines = useMemo(() => progressLineSeqs(rows), [rows]);
   // The first run (note #726): the sign-in card under the FIRST ask, for as
   // long as no plan is in — a later "I've kept that too" points up at it.
   const messages = answer?.messages ?? [];
@@ -663,9 +667,10 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // screen has already been told landed.
   const running = Boolean(answer?.working);
   const working = running && !stopped;
-  // The recap line under the latest completed request (note #945). The
-  // conversation's last word is the last row it DRAWS — a quiet event
-  // turn's rows stay in the record and off the screen.
+  // Whether the latest completed request's recap is the newest news (note
+  // #945): what the read-aloud speaks from. The block that drew the recap
+  // here left with note #1193. The conversation's last word is the last row
+  // it DRAWS — a quiet event turn's rows stay in the record and off the screen.
   const shownMessages = messages.filter((_, at) => { const form = views[at]?.form; return form !== 'hidden' && form !== 'remove-room'; });
   const recapShown = showsTurnRecap(answer?.lastTurn, {
     busy: running || pending.length > 0,
@@ -787,7 +792,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
                           {/* The Chief of Staff's files (note #749), drawn as a room
                               agent's ATTACH: files are — the words as Markdown in
                               their own row, the files on a row of their own under it. */}
-                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} htmlState={htmlStates.get(row.seq)} onHtmlAnswer={answerHtml} />
+                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} htmlState={htmlStates.get(row.seq)} onHtmlAnswer={answerHtml} progress={progressLines.has(row.seq)} />
                           {row.role === 'agent' && row.files?.length
                             ? <ChatMessageRow row={filesOf(row)} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} />
                             : null}
@@ -812,10 +817,13 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
               Home and its own screen, through `agentStateLine`. */}
         </div>
         </ChatGalleryProvider>
-        {/* Under the latest completed request, once it is over (note #945),
-            with whose answers it is still collecting where an agent's says
-            what it left running. */}
-        {recapShown && answer?.lastTurn ? <TurnRecap id="recapChatRecap" turn={answer.lastTurn} waiting={answer.waiting} {...((voice.on && voice.available) || voice.error ? { voice: { state: voice.state, onPlay: voice.play, error: voice.error } } : {})} /> : null}
+        {/* No recap block under the latest request (note #1193, Adam, 18 Nov
+            2026: the reply is the whole of what the Chief of Staff shows
+            here, and the recap repeated it). Only its read-aloud is left
+            (note #1146): the play button, while the speaker is on. */}
+        {recapShown && answer?.lastTurn?.recap && ((voice.on && voice.available) || voice.error)
+          ? <RecapAloud id="recapChatRecap" voice={{ state: voice.state, onPlay: voice.play, error: voice.error }} />
+          : null}
         {/* Visible only while a request runs: the typing bubble carries the
             phase the machine reports — Thinking…, the rare first-time
             setup, Stopping… (never the machine waking, note #633; a room

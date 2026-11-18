@@ -178,6 +178,44 @@ export function agentChatHtmlStates(rows: readonly HtmlStateRow[]): Map<number, 
   return states;
 }
 
+/**
+ * Note #1193: which of an agent's plain lines were written WHILE it worked.
+ *
+ * Adam, 18 Nov 2026: "let's show agent generated interactive html only" —
+ * an agent's reply is one HTML interface, and, asked about the short lines
+ * an agent writes while it works, he chose to keep them "as quiet plain
+ * lines". A turn delivers each text block as its own row, so the rows of one
+ * turn are those lines and then the reply. The rule that tells them apart
+ * needs no flag on a stored row: in a run of the agent's rows that nothing
+ * else interrupts, every plain (not HTML) line that comes BEFORE an HTML
+ * reply is a progress line. A turn that never answers in HTML has none, which
+ * is what keeps every old Markdown conversation reading as it always did, and
+ * an agent that ignores the rule keeps its words at full size.
+ */
+export interface ProgressRow {
+  seq: number;
+  role: string;
+  text: string;
+  file?: unknown;
+  files?: readonly unknown[];
+}
+
+export function progressLineSeqs(rows: readonly ProgressRow[]): Set<number> {
+  const quiet = new Set<number>();
+  let run: number[] = [];
+  for (const row of rows) {
+    // The person's words, a platform row or a fresh chat ends the run.
+    if (row.role !== 'agent') { run = []; continue; }
+    if (isHtmlReply(row.text)) {
+      for (const seq of run) quiet.add(seq);
+      run = [];
+    } else if (row.text.trim() && !row.file && !row.files?.length) {
+      run.push(row.seq);
+    }
+  }
+  return quiet;
+}
+
 /** A reply's opening words, for telling an agent which reply was answered. */
 export function replyOpening(text: string, max = 240): string {
   const words = replyPlainText(text).replace(/\s+/g, ' ').trim();

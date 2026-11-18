@@ -2849,89 +2849,29 @@ function versionScript(): Record<string, Answer> {
 }
 
 /**
- * Note #945 (the owner, 2026-11-01, "recap line like in terminal claude code"):
- * under the latest completed turn, the turn's facts and — once the row
- * recap written for that turn has arrived — the recap in italics.
+ * Note #945 put a recap line under the latest completed turn; note #1193
+ * (Adam, 18 Nov 2026, "let's show agent generated interactive html only")
+ * took it out of every chat: it repeated the reply above it.
  */
-describe('the recap line under the latest turn (note #945)', () => {
+describe('no recap block under the latest turn (note #1193)', () => {
   const ask = chatMessage({ seq: 1, role: 'owner', text: 'Set up the DNS', at: '2026-09-02T10:00:00Z' });
   const reply = chatMessage({ seq: 2, text: 'Paused on DNS: add the 17 records.', at: '2026-09-02T10:00:11Z' });
   const ended = { startedAt: '2026-09-02T10:00:00Z', endedAt: '2026-09-02T10:00:12Z' };
-  const line = () => document.getElementById('agentChatRecap');
-  // One sentence a line (note #976): the recap's words, read back sentence by sentence.
-  const recapWords = () => { const text = line()?.querySelector('.turnrecaptext'); return text ? [...text.querySelectorAll('p')].map((p) => p.textContent).join(' | ') : null; };
-  const chip = () => line()?.querySelector('.turnfacts .recaptag')?.textContent ?? null;
 
-  it('appears under the turn once it is over, with how long it worked and when it finished', async () => {
+  it('draws the reply and nothing of the recap, with a recap on record and a job still running', async () => {
     open(() => ({
       messages: [ask, reply], working: false,
       lastTurn: { ...ended, recap: 'We set up DNS and it is paused. Next, add the 17 records and reply "done".' },
-    }));
-    await head();
-    await waitFor(() => expect(line()).toBeTruthy());
-    const facts = line()!.querySelector('.turnfacts .turnfactswords')!.textContent!;
-    expect(facts.startsWith('Worked for 12s · done ')).toBe(true);
-    // The label is a chip on the facts line, not a prefix inside the words;
-    // the words are unchanged, a sentence a line, upright behind the rule.
-    expect(chip()).toBe('Recap');
-    expect(recapWords()).toBe('We set up DNS and it is paused. | Next, add the 17 records and reply "done".');
-    // It stands after the transcript, not inside a row, and is not a message.
-    expect(log().contains(line())).toBe(false);
-    expect(line()!.closest('.chatpane')).toBeTruthy();
-    expect(line()!.className).toBe('turnrecap');
-  });
-
-  it('draws no recap while none exists for the turn — the facts alone, never a placeholder', async () => {
-    open(() => ({ messages: [ask, reply], working: false, lastTurn: ended }));
-    await head();
-    await waitFor(() => expect(line()).toBeTruthy());
-    expect(recapWords()).toBeNull();
-    expect(chip()).toBeNull();
-    expect(line()!.getAttribute('data-recap')).toBe('none');
-    expect(line()!.querySelector('.tdots, [role="progressbar"]')).toBeNull();
-    expect(line()!.textContent).not.toMatch(/recap|…|loading/i);
-  });
-
-  it('arrives after the reply and changes in place when a later summary rewrites it', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    let answer: WorkspaceChatAnswer = { messages: [ask, reply], working: false, lastTurn: ended };
-    open(() => answer);
-    await head();
-    await waitFor(() => expect(line()).toBeTruthy());
-    expect(recapWords()).toBeNull();
-    answer = { messages: [], working: false, lastTurn: { ...ended, recap: 'Checkpoint: DNS records drafted.' } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(recapWords()).toBe('Checkpoint: DNS records drafted.'));
-    const first = line();
-    answer = { messages: [], working: false, lastTurn: { ...ended, recap: 'DNS is paused. Next, add the 17 records.' } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(recapWords()).toBe('DNS is paused. | Next, add the 17 records.'));
-    // The same line, rewritten — not a second one under it.
-    expect(line()).toBe(first);
-    expect(document.querySelectorAll('.turnrecap')).toHaveLength(1);
-  });
-
-  it('is absent while a turn runs and once the reader has written again', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    let answer: WorkspaceChatAnswer = { messages: [ask, reply], working: true, activity: 'Running npm test', lastTurn: { ...ended, recap: 'Old turn.' } };
-    open(() => answer);
-    await head();
-    await waitFor(() => expect(rows()).toHaveLength(2));
-    expect(line()).toBeNull();
-    answer = { messages: [], working: false, lastTurn: { ...ended, recap: 'Done.' } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(line()).toBeTruthy());
-    answer = { messages: [chatMessage({ seq: 3, role: 'owner', text: 'Thanks', at: '2026-09-02T10:05:00Z' })], working: false, lastTurn: { ...ended, recap: 'Done.' } };
-    await act(async () => { await vi.advanceTimersByTimeAsync(CHAT_POLL_MS + 50); });
-    await waitFor(() => expect(line()).toBeNull());
-  });
-
-  it('says what the agent left running, from the jobs strip\'s own count', async () => {
-    open(() => ({ messages: [ask, reply], working: false, lastTurn: ended }), {
+    }), {
       'GET api/agents/felix/jobs': () => ({ jobs: [{ id: 'j_111111111111111111111111', label: 'npm run build', startedAt: '2026-09-02T10:00:05Z' }] }),
     });
     await head();
-    await waitFor(() => expect(line()?.textContent).toContain('· 1 background job still running'));
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    await waitFor(() => expect(document.getElementById("agentChatJobs")).toBeTruthy());
+    expect(document.getElementById('agentChatRecap')).toBeNull();
+    expect(document.querySelector('.turnrecap, .recaptag')).toBeNull();
+    expect(document.querySelector('.chatpane')!.textContent).not.toContain('We set up DNS and it is paused');
+    expect(document.querySelector('.chatpane')!.textContent).not.toContain('Worked for');
   });
 });
 

@@ -1234,6 +1234,14 @@ body.agent-chat-open .home-loading {
   background: none; border-radius: 0; padding: 0; margin-top: 14px;
 }
 .chatmsg.agent.flat + .chatmsg.agent.flat { margin-top: 12px; }
+/* A line the agent wrote while it worked, before the HTML reply that closed
+   the same turn (note #1193; Adam, 18 Nov 2026: keep them "as quiet plain
+   lines"). The reply is the interface, so these step back: one size down
+   from the reading type and in the hint colour, still plain words on the
+   page, still selectable, with their clock. Not the smallest role: these are
+   sentences, and 12px is below what a person should have to read on a bus. */
+.chatmsg.agent.flat.progress { color: var(--hint); font-size: var(--ui-lg); line-height: var(--ui-lg-leading); }
+.chatmsg.agent.flat.progress + .chatmsg.agent.flat.progress { margin-top: 6px; }
 /* The clock goes to the side the voice SPEAKS from, which is the rule the
    bubbles were keeping without anyone having to write it down: the reader's
    sits at the right because their bubble is pinned to the right, and an
