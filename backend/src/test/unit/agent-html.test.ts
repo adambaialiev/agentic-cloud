@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { htmlReplyNeedsFrame, htmlReplyParts, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
 import { recapHtmlStates, type RecapMessage } from '../../shared/workspace-recap-chat.js';
-import { REPLY_FRAME_CONTENT_SECURITY_POLICY, replyFrameRoutes } from '../../routes/reply-frame.js';
+import { REPLY_FRAME_CONTENT_SECURITY_POLICY, replyFrameRoutes, replyFrameTimingLine } from '../../routes/reply-frame.js';
 import { WORKSPACE_AGENT_INSTRUCTIONS, quietLine } from '../../services/workspace-recap-chat.js';
 
 describe('HTML replies (note #1186): which reply is HTML, and its plain words', () => {
@@ -112,5 +112,30 @@ describe('What the Chief of Staff is told (note #1186)', () => {
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('no network at all');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('stays plain words');
     void vi;
+  });
+
+  it('starts the inner frame at a real size, light, and measures as soon as the page is parsed (note #1192)', async () => {
+    const app = express().use('/workspace', replyFrameRoutes());
+    const server = app.listen(0);
+    await new Promise((ready) => server.once('listening', ready));
+    const text = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/workspace/reply-frame`)).text();
+    server.close();
+    // A frame of no size may be put to sleep by a phone's browser.
+    expect(text).toContain('iframe{display:block;border:0;width:100%;height:100vh}');
+    expect(text).not.toMatch(/height:0[;}]/);
+    expect(text).toContain('<meta name="color-scheme" content="light">');
+    expect(text).toContain("document.addEventListener('DOMContentLoaded',measure)");
+  });
+
+  it('writes a slow or failed frame down as numbers and the browser, nothing else, and not without end', () => {
+    const line = replyFrameTimingLine({ outcome: 'slow', loaded: 9_800.4, ready: 9_812, shown: 9_901, fetch: 9_700, transfer: 0, attempt: 0, html: '<p>secret</p>' }, 'Mozilla/5.0 (iPhone)', 1_000);
+    expect(line).toBe('[reply-frame] slow: loaded=9800 ready=9812 shown=9901 fetch=9700 transfer=0 attempt=0 ua="Mozilla/5.0 (iPhone)"');
+    expect(replyFrameTimingLine({ outcome: 'whatever', shown: 1 }, '', 1_000)).toBeNull();
+    expect(replyFrameTimingLine({ outcome: 'failed' }, '', 1_000)).toBeNull();
+    expect(replyFrameTimingLine({ outcome: 'failed', ready: -5, loaded: 'x' }, '', 1_000)).toBeNull();
+    let written = 1;
+    for (let i = 0; i < 100; i += 1) if (replyFrameTimingLine({ outcome: 'failed', attempt: 1 }, '', 2_000)) written += 1;
+    expect(written).toBe(30);
+    expect(replyFrameTimingLine({ outcome: 'failed', attempt: 1 }, '', 70_000)).not.toBeNull();
   });
 });

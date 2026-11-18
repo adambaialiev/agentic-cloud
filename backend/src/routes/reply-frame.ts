@@ -135,16 +135,25 @@ if(!lines.length)lines.push(((s&&(s.value||s.textContent))||'Submitted').trim())
 reply(lines.join('\\n'))});
 function measure(){post({t:'h',h:Math.ceil(root.getBoundingClientRect().height)})}
 if(window.ResizeObserver)new ResizeObserver(measure).observe(root);
-addEventListener('load',measure);setTimeout(measure,0);
+document.addEventListener('DOMContentLoaded',measure);addEventListener('load',measure);setTimeout(measure,0);
 if(state!=='live')addEventListener('DOMContentLoaded',lock);
 })();`;
 
 /** The outer document. It has no words of its own: it waits for the
- *  Workspace to hand it the reply, builds the inner frame, and relays. */
+ *  Workspace to hand it the reply, builds the inner frame, and relays.
+ *
+ *  Note #1192 (Adam, 18 Nov 2026: "it was just blank black and then buttons
+ *  appeared after 10 seconds"): the inner frame starts as tall as this one,
+ *  never at zero. A frame of no size from another origin is one a phone's
+ *  browser may treat as invisible and put to sleep — its timers and its
+ *  drawing held back — and that frame was the one whose height report the
+ *  whole reply waited on. The page measures itself as soon as it is parsed,
+ *  not only on a timer, and both documents say they are light, so nothing
+ *  between them is drawn in a dark backdrop. */
 function outerDocument(): string {
   const inner = JSON.stringify({ style: INNER_STYLE, bridge: INNER_BRIDGE });
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}iframe{display:block;border:0;width:100%;height:0}</style>
+<meta name="color-scheme" content="light"><style>:root{color-scheme:light}html,body{margin:0;padding:0;background:transparent;overflow:hidden}iframe{display:block;border:0;width:100%;height:100vh}</style>
 </head><body><script>(function(){
 var P=parent,K=${inner.replace(/</g, '\\u003c')},frame=null,MAX=${REPLY_FRAME_ANSWER_MAX};
 function up(m){try{P.postMessage(m,'*')}catch(e){}}
@@ -163,6 +172,33 @@ else if(d.t==='reply'&&typeof d.text==='string'){up({t:'reply',text:d.text.slice
 else if(d.t==='open'&&typeof d.href==='string'){up({t:'open',href:d.href.slice(0,4000)})}});
 up({t:'ready'});void esc;
 })();</script></body></html>`;
+}
+
+/**
+ * Note #1192: what a slow or failed frame reports, so the next "it took ten
+ * seconds" has an answer in the log rather than a guess. Numbers only —
+ * milliseconds since the frame was put on the page, and the frame
+ * document's own fetch as the browser timed it — plus the browser's name.
+ * Nothing the reply said and nobody's name.
+ */
+const TIMING_FIELDS = ['loaded', 'ready', 'shown', 'fetch', 'transfer', 'attempt'] as const;
+const TIMING_PER_MINUTE = 30;
+let timingWindow = { at: 0, count: 0 };
+
+export function replyFrameTimingLine(body: unknown, userAgent: string, now = Date.now()): string | null {
+  if (now - timingWindow.at > 60_000) timingWindow = { at: now, count: 0 };
+  if (timingWindow.count >= TIMING_PER_MINUTE) return null;
+  const input = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+  const parts: string[] = [];
+  for (const field of TIMING_FIELDS) {
+    const value = input[field];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) parts.push(`${field}=${Math.min(Math.round(value), 3_600_000)}`);
+  }
+  const outcome = input.outcome === 'failed' ? 'failed' : input.outcome === 'slow' ? 'slow' : null;
+  if (!outcome || !parts.length) return null;
+  const browser = userAgent.replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+  timingWindow.count += 1;
+  return `[reply-frame] ${outcome}: ${parts.join(' ')} ua=${JSON.stringify(browser)}`;
 }
 
 let cached: string | null = null;

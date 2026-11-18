@@ -32,6 +32,8 @@ import type { NoteRefs } from '../../render/note-refs.js';
 import { plainClick } from '../../ui/link-click.js';
 import { htmlUiKey, isHtmlUiClosed, linksAsWritten, REPLY_FRAME_SRC, setHtmlUiClosed, splitHtmlReply } from './html-reply-links.js';
 import { Svg } from '../../ui/icons.js';
+import { jsonBody } from '../../api/client.js';
+import { useSession } from '../../session/useSession.js';
 
 /** What a frame stands at before it has said its height, and the most it
  *  may ask for. */
@@ -99,6 +101,27 @@ function useNear(margin: string): [(node: HTMLDivElement | null) => void, boolea
   return [ref, near];
 }
 
+/** Note #1192: how long a frame may take before the card says so. A frame
+ *  has no network to wait on, so on a working phone it shows in well under a
+ *  second; past this, something is wrong and the person gets words and a
+ *  way to try again rather than an empty box. Past the first, a frame that
+ *  is merely slow is written down for us (`api/reply-frame/timing`). */
+const FRAME_GIVE_UP_MS = 8_000;
+const FRAME_SLOW_MS = 2_500;
+
+type FramePhase = 'loading' | 'shown' | 'failed';
+
+/** How the frame document's own fetch went, as the browser timed it. */
+function frameFetchTiming(): { fetch?: number; transfer?: number } {
+  try {
+    const url = new URL(REPLY_FRAME_SRC, window.location.origin).href;
+    const entries = performance.getEntriesByName(url) as PerformanceResourceTiming[];
+    const last = entries[entries.length - 1];
+    if (!last) return {};
+    return { fetch: last.duration, transfer: last.transferSize };
+  } catch { return {}; }
+}
+
 function HtmlFrame({ source, replyKey, state, onAnswer }: {
   source: string;
   replyKey: string;
@@ -106,9 +129,18 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
   onAnswer?: (text: string) => void;
 }) {
   const navigate = useNavigate();
+  const { api } = useSession();
   const frame = useRef<HTMLIFrameElement | null>(null);
   const [height, setHeight] = useState(() => heights.get(replyKey) ?? FRAME_START_PX);
   const [nearRef, near] = useNear(FRAME_NEAR_MARGIN);
+  // Note #1192: nothing of the frame is shown until its page has said how
+  // tall it is — until then the card holds a quiet placeholder, so a frame
+  // the browser has not painted yet (black, on Adam's phone) is never seen.
+  const [phase, setPhaseState] = useState<FramePhase>('loading');
+  const phaseNow = useRef<FramePhase>('loading');
+  const setPhase = useCallback((next: FramePhase) => { phaseNow.current = next; setPhaseState(next); }, []);
+  const [attempt, setAttempt] = useState(0);
+  const timing = useRef({ start: 0, loaded: -1, ready: -1, reported: false });
   const links = useMemo(() => linksAsWritten(source), [source]);
   // Read by the listener, which is attached once per frame.
   const live = useRef({ state, onAnswer, answered: state !== 'live' });
@@ -118,8 +150,47 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
     if (state !== 'live') live.current.answered = true;
   }, [state, onAnswer]);
 
+  const report = useCallback((outcome: 'slow' | 'failed', shown: number) => {
+    const t = timing.current;
+    if (t.reported) return;
+    t.reported = true;
+    const body = {
+      outcome,
+      attempt,
+      ...(t.loaded >= 0 ? { loaded: t.loaded } : {}),
+      ...(t.ready >= 0 ? { ready: t.ready } : {}),
+      ...(shown >= 0 ? { shown } : {}),
+      ...frameFetchTiming(),
+    };
+    void api.api('api/reply-frame/timing', jsonBody(body)).catch(() => { /* a report is never worth an error */ });
+  }, [api, attempt]);
+
+  // The page inside is handed its reply when the frame says it is ready —
+  // and again when the frame has loaded, in case that first word arrived
+  // before anyone was listening. The frame takes the first and ignores the
+  // rest.
+  const show = useCallback(() => {
+    frame.current?.contentWindow?.postMessage({ t: 'show', html: source, state: live.current.state, title: 'Interactive reply' }, '*');
+  }, [source]);
+
+  // The clock runs per frame: from when it is put on the page (first near,
+  // or Try again) — never restarted by the screen drawing again.
+  const reportNow = useRef(report);
+  useLayoutEffect(() => { reportNow.current = report; }, [report]);
   useEffect(() => {
     if (!near) return;
+    timing.current = { start: performance.now(), loaded: -1, ready: -1, reported: false };
+    const giveUp = window.setTimeout(() => {
+      if (phaseNow.current !== 'loading') return;
+      setPhase('failed');
+      reportNow.current('failed', -1);
+    }, FRAME_GIVE_UP_MS);
+    return () => window.clearTimeout(giveUp);
+  }, [near, attempt, setPhase]);
+
+  useEffect(() => {
+    if (!near) return;
+    const since = () => Math.round(performance.now() - timing.current.start);
     const onMessage = (event: MessageEvent) => {
       const own = frame.current?.contentWindow;
       if (!own || event.source !== own) return;
@@ -127,11 +198,19 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
       if (!data || typeof data !== 'object') return;
       const message = data as { t?: unknown; h?: unknown; text?: unknown; href?: unknown };
       if (message.t === 'ready') {
-        own.postMessage({ t: 'show', html: source, state: live.current.state, title: 'Interactive reply' }, '*');
+        if (timing.current.ready < 0) timing.current.ready = since();
+        show();
       } else if (message.t === 'h' && typeof message.h === 'number' && Number.isFinite(message.h)) {
         const next = Math.max(0, Math.min(FRAME_MAX_PX, Math.ceil(message.h)));
         heights.set(replyKey, next);
         setHeight(next);
+        if (phaseNow.current !== 'shown') {
+          // Shown after all, late or after the card gave up: written down
+          // with the step that took the time.
+          const took = since();
+          if (phaseNow.current === 'failed' || took > FRAME_SLOW_MS) { timing.current.reported = false; report('slow', took); }
+          setPhase('shown');
+        }
       } else if (message.t === 'reply' && typeof message.text === 'string') {
         // One answer per reply, and only while it is the live one: a frame
         // whose script keeps posting is heard once.
@@ -149,23 +228,55 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [near, source, replyKey, links, navigate]);
+  }, [near, show, replyKey, links, navigate, report, setPhase]);
+
+  const onLoad = useCallback(() => {
+    if (timing.current.loaded < 0 && timing.current.start) timing.current.loaded = Math.round(performance.now() - timing.current.start);
+    show();
+  }, [show]);
+
+  const retry = useCallback(() => {
+    setPhase('loading');
+    setAttempt((n) => n + 1);
+  }, [setPhase]);
 
   // An answer sent, or a newer reply arrived: the frame's controls lock.
   useEffect(() => {
     frame.current?.contentWindow?.postMessage({ t: 'state', state }, '*');
   }, [state]);
 
+  const shown = phase === 'shown';
   return (
-    <div className={`chathtml chathtmlframe${state === 'live' ? '' : ` ${state}`}`} ref={nearRef} style={{ height }}>
+    <div
+      className={`chathtml chathtmlframe${state === 'live' ? '' : ` ${state}`}${shown ? '' : ' waiting'}`}
+      ref={nearRef}
+      style={shown ? { height } : { minHeight: heights.get(replyKey) ?? FRAME_START_PX }}
+      aria-busy={phase === 'loading' ? true : undefined}
+    >
+      {phase === 'loading' ? (
+        <div className="chathtmlwait" role="status">
+          <span className="chathtmlbar" /><span className="chathtmlbar short" />
+          <span className="sr-only">Loading the rest of this reply</span>
+        </div>
+      ) : null}
+      {phase === 'failed' ? (
+        <div className="chathtmlfailed" role="alert">
+          <span>This part of the reply did not load.</span>
+          <button type="button" className="chathtmlretry" onClick={retry}>Try again</button>
+        </div>
+      ) : null}
       {near ? (
         <iframe
+          key={attempt}
           ref={frame}
           src={REPLY_FRAME_SRC}
           title="Interactive reply"
           sandbox="allow-scripts allow-forms"
           referrerPolicy="no-referrer"
           loading="eager"
+          onLoad={onLoad}
+          tabIndex={shown ? undefined : -1}
+          aria-hidden={shown ? undefined : true}
           style={{ height }}
         />
       ) : null}

@@ -1262,7 +1262,26 @@ body.agent-chat-open .home-loading {
 .chatmsg .chathtmlpage.kpage h3 { font-size: 1.06em; line-height: 1.3; }
 .chatmsg .chathtmlpage.kpage h4, .chatmsg .chathtmlpage.kpage h5, .chatmsg .chathtmlpage.kpage h6 { font-size: 1em; }
 .chatmsg .chathtmlpage.kpage > :last-child { margin-bottom: 0; }
-.chatmsg .chathtmlframe { width: 100%; overflow: hidden; }
+.chatmsg .chathtmlframe { position: relative; width: 100%; overflow: hidden; }
+/* Note #1192: until the page inside has said how tall it is, the frame is
+   laid out at its full size (so the browser keeps it awake) but not seen,
+   and the card shows two quiet bars in its place — or, if it never comes,
+   words and a way to try again. Never an empty or a black box. */
+.chatmsg .chathtmlframe.waiting iframe { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; }
+.chatmsg .chathtmlwait { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: inherit; padding-right: 28px; box-sizing: border-box; }
+.chatmsg .chathtmlbar { display: block; height: 12px; width: 72%; border-radius: var(--r-sm); background: color-mix(in srgb, var(--hint) 16%, #fff); }
+.chatmsg .chathtmlbar.short { width: 44%; }
+@media (prefers-reduced-motion: no-preference) {
+  .chatmsg .chathtmlbar { animation: chathtmlwait 1.4s ease-in-out infinite; }
+  .chatmsg .chathtmlbar.short { animation-delay: .2s; }
+}
+@keyframes chathtmlwait { 50% { opacity: .45; } }
+.chatmsg .chathtmlfailed {
+  display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 10px;
+  min-height: inherit; padding-right: 28px; box-sizing: border-box;
+  font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
+}
+.chatmsg .chathtmlretry { color: var(--accent); padding: 4px 0; }
 .chatmsg .chathtmlframe iframe { display: block; width: 100%; border: 0; background: transparent; }
 /* The UI a reply carries sits in a card of its own (note #1188): the words
    the reply opens with stay on the page, and the form or the buttons read as

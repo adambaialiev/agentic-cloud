@@ -1,4 +1,4 @@
-import { replyFrameRoutes } from './reply-frame.js';
+import { replyFrameRoutes, replyFrameTimingLine } from './reply-frame.js';
 import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
 import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
 import { WorkspaceAgentEventSweep } from '../services/workspace-agent-events.js';
@@ -5913,6 +5913,15 @@ self.addEventListener('activate', (event) => {
       return res.json({ ok: true, stopped, name: WORKSPACE_AGENT_NAME } satisfies RecapChatStopAnswer);
     } catch (error) { return recapChatError(res, error); }
   });
+  // Note #1192: a reply's frame that was slow to show, or never did, says how
+  // long each step took; one line in the log, numbers only (reply-frame.ts).
+  router.post('/api/reply-frame/timing', async (req, res) => {
+    const auth = await authenticate(req, res); if (!auth) return;
+    const line = replyFrameTimingLine(req.body, String(req.headers['user-agent'] ?? ''));
+    if (line) console.log(line);
+    res.status(204).end();
+  });
+
   /**
    * The Chief of Staff's recap, read aloud (note #1146), on the workplace's
    * own OpenRouter key — the dictation key, which never leaves the server:

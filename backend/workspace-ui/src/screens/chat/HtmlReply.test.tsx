@@ -1,6 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RecapChatAnswer, RecapMessage } from '../../../../src/shared/workspace-recap-chat.js';
 import { App } from '../../App.js';
 import { emptyState, scriptedApi, workspaceScript } from '../../test/fixtures.js';
@@ -26,6 +26,7 @@ afterEach(() => { document.body.classList.remove('agent-chat-open'); window.loca
 
 function mount(messages: RecapMessage[]) {
   const sent: unknown[] = [];
+  const timings: unknown[] = [];
   const answer = (): RecapChatAnswer => ({ orgId: 'o1', working: false, waiting: [], messages });
   const scripted = scriptedApi({
     ...workspaceScript(() => state),
@@ -33,9 +34,10 @@ function mount(messages: RecapMessage[]) {
     'GET api/recap/settings': () => ({ orgId: 'o1', settings: { cli: 'claude', model: 'opus', effort: 'high' }, models: [] }),
     'GET api/recap/chat': () => answer(),
     'POST api/recap/chat': (call) => { sent.push(JSON.parse(String(call.init?.body))); return answer(); },
+    'POST api/reply-frame/timing': (call) => { timings.push(JSON.parse(String(call.init?.body))); return null; },
   });
   render(<MemoryRouter initialEntries={['/']}><Address /><App api={scripted.api} /></MemoryRouter>);
-  return { sent };
+  return { sent, timings };
 }
 
 const frameSays = (frame: HTMLIFrameElement, data: unknown) => act(async () => {
@@ -148,6 +150,78 @@ describe('the UI a reply carries sits in a card with a quiet close (note #1188)'
     mount([reply]);
     await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlhidden')).not.toBeNull());
     expect(document.querySelector('#recapChatLog .chathtmlui')).toBeNull();
+  });
+});
+
+describe('an HTML reply while its frame loads (note #1192)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('holds a quiet placeholder, not an empty box, until the page inside says its height; the reply is handed over on ready AND on load', async () => {
+    mount([{ id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const box = document.querySelector<HTMLElement>('#recapChatLog .chathtmlframe')!;
+    const frame = box.querySelector('iframe')!;
+    expect(box.classList.contains('waiting')).toBe(true);
+    expect(box.getAttribute('aria-busy')).toBe('true');
+    expect(box.querySelectorAll('.chathtmlwait .chathtmlbar')).toHaveLength(2);
+    expect(box.querySelector('.chathtmlwait')?.textContent).toBe('Loading the rest of this reply');
+    expect(frame.getAttribute('aria-hidden')).toBe('true');
+    const posted: unknown[] = [];
+    frame.contentWindow!.postMessage = ((data: unknown) => { posted.push(data); }) as never;
+    // The frame's first word may come before anyone listens: its load hands the reply over too.
+    await act(async () => { fireEvent.load(frame); });
+    await frameSays(frame, { t: 'ready' });
+    expect(posted.filter((m) => (m as { t: string }).t === 'show')).toHaveLength(2);
+    expect(box.querySelector('.chathtmlwait')).not.toBeNull();
+    await frameSays(frame, { t: 'h', h: 90 });
+    expect(box.classList.contains('waiting')).toBe(false);
+    expect(box.querySelector('.chathtmlwait')).toBeNull();
+    expect(box.style.height).toBe('90px');
+    expect(frame.hasAttribute('aria-hidden')).toBe(false);
+  });
+
+  it('says so when the frame never comes, offers Try again with a fresh frame, and writes down how long each step took', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
+    const { timings } = mount([{ id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now }]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const box = document.querySelector<HTMLElement>('#recapChatLog .chathtmlframe')!;
+    const first = box.querySelector('iframe')!;
+    await act(async () => { vi.advanceTimersByTime(0); });
+    await frameSays(first, { t: 'ready' });
+    await act(async () => { vi.advanceTimersByTime(8_100); });
+    expect(box.querySelector('.chathtmlwait')).toBeNull();
+    expect(box.querySelector('.chathtmlfailed')?.textContent).toBe('This part of the reply did not load.Try again');
+    await waitFor(() => expect(timings).toHaveLength(1));
+    expect(timings[0]).toMatchObject({ outcome: 'failed', attempt: 0 });
+    expect((timings[0] as { ready: number }).ready).toBeGreaterThanOrEqual(0);
+    expect(timings[0]).not.toHaveProperty('shown');
+    await act(async () => fireEvent.click(box.querySelector('.chathtmlretry')!));
+    const second = box.querySelector('iframe')!;
+    expect(second).not.toBe(first);
+    expect(box.querySelector('.chathtmlfailed')).toBeNull();
+    expect(box.querySelector('.chathtmlwait')).not.toBeNull();
+    // The old frame is no longer heard; the new one is.
+    await frameSays(first, { t: 'h', h: 70 });
+    expect(box.classList.contains('waiting')).toBe(true);
+    await frameSays(second, { t: 'h', h: 70 });
+    expect(box.classList.contains('waiting')).toBe(false);
+  });
+
+  it('writes down a frame that showed, but slowly; a quick one is not reported', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
+    const { timings } = mount([
+      { id: 'm1', role: 'assistant', text: '<p>One.</p><button data-reply="A">A</button>', at: now },
+    ]);
+    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
+    const frame = document.querySelector<HTMLIFrameElement>('#recapChatLog .chathtmlui iframe')!;
+    await act(async () => { vi.advanceTimersByTime(0); });
+    await act(async () => { vi.advanceTimersByTime(3_000); });
+    await frameSays(frame, { t: 'h', h: 60 });
+    await waitFor(() => expect(timings).toHaveLength(1));
+    expect(timings[0]).toMatchObject({ outcome: 'slow' });
+    expect((timings[0] as { shown: number }).shown).toBeGreaterThanOrEqual(2_500);
+    await frameSays(frame, { t: 'h', h: 61 });
+    expect(timings).toHaveLength(1);
   });
 });
 
