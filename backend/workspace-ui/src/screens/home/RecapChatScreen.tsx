@@ -379,6 +379,29 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
     }
     if (following.current) node.scrollTop = node.scrollHeight;
   }, [answer]);
+  // A reader at the end stays at the end when the conversation grows under
+  // them with no new answer to bring it (note #1193). Since a reply is one
+  // HTML interface, the newest reply is usually a frame: the conversation
+  // opens at its end while that frame is a placeholder, and the page inside
+  // then says how tall it is. Nothing asked again, so the conversation stood
+  // above its own newest reply until the next answer: 813 px above on
+  // production's code the evening this shipped, 2,052 px with a long reply
+  // last. Words the knowledge renderer builds in an effect grew it the same
+  // way, by less. An agent's chat already follows its end through this.
+  useEffect(() => {
+    const node = pane.current;
+    const log = node?.querySelector<HTMLElement>('.chatlog');
+    if (!node || !log || typeof ResizeObserver !== 'function') return;
+    let tall = log.offsetHeight;
+    const observer = new ResizeObserver(() => {
+      const now = log.offsetHeight;
+      const grew = now > tall;
+      tall = now;
+      if (grew && following.current && restore.current === null && !waking.current && !document.hidden) node.scrollTop = node.scrollHeight;
+    });
+    observer.observe(log);
+    return () => observer.disconnect();
+  }, []);
   // Back from the picker: the transcript stands where it stood.
   useLayoutEffect(() => {
     if (picking || parked.current === null) return;

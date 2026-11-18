@@ -112,27 +112,40 @@ function HtmlWords({ source, notes }: { source: string; notes: NoteRefs }) {
  * exactly what that row moved, all in the one task, so no scroll of the
  * reader's falls in between and is undone. Where the browser already held
  * the place, the row has not moved and nothing is done.
+ *
+ * And a reader AT THE END stays at the end, wherever the frame is. A
+ * conversation opens at its newest reply while that reply's frame is still a
+ * placeholder; the page inside then says how tall it is, and the reply grew
+ * below the screen. Found on production's own code the evening this
+ * shipped: the Chief of Staff's chat opened 813 px above its end, and 2,052
+ * px with a long reply last. (An agent's chat follows its end by itself.)
  */
-interface Place { pane: HTMLElement; row: Element; top: number }
+type Place = { pane: HTMLElement; end: true } | { pane: HTMLElement; end: false; row: Element; top: number };
+
+/** How close to the end still counts as reading the end. */
+const AT_END_PX = 8;
 
 function placeOf(box: HTMLElement | null): Place | null {
   const pane = box?.closest<HTMLElement>('.chatpane');
   if (!box || !pane) return null;
   const view = pane.getBoundingClientRect();
   // Growing on screen or below it moves only what is under it, as any new
-  // row does; the end of the conversation is followed by the screen itself.
-  if (!view.height || box.getBoundingClientRect().top >= view.top) return null;
+  // row does.
+  if (!view.height) return null;
+  if (pane.scrollHeight - pane.scrollTop - pane.clientHeight <= AT_END_PX) return { pane, end: true };
+  if (box.getBoundingClientRect().top >= view.top) return null;
   // A row on screen, near its top: a few tries, because a point may fall in
   // the gap between two rows.
   for (const down of [24, 64, 104, 144, 200]) {
     if (down >= view.height) break;
     const row = document.elementFromPoint(view.left + view.width / 2, view.top + down)?.closest('.chatmsg, .chatday');
-    if (row && pane.contains(row)) return { pane, row, top: row.getBoundingClientRect().top };
+    if (row && pane.contains(row)) return { pane, end: false, row, top: row.getBoundingClientRect().top };
   }
   return null;
 }
 
 function keepPlace(place: Place): void {
+  if (place.end) { place.pane.scrollTop = place.pane.scrollHeight; return; }
   if (!place.pane.contains(place.row)) return;
   const moved = place.row.getBoundingClientRect().top - place.top;
   if (Math.abs(moved) >= 1) place.pane.scrollTop += moved;

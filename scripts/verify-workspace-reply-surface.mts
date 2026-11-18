@@ -18,6 +18,7 @@
  *    placeholder of note #1192 gives way to the page);
  *  - the plain line written before the turn's HTML reply is drawn quiet;
  *  - a tap in the frame is sent as the person's message, naming the reply;
+ *  - each conversation stands at its end once its newest frame has grown;
  *  - the header and the message box stand, and nothing overflows.
  *
  *   npm --prefix backend run build:workspace-ui
@@ -150,6 +151,7 @@ async function drawn(page: Page, log: string) {
       head: (document.querySelector('.chathead')?.getBoundingClientRect().height ?? 0) > 30,
       box: (document.querySelector('#agentChatText')?.getBoundingClientRect().height ?? 0) > 20 && Boolean(document.querySelector('#agentChatSend')),
       fits: document.documentElement.scrollWidth <= innerWidth,
+      fromEnd: Math.round(pane.scrollHeight - pane.scrollTop - pane.clientHeight),
     };
   }, log);
 }
@@ -223,6 +225,7 @@ try {
   check('Home: its frame shows, at the height of its page', Boolean(homeReply) && homeReply!.waiting === 0 && homeReply!.frameHeight > 80, JSON.stringify(homeReply));
   check('Home: no recap block, chip, facts or words, with a recap on record and Oscar awaited',
     seen.recap === 0 && !seen.words.includes('Asked Oscar to set up') && !seen.words.includes('Worked for') && !seen.words.includes('waiting on Oscar'), `${seen.recap}`);
+  check('Home: the conversation stands at its end after its frame grew to its page', seen.fromEnd <= 4, `${seen.fromEnd} px from it`);
   check('Home: the header and the message box stand', seen.head && seen.box);
   check('Home: nothing overflows', seen.fits);
 
@@ -241,6 +244,7 @@ try {
   check('chat: its frame shows, at the height of its page', Boolean(reply) && reply!.waiting === 0 && reply!.frameHeight > 120, JSON.stringify(reply));
   check('chat: no recap block, chip, facts or words, with a recap on record and a job still running',
     seen.recap === 0 && !seen.words.includes('We are setting up your own') && !seen.words.includes('Worked for') && !seen.words.includes('still running'), `${seen.recap}`);
+  check('chat: the conversation stands at its end after its frame grew to its page', seen.fromEnd <= 4, `${seen.fromEnd} px from it`);
   check('chat: the header and the message box stand', seen.head && seen.box);
   check('chat: nothing overflows', seen.fits);
 

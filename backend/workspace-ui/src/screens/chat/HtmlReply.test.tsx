@@ -122,10 +122,21 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
 
 /** What the frame was handed: the reply as the page inside will draw it. */
 async function handedTo(frame: HTMLIFrameElement): Promise<string[]> {
-  const shown: string[] = [];
-  frame.contentWindow!.postMessage = ((data: { t?: string; html?: string }) => { if (data.t === 'show') shown.push(data.html ?? ''); }) as never;
-  await frameSays(frame, { t: 'ready' });
-  return shown;
+  const shown = new Set<string>();
+  frame.contentWindow!.postMessage = ((data: { t?: string; html?: string }) => { if (data.t === 'show') shown.add(data.html ?? ''); }) as never;
+  // The frame's listener is attached in an effect: say "ready" until it is heard.
+  await heard(frame, { t: 'ready' }, () => expect(shown.size).toBeGreaterThan(0));
+  return [...shown];
+}
+
+/**
+ * Say something as the frame until the Workspace has acted on it. A frame's
+ * listener is attached in an effect, a moment after the frame is in the
+ * page, so a word said once, straight after the frame appears, can fall
+ * before anyone listens (seen under load: one run in a few).
+ */
+function heard(frame: HTMLIFrameElement, data: unknown, acted: () => void): Promise<void> {
+  return waitFor(async () => { await frameSays(frame, data); acted(); }, { timeout: 4000 });
 }
 
 describe('a reply is one surface, drawn whole as the agent laid it out (note #1193)', () => {
@@ -167,8 +178,7 @@ describe('a reply is one surface, drawn whole as the agent laid it out (note #11
     const reply: RecapMessage = { id: 'm1', role: 'assistant', text: '<p>Pick.</p><button data-reply="A">A</button>', at: now };
     mount([reply]);
     await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
-    await frameSays(document.querySelector<HTMLIFrameElement>('#recapChatLog iframe')!, { t: 'h', h: 310 });
-    await waitFor(() => expect(window.localStorage.getItem('acc.htmlReplyHeights')).toContain('310'), { timeout: 2000 });
+    await heard(document.querySelector<HTMLIFrameElement>('#recapChatLog iframe')!, { t: 'h', h: 310 }, () => expect(window.localStorage.getItem('acc.htmlReplyHeights') ?? '').toContain('310'));
     document.body.innerHTML = '';
     forgetFrameHeights();
     mount([reply]);
@@ -209,8 +219,7 @@ describe('a framed reply far from the screen (note #1193)', () => {
     await says('1200px 0px', true);
     const first = box.querySelector('iframe')!;
     expect(first).not.toBeNull();
-    await frameSays(first, { t: 'h', h: 240 });
-    expect(box.style.height).toBe('240px');
+    await heard(first, { t: 'h', h: 240 }, () => expect(box.style.height).toBe('240px'));
     // Far away, untouched: the frame goes, its place stays.
     await says('6000px 0px', false);
     expect(box.querySelector('iframe')).toBeNull();
@@ -220,9 +229,9 @@ describe('a framed reply far from the screen (note #1193)', () => {
     const second = box.querySelector('iframe')!;
     expect(second).not.toBe(first);
     expect(box.classList.contains('waiting')).toBe(true);
-    await frameSays(second, { t: 'h', h: 240 });
-    expect(box.classList.contains('waiting')).toBe(false);
+    await heard(second, { t: 'h', h: 240 }, () => expect(box.classList.contains('waiting')).toBe(false));
     // Touched: what the person typed lives only in this frame, so it stays.
+    // (Its listener has just been proved attached by the height it heard.)
     await frameSays(second, { t: 'touched' });
     await says('6000px 0px', false);
     expect(box.querySelector('iframe')).toBe(second);

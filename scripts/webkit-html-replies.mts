@@ -21,6 +21,7 @@
 //  - the header and the message box stand exactly where they stood;
 //  - every frame near the screen shows, light, on a phone set to dark too;
 //  - a tap in a frame is the person's message, naming the reply, once;
+//  - a chat opens AT its end, however tall its newest framed replies grow;
 //  - a long conversation of framed replies, read from its end to its start,
 //    keeps only the frames near the screen alive, and moves nothing.
 //
@@ -30,9 +31,14 @@
 //   npm --prefix backend run build:workspace-ui
 //   (mkdir -p ~/pw && cd ~/pw && npm i playwright && npx playwright install webkit chromium && sudo npx playwright install-deps)
 //   PLAYWRIGHT_DIR=~/pw OUT_DIR=/tmp/html-replies backend/node_modules/.bin/tsx scripts/webkit-html-replies.mts
+//
+// SHELL_DIR=<dir> draws with a different built shell: production's own, say,
+// downloaded as it is served (index.html and its assets/), which is how the
+// change was checked live. REAL_REPLY=<file> puts a reply an agent really
+// wrote at the end of both chats.
 
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -131,6 +137,13 @@ const felixRows: Row[] = [
   { seq: 8, role: 'owner', text: 'What is still open?', at: iso(6) },
   { seq: 9, role: 'agent', text: `Three decisions are **open**, all with my suggestion ticked:\n\n${SIX}`, at: iso(5) },
 ];
+/** REAL_REPLY=<file>: a reply an agent really wrote, as the newest reply of both chats. */
+const REAL = process.env.REAL_REPLY ? readFileSync(process.env.REAL_REPLY, 'utf8').trim() : '';
+if (REAL) {
+  cosMessages.push({ id: 'c11', role: 'owner', text: 'Chats show only the agent\'s interactive HTML: build it.', at: iso(1.5) }, { id: 'c12', role: 'assistant', text: REAL, at: iso(1) });
+  felixRows.push({ seq: 10, role: 'owner', text: 'Chats show only the agent\'s interactive HTML: build it.', at: iso(2) }, { seq: 11, role: 'agent', text: 'Reading the note and the chat code first.', at: iso(1.8) }, { seq: 12, role: 'agent', text: REAL, at: iso(1) });
+}
+const FELIX_ROWS = felixRows.length;
 const sent: Array<{ message: string; answerTo?: number }> = [];
 /** The long conversation: one framed reply after another. */
 const LONG = Number(process.env.LONG || 120);
@@ -157,7 +170,7 @@ const agentLifecycle = {
 const directMessageStorage = new SqliteDirectMessageStorage(openSqliteDb(':memory:'));
 const deps = {
   userStorage, orgStorage, workspaceWebAuth, directMessageStorage, mailboxes: mailbox.mailboxes, workspaceWebOrigin: ORIGIN,
-  workspaceUiDir: path.join(REPO, 'backend/dist/workspace-ui'), workspaceUiDefault: 'react', agentLifecycle,
+  workspaceUiDir: process.env.SHELL_DIR || path.join(REPO, 'backend/dist/workspace-ui'), workspaceUiDefault: 'react', agentLifecycle,
 } as unknown as RouteDeps;
 
 const app = express();
@@ -210,7 +223,7 @@ try {
         workspaceAgentSettings: { cli: 'claude', model: 'sonnet', effort: 'high' },
         workspaceRecapChat: { messages: cosMessages, receipts: [], pending: [] },
       });
-      felixRows.length = 9;
+      felixRows.length = FELIX_ROWS;
       sent.length = 0;
 
       const shot = (name: string) => page.screenshot({ path: path.join(OUT, `${tag}-${name}.png`) });
@@ -281,7 +294,17 @@ try {
       const first = await inside(0);
       check(`${tag} · Chief of Staff: the page inside is light (dark ink, nothing painted behind it) and its words select`,
         Boolean(first) && first!.background === 'rgba(0, 0, 0, 0)' && first!.color === 'rgb(31, 30, 29)' && first!.select !== 'none' && seen.card === 'rgb(255, 255, 255)', JSON.stringify({ first, card: seen.card }));
+      const fromEnd = () => page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; return Math.round(pane.scrollHeight - pane.scrollTop - pane.clientHeight); });
+      let off = await fromEnd();
+      check(`${tag} · Chief of Staff: the chat opens AT its end, after every frame near it has grown to its page (${off} px from it)`, off <= 4, String(off));
       await shot('cos-end');
+      if (REAL) {
+        const real = agentRows.at(-1)!;
+        check(`${tag} · Chief of Staff: the REAL reply is one card holding one frame, shown`, real.kids.length === 1 && real.kids[0] === 'chathtmlui' && real.frames === 1 && real.native === '' && real.height > 200, JSON.stringify(real));
+        await page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; const card = [...document.querySelectorAll<HTMLElement>('#recapChatLog .chathtmlui')].at(-1)!; pane.scrollTop += card.getBoundingClientRect().top - pane.getBoundingClientRect().top - 70; });
+        await page.waitForTimeout(500);
+        await shot('cos-real-top');
+      }
       await page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; pane.scrollTop = 0; });
       await page.waitForTimeout(700);
       await shot('cos-top');
@@ -299,13 +322,24 @@ try {
         Boolean(oldLine && oldReply) && !/progress/.test(oldLine!.cls) && !/progress/.test(oldReply!.cls) && oldLine!.size === '17px', JSON.stringify([oldLine?.cls, oldReply?.cls, oldLine?.size]));
       check(`${tag} · agent: the lines written before the turn's HTML reply are quiet plain lines`,
         Boolean(lineA && lineB) && /progress/.test(lineA!.cls) && /progress/.test(lineB!.cls) && lineA!.size === '14px' && lineA!.color !== oldLine!.color && lineA!.native.startsWith('Reading the note'), JSON.stringify([lineA, oldLine?.color]));
-      check(`${tag} · agent: the reply is ONE card holding ONE frame`, Boolean(shipped) && shipped!.kids.length === 1 && shipped!.kids[0] === 'chathtmlui' && shipped!.frames === 1 && shipped!.native === '', JSON.stringify(shipped));
+      check(`${tag} · agent: the reply is ONE card holding ONE frame`, Boolean(shipped) && shipped!.kids.length === 1 && shipped!.kids[0] === 'chathtmlui' && shipped!.frames <= 1 && shipped!.native === '', JSON.stringify(shipped));
       check(`${tag} · agent: a sentence before the first tag sits at the top of the same card`,
-        Boolean(asks) && asks!.kids.length === 1 && asks!.kids[0] === 'chathtmlui' && asks!.frames === 1 && asks!.native.startsWith('Three decisions are open'), JSON.stringify(asks));
+        Boolean(asks) && asks!.kids.length === 1 && asks!.kids[0] === 'chathtmlui' && asks!.frames <= 1 && asks!.native.startsWith('Three decisions are open'), JSON.stringify(asks));
       check(`${tag} · agent: no recap block, with a recap on record`, seen.recap === 0 && !seen.paneText.includes('Three decisions are waiting on you'), String(seen.recap));
       check(`${tag} · agent: the header and the message box stand`, seen.head && seen.box && seen.send);
       check(`${tag} · agent: every frame near the screen has shown; none failed`, seen.waiting === 0 && seen.failed === 0);
+      off = await fromEnd();
+      check(`${tag} · agent: the chat opens AT its end (${off} px from it)`, off <= 4, String(off));
       await shot('agent-end');
+      if (REAL) {
+        const real = felix.at(-1)!;
+        check(`${tag} · agent: the REAL reply is one card holding one frame, shown, under its quiet working line`, real.kids.length === 1 && real.kids[0] === 'chathtmlui' && real.frames === 1 && real.native === '' && real.height > 200 && /progress/.test(felix.at(-2)!.cls), JSON.stringify(real));
+        await page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; const card = [...document.querySelectorAll<HTMLElement>('#agentChatLog .chathtmlui')].at(-1)!; pane.scrollTop += card.getBoundingClientRect().top - pane.getBoundingClientRect().top - 150; });
+        await page.waitForTimeout(500);
+        await shot('agent-real-top');
+        await page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; pane.scrollTop = pane.scrollHeight; });
+        await page.waitForTimeout(400);
+      }
       await page.evaluate(() => { const pane = document.querySelector<HTMLElement>('.chatpane')!; const row = document.querySelector<HTMLElement>('#agentChatLog .chatmsg.progress')!; pane.scrollTop += row.getBoundingClientRect().top - pane.getBoundingClientRect().top - 120; });
       await page.waitForTimeout(700);
       await shot('agent-progress');
