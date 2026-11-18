@@ -29,12 +29,43 @@
  *  and prose that mentions `<div>` mid-sentence does not START with it. */
 const OPENS_WITH_TAG = /^\s*(?:<!--|<!doctype\s|<[a-z][a-z0-9-]*(?=[\s>/]))/i;
 
-export function isHtmlReply(text: string | null | undefined): boolean {
-  if (!text) return false;
+function opensWithTag(text: string): boolean {
   if (!OPENS_WITH_TAG.test(text)) return false;
   // `<https://example.com>` is an autolink, and `<you@x.com>` a mail one:
   // both match the tag pattern only by accident of their first letters.
   return !/^\s*<[a-z][a-z0-9+.-]*:/i.test(text) && !/^\s*<[^>\s]*@[^>\s]*>/.test(text);
+}
+
+/** A line that opens an HTML block, at the very start of the line. */
+const BLOCK_LINE = /\n(?=<(?:p|div|form|h[1-6]|ul|ol|table|section|article|fieldset|details|label|button|style|script)\b)/gi;
+
+/**
+ * A reply as its Markdown lead-in and its HTML, or null for a Markdown reply.
+ *
+ * Note #1191, found live: a Claude Code turn writes its words as one text
+ * block, and an agent says a sentence before its form ("Six decisions are
+ * open — pick yours:") as often as not. That reply does not START with a
+ * tag, so it read as Markdown with the form's tags shown as text. So a reply
+ * may also open with Markdown and turn to HTML at a line that starts with a
+ * block tag — but only when what follows asks for something (a form, a
+ * button, a script: `htmlReplyNeedsFrame`) and the line is not inside a
+ * fenced code block, so a Markdown reply that SHOWS some HTML stays one.
+ */
+export function htmlReplyParts(text: string | null | undefined): { lead: string; html: string } | null {
+  if (!text) return null;
+  if (opensWithTag(text)) return { lead: '', html: text };
+  for (const match of text.matchAll(BLOCK_LINE)) {
+    const before = text.slice(0, match.index);
+    if ((before.match(/^[ \t]*(```|~~~)/gm) ?? []).length % 2) continue;
+    const html = text.slice(match.index + 1);
+    if (!htmlReplyNeedsFrame(html)) return null;
+    return { lead: before.trim(), html };
+  }
+  return null;
+}
+
+export function isHtmlReply(text: string | null | undefined): boolean {
+  return htmlReplyParts(text) !== null;
 }
 
 /**
@@ -105,7 +136,10 @@ export function htmlToPlainText(html: string): string {
 /** A reply's words for any reader that is not the chat bubble: the plain text
  *  of an HTML reply, and a Markdown reply exactly as it was written. */
 export function replyPlainText(text: string): string {
-  return isHtmlReply(text) ? htmlToPlainText(text) : text;
+  const parts = htmlReplyParts(text);
+  if (!parts) return text;
+  const words = htmlToPlainText(parts.html);
+  return parts.lead ? `${parts.lead}\n\n${words}`.trim() : words;
 }
 
 /**

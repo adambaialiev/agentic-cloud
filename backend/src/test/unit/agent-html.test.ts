@@ -1,7 +1,7 @@
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { htmlReplyNeedsFrame, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
+import { htmlReplyNeedsFrame, htmlReplyParts, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
 import { recapHtmlStates, type RecapMessage } from '../../shared/workspace-recap-chat.js';
 import { REPLY_FRAME_CONTENT_SECURITY_POLICY, replyFrameRoutes } from '../../routes/reply-frame.js';
 import { WORKSPACE_AGENT_INSTRUCTIONS, quietLine } from '../../services/workspace-recap-chat.js';
@@ -19,6 +19,17 @@ describe('HTML replies (note #1186): which reply is HTML, and its plain words', 
     expect(isHtmlReply('< not a tag')).toBe(false);
     expect(isHtmlReply('')).toBe(false);
     expect(isHtmlReply(undefined)).toBe(false);
+  });
+
+  it('takes a Markdown lead-in before an HTML block that asks, as Claude Code writes it (note #1191), but never HTML shown in a code fence or a block that only tells', () => {
+    const real = "It's live. My next message is a **real** reply.\n\n<p>Six decisions.</p>\n<form data-reply=\"Open\">\n<label><input type=\"radio\" name=\"a\" value=\"yes\" checked> Yes</label>\n<button type=\"submit\">Send</button></form>";
+    expect(htmlReplyParts(real)).toEqual({ lead: "It's live. My next message is a **real** reply.", html: real.slice(real.indexOf('<p>')) });
+    expect(isHtmlReply(real)).toBe(true);
+    expect(replyPlainText(real)).toBe("It's live. My next message is a **real** reply.\n\nSix decisions.\n\nYes\n\n[Send]");
+    expect(isHtmlReply('Here is the form I would use:\n\n```html\n<form><button>Go</button></form>\n```')).toBe(false);
+    expect(isHtmlReply('A table:\n\n<table><tr><td>1</td></tr></table>')).toBe(false);
+    expect(isHtmlReply('Indented code:\n\n    <form><button>Go</button></form>')).toBe(false);
+    expect(htmlReplyParts('<p>From the first character.</p>')).toEqual({ lead: '', html: '<p>From the first character.</p>' });
   });
 
   it('sends only what runs or asks to the frame; words are drawn natively', () => {

@@ -25,9 +25,9 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { htmlReplyNeedsFrame, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
+import { htmlReplyNeedsFrame, htmlReplyParts, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
 import { KnowledgeHtml } from '../../render/KnowledgeHtml.js';
-import { workspaceLinkTo } from '../../render/Markdown.js';
+import { Markdown, workspaceLinkTo } from '../../render/Markdown.js';
 import type { NoteRefs } from '../../render/note-refs.js';
 import { plainClick } from '../../ui/link-click.js';
 import { htmlUiKey, isHtmlUiClosed, linksAsWritten, REPLY_FRAME_SRC, setHtmlUiClosed, splitHtmlReply } from './html-reply-links.js';
@@ -218,10 +218,14 @@ export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, on
   onAnswer?: (seq: number, text: string) => void;
 }) {
   const answer = useCallback((text: string) => onAnswer?.(seq, text), [onAnswer, seq]);
-  const { words, ui } = useMemo(() => splitHtmlReply(source, htmlReplyNeedsFrame), [source]);
-  if (!ui) return <HtmlWords source={source} notes={notes} />;
+  // A Markdown lead-in before the HTML (note #1191) is drawn as Markdown.
+  const parts = useMemo(() => htmlReplyParts(source) ?? { lead: '', html: source }, [source]);
+  const { words, ui } = useMemo(() => splitHtmlReply(parts.html, htmlReplyNeedsFrame), [parts.html]);
+  const lead = parts.lead ? <Markdown source={parts.lead} className="chatmarkdown" notes={notes} workspaceLinks /> : null;
+  if (!ui) return <>{lead}<HtmlWords source={parts.html} notes={notes} /></>;
   return (
     <>
+      {lead}
       {words ? <HtmlWords source={words} notes={notes} /> : null}
       <HtmlUi ui={ui} replyKey={`${seq}:${ui.length}`} state={state} onAnswer={onAnswer ? answer : undefined} />
     </>
