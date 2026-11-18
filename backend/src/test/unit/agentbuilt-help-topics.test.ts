@@ -306,7 +306,7 @@ describe('agentbuilt help <topic>', () => {
     expect(stdout).not.toContain('Markdown is still the right reply');
     // What it kept: how to ask, what comes back, the locked frame.
     expect(stdout).toContain('agentbuilt.reply(text)');
-    expect(stdout).toContain('Each reply is answered once');
+    expect(stdout).toContain('A reply takes as many answers as your user gives');
     expect(stdout).toContain('no network at all');
   });
 

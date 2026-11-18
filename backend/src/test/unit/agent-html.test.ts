@@ -1,8 +1,8 @@
 import express from 'express';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { htmlReplyNeedsFrame, htmlReplyParts, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
-import { recapHtmlStates, type RecapMessage } from '../../shared/workspace-recap-chat.js';
+import { agentChatHtmlAnswers, agentChatHtmlStates, htmlReplyAnswerable, htmlReplyNeedsFrame, htmlReplyParts, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
+import { recapHtmlAnswers, recapHtmlStates, type RecapMessage } from '../../shared/workspace-recap-chat.js';
 import { REPLY_FRAME_CONTENT_SECURITY_POLICY, replyFrameRoutes, replyFrameTimingLine } from '../../routes/reply-frame.js';
 import { WORKSPACE_AGENT_INSTRUCTIONS, quietLine } from '../../services/workspace-recap-chat.js';
 
@@ -74,12 +74,12 @@ describe('The reply frame (note #1186): closed off, one way out', () => {
     // only to its parent, and the outer passes up only its own frame's words.
     expect(res.text).toContain("frame.setAttribute('sandbox','allow-scripts allow-forms')");
     expect(res.text).toContain('e.source!==frame.contentWindow');
-    expect(res.text).toContain('agentbuilt={reply:reply');
+    expect(res.text).toContain('window.agentbuilt={reply:function(t){return reply(t)}');
     expect(res.text).not.toMatch(/fetch\(|XMLHttpRequest|document\.cookie|localStorage/);
   });
 });
 
-describe('Answer states (notes #1186, #1189): one answer per reply, live until answered or a fresh chat', () => {
+describe('Answer states (notes #1186, #1189, #1194): answerable until a fresh chat, however often answered', () => {
   const at = '2026-11-16T22:00:00.000Z';
   const row = (id: string, role: RecapMessage['role'], text: string, extra: Partial<RecapMessage> = {}): RecapMessage => ({ id, role, text, at, ...extra });
   it('keeps every unanswered HTML reply since the fresh chat live, an answered one answered, one before the fresh chat old, never a Markdown reply', () => {
@@ -96,6 +96,26 @@ describe('Answer states (notes #1186, #1189): one answer per reply, live until a
     ];
     const states = recapHtmlStates(messages);
     expect([...states.entries()]).toEqual([[0, 'old'], [3, 'answered'], [6, 'live'], [7, 'live'], [8, 'live']]);
+    // Note #1194: answered is still answerable; only old is closed.
+    expect([...states.values()].map(htmlReplyAnswerable)).toEqual([false, true, true, true, true]);
+  });
+
+  it('collects what was already sent to each reply, in both chats, so the page marks it and the same answer is not sent twice (note #1194)', () => {
+    const messages = [
+      row('b', 'assistant', '<button data-reply="Fix both">Fix</button><button data-reply="Add it there too">Add</button>'),
+      row('c', 'owner', ' Fix both ', { answerTo: 'b' }),
+      row('d', 'owner', 'typed, not an answer'),
+      row('e', 'owner', 'Add it there too', { answerTo: 'b' }),
+      row('f', 'owner', 'to a reply that is gone', { answerTo: 'zz' }),
+    ];
+    expect([...recapHtmlAnswers(messages).entries()]).toEqual([[0, ['Fix both', 'Add it there too']]]);
+    const rows = [
+      { seq: 4, role: 'agent', text: '<button data-reply="Keep it">Keep</button>' },
+      { seq: 5, role: 'owner', text: 'Keep it', answerTo: 4 },
+      { seq: 6, role: 'owner', text: 'Leave them', answerTo: 4 },
+    ];
+    expect([...agentChatHtmlAnswers(rows).entries()]).toEqual([[4, ['Keep it', 'Leave them']]]);
+    expect(agentChatHtmlStates(rows).get(4)).toBe('answered');
   });
 });
 

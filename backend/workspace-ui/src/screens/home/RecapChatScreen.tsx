@@ -34,7 +34,7 @@ import { useLocation } from 'react-router-dom';
 import { parseWorkspaceRoute, WORKSPACE_BASE } from '../../../../src/shared/workspace-routes.js';
 import type { WorkspaceRecapSettingsAnswer } from '../../../../src/shared/workspace-recap.js';
 import { progressLineSeqs } from '../../../../src/shared/agent-html.js';
-import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage, recapHtmlStates } from '../../../../src/shared/workspace-recap-chat.js';
+import { WORKSPACE_AGENT_CHAT_ID, type RecapChatAnswer, type RecapChatRead, type RecapChatStopAnswer, type RecapMessage, recapHtmlAnswers, recapHtmlStates } from '../../../../src/shared/workspace-recap-chat.js';
 import { recapRowViews } from '../../../../src/shared/recap-chat-rows.js';
 import type { WorkspaceChatFile, WorkspaceChatFileAccessAnswer, WorkspaceChatMessage } from '../../../../src/shared/workspace-api.js';
 import { chatFilesBody } from '../chat/chat-upload.js';
@@ -529,9 +529,11 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   // them; the rest of the platform's narration stays in the agent's record.
   const views = useMemo(() => recapRowViews(answer?.messages ?? []), [answer]);
   // Note #1186: which of the Chief of Staff's HTML replies can still be
-  // answered. One answer per reply, and only the newest reply it wrote: an
-  // older one belongs to a turn that is over, and stands drawn but inert.
+  // answered — since note #1194 every one since the last fresh chat, however
+  // often it was answered — and what was already sent to each, so the page
+  // marks it and the same answer is not sent twice.
   const htmlStates = useMemo(() => recapHtmlStates(answer?.messages ?? []), [answer]);
+  const htmlSent = useMemo(() => recapHtmlAnswers(answer?.messages ?? []), [answer]);
   // Note #1193: plain lines written before the HTML reply of the same
   // request are kept and drawn quiet, as in an agent's chat.
   const progressLines = useMemo(() => progressLineSeqs(rows), [rows]);
@@ -565,7 +567,9 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
   const send = useCallback((message: string, files: File[], answerTo?: string): boolean => {
     const text = message.trim();
     if (!text && !files.length) return false;
-    const draft = `${text}\n${files.map((file) => `${file.name}:${file.size}`).join('\n')}`;
+    // The reply it answers is part of the draft (note #1194): the same words
+    // to two replies are two messages, the same words to one reply are one.
+    const draft = `${text}\n${files.map((file) => `${file.name}:${file.size}`).join('\n')}\n${answerTo ?? ''}`;
     if (pendingSend.current?.draft !== draft) pendingSend.current = { clientId: crypto.randomUUID(), draft };
     const { clientId } = pendingSend.current;
     // Whatever the last turn ended as, this message starts one: the stopped
@@ -815,7 +819,7 @@ export function Conversation({ orgId, home = false, notice = '', standing = '', 
                           {/* The Chief of Staff's files (note #749), drawn as a room
                               agent's ATTACH: files are — the words as Markdown in
                               their own row, the files on a row of their own under it. */}
-                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} htmlState={htmlStates.get(row.seq)} onHtmlAnswer={answerHtml} progress={progressLines.has(row.seq)} />
+                          <ChatMessageRow row={row.role === 'agent' && row.files?.length ? wordsOf(row) : row} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} htmlState={htmlStates.get(row.seq)} htmlSent={htmlSent.get(row.seq)} onHtmlAnswer={answerHtml} progress={progressLines.has(row.seq)} />
                           {row.role === 'agent' && row.files?.length
                             ? <ChatMessageRow row={filesOf(row)} agentId={WORKSPACE_AGENT_CHAT_ID} workspaceLinks foldReports onOpenProposal={noProposal} onOpenFile={openFile} onPictureLoaded={pictureLoaded} />
                             : null}

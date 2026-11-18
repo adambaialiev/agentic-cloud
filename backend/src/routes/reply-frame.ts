@@ -109,7 +109,8 @@ input:not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button
 input[type=radio],input[type=checkbox]{width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--accent)}
 fieldset{border:1px solid var(--border);border-radius:8px;padding:8px 12px}
 :disabled{opacity:.5;cursor:default}
-html[data-reply-state=answered] [data-reply],html[data-reply-state=old] [data-reply]{cursor:default}
+[data-reply-sent]::after{content:"\\00a0\\2713";font-weight:600}
+html[data-reply-state=old] [data-reply]{cursor:default}
 `.replace(/\n/g, '');
 
 /**
@@ -119,31 +120,39 @@ html[data-reply-state=answered] [data-reply],html[data-reply-state=old] [data-re
  * matters is made by the parent and by the Workspace above it.
  */
 const INNER_BRIDGE = `(function(){
-var P=parent,root=document.documentElement,state=root.getAttribute('data-reply-state')||'live',MAX=${REPLY_FRAME_ANSWER_MAX};
+var P=parent,root=document.documentElement,state=root.getAttribute('data-reply-state')||'live',MAX=${REPLY_FRAME_ANSWER_MAX},sent=[];
 function post(m){try{P.postMessage(m,'*')}catch(e){}}
 function lock(){var all=document.querySelectorAll('button,input,select,textarea,fieldset');for(var i=0;i<all.length;i++){all[i].disabled=true}}
-function set(s){state=s;root.setAttribute('data-reply-state',s);if(s!=='live')lock();try{dispatchEvent(new CustomEvent('agentbuilt:state',{detail:s}))}catch(e){}}
-function reply(text){if(state!=='live')return false;text=String(text==null?'':text).trim();if(!text)return false;post({t:'reply',text:text.slice(0,MAX)});set('answered');return true}
-window.agentbuilt={reply:reply,state:function(){return state}};
-addEventListener('message',function(e){var d=e.data;if(e.source!==P||!d||d.t!=='state')return;if(d.state==='answered'||d.state==='old'||d.state==='live')set(d.state)});
+function had(t){for(var i=0;i<sent.length;i++){if(sent[i]===t)return true}return false}
+function headHad(h){for(var i=0;i<sent.length;i++){if(sent[i].split('\\n')[0]===h)return true}return false}
+function isSubmit(el){return Boolean(el.form)&&(el.type==='submit'||el.type==='image')}
+function marks(){if(document.readyState==='loading')return;var all=document.querySelectorAll('[data-reply]:not(form),form button,form input[type=submit]');
+for(var i=0;i<all.length;i++){var el=all[i],hit;if(isSubmit(el)){var h=((el.getAttribute('data-reply')||el.form.getAttribute('data-reply')||'')+'').trim();hit=Boolean(h)&&headHad(h)}else{hit=el.hasAttribute('data-reply')&&had(((el.getAttribute('data-reply')||el.textContent||'')+'').trim())}
+if(hit)el.setAttribute('data-reply-sent','')}}
+function set(s){state=s;root.setAttribute('data-reply-state',s);if(s==='old')lock();try{dispatchEvent(new CustomEvent('agentbuilt:state',{detail:s}))}catch(e){}}
+function reply(text,el){if(state==='old')return false;text=String(text==null?'':text).trim().slice(0,MAX);if(!text)return false;if(el&&el.setAttribute)el.setAttribute('data-reply-sent','');if(had(text))return false;sent.push(text);post({t:'reply',text:text});if(state==='live')set('answered');return true}
+window.agentbuilt={reply:function(t){return reply(t)},state:function(){return state}};
+addEventListener('message',function(e){var d=e.data;if(e.source!==P||!d||d.t!=='state')return;
+if(d.sent&&d.sent.length!==undefined){for(var i=0;i<d.sent.length&&i<200;i++){var t=String(d.sent[i]).trim();if(t&&!had(t))sent.push(t)}marks()}
+if(d.state==='answered'||d.state==='old'||d.state==='live')set(d.state)});
 document.addEventListener('click',function(e){if(e.defaultPrevented||!e.target||!e.target.closest)return;
 var a=e.target.closest('a[href]');
 if(a){var raw=a.getAttribute('href')||'';e.preventDefault();if(raw.charAt(0)==='#'){var at=document.getElementById(decodeURIComponent(raw.slice(1)));if(at)at.scrollIntoView();return}post({t:'open',href:a.href});return}
 var b=e.target.closest('[data-reply]');if(!b||b.tagName==='FORM')return;
 var c=e.target.closest('input,select,textarea,label,form');if(c&&c!==b&&b.contains(c))return;
 if(b.form&&(b.type==='submit'||b.type==='image'))return;
-e.preventDefault();reply(b.getAttribute('data-reply')||b.textContent)});
+e.preventDefault();reply(b.getAttribute('data-reply')||b.textContent,b)});
 document.addEventListener('submit',function(e){if(e.defaultPrevented)return;e.preventDefault();var f=e.target,s=e.submitter||null,lines=[];
 var head=(s&&s.getAttribute&&s.getAttribute('data-reply'))||f.getAttribute('data-reply')||'';if(head)lines.push(head);
 var fd;try{fd=new FormData(f,s)}catch(x){fd=new FormData(f)}var seen={},order=[];
 fd.forEach(function(v,k){if(typeof v!=='string')return;if(head&&s&&s.name&&k===s.name)return;if(!(k in seen)){seen[k]=[];order.push(k)}seen[k].push(v)});
 for(var i=0;i<order.length;i++)lines.push(order[i]+': '+seen[order[i]].join(', '));
 if(!lines.length)lines.push(((s&&(s.value||s.textContent))||'Submitted').trim());
-reply(lines.join('\\n'))});
+reply(lines.join('\\n'),s||f.querySelector('button:not([type=button]):not([type=reset]),input[type=submit]'))});
 function measure(){post({t:'h',h:Math.ceil(root.getBoundingClientRect().height)})}
 if(window.ResizeObserver)new ResizeObserver(measure).observe(root);
 document.addEventListener('DOMContentLoaded',measure);addEventListener('load',measure);setTimeout(measure,0);
-if(state!=='live')addEventListener('DOMContentLoaded',lock);
+addEventListener('DOMContentLoaded',function(){marks();if(state==='old')lock()});
 var touched=false;function touch(){if(touched)return;touched=true;post({t:'touched'})}
 ['pointerdown','keydown','input','change'].forEach(function(n){document.addEventListener(n,touch,true)});
 })();`;
@@ -167,13 +176,15 @@ function outerDocument(): string {
 var P=parent,K=${inner.replace(/</g, '\\u003c')},frame=null,MAX=${REPLY_FRAME_ANSWER_MAX};
 function up(m){try{P.postMessage(m,'*')}catch(e){}}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
+function sentOf(v){var out=[];if(v&&v.length!==undefined){for(var i=0;i<v.length&&i<200;i++){if(typeof v[i]==='string')out.push(v[i].slice(0,MAX))}}return out}
 addEventListener('message',function(e){var d=e.data;if(!d||typeof d!=='object')return;
 if(e.source===P){
-if(d.t==='show'&&!frame&&typeof d.html==='string'){var st=d.state==='answered'||d.state==='old'?d.state:'live';
+if(d.t==='show'&&!frame&&typeof d.html==='string'){var st=d.state==='answered'||d.state==='old'?d.state:'live',said={t:'state',state:st,sent:sentOf(d.sent)};
 frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-scripts allow-forms');frame.setAttribute('title',typeof d.title==='string'?d.title:'Reply');
 frame.srcdoc='<!doctype html><html data-reply-state="'+st+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base target="_self"><style>'+K.style+'</style><script>'+K.bridge+'<\\/script></head><body>'+d.html+'</body></html>';
+frame.addEventListener('load',function(){if(frame.contentWindow)frame.contentWindow.postMessage(said,'*')});
 document.body.appendChild(frame)}
-else if(d.t==='state'&&frame&&frame.contentWindow){frame.contentWindow.postMessage({t:'state',state:d.state},'*')}
+else if(d.t==='state'&&frame&&frame.contentWindow){frame.contentWindow.postMessage({t:'state',state:d.state,sent:sentOf(d.sent)},'*')}
 return}
 if(!frame||e.source!==frame.contentWindow)return;
 if(d.t==='h'&&typeof d.h==='number'&&d.h>=0){var h=Math.min(20000,Math.ceil(d.h));frame.style.height=h+'px';up({t:'h',h:h})}

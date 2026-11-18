@@ -1,4 +1,4 @@
-import { agentChatHtmlStates, replyOpening, replyPlainText } from '../shared/agent-html.js';
+import { agentChatHtmlStates, htmlReplyAnswerable, replyOpening, replyPlainText } from '../shared/agent-html.js';
 import { harnessName, subscriptionName } from '../shared/harness-clis.js';
 import { CATALOGUE_URL } from '../shared/public-host.js';
 import { PRIVATE_COPY } from '../shared/private-copy.js';
@@ -1137,7 +1137,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // while working drawn as small print; the header and message box stay.
 // v204 (note #1193): CLI 1.87.0 — `agentbuilt help html` no longer says the
 // card can be hidden: Adam took the close away ("remove the close").
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 204;
+// v205 (note #1194): CLI 1.88.0 — `agentbuilt help html`: a reply takes as
+// many answers as the user gives (Adam: "Just let's not disable buttons"),
+// each its own message naming the reply; no longer "answered once".
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 205;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -3955,15 +3958,16 @@ export class AgentService {
     const message = args.message.trim();
     const uploads = args.attachments ?? [];
     // An answer through a reply's HTML (note #1191): that reply must still be
-    // answerable — unanswered, and since the last fresh chat — and the turn
+    // answerable — since the last fresh chat (answered before is fine since
+    // note #1194) — and the turn
     // is told which reply it was, since newer ones may have come between.
     let answered: { seq: number; at: string; words: string } | undefined;
     if (typeof args.answerTo === 'number') {
       if (uploads.length) return { ok: false, code: 'unavailable', reason: 'An answer to a reply carries no files.' };
       const rows = await this.deps.agentChatStorage?.getAfter(args.userId, target.id, 0) ?? [];
       const state = agentChatHtmlStates(rows).get(args.answerTo);
-      if (state === 'answered') return { ok: false, code: 'busy', reason: 'You already answered that reply. Type to add anything.' };
-      if (state !== 'live') return { ok: false, code: 'busy', reason: 'That reply is from before a fresh chat, so it can no longer be answered. Type your answer instead.' };
+      // Note #1194: answered before is no refusal; every further tap is sent.
+      if (!htmlReplyAnswerable(state)) return { ok: false, code: 'busy', reason: 'That reply is from before a fresh chat, so it can no longer be answered. Type your answer instead.' };
       const reply = rows.find((row) => row.seq === args.answerTo)!;
       answered = { seq: reply.seq, at: reply.at, words: replyOpening(reply.text) };
     }

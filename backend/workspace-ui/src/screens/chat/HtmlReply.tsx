@@ -23,8 +23,10 @@
  *    the locked frame served at /workspace/reply-frame — see
  *    backend/src/routes/reply-frame.ts for why it is two frames and what
  *    each refuses. This component is the third wall: it listens only to ITS
- *    frame, takes one answer per reply and only while the reply is live, and
- *    opens only links that were in the HTML as written.
+ *    frame, takes answers only while the reply is answerable (every reply
+ *    since the last fresh chat, answered before or not: note #1194), never
+ *    the same answer to the same reply twice, and opens only links that were
+ *    in the HTML as written.
  *
  * The frame always sits in a card the Workspace draws (note #1188), and that
  * card is the safety line of this redesign, not decoration. Everything an
@@ -42,7 +44,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { htmlReplyNeedsFrame, htmlReplyParts, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
+import { htmlReplyAnswerable, htmlReplyNeedsFrame, htmlReplyParts, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
 import { KnowledgeHtml } from '../../render/KnowledgeHtml.js';
 import { Markdown, workspaceLinkTo } from '../../render/Markdown.js';
 import type { NoteRefs } from '../../render/note-refs.js';
@@ -208,9 +210,17 @@ function frameFetchTiming(): { fetch?: number; transfer?: number } {
   } catch { return {}; }
 }
 
-function HtmlFrame({ source, state, onAnswer }: {
+/** Note #1194: answers a frame may send, at most, while it is on the page,
+ *  and how close together. Every tap of the person's is far inside both; a
+ *  script that posts in a loop is not. */
+const FRAME_ANSWERS_MAX = 40;
+const FRAME_ANSWER_GAP_MS = 250;
+
+function HtmlFrame({ source, state, sent, onAnswer }: {
   source: string;
   state: HtmlReplyAnswerState;
+  /** What the person already sent to this reply, as the record holds it. */
+  sent: readonly string[];
   onAnswer?: (text: string) => void;
 }) {
   const navigate = useNavigate();
@@ -241,13 +251,16 @@ function HtmlFrame({ source, state, onAnswer }: {
   const [attempt, setAttempt] = useState(0);
   const timing = useRef({ start: 0, loaded: -1, ready: -1, reported: false });
   const links = useMemo(() => linksAsWritten(source), [source]);
-  // Read by the listener, which is attached once per frame.
-  const live = useRef({ state, onAnswer, answered: state !== 'live' });
+  // Read by the listener, which is attached once per frame. `sending` is
+  // what this frame sent and the record does not show yet: a double tap, or
+  // a second tap while the first is on its way, is the same answer and is
+  // not sent again (note #1194).
+  const live = useRef({ state, onAnswer, sent, sending: new Set<string>(), count: 0, last: -Infinity });
   useLayoutEffect(() => {
     live.current.state = state;
     live.current.onAnswer = onAnswer;
-    if (state !== 'live') live.current.answered = true;
-  }, [state, onAnswer]);
+    live.current.sent = sent;
+  }, [state, onAnswer, sent]);
 
   const report = useCallback((outcome: 'slow' | 'failed', shown: number) => {
     const t = timing.current;
@@ -269,7 +282,7 @@ function HtmlFrame({ source, state, onAnswer }: {
   // before anyone was listening. The frame takes the first and ignores the
   // rest.
   const show = useCallback(() => {
-    frame.current?.contentWindow?.postMessage({ t: 'show', html: source, state: live.current.state, title: 'Interactive reply' }, '*');
+    frame.current?.contentWindow?.postMessage({ t: 'show', html: source, state: live.current.state, sent: [...live.current.sent, ...live.current.sending], title: 'Interactive reply' }, '*');
   }, [source]);
 
   // The clock runs per frame: from when it is put on the page (first near,
@@ -319,13 +332,19 @@ function HtmlFrame({ source, state, onAnswer }: {
         touched.current = true;
       } else if (message.t === 'reply' && typeof message.text === 'string') {
         touched.current = true;
-        // One answer per reply, and only while it is the live one: a frame
-        // whose script keeps posting is heard once.
-        if (live.current.answered || live.current.state !== 'live' || !live.current.onAnswer) return;
+        // Note #1194 (Adam: "Just let's not disable buttons"): every answer
+        // is sent, each its own message naming this reply, while the reply
+        // is answerable — but never the same answer twice, and a script that
+        // posts in a loop is cut off.
+        const now = live.current;
+        if (!htmlReplyAnswerable(now.state) || !now.onAnswer) return;
         const text = message.text.trim().slice(0, 10_000);
-        if (!text) return;
-        live.current.answered = true;
-        live.current.onAnswer(text);
+        if (!text || now.sending.has(text) || now.sent.includes(text)) return;
+        const at = performance.now();
+        if (now.count >= FRAME_ANSWERS_MAX || at - now.last < FRAME_ANSWER_GAP_MS) return;
+        now.count += 1; now.last = at;
+        now.sending.add(text);
+        now.onAnswer(text);
       } else if (message.t === 'open' && typeof message.href === 'string') {
         // Only an address the HTML carried as written: never one a script
         // built after the person typed something into the reply.
@@ -357,10 +376,12 @@ function HtmlFrame({ source, state, onAnswer }: {
     setAttempt((n) => n + 1);
   }, [setPhase]);
 
-  // An answer sent, or a newer reply arrived: the frame's controls lock.
+  // What the page inside marks as sent, and whether it is closed (only a
+  // reply from before a fresh chat is): told whenever the record changes.
   useEffect(() => {
-    frame.current?.contentWindow?.postMessage({ t: 'state', state }, '*');
-  }, [state]);
+    for (const text of sent) live.current.sending.delete(text);
+    frame.current?.contentWindow?.postMessage({ t: 'state', state, sent: [...sent, ...live.current.sending] }, '*');
+  }, [state, sent]);
 
   const shown = phase === 'shown';
   return (
@@ -417,26 +438,39 @@ function HtmlFrame({ source, state, onAnswer }: {
  * so it is drawn as Markdown, at the top of the same card: one surface.
  * Answered and older replies are cards too.
  */
-function HtmlCard({ html, lead, notes, state, onAnswer }: {
+function HtmlCard({ html, lead, notes, state, sent, onAnswer }: {
   html: string;
   lead: string;
   notes: NoteRefs;
   state: HtmlReplyAnswerState;
+  sent: readonly string[];
   onAnswer?: (text: string) => void;
 }) {
   return (
-    <div className={`chathtmlui${state === 'live' ? '' : ` ${state}`}`}>
-      {lead ? <Markdown source={lead} className="chatmarkdown chathtmllead" notes={notes} workspaceLinks /> : null}
-      <HtmlFrame source={html} state={state} onAnswer={onAnswer} />
-    </div>
+    <>
+      <div className={`chathtmlui${state === 'live' ? '' : ` ${state}`}`}>
+        {lead ? <Markdown source={lead} className="chatmarkdown chathtmllead" notes={notes} workspaceLinks /> : null}
+        <HtmlFrame source={html} state={state} sent={sent} onAnswer={onAnswer} />
+      </div>
+      {/* Note #1194: the one reply whose controls are closed says why, in
+          the Workspace's words, outside the agent's card — so it never reads
+          as a fault. */}
+      {state === 'old' && /data-reply|<form|<button|<input|<select|<textarea|agentbuilt\.reply/i.test(html) ? (
+        <div className="chathtmlclosed">From before a fresh chat, so its buttons no longer send. Type your answer instead.</div>
+      ) : null}
+    </>
   );
 }
 
-export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, onAnswer }: {
+const NOTHING_SENT: readonly string[] = [];
+
+export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, sent = NOTHING_SENT, onAnswer }: {
   source: string;
   seq: number;
   state: HtmlReplyAnswerState;
   notes: NoteRefs;
+  /** Note #1194: what the person already sent to this reply. */
+  sent?: readonly string[];
   onAnswer?: (seq: number, text: string) => void;
 }) {
   const answer = useCallback((text: string) => onAnswer?.(seq, text), [onAnswer, seq]);
@@ -445,5 +479,5 @@ export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, on
   // lead-in is only ever taken before HTML that asks, so there is none here.
   if (!htmlReplyNeedsFrame(parts.html)) return <HtmlWords source={parts.html} notes={notes} />;
   // Anything else: the whole reply, in the locked frame, in one card.
-  return <HtmlCard html={parts.html} lead={parts.lead} notes={notes} state={state} onAnswer={onAnswer ? answer : undefined} />;
+  return <HtmlCard html={parts.html} lead={parts.lead} notes={notes} state={state} sent={sent} onAnswer={onAnswer ? answer : undefined} />;
 });

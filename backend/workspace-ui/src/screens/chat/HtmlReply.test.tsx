@@ -32,7 +32,13 @@ function mount(messages: RecapMessage[]) {
     'GET api/recap/agent/settings': () => ({ orgId: 'o1', settings: { cli: 'claude', model: 'opus', effort: 'high' }, models: [] }),
     'GET api/recap/settings': () => ({ orgId: 'o1', settings: { cli: 'claude', model: 'opus', effort: 'high' }, models: [] }),
     'GET api/recap/chat': () => answer(),
-    'POST api/recap/chat': (call) => { sent.push(JSON.parse(String(call.init?.body))); return answer(); },
+    'POST api/recap/chat': (call) => {
+      const body = JSON.parse(String(call.init?.body)) as { text: string; answerTo?: string };
+      sent.push(body);
+      // On the record, as the server keeps it: the answer names its reply.
+      messages = [...messages, { id: `sent-${sent.length}`, role: 'owner', text: body.text, at: now, ...(body.answerTo ? { answerTo: body.answerTo } : {}) }];
+      return answer();
+    },
     'POST api/reply-frame/timing': (call) => { timings.push(JSON.parse(String(call.init?.body))); return null; },
   });
   render(<MemoryRouter initialEntries={['/']}><Address /><App api={scripted.api} /></MemoryRouter>);
@@ -74,7 +80,7 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     await waitFor(() => expect(screen().textContent).toContain('/notes/12'));
   });
 
-  it('sends a tap as the person\'s message naming the reply, once; an OLDER reply stays answerable after a newer one (note #1189); a foreign frame and a reply from before a fresh chat are not heard', async () => {
+  it('sends every tap as the person\'s message naming the reply, never the same answer twice (note #1194); an OLDER reply stays answerable after a newer one (note #1189); a foreign frame and a reply from before a fresh chat are not heard, and the latter says why', async () => {
     const { sent } = mount([
       { id: 'm0', role: 'assistant', text: '<button data-reply="Gone">Gone</button>', at: now },
       { id: 'd1', role: 'action', text: '', at: now, kind: 'new-chat-divider' },
@@ -88,13 +94,30 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     await act(async () => { window.dispatchEvent(new MessageEvent('message', { data: { t: 'reply', text: 'Forged' }, source: window })); });
     await frameSays(live!, { t: 'h', h: 222 });
     expect(live!.style.height).toBe('222px');
+    const told: unknown[] = [];
+    live!.contentWindow!.postMessage = ((data: unknown) => { told.push(data); }) as never;
     await frameSays(live!, { t: 'reply', text: 'Ship A' });
-    await frameSays(live!, { t: 'reply', text: 'Ship A again' });
+    // A double tap is the same answer: sent once.
+    await frameSays(live!, { t: 'reply', text: 'Ship A' });
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ text: 'Ship A', answerTo: 'm3' });
-    await frameSays(older!, { t: 'reply', text: 'Older' });
+    // The page is told what was sent, so it marks it; nothing is locked.
+    await waitFor(() => expect(told).toContainEqual({ t: 'state', state: 'answered', sent: ['Ship A'] }));
+    // Answering does not close the reply: the next tap is sent too.
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+    await frameSays(live!, { t: 'reply', text: 'Ship B' });
     await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent[1]).toMatchObject({ text: 'Older', answerTo: 'm1' });
+    expect(sent[1]).toMatchObject({ text: 'Ship B', answerTo: 'm3' });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 300)); });
+    await frameSays(live!, { t: 'reply', text: 'Ship A' });
+    await frameSays(older!, { t: 'reply', text: 'Older' });
+    await waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent[2]).toMatchObject({ text: 'Older', answerTo: 'm1' });
+    // Only the reply from before the fresh chat is closed, and it says why.
+    const rows = [...document.querySelectorAll('#recapChatLog .chatmsg.html')];
+    expect(rows[0]!.querySelector('.chathtmlclosed')?.textContent).toBe('From before a fresh chat, so its buttons no longer send. Type your answer instead.');
+    expect(rows[1]!.querySelector('.chathtmlclosed')).toBeNull();
+    expect(rows[2]!.querySelector('.chathtmlclosed')).toBeNull();
   });
 
   it('opens only links written in the HTML: a Workspace one inside, never one a script made up', async () => {

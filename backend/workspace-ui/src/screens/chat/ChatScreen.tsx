@@ -52,7 +52,7 @@
  * page pan it used to reveal the box, and the chat returns that to zero.
  */
 
-import { agentChatHtmlStates, progressLineSeqs } from '../../../../src/shared/agent-html.js';
+import { agentChatHtmlAnswers, agentChatHtmlStates, progressLineSeqs } from '../../../../src/shared/agent-html.js';
 import { overviewTo } from '../home/home-address.js';
 import {
   Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
@@ -998,9 +998,13 @@ export function ChatScreen() {
     return true;
   }, [id, outbox]);
   // Note #1191: an agent's HTML reply is drawn as HTML here too, by the Chief
-  // of Staff's rules — live until answered once or a fresh chat — and what
+  // of Staff's rules — answerable until a fresh chat, however often (note
+  // #1194) — and what
   // the person taps or fills in is their message, naming that reply.
   const htmlStates = useMemo(() => agentChatHtmlStates(rows), [rows]);
+  // Note #1194: what was already sent to each reply; every further answer is
+  // sent too, never the same one twice.
+  const htmlSent = useMemo(() => agentChatHtmlAnswers(rows), [rows]);
   // Note #1193: the plain lines an agent wrote while it worked, before the
   // HTML reply that closed the turn, are kept and drawn quiet.
   const progressLines = useMemo(() => progressLineSeqs(rows), [rows]);
@@ -1298,6 +1302,7 @@ export function ChatScreen() {
                   onOpenFile={openFileRow}
                   onPictureLoaded={pictureLoaded}
                   htmlState={htmlStates.get(row.seq)}
+                  htmlSent={htmlSent.get(row.seq)}
                   onHtmlAnswer={answerHtml}
                   progress={progressLines.has(row.seq)}
                 />

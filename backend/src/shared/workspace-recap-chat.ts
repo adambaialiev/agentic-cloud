@@ -320,6 +320,22 @@ export interface RecapChatStopAnswer { ok: true; stopped: boolean; name: string 
  * holds, and is `old`. Closing a card is the screen's business and changes
  * nothing here.
  */
+/** Note #1194: what the person already sent to each of the Chief of Staff's
+ *  replies (by the reply's place in the list), so the page can mark what was
+ *  tapped and the same answer is not sent twice. */
+export function recapHtmlAnswers(messages: readonly RecapMessage[]): Map<number, string[]> {
+  const at = new Map<string, number>();
+  messages.forEach((message, seq) => { at.set(message.id, seq); });
+  const out = new Map<number, string[]>();
+  for (const message of messages) {
+    if (message.role !== 'owner' || !message.answerTo) continue;
+    const seq = at.get(message.answerTo);
+    if (seq === undefined) continue;
+    out.set(seq, [...(out.get(seq) ?? []), message.text.trim()]);
+  }
+  return out;
+}
+
 export function recapHtmlStates(messages: readonly RecapMessage[]): Map<number, HtmlReplyAnswerState> {
   const answered = new Set(messages.flatMap((message) => (message.role === 'owner' && message.answerTo ? [message.answerTo] : [])));
   let fresh = -1;

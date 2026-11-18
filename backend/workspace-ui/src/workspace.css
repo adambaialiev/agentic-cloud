@@ -1290,6 +1290,10 @@ body.agent-chat-open .home-loading {
   font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
 }
 .chatmsg .chathtmlretry { color: var(--accent); padding: 4px 0; }
+/* Note #1194: a reply from before a fresh chat is the one whose controls are
+   closed; this quiet line under its card says why, so it never reads as a
+   fault. Answered replies stay as they were drawn, every control live. */
+.chatmsg .chathtmlclosed { margin-top: 6px; font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint); }
 .chatmsg .chathtmlframe iframe { display: block; width: 100%; border: 0; background: transparent; }
 /* A reply that styles itself, runs or asks sits WHOLE in a card of its own
    (note #1188; whole since note #1193, when the Workspace stopped lifting

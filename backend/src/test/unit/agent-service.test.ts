@@ -1028,11 +1028,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 204,
+      version: 205,
       templateHash: '03959420d341864f',
       templateHashWithoutUrl: 'c099c706a680826d',
-      platformDocsHash: '872f30d187ec0f25',
-      agentbuiltCliHash: '92ce89244f348306',
+      platformDocsHash: '3c1741d9e79082aa',
+      agentbuiltCliHash: '1c1de45966cb3e15',
     });
   });
 
@@ -4512,7 +4512,7 @@ describe('AgentService — idle-only agent handoffs', () => {
     await expect(stoppedUserMessageStorage.listAll()).resolves.toEqual([]);
   });
 
-  it('takes an answer through an agent\'s HTML reply once, while it is live, and tells the turn which reply it answers (note #1191)', async () => {
+  it('takes every answer through an agent\'s HTML reply until a fresh chat, even while the agent works, and tells the turn which reply it answers (notes #1191, #1194)', async () => {
     const chats = new InMemoryAgentChatStorage();
     const built = await fixture(undefined, { agentChatStorage: chats });
     const internals = built.service as unknown as {
@@ -4537,8 +4537,18 @@ describe('AgentService — idle-only agent handoffs', () => {
     await vi.waitFor(async () => {
       expect((await chats.getAfter('user-1', 'agent-b', 0)).at(-1)).toMatchObject({ role: 'owner', text: 'q1: on', answerTo: ask });
     });
-    await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'again', answerTo: ask }))
-      .resolves.toMatchObject({ ok: false, code: 'busy', reason: expect.stringContaining('already answered') });
+    // Note #1194 (Adam: "Just let's not disable buttons"): a second answer
+    // to the same reply is carried too — here while the agent is working, so
+    // it steers that turn, named as an answer to the same reply.
+    built.backgroundRunner.steerAgent.mockReturnValue({ status: 'steering' });
+    await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'q2: on', answerTo: ask }))
+      .resolves.toMatchObject({ ok: true, steered: true });
+    const steered = built.backgroundRunner.steerAgent.mock.calls.at(-1)![1] as UserInputPayload;
+    expect(steered.content).toContain(`answered through the interactive HTML in your reply of ${at}`);
+    expect(steered.content).toContain('q2: on');
+    await vi.waitFor(async () => {
+      expect((await chats.getAfter('user-1', 'agent-b', 0)).at(-1)).toMatchObject({ role: 'owner', text: 'q2: on', answerTo: ask });
+    });
     await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'old', answerTo: old }))
       .resolves.toMatchObject({ ok: false, code: 'busy', reason: expect.stringContaining('fresh chat') });
   });

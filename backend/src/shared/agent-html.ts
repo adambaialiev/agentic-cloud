@@ -144,11 +144,24 @@ export function replyPlainText(text: string): string {
 
 /**
  * The person's answer through a reply's HTML is an ordinary message of theirs
- * on the record, with the reply it answers named by its seq. One answer per
- * reply, and only the NEWEST reply of the agent can be answered: an older one
- * belongs to a turn that is over, and its controls stand drawn but inert.
+ * on the record, with the reply it answers named by its seq.
+ *
+ *  - `live`: not answered yet, and since the last fresh chat.
+ *  - `answered`: answered at least once — and STILL answerable. Note #1194
+ *    (Adam, 18 Nov 2026, after one tap greyed out the other two questions of
+ *    a reply: "Just let's not disable buttons"): every further tap or form
+ *    is sent too, each its own message naming the same reply. The only thing
+ *    that is not sent twice is the same answer to the same reply.
+ *  - `old`: from before a fresh chat. The agent no longer holds that
+ *    conversation, so a tap there could not be read against anything: the
+ *    one state whose controls are locked, and it says why.
  */
 export type HtmlReplyAnswerState = 'live' | 'answered' | 'old';
+
+/** Whether a reply in this state takes an answer (note #1194: all but old). */
+export function htmlReplyAnswerable(state: HtmlReplyAnswerState | undefined): boolean {
+  return state === 'live' || state === 'answered';
+}
 
 /**
  * Note #1191: the same answer states for an ordinary agent's own chat, whose
@@ -164,6 +177,18 @@ export interface HtmlStateRow {
   kind?: string;
   text: string;
   answerTo?: number;
+}
+
+/** Note #1194: what the person already sent to each reply of an agent's
+ *  chat (by the reply's seq), so the page can mark what was tapped and the
+ *  same answer is not sent twice. */
+export function agentChatHtmlAnswers(rows: readonly HtmlStateRow[]): Map<number, string[]> {
+  const out = new Map<number, string[]>();
+  for (const row of rows) {
+    if (row.role !== 'owner' || typeof row.answerTo !== 'number') continue;
+    out.set(row.answerTo, [...(out.get(row.answerTo) ?? []), row.text.trim()]);
+  }
+  return out;
 }
 
 export function agentChatHtmlStates(rows: readonly HtmlStateRow[]): Map<number, HtmlReplyAnswerState> {

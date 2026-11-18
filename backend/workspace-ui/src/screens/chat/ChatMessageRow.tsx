@@ -685,7 +685,7 @@ function PeerReport({ from, avatarUrl, text, notes, workspaceLinks }: {
  * Everything a row is given is stable across polls — the row object itself is
  * kept by the merge, and the screen holds its callbacks — so this is free.
  */
-export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false, htmlState, onHtmlAnswer, progress = false }: {
+export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpenProposal, onOpenFile, onPictureLoaded, workspaceLinks = false, foldReports = false, htmlState, htmlSent, onHtmlAnswer, progress = false }: {
   row: TranscriptRow;
   /** Note #1193: a plain line the agent wrote while it worked, before the
    *  HTML reply that closed the same turn (`progressLineSeqs`). Kept, and
@@ -695,6 +695,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpe
    *  answered. Given only by the Chief of Staff's chat, and only for a reply
    *  that IS HTML; every other chat leaves it out and draws Markdown. */
   htmlState?: HtmlReplyAnswerState;
+  /** Note #1194: what the person already sent to this HTML reply. */
+  htmlSent?: readonly string[];
   /** What the person tapped or filled in on that reply, as their message. */
   onHtmlAnswer?: (seq: number, text: string) => void;
   agentId: string;
@@ -868,7 +870,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({ row, agentId, onOpe
     );
   } else if (role === 'agent' && htmlState && isHtmlReply(row.text)) {
     extra = ' rich html';
-    body = <HtmlReply source={row.text} seq={row.seq} state={htmlState} notes={notes} onAnswer={onHtmlAnswer} />;
+    body = <HtmlReply source={row.text} seq={row.seq} state={htmlState} notes={notes} sent={htmlSent} onAnswer={onHtmlAnswer} />;
   } else if (role === 'agent') {
     extra = progress ? ' rich progress' : ' rich';
     body = <Markdown source={row.text} className="chatmarkdown" notes={notes} workspaceLinks={workspaceLinks} />;
