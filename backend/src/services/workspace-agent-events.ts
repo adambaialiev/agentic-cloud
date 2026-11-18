@@ -1,3 +1,4 @@
+import { replyPlainText } from '../shared/agent-html.js';
 import type { OrgStorage } from './org-storage.js';
 import { orgKnowledgeShelfNamespace } from './org-git.js';
 import type { UserStorage } from './user-storage.js';
@@ -104,7 +105,8 @@ const hoursSince = (iso: string | undefined, now: Date): number => {
   return Number.isFinite(at) ? (now.getTime() - at) / 3_600_000 : 0;
 };
 const quote = (text: string, max = 120): string => {
-  const flat = text.replace(/\s+/g, ' ').trim();
+  // An agent's HTML reply (note #1191) is quoted by its words, never its tags.
+  const flat = replyPlainText(text).replace(/\s+/g, ' ').trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 const ago = (hours: number): string => (hours >= 48 ? `${Math.floor(hours / 24)} days` : `${Math.floor(hours)} hours`);

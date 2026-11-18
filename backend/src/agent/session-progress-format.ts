@@ -1,3 +1,4 @@
+import { replyPlainText } from '../shared/agent-html.js';
 import type { SessionToolCallProgress } from '../types/persistence.js';
 import type {
   SessionHistoryEntrySummary,
@@ -105,7 +106,7 @@ export function formatSessionSummaryLine(
     parts.push(`last_error=${JSON.stringify(lastError)}`);
   }
   if (typeof session.lastAssistantMessage === 'string' && session.lastAssistantMessage.trim()) {
-    const lastReply = session.lastAssistantMessage.replace(/\s+/g, ' ').trim();
+    const lastReply = replyPlainText(session.lastAssistantMessage).replace(/\s+/g, ' ').trim();
     parts.push(`last_reply=${JSON.stringify(lastReply)}`);
     // The send time matters because last_reply is NOT refreshed while the child
     // works silently — a stale last_reply with fresh recent_tools just means the

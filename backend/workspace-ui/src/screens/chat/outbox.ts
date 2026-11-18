@@ -59,6 +59,8 @@ export interface OutgoingMessage {
    *  answers this send is newer. */
   readonly after: number;
   readonly state: OutgoingState;
+  /** Note #1191: the seq of the agent's HTML reply this answers. */
+  readonly answerTo?: number;
   /** Whole percent of the big files gone up in parts so far (note #943),
    *  while there are any; absent for a message with none. */
   readonly percent?: number;
@@ -175,7 +177,7 @@ export class ChatOutbox {
    *  something about them changes. */
   readonly list = (agentId: string): readonly OutgoingMessage[] => this.held.get(agentId) ?? NONE;
 
-  send(agentId: string, draft: { text: string; files: File[]; after: number }): void {
+  send(agentId: string, draft: { text: string; files: File[]; after: number; answerTo?: number }): void {
     if (this.closed) return;
     this.made += 1;
     const message: OutgoingMessage = {
@@ -184,6 +186,7 @@ export class ChatOutbox {
       files: draft.files,
       sentAt: Date.now(),
       after: draft.after,
+      ...(draft.answerTo ? { answerTo: draft.answerTo } : {}),
       state: 'waiting',
     };
     this.write(agentId, [...this.list(agentId), message]);

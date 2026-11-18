@@ -32,7 +32,7 @@ async function deliver(api: WorkspaceApi, agentId: string, message: OutgoingMess
     });
     return;
   }
-  await api.api<WorkspaceChatSendAnswer>(path, jsonBody({ message: message.text }));
+  await api.api<WorkspaceChatSendAnswer>(path, jsonBody({ message: message.text, ...(message.answerTo ? { answerTo: message.answerTo } : {}) }));
 }
 
 export function ChatOutboxProvider({ children }: { children: ReactNode }) {

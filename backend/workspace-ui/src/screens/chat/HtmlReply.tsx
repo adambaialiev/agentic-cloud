@@ -127,7 +127,7 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
       if (!data || typeof data !== 'object') return;
       const message = data as { t?: unknown; h?: unknown; text?: unknown; href?: unknown };
       if (message.t === 'ready') {
-        own.postMessage({ t: 'show', html: source, state: live.current.state, title: 'Reply from the Chief of Staff' }, '*');
+        own.postMessage({ t: 'show', html: source, state: live.current.state, title: 'Interactive reply' }, '*');
       } else if (message.t === 'h' && typeof message.h === 'number' && Number.isFinite(message.h)) {
         const next = Math.max(0, Math.min(FRAME_MAX_PX, Math.ceil(message.h)));
         heights.set(replyKey, next);
@@ -162,7 +162,7 @@ function HtmlFrame({ source, replyKey, state, onAnswer }: {
         <iframe
           ref={frame}
           src={REPLY_FRAME_SRC}
-          title="Reply from the Chief of Staff"
+          title="Interactive reply"
           sandbox="allow-scripts allow-forms"
           referrerPolicy="no-referrer"
           loading="eager"

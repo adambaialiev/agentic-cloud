@@ -1028,11 +1028,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 201,
-      templateHash: '4e8675e830003500',
-      templateHashWithoutUrl: '09cc2c789632a972',
-      platformDocsHash: '61c78b3164e9677d',
-      agentbuiltCliHash: '861a233899b249e2',
+      version: 202,
+      templateHash: '291477747260e904',
+      templateHashWithoutUrl: 'd3b880cc6fb99a93',
+      platformDocsHash: 'f05c8db4890025d3',
+      agentbuiltCliHash: '90ec87b463140883',
     });
   });
 
@@ -4489,6 +4489,37 @@ describe('AgentService — idle-only agent handoffs', () => {
     expect(payload.content).toContain('held owner words');
     expect(payload.content).toContain('second retry');
     await expect(stoppedUserMessageStorage.listAll()).resolves.toEqual([]);
+  });
+
+  it('takes an answer through an agent\'s HTML reply once, while it is live, and tells the turn which reply it answers (note #1191)', async () => {
+    const chats = new InMemoryAgentChatStorage();
+    const built = await fixture(undefined, { agentChatStorage: chats });
+    const internals = built.service as unknown as {
+      ensureTelegramAgentMachine: (userId: string, agent: unknown) => Promise<unknown>;
+      resolveTelegramRestartLoop: () => Promise<unknown>;
+      touchTelegramAgentActivity: () => void;
+    };
+    vi.spyOn(internals, 'ensureTelegramAgentMachine').mockResolvedValue({ agent: built.recipient, reprovisioned: false });
+    vi.spyOn(internals, 'resolveTelegramRestartLoop').mockResolvedValue({ loopFn: vi.fn(), loopDeps: {} });
+    vi.spyOn(internals, 'touchTelegramAgentActivity').mockImplementation(() => {});
+    built.backgroundRunner.startAgent.mockReturnValue({ status: 'started' });
+    const at = '2026-11-18T18:00:00.000Z';
+    const old = (await chats.append('user-1', 'agent-b', { role: 'agent', text: '<button data-reply="old">Old</button>', at })).seq;
+    await chats.append('user-1', 'agent-b', { role: 'platform', kind: 'new-chat-divider', text: '---', at });
+    const ask = (await chats.append('user-1', 'agent-b', { role: 'agent', text: '<p>Six questions.</p><form><label><input type="checkbox" name="q1" checked> One</label><button>Send</button></form>', at })).seq;
+    await chats.append('user-1', 'agent-b', { role: 'agent', text: 'A newer **Markdown** reply.', at });
+    await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'q1: on', answerTo: ask }))
+      .resolves.toMatchObject({ ok: true });
+    const payload = built.backgroundRunner.startAgent.mock.calls.at(-1)![2] as UserInputPayload;
+    expect(payload.content).toContain(`answered through the interactive HTML in your reply of ${at}, the one that begins: "Six questions. One [Send]"`);
+    expect(payload.content).toContain('q1: on');
+    await vi.waitFor(async () => {
+      expect((await chats.getAfter('user-1', 'agent-b', 0)).at(-1)).toMatchObject({ role: 'owner', text: 'q1: on', answerTo: ask });
+    });
+    await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'again', answerTo: ask }))
+      .resolves.toMatchObject({ ok: false, code: 'busy', reason: expect.stringContaining('already answered') });
+    await expect(built.service.chatMessageAgentFromUser({ userId: 'user-1', agentId: 'agent-b', message: 'old', answerTo: old }))
+      .resolves.toMatchObject({ ok: false, code: 'busy', reason: expect.stringContaining('fresh chat') });
   });
 
   it('names the Workspace Agent and its reason on the stopped agent\'s chat row, and waits for the turn to unwind (note #462)', async () => {

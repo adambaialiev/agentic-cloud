@@ -1,3 +1,4 @@
+import { replyPlainText } from '../../../../src/shared/agent-html.js';
 import { overviewTo } from '../home/home-address.js';
 import { isHarnessCli } from '../../../../src/shared/harness-clis.js';
 import { HeadRuntimeButton } from '../../ui/HeadRuntimeButton.js';
@@ -404,7 +405,7 @@ export function AgentScreen() {
             <div className="agentlastlabel">Last reply{lastReplyAge ? ` · ${lastReplyAge}` : ''}</div>
             {/* Folded when long (note #461), keyed on the words so a new
                 reply arrives folded rather than inheriting the last one's tap. */}
-            <FoldLong contentKey={lastReply.text}><div className="agentlastbody" id="agentInfoLastMessage"><Markdown source={lastReply.text} className="agentmessage" notes={notes} workspaceLinks /></div></FoldLong>
+            <FoldLong contentKey={lastReply.text}><div className="agentlastbody" id="agentInfoLastMessage"><Markdown source={replyPlainText(lastReply.text)} className="agentmessage" notes={notes} workspaceLinks /></div></FoldLong>
           </div>
         )
         : null}

@@ -1,3 +1,4 @@
+import { replyPlainText } from '../shared/agent-html.js';
 import { resolveQuickNoteWorkMap } from './quick-note-work.js';
 import type { RouteDeps } from '../routes/deps.js';
 import type { AgentRecord } from '../types/user.js';
@@ -88,7 +89,7 @@ export async function collectWorkspaceRecapSources(args: {
     for (const message of recent) {
       sources.push({ id: `chat:${agent.id}:${message.seq}`, kind: message.role === 'owner' ? 'request' : 'message',
         title: message.role === 'owner' ? `You → ${agent.name}` : message.role === 'agent' ? `${agent.name} → you` : `${agent.name} · workspace message`,
-        text: message.text, at: message.at, href: workspaceRoutePath({ kind: 'chat', id: agent.id })!,
+        text: message.role === 'agent' ? replyPlainText(message.text) : message.text, at: message.at, href: workspaceRoutePath({ kind: 'chat', id: agent.id })!,
         ...(message === current ? { status: `In progress: ${agent.name} is working on this right now` } : {}),
       });
     }

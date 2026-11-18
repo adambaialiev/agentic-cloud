@@ -8,6 +8,7 @@
  * exactly the rows that moved.
  */
 
+import { replyPlainText } from '../../../src/shared/agent-html.js';
 import type {
   WorkspaceAgentRow,
   WorkspaceAgentSessionLimit,
@@ -324,7 +325,8 @@ export function markdownPreview(source: string): string {
 /** One line from the reply itself, empty when that reply carries no words. */
 export function unreadMessagePreview(agent: Pick<WorkspaceAgentRow, 'lastReply'>): string {
   const source = typeof agent.lastReply?.text === 'string' ? agent.lastReply.text.trim() : '';
-  return source ? markdownPreview(source) : '';
+  // An HTML reply (note #1191) previews as its words, never its tags.
+  return source ? markdownPreview(replyPlainText(source)) : '';
 }
 
 /** What is waiting, for a row that has no words of its own to show. Split from

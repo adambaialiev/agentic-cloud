@@ -142,6 +142,9 @@ export interface AgentChatMessage {
   open?: { pr?: string; kp?: string };
   /** The durable mail request rendered and decided inside this chat. */
   mailApprovalId?: string;
+  /** Note #1191: on an owner's message, the seq of the agent's HTML reply it
+   *  answers — what they tapped or filled in there. */
+  answerTo?: number;
 }
 
 /**

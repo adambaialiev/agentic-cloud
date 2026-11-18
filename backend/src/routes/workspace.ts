@@ -9544,8 +9544,14 @@ self.addEventListener('activate', (event) => {
     if (!activeAgent(auth, agentId)) {
       return res.status(404).json({ error: 'No such agent on this account' });
     }
-    const body = (req.body ?? {}) as { message?: unknown };
+    const body = (req.body ?? {}) as { message?: unknown; answerTo?: unknown };
     const message = typeof body.message === 'string' ? body.message.trim() : '';
+    // Note #1191: what the person tapped or filled in on one of the agent's
+    // HTML replies names that reply. Only the agent's owner reaches this route.
+    if (body.answerTo !== undefined && body.answerTo !== null && !(Number.isInteger(body.answerTo) && (body.answerTo as number) > 0)) {
+      return res.status(400).json({ error: 'That answer does not name a reply.' });
+    }
+    const answerTo = typeof body.answerTo === 'number' ? body.answerTo : undefined;
     if (!message) {
       return res.status(400).json({ error: 'Write something to send.' });
     }
@@ -9554,7 +9560,7 @@ self.addEventListener('activate', (event) => {
         error: `That message is ${message.length} characters — keep it under ${AGENT_USER_MESSAGE_MAX_LENGTH}.`,
       });
     }
-    const result = await send({ userId: auth.userId, agentId, message });
+    const result = await send({ userId: auth.userId, agentId, message, ...(answerTo ? { answerTo } : {}) });
     if (!result.ok) {
       return res.status(result.code === 'busy' ? 409 : result.code === 'not_found' ? 404 : 503)
         .json({ error: result.reason, code: result.code });

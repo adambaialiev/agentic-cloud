@@ -2934,3 +2934,29 @@ describe('the recap line under the latest turn (note #945)', () => {
     await waitFor(() => expect(line()?.textContent).toContain('· 1 background job still running'));
   });
 });
+
+describe('an agent\'s HTML reply (note #1191)', () => {
+  it('draws an HTML reply in the locked frame, keeps Markdown as Markdown, and sends a tap as the owner\'s message naming the reply, once — after a newer reply too', async () => {
+    const sent: unknown[] = [];
+    const at = new Date().toISOString();
+    const ask = '<p>Six questions.</p><form><label><input type="checkbox" name="q1" checked> One</label><button>Send</button></form>';
+    open(() => ({ messages: [
+      chatMessage({ seq: 1, role: 'agent', text: ask, at }),
+      chatMessage({ seq: 2, role: 'owner', text: 'wait', at }),
+      chatMessage({ seq: 3, role: 'agent', text: 'A newer **Markdown** reply.', at }),
+    ], working: false }), {
+      'POST api/agents/felix/chat': (call) => { sent.push(JSON.parse(String(call.init?.body))); return { ok: true, name: 'Felix', steered: false }; },
+    });
+    await head();
+    await waitFor(() => expect(log().querySelector('.chathtmlui iframe')).not.toBeNull());
+    expect(log().querySelector('.chathtml .kpage p')?.textContent).toBe('Six questions.');
+    expect(log().querySelector('strong')?.textContent).toBe('Markdown');
+    const frame = log().querySelector<HTMLIFrameElement>('.chathtmlui iframe')!;
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
+    const says = (data: unknown) => act(async () => { window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow })); });
+    await says({ t: 'reply', text: 'q1: on' });
+    await says({ t: 'reply', text: 'q1: on again' });
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ message: 'q1: on', answerTo: 1 });
+  });
+});

@@ -1,3 +1,4 @@
+import { agentChatHtmlStates, replyOpening, replyPlainText } from '../shared/agent-html.js';
 import { harnessName, subscriptionName } from '../shared/harness-clis.js';
 import { CATALOGUE_URL } from '../shared/public-host.js';
 import { PRIVATE_COPY } from '../shared/private-copy.js';
@@ -1129,7 +1130,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v201 (note #1178): CLI 1.84.0 — `agentbuilt outreach` only says that
 // Outreach moved into its own app and prints that app's own command; the
 // platform's Outreach routes are gone.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 201;
+// v202 (note #1191): CLI 1.85.0 — "Talking with your user" says an agent MAY
+// answer in interactive HTML; `agentbuilt help html` says how.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 202;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -2145,9 +2148,13 @@ export function buildTelegramAgentWorkspaceMessagePrompt(args: {
 export function buildTelegramAgentChatScreenMessagePrompt(args: {
   message: string;
   machineWasRebuilt?: boolean;
+  /** Note #1191: the HTML reply of yours this answers — its time and opening words. */
+  answered?: { at: string; words: string };
 }): string {
   return [
-    '[Platform] Your user sent this from your chat screen in the Workspace. It is a direct message from them and carries their full authority — treat it exactly as if they had typed it in this conversation. Your reply reaches them in the Workspace, so answer as an ordinary turn.',
+    args.answered
+      ? `[Platform] Your user answered through the interactive HTML in your reply of ${args.answered.at}, the one that begins: "${args.answered.words}". Below is what they tapped or filled in there (a data-reply value, or a form's fields as name: value lines). It is a direct message from them and carries their full authority. Newer replies may have come since, so read it against THAT reply. Your reply reaches them in the Workspace, so answer as an ordinary turn.`
+      : '[Platform] Your user sent this from your chat screen in the Workspace. It is a direct message from them and carries their full authority — treat it exactly as if they had typed it in this conversation. Your reply reaches them in the Workspace, so answer as an ordinary turn.',
     '',
     args.message,
     ...(args.machineWasRebuilt ? [
@@ -3932,6 +3939,8 @@ export class AgentService {
     agentId: string;
     message: string;
     attachments?: AgentChatUpload[];
+    /** Note #1191: the seq of the agent's HTML reply this message answers. */
+    answerTo?: number;
   }): Promise<AgentPeerMessageResult & { steered?: boolean }> {
     const profile = await this.deps.userStorage.getProfile(args.userId);
     const target = profile?.telegram?.agents?.[args.agentId];
@@ -3940,6 +3949,19 @@ export class AgentService {
     }
     const message = args.message.trim();
     const uploads = args.attachments ?? [];
+    // An answer through a reply's HTML (note #1191): that reply must still be
+    // answerable — unanswered, and since the last fresh chat — and the turn
+    // is told which reply it was, since newer ones may have come between.
+    let answered: { seq: number; at: string; words: string } | undefined;
+    if (typeof args.answerTo === 'number') {
+      if (uploads.length) return { ok: false, code: 'unavailable', reason: 'An answer to a reply carries no files.' };
+      const rows = await this.deps.agentChatStorage?.getAfter(args.userId, target.id, 0) ?? [];
+      const state = agentChatHtmlStates(rows).get(args.answerTo);
+      if (state === 'answered') return { ok: false, code: 'busy', reason: 'You already answered that reply. Type to add anything.' };
+      if (state !== 'live') return { ok: false, code: 'busy', reason: 'That reply is from before a fresh chat, so it can no longer be answered. Type your answer instead.' };
+      const reply = rows.find((row) => row.seq === args.answerTo)!;
+      answered = { seq: reply.seq, at: reply.at, words: replyOpening(reply.text) };
+    }
     if (!message && uploads.length === 0) {
       return { ok: false, code: 'unavailable', reason: 'Write something or attach a file to send.' };
     }
@@ -4010,7 +4032,7 @@ export class AgentService {
       : fileNames.length > 1 ? `Sent ${fileNames.length} files: ${fileNames.join(', ')}` : '';
     const admissionText = message || fallback;
     const currentPayload = (machineWasRebuilt = false): UserInputPayload => ({
-      content: buildTelegramAgentChatScreenMessagePrompt({ message, machineWasRebuilt }),
+      content: buildTelegramAgentChatScreenMessagePrompt({ message, machineWasRebuilt, ...(answered ? { answered } : {}) }),
       preserveAfterUserStop: true,
       ...(preparedAttachments.length ? { attachments: preparedAttachments.map((file) => file.record) } : {})
     });
@@ -4040,7 +4062,7 @@ export class AgentService {
           preparedAttachments.map((file) => file.chatFile),
         );
       } else {
-        this.appendAgentRecapMessage(args.userId, target.id, 'owner', message);
+        this.appendAgentRecapMessage(args.userId, target.id, 'owner', message, undefined, answered?.seq);
       }
       this.touchTelegramAgentActivity(args.userId, target);
     };
@@ -4073,7 +4095,7 @@ export class AgentService {
         audience: 'user',
         content: ({ machineWasRebuilt }) => payload(machineWasRebuilt).content,
         task: message || fallback,
-        recap: { role: 'owner', text: admissionText },
+        recap: { role: 'owner', text: admissionText, ...(answered ? { answerTo: answered.seq } : {}) },
         ...(combinedAttachments?.length ? { attachments: combinedAttachments } : {}),
         ...(preparedAttachments.length ? {
           chatFiles: { files: preparedAttachments.map((file) => file.chatFile), text: message }
@@ -4216,7 +4238,7 @@ export class AgentService {
     content: (context: { machineWasRebuilt: boolean }) => string;
     /** The row's "Now" line for as long as this turn runs. */
     task: string;
-    recap: { role: 'platform' | 'owner'; text: string };
+    recap: { role: 'platform' | 'owner'; text: string; answerTo?: number };
     /** Workspace-chat uploads, staged on the machine with this same turn. */
     attachments?: AttachmentRecord[];
     /** The visible chat row for those uploads; text is their optional caption. */
@@ -4366,7 +4388,7 @@ export class AgentService {
         args.chatFiles.files,
       );
     } else {
-      this.appendAgentRecapMessage(args.userId, ensured.agent.id, args.recap.role, args.recap.text);
+      this.appendAgentRecapMessage(args.userId, ensured.agent.id, args.recap.role, args.recap.text, undefined, args.recap.answerTo);
     }
     this.touchTelegramAgentActivity(args.userId, ensured.agent);
     return {
@@ -4966,8 +4988,11 @@ export class AgentService {
     role: AgentRecapTurnMessage['role'],
     text: string,
     open?: { pr?: string; kp?: string },
+    answerTo?: number,
   ): void {
-    this.appendTelegramAgentRecapBufferMessage(userId, agentId, role, text);
+    // The recap buffer is words for a summarizer: an HTML reply goes in as its
+    // plain words (note #1191), the chat row below keeps it whole.
+    this.appendTelegramAgentRecapBufferMessage(userId, agentId, role, role === 'agent' ? replyPlainText(text) : text);
     // An owner's message is a turn admitted or steered: the overview should
     // say the agent is on it, not wait for the reply to find out.
     if (role === 'owner') this.emitWorkspaceActivity(userId, agentId, 'turn-started');
@@ -4985,7 +5010,8 @@ export class AgentService {
       role,
       text,
       at: new Date().toISOString(),
-      ...(open ? { open } : {})
+      ...(open ? { open } : {}),
+      ...(typeof answerTo === 'number' ? { answerTo } : {})
     }).then((result) => this.cleanupTrimmedChatFiles(result.trimmed)).catch((error) => {
       console.warn(`[telegram] Failed to record a chat message for agent ${agentId}:`, error);
     });
@@ -8226,8 +8252,11 @@ export class AgentService {
       ]),
       'To send a file into the chat, put a line `ATTACH: /absolute/path/to/file` (or `ATTACH: ~/relative/path`) on its OWN line in your reply — it arrives as a photo or document, up to 5 GB. Use it whenever the result IS a file: reports, images, archives, exports. When the user asks for an artifact, produce the actual FILE and ATTACH it — a link to your site is a fallback, not a substitute.',
       ...(this.deps.agentbuilt ? ['BUT WORDS THEY WILL READ ARE NOT A FILE. A plan, a brief, a spec, a write-up, a checklist — anything your user asked you to WRITE — goes on a quick note (`agentbuilt note add --file plan.html`; up to 100,000 characters, so a whole plan fits), or on a knowledge page when the next agent must not get it wrong. A document dropped into the chat as a file scrolls away, opens in nothing on a phone, and is found by nobody next week; a note is where they and every agent of theirs look, and it stays editable as the plan changes. So write it as a note, and give them the note in your reply. ATTACH is for what only a program opens — an image, an archive, a spreadsheet, an export — not for the words themselves.'] : []),
-      'Your user may forward your message to show off what you made, so make each delivery — especially a live link — ONE complete message that stands on its own: say plainly what it is and include the link, so a stranger reading only that message understands it.',
-      'Some messages reach you as voice-message TRANSCRIPTIONS, and transcription garbles words ("sales token" for "access token"). When a request reads oddly, interpret it charitably, say how you read it, and proceed on that reading.',
+      // Note #1191: an agent may answer in interactive HTML, by the Chief of
+      // Staff's rules (notes #1186, #1188, #1189). Allowed, never required.
+      ...(this.deps.agentbuilt ? ['YOU MAY ANSWER IN HTML: buttons or a form your user taps instead of typing. `agentbuilt help html` first.'] : []),
+      'Your user may forward a delivery to show it off, so make it ONE message that stands on its own: say plainly what it is and include the link, so a stranger reading only that message understands it.',
+      'Some messages are voice TRANSCRIPTIONS, which garble words ("sales token" for "access token"): read an odd request charitably, say how you read it, and proceed on that reading.',
       '## Check before you call it done',
       '"Merged", "deployed", "saved" and "working" are four different things. Before you tell your user something is done, look at the thing itself: open the file you wrote, load the page you published, run the command you fixed, read back the setting you changed. Report what you actually saw. If you could not check, say so plainly rather than phrasing a guess as a result.',
       'It matters most when a change has to travel — a build, a deploy, another machine, a cache: ask who is still holding the OLD version and what makes them pick up the new one. Work completed but never arrived is the most common way a job looks finished and is not.',

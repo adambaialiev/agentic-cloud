@@ -726,6 +726,8 @@ export interface RouteDeps {
       /** Files selected together in the composer, admitted with one turn:
        *  inline bytes, or the id of a file that went up in parts (note #943). */
       attachments?: AgentChatUpload[];
+      /** Note #1191: the seq of the agent's HTML reply this message answers. */
+      answerTo?: number;
     }): Promise<AgentPeerMessageResult & { steered?: boolean }>;
     /**
      * Something that changes what a Home overview should say happened to one

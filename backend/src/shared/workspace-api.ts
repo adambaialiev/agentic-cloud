@@ -1009,6 +1009,8 @@ export interface WorkspaceChatMessage {
   seq: number;
   role: 'owner' | 'agent' | 'platform';
   text: string;
+  /** Note #1191: on an owner's message, the seq of the agent's HTML reply it answers. */
+  answerTo?: number;
   at: string;
   files?: WorkspaceChatFile[];
   /** Legacy single-file row, normalized by the reader. */

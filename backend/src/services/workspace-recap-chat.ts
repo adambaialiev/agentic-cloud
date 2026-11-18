@@ -1755,7 +1755,8 @@ export class WorkspaceRecapChat implements WorkspaceAgentHooks {
         role: row.role,
         author: row.role === 'owner' ? 'Owner' : row.role === 'agent' ? target.record.name : 'Platform',
         at: row.at,
-        text: row.text,
+        // An agent's HTML reply reaches the Chief of Staff as its words (note #1191).
+        text: row.role === 'agent' ? replyPlainText(row.text) : row.text,
       }));
     return { ok: true, agent: { id: target.record.id, name: target.record.name }, steps };
   }

@@ -115,3 +115,37 @@ export function replyPlainText(text: string): string {
  * belongs to a turn that is over, and its controls stand drawn but inert.
  */
 export type HtmlReplyAnswerState = 'live' | 'answered' | 'old';
+
+/**
+ * Note #1191: the same answer states for an ordinary agent's own chat, whose
+ * rows are numbered by `seq`. Adam, 18 Nov 2026, widening note #1186:
+ * regular agents may answer in HTML too, by the Chief of Staff's rules — so
+ * an HTML reply stays `live` until the person answers it (once, a person's
+ * row naming it by `answerTo`), and only a fresh chat (a new-chat divider
+ * after it) makes it `old`.
+ */
+export interface HtmlStateRow {
+  seq: number;
+  role: string;
+  kind?: string;
+  text: string;
+  answerTo?: number;
+}
+
+export function agentChatHtmlStates(rows: readonly HtmlStateRow[]): Map<number, HtmlReplyAnswerState> {
+  const answered = new Set(rows.flatMap((row) => (row.role === 'owner' && typeof row.answerTo === 'number' ? [row.answerTo] : [])));
+  let fresh = -Infinity;
+  for (const row of rows) if (row.kind === 'new-chat-divider' && row.seq > fresh) fresh = row.seq;
+  const states = new Map<number, HtmlReplyAnswerState>();
+  for (const row of rows) {
+    if (row.role !== 'agent' || !isHtmlReply(row.text)) continue;
+    states.set(row.seq, answered.has(row.seq) ? 'answered' : row.seq > fresh ? 'live' : 'old');
+  }
+  return states;
+}
+
+/** A reply's opening words, for telling an agent which reply was answered. */
+export function replyOpening(text: string, max = 240): string {
+  const words = replyPlainText(text).replace(/\s+/g, ' ').trim();
+  return words.length > max ? `${words.slice(0, max - 1)}…` : words;
+}
