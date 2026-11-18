@@ -144,11 +144,11 @@ function keepPlace(place: Place): void {
  * is held at its last height meanwhile (`rememberedFrameHeight`), so the
  * conversation does not move, and coming near again builds it afresh.
  */
-function useNear(margin: string, farMargin: string, keep: () => boolean): [(node: HTMLDivElement | null) => void, boolean] {
+function useNear(margin: string, farMargin: string, keep: () => boolean, onFar: () => void): [(node: HTMLDivElement | null) => void, boolean] {
   const [near, setNear] = useState(() => typeof IntersectionObserver === 'undefined');
   const observers = useRef<IntersectionObserver[]>([]);
-  const keepNow = useRef(keep);
-  useLayoutEffect(() => { keepNow.current = keep; }, [keep]);
+  const now = useRef({ keep, onFar });
+  useLayoutEffect(() => { now.current = { keep, onFar }; }, [keep, onFar]);
   const ref = useCallback((node: HTMLDivElement | null) => {
     for (const observer of observers.current) observer.disconnect();
     observers.current = [];
@@ -164,7 +164,8 @@ function useNear(margin: string, farMargin: string, keep: () => boolean): [(node
       const last = entries[entries.length - 1];
       // A screen that is hidden (not scrolled away) intersects nothing
       // either: that is not "far", and its frames stay.
-      if (!last || last.isIntersecting || node.offsetParent === null || keepNow.current()) return;
+      if (!last || last.isIntersecting || node.offsetParent === null || now.current.keep()) return;
+      now.current.onFar();
       setNear(false);
     }, { root: pane, rootMargin: farMargin });
     build.observe(node);
@@ -203,6 +204,7 @@ function HtmlFrame({ source, state, onAnswer }: {
   const navigate = useNavigate();
   const { api } = useSession();
   const frame = useRef<HTMLIFrameElement | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
   // Its last measured height at this screen width, kept on the device, so a
   // frame built again (the screen left and came back, the page reloaded, the
   // frame let go while far away) reserves its place instead of growing into it.
@@ -214,13 +216,16 @@ function HtmlFrame({ source, state, onAnswer }: {
   const heightNow = useRef(height);
   const touched = useRef(false);
   const keep = useCallback(() => touched.current || document.activeElement === frame.current, []);
-  const [nearRef, near] = useNear(FRAME_NEAR_MARGIN, FRAME_FAR_MARGIN, keep);
   // Note #1192: nothing of the frame is shown until its page has said how
   // tall it is — until then the card holds a quiet placeholder, so a frame
   // the browser has not painted yet (black, on Adam's phone) is never seen.
   const [phase, setPhaseState] = useState<FramePhase>('loading');
   const phaseNow = useRef<FramePhase>('loading');
   const setPhase = useCallback((next: FramePhase) => { phaseNow.current = next; setPhaseState(next); }, []);
+  // A frame let go while far away comes back loading, behind its placeholder.
+  const letGo = useCallback(() => setPhase('loading'), [setPhase]);
+  const [nearRef, near] = useNear(FRAME_NEAR_MARGIN, FRAME_FAR_MARGIN, keep, letGo);
+  const setBox = useCallback((node: HTMLDivElement | null) => { box.current = node; nearRef(node); }, [nearRef]);
   const [attempt, setAttempt] = useState(0);
   const timing = useRef({ start: 0, loaded: -1, ready: -1, reported: false });
   const links = useMemo(() => linksAsWritten(source), [source]);
@@ -322,16 +327,13 @@ function HtmlFrame({ source, state, onAnswer }: {
 
   // Focus moving into the frame is the person touching it, whatever the page
   // inside says or does not say: the window blurs with the frame as the
-  // focused element. And a frame let go while far away comes back loading.
+  // focused element.
   useEffect(() => {
-    if (!near) { if (phaseNow.current !== 'loading') setPhase('loading'); return; }
+    if (!near) return;
     const onBlur = () => { if (document.activeElement === frame.current) touched.current = true; };
     window.addEventListener('blur', onBlur);
     return () => window.removeEventListener('blur', onBlur);
-  }, [near, setPhase]);
-
-  const box = useRef<HTMLDivElement | null>(null);
-  const setBox = useCallback((node: HTMLDivElement | null) => { box.current = node; nearRef(node); }, [nearRef]);
+  }, [near]);
 
   const onLoad = useCallback(() => {
     if (timing.current.loaded < 0 && timing.current.start) timing.current.loaded = Math.round(performance.now() - timing.current.start);
