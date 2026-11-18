@@ -1028,11 +1028,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 202,
-      templateHash: '291477747260e904',
-      templateHashWithoutUrl: 'd3b880cc6fb99a93',
-      platformDocsHash: 'f05c8db4890025d3',
-      agentbuiltCliHash: '90ec87b463140883',
+      version: 203,
+      templateHash: '03959420d341864f',
+      templateHashWithoutUrl: 'c099c706a680826d',
+      platformDocsHash: '57851c9583aadeb9',
+      agentbuiltCliHash: '6253b4ab979eda90',
     });
   });
 
@@ -1089,6 +1089,27 @@ describe('AgentService', () => {
     // still fits. Raising it is the owner's call, not a convenience.
     expect(bytes, `docs are ${bytes} bytes, over the ${INSTRUCTION_FILE_BUDGET_BYTES}-byte budget — move words into an \`agentbuilt help\` topic rather than raising it`)
       .toBeLessThanOrEqual(INSTRUCTION_FILE_BUDGET_BYTES);
+  });
+
+  it('tells the agent its reply is one HTML interface and all the user sees of it, and that the chat around it stays (note #1193)', () => {
+    const service = createAgentService({
+      sessionStorage: new InMemorySessionStorage(),
+      userStorage: new InMemoryUserStorage(),
+      eventEmitter: new AgentEventEmitter(),
+      agentbuilt: { apiUrl: 'https://backend.example', appsDomain: 'agentbuilt.app' },
+    });
+    // One block for every harness (OpenCode reads the same file as Codex).
+    for (const cli of ['claude', 'codex'] as const) {
+      const docs = (service as unknown as {
+        buildTelegramAgentIdentityBlock: (agent: unknown) => string;
+      }).buildTelegramAgentIdentityBlock(telegramAgent(cli, { agentId: 'agent-a', name: 'Ben', serverId: 'fly_ia-1.aa11', connectedAt: 't' }));
+      expect(docs, cli).toContain('YOUR REPLY IS ONE HTML INTERFACE, and of all you write your user sees ONLY what its HTML draws.');
+      expect(docs, cli).toContain('Lines written while you work show as small print; no recap is shown.');
+      // Adam's next two messages: "chat input should be kept", "and header also".
+      expect(docs, cli).toContain("The chat's header and message box stay, so typing always works.");
+      expect(docs, cli).toContain('`agentbuilt help html` first.');
+      expect(docs, cli).not.toContain('YOU MAY ANSWER IN HTML');
+    }
   });
 
   it('tells the agent to wait for checks before it opens a proposal', () => {

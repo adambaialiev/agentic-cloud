@@ -284,6 +284,30 @@ describe('agentbuilt help <topic>', () => {
     expect(stderr).not.toContain('agentbuilt help');
   });
 
+  it('html: the reply is one interface and all the user sees of it, and the screen around it is the Workspace\'s (note #1193)', async () => {
+    // Adam, 18 Nov 2026: "agents should know that user is able to see only
+    // the agent generated html interactive interface"; then "chat input
+    // should be kept" and "and header also". Both halves are pinned: an agent
+    // told only the first could read it as the header and message box gone.
+    const { status, stdout, stderr } = await runCli(['help', 'html']);
+    expect(status).toBe(0);
+    expect(stderr).toBe('');
+    expect(stdout).toContain('YOUR REPLY IS ONE HTML INTERFACE, AND OF ALL YOU WRITE IT IS WHAT YOUR USER SEES');
+    expect(stdout).toContain('no recap stands under it any more');
+    expect(stdout).toContain('"only your HTML" is about your REPLY, not the screen');
+    expect(stdout).toContain('typing an answer always works beside your buttons; never draw a header or a message box of your own');
+    expect(stdout).toContain('your page cannot draw outside its own card, so never imitate one');
+    expect(stdout).toContain('is drawn WHOLE, as you laid it out, in one white card');
+    expect(stdout).toContain('A final message that does not start with a tag is not lost: it is drawn as Markdown words');
+    // The rule that was replaced is gone, not left beside the new one.
+    expect(stdout).not.toContain('YOU NEVER HAVE TO');
+    expect(stdout).not.toContain('Markdown is still the right reply');
+    // What it kept: how to ask, what comes back, the locked frame.
+    expect(stdout).toContain('agentbuilt.reply(text)');
+    expect(stdout).toContain('Each reply is answered once');
+    expect(stdout).toContain('no network at all');
+  });
+
   it('every topic is read without a config and never says anything about a missing one', async () => {
     for (const topic of ['repos', 'knowledge', 'notes', 'hosting', 'mail', 'secrets', 'agents', 'chat']) {
       const { status, stdout, stderr } = await runCli(['help', topic]);

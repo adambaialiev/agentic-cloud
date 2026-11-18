@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.85.0';
+const VERSION = '1.86.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -180,7 +180,7 @@ a conversation (your first such command reminds you if you have not):
   agentbuilt help agents       the roster, messaging a sibling, the Workspace Agent
   agentbuilt help chat         resetting a chat, when the call is yours, the handoff
   agentbuilt help docker       Docker on this machine: starting it, sleep, disk, memory, CI
-  agentbuilt help html         answering in interactive HTML: buttons and forms your user taps
+  agentbuilt help html         your reply is one HTML interface: lay it out, ask with buttons and forms
 
 Commands:
 Durable local jobs (finite work that must survive the conversational turn):
@@ -916,14 +916,17 @@ const HELP_TOPICS = {
   // on first use (infra/fly-machine-image/docker). The instruction file keeps
   // two lines; the rest is here.
   html: {
-    title: "Answering in interactive HTML",
-    lead: "When a reply as buttons or a form saves your user typing, how to write one, what comes back, and what the page cannot do.",
+    title: "Your reply is one HTML interface",
+    lead: "Your user sees only what your reply's HTML draws: how to lay one out, what the Workspace draws around it, how to ask, what comes back, and what the page cannot do.",
     paragraphs: [
-      "YOU MAY ANSWER IN HTML; YOU NEVER HAVE TO. A reply whose first character is a tag (`<p>`, `<h3>`, `<form>`) is drawn as a page in your user's chat; anything else is Markdown, as always. Use HTML when it saves them typing: a decision, several questions at once, a choice to pick. For a report, a plan or a plain answer, Markdown is still the right reply. Write a fragment, never `<html>` or `<body>`.",
+      "YOUR REPLY IS ONE HTML INTERFACE, AND OF ALL YOU WRITE IT IS WHAT YOUR USER SEES (note #1193). The message that ends your turn is drawn as a page in their chat when its first character is a tag (`<h3>`, `<p>`, `<div>`). Nothing of yours is shown beside it: no recap stands under it any more, and the Workspace sets none of your words for you. So everything your user must know, open or decide has to be IN that one reply, laid out as an interface and not as prose with buttons underneath: what happened, what is waiting on them, the links to open, and the buttons or form to answer with. Say each thing once. Write a fragment, never `<html>` or `<body>`, and start with the tag, not with a sentence before it.",
+      "THE CHAT AROUND IT IS THE WORKSPACE'S AND STAYS. The header, your user's own messages, the time under your reply and the message box are drawn by the Workspace, always: \"only your HTML\" is about your REPLY, not the screen. So typing an answer always works beside your buttons; never draw a header or a message box of your own. Proposal cards, the Send email confirmation, stopped and fresh-chat lines and attached files are the Workspace's too: your page cannot draw outside its own card, so never imitate one. Raise the real thing (`agentbuilt pr ready`, `agentbuilt mail send`, an `ATTACH:` line on its own line after your HTML).",
+      "HOW IT IS DRAWN. A reply that styles itself, runs or asks (a `<style>`, a `style=` attribute, a `<script>`, a button, a form control, a `data-reply`) is drawn WHOLE, as you laid it out, in one white card your user can hide and show again. A reply of words alone (headings, paragraphs, lists, tables, links, an inline `<svg>`, and no style, script or control) is drawn straight on the chat's page in its reading type: a short plain answer is one `<p>`, and that is a perfectly good reply. The page is light on every phone, dark mode included, and often 360px wide: keep it simple, one column, no fixed widths.",
+      "WHILE YOU WORK. Each text you write before your final message arrives in the chat as its own row. Those rows are kept, as small quiet print above your reply: right for \"reading the note first\", never the place for a result, a question or a link, because the reply is where your user looks. A final message that does not start with a tag is not lost: it is drawn as Markdown words, as every reply was before. But it is not the interface, so do not end a turn that way on purpose.",
       "HOW TO ASK. `<button data-reply=\"Yes, ship it\">Ship it</button>` sends its `data-reply` as their answer. A `<form>` with named fields sends one `name: value` line per field when submitted, with the pressed button's (or the form's) `data-reply` on the first line: six yes/no questions are six checkboxes and a submit button, plus a `<button data-reply=\"Yes to all\">Yes to all</button>` beside it. A script may call `agentbuilt.reply(text)`. Ask everything you need in one reply, and offer the likely answers as buttons, never as the only way: typing always works.",
       "WHAT COMES BACK. The answer arrives as your user's next message, a direct message with their full authority, and starts your turn as typing does. A platform line above it names the reply it answers by time and opening words, because newer replies may have come between: read it against THAT reply. Each reply is answered once. It stays answerable until then, even after newer replies, until a fresh chat, after which it is locked.",
-      "WHAT THE PAGE CANNOT DO. It runs in a locked frame: no network at all (no fetch, no picture, font, stylesheet or script from an address), no navigation, no popups, and a link opens only if it is written in the HTML itself (a `/workspace/...` path opens inside the Workspace). Inline `<style>`, `<script>`, `<svg>` and `data:` pictures work. The page is light and often a phone 360px wide, so keep it simple. The opening words of a reply are drawn on the page; the controls sit in a card your user can close.",
-      "ONLY YOUR REPLIES TO YOUR USER. Messages to other agents, notes, knowledge pages, commit messages and everything else stay as they are. Never put a secret into the HTML: the reply is stored in the chat like any other.",
+      "WHAT THE PAGE CANNOT DO. It runs in a locked frame: no network at all (no fetch, no picture, font, stylesheet or script from an address), no navigation, no popups, and a link opens only if it is written in the HTML itself (a `/workspace/...` path opens inside the Workspace, so turn every `Open: /workspace/...` line a command prints into an `<a href>`). Inline `<style>`, `<script>`, `<svg>` and `data:` pictures work.",
+      "ONLY YOUR REPLIES TO YOUR USER. Messages to other agents (the answer you send the Workspace Agent included), notes, knowledge pages, commit messages and everything else stay as they are, and wherever your reply travels outside the chat (the recap on Home, the roster, another agent reading your history) it is read as plain words, so it must still make sense without its layout. Never put a secret into the HTML: the reply is stored in the chat like any other.",
     ],
   },
   docker: {

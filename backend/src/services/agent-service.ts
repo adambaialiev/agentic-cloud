@@ -1132,7 +1132,10 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // platform's Outreach routes are gone.
 // v202 (note #1191): CLI 1.85.0 — "Talking with your user" says an agent MAY
 // answer in interactive HTML; `agentbuilt help html` says how.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 202;
+// v203 (note #1193): CLI 1.86.0 — the reply IS one HTML interface, and of the
+// agent's words it is all the user sees: no recap in chat, lines written
+// while working drawn as small print; the header and message box stay.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 203;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -8250,12 +8253,16 @@ export class AgentService {
       ] : [
         'You run in single turns: when your reply ends, you STOP until the user writes again. Never promise a result is "on its way" — nothing happens between turns, so that promise breaks. Do the work first, then reply once with the finished result. If something is genuinely too big for one turn, say what IS done and ask the user to say "continue".',
       ]),
-      'To send a file into the chat, put a line `ATTACH: /absolute/path/to/file` (or `ATTACH: ~/relative/path`) on its OWN line in your reply — it arrives as a photo or document, up to 5 GB. Use it whenever the result IS a file: reports, images, archives, exports. When the user asks for an artifact, produce the actual FILE and ATTACH it — a link to your site is a fallback, not a substitute.',
-      ...(this.deps.agentbuilt ? ['BUT WORDS THEY WILL READ ARE NOT A FILE. A plan, a brief, a spec, a write-up, a checklist — anything your user asked you to WRITE — goes on a quick note (`agentbuilt note add --file plan.html`; up to 100,000 characters, so a whole plan fits), or on a knowledge page when the next agent must not get it wrong. A document dropped into the chat as a file scrolls away, opens in nothing on a phone, and is found by nobody next week; a note is where they and every agent of theirs look, and it stays editable as the plan changes. So write it as a note, and give them the note in your reply. ATTACH is for what only a program opens — an image, an archive, a spreadsheet, an export — not for the words themselves.'] : []),
-      // Note #1191: an agent may answer in interactive HTML, by the Chief of
-      // Staff's rules (notes #1186, #1188, #1189). Allowed, never required.
-      ...(this.deps.agentbuilt ? ['YOU MAY ANSWER IN HTML: buttons or a form your user taps instead of typing. `agentbuilt help html` first.'] : []),
-      'Your user may forward a delivery to show it off, so make it ONE message that stands on its own: say plainly what it is and include the link, so a stranger reading only that message understands it.',
+      'To send a file into the chat, put a line `ATTACH: /absolute/path/to/file` (or `ATTACH: ~/relative/path`) on its OWN line in your reply — it arrives as a photo or document, up to 5 GB. When the user asks for an artifact, produce the actual FILE and ATTACH it — a link to your site is a fallback, not a substitute.',
+      ...(this.deps.agentbuilt ? ['BUT WORDS THEY WILL READ ARE NOT A FILE. A plan, a brief, a spec, a write-up, a checklist — anything your user asked you to WRITE — goes on a quick note (`agentbuilt note add --file plan.html`), or on a knowledge page when the next agent must not get it wrong. A file in the chat scrolls away and opens in nothing on a phone; a note is where they and every agent of theirs look, and it stays editable. So write the note and link it in your reply. ATTACH is for what only a program opens: an image, an archive, a spreadsheet, an export.'] : []),
+      // Note #1193 (Adam, 18 Nov 2026: "let's show agent generated interactive
+      // html only. agents should know that user is able to see only the agent
+      // generated html interactive interface"). Note #1191's "you may" became
+      // "your reply is": one HTML interface, and of the agent's own words it
+      // is all that is drawn. The header and the message box are the
+      // Workspace's and stay (his next two messages), so the line says so.
+      ...(this.deps.agentbuilt ? ['YOUR REPLY IS ONE HTML INTERFACE, and of all you write your user sees ONLY what its HTML draws. Start your final message with a tag and lay out all they must know, open or decide: what happened, what is waiting, buttons or a form to answer with. Lines written while you work show as small print; no recap is shown. The chat\'s header and message box stay, so typing always works. `agentbuilt help html` first.'] : []),
+      'Your user may forward a delivery, so make it ONE message that stands on its own: say plainly what it is and include the link, for a stranger who reads only that.',
       'Some messages are voice TRANSCRIPTIONS, which garble words ("sales token" for "access token"): read an odd request charitably, say how you read it, and proceed on that reading.',
       '## Check before you call it done',
       '"Merged", "deployed", "saved" and "working" are four different things. Before you tell your user something is done, look at the thing itself: open the file you wrote, load the page you published, run the command you fixed, read back the setting you changed. Report what you actually saw. If you could not check, say so plainly rather than phrasing a guess as a result.',
