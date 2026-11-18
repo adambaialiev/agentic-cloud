@@ -59,7 +59,8 @@ describe('the Chief of Staff\'s HTML replies (note #1186)', () => {
     expect(frame.getAttribute('src')).toBe(REPLY_FRAME_SRC);
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
     // Since note #1188 the words a reply opens with stand on the page, and its UI in a card.
-    expect(asks!.querySelector('.chathtml')?.textContent).toContain('Which one?');
+    // The words are built in an effect: wait for them, never read the first paint.
+    await waitFor(() => expect(asks!.querySelector('.chathtml')?.textContent).toContain('Which one?'));
     expect(asks!.querySelector('.chathtmlui iframe')).toBe(frame);
   });
 

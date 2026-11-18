@@ -2949,7 +2949,7 @@ describe('an agent\'s HTML reply (note #1191)', () => {
     });
     await head();
     await waitFor(() => expect(log().querySelector('.chathtmlui iframe')).not.toBeNull());
-    expect(log().querySelector('.chathtml .kpage p')?.textContent).toBe('Six questions.');
+    await waitFor(() => expect(log().querySelector('.chathtml .kpage p')?.textContent).toBe('Six questions.'));
     expect(log().querySelector('strong')?.textContent).toBe('Markdown');
     const frame = log().querySelector<HTMLIFrameElement>('.chathtmlui iframe')!;
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms');
