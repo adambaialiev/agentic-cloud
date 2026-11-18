@@ -15,40 +15,18 @@ export function linksAsWritten(html: string): Set<string> {
   return out;
 }
 
-/**
- * Which framed replies the person closed (note #1188), on this device:
- * closing only hides it — nothing is sent and no turn starts — and the reply
- * keeps a quiet way to show it again. Keyed by the reply's own HTML, so the
- * same reply is the same key whatever its place in the list; the newest 200
- * kept. Since note #1193 the key is of the whole reply, not of the part that
- * used to be split off as its UI, so a card closed before that change shows
- * once more.
- */
-const CLOSED_KEY = 'acc.htmlReplyClosed';
-const CLOSED_MAX = 200;
-
+/** A short, stable key for a reply's own HTML: the same reply is the same
+ *  key whatever its place in the list. */
 export function htmlUiKey(ui: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < ui.length; i += 1) { hash ^= ui.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
   return `${(hash >>> 0).toString(36)}${ui.length.toString(36)}`;
 }
 
-function readClosed(): string[] {
-  try {
-    const raw: unknown = JSON.parse(window.localStorage.getItem(CLOSED_KEY) ?? '[]');
-    return Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : [];
-  } catch { return []; }
-}
-
-export function isHtmlUiClosed(key: string): boolean {
-  return readClosed().includes(key);
-}
-
-export function setHtmlUiClosed(key: string, closed: boolean): void {
-  const rest = readClosed().filter((entry) => entry !== key);
-  const next = closed ? [...rest, key].slice(-CLOSED_MAX) : rest;
-  try { window.localStorage.setItem(CLOSED_KEY, JSON.stringify(next)); } catch { /* private mode: closed for this view only */ }
-}
+/** Where a device remembered which cards its person had closed (note
+ *  #1188). The close left with note #1193, so nothing reads it; it is
+ *  taken off the device the first time the heights below are read. */
+const CLOSED_KEY = 'acc.htmlReplyClosed';
 
 /**
  * A framed reply's last measured height, on this device (note #1193). Since
@@ -67,6 +45,7 @@ let heightsSave: number | undefined;
 function heightsHeld(): Map<string, number> {
   if (heights) return heights;
   heights = new Map();
+  try { window.localStorage.removeItem(CLOSED_KEY); } catch { /* nothing to tidy */ }
   try {
     const raw: unknown = JSON.parse(window.localStorage.getItem(HEIGHTS_KEY) ?? '[]');
     if (Array.isArray(raw)) {

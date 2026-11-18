@@ -1276,7 +1276,7 @@ body.agent-chat-open .home-loading {
    and the card shows two quiet bars in its place — or, if it never comes,
    words and a way to try again. Never an empty or a black box. */
 .chatmsg .chathtmlframe.waiting iframe { position: absolute; top: 0; left: 0; opacity: 0; pointer-events: none; }
-.chatmsg .chathtmlwait { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: inherit; padding-right: 28px; box-sizing: border-box; }
+.chatmsg .chathtmlwait { display: flex; flex-direction: column; justify-content: center; gap: 10px; min-height: inherit; box-sizing: border-box; }
 .chatmsg .chathtmlbar { display: block; height: 12px; width: 72%; border-radius: var(--r-sm); background: color-mix(in srgb, var(--hint) 16%, #fff); }
 .chatmsg .chathtmlbar.short { width: 44%; }
 @media (prefers-reduced-motion: no-preference) {
@@ -1286,7 +1286,7 @@ body.agent-chat-open .home-loading {
 @keyframes chathtmlwait { 50% { opacity: .45; } }
 .chatmsg .chathtmlfailed {
   display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 4px 10px;
-  min-height: inherit; padding-right: 28px; box-sizing: border-box;
+  min-height: inherit; box-sizing: border-box;
   font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
 }
 .chatmsg .chathtmlretry { color: var(--accent); padding: 4px 0; }
@@ -1295,29 +1295,15 @@ body.agent-chat-open .home-loading {
    (note #1188; whole since note #1193, when the Workspace stopped lifting
    its opening words out and setting them beside it). The border is the
    Workspace's and is the mark that the agent drew what is inside: nothing of
-   the platform's is ever drawn in one. The close mark is the Workspace's
-   too, outside the frame, small and in the hint colour so it never competes
-   with the form's own button; the frame's page leaves its first line clear
-   of it, and so does a sentence the agent wrote before its first tag. */
+   the platform's is ever drawn in one. The card had a close mark in its
+   corner until Adam took it away (18 Nov 2026, "remove the close"): closing
+   had come to hide the whole reply. */
 .chatmsg .chathtmlui {
-  position: relative; margin-top: 10px; padding: 12px 14px;
+  margin-top: 10px; padding: 12px 14px;
   background: #fff; border: 1px solid var(--border); border-radius: var(--r-lg);
 }
 .chatmsg .chathtml:only-child, .chatmsg .chathtmlui:first-child { margin-top: 0; }
-.chatmsg .chathtmlclose {
-  position: absolute; top: 4px; right: 4px; width: 32px; height: 32px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--hint); opacity: .7; border-radius: 999px;
-}
-.chatmsg .chathtmlclose:hover, .chatmsg .chathtmlclose:focus-visible { opacity: 1; background: color-mix(in srgb, var(--hint) 10%, transparent); }
-.chatmsg .chathtmlhidden {
-  display: flex; align-items: baseline; gap: 8px; margin-top: 8px;
-  font-size: var(--ui-sm); line-height: var(--ui-sm-leading); color: var(--hint);
-}
-.chatmsg .chathtmlshow { color: var(--accent); padding: 4px 0; }
-/* How the hidden reply began, on one line: enough to know which it was. */
-.chatmsg .chathtmlwas { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chatmsg .chathtmlui > .chathtmllead { padding-right: 24px; margin-bottom: 9px; }
+.chatmsg .chathtmlui > .chathtmllead { margin-bottom: 9px; }
 /* A file message already stood outside the bubble (note #160); flat, it only
    has to give up the side it was pinned to and the padding that indented it
    from an edge that is no longer there. Its caption keeps its own bubble on

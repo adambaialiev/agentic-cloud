@@ -1135,7 +1135,9 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v203 (note #1193): CLI 1.86.0 — the reply IS one HTML interface, and of the
 // agent's words it is all the user sees: no recap in chat, lines written
 // while working drawn as small print; the header and message box stay.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 203;
+// v204 (note #1193): CLI 1.87.0 — `agentbuilt help html` no longer says the
+// card can be hidden: Adam took the close away ("remove the close").
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 204;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

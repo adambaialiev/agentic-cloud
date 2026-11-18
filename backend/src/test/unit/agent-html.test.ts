@@ -106,6 +106,9 @@ describe('What the Chief of Staff is told (note #1186)', () => {
     // Note #1193: the reply is the whole of what it shows, and the screen around it stays.
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('That HTML is ALL of yours the person sees (note #1193)');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('no recap stands under your reply in the chat any more');
+    // The card's close left (Adam, 18 Nov 2026: "remove the close"), so nothing says a card can be hidden.
+    expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('in one card; a reply of words alone');
+    expect(WORKSPACE_AGENT_INSTRUCTIONS).not.toContain('the person can hide');
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain("The chat's header and message box are the Workspace's and stay, so typing always works");
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('<button data-reply=\\"Merge it\\">Merge</button>'.replace(/\\"/g, '"'));
     expect(WORKSPACE_AGENT_INSTRUCTIONS).toContain('agentbuilt.reply(text)');

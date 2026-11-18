@@ -42,13 +42,12 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { htmlReplyNeedsFrame, htmlReplyParts, replyOpening, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
+import { htmlReplyNeedsFrame, htmlReplyParts, type HtmlReplyAnswerState } from '../../../../src/shared/agent-html.js';
 import { KnowledgeHtml } from '../../render/KnowledgeHtml.js';
 import { Markdown, workspaceLinkTo } from '../../render/Markdown.js';
 import type { NoteRefs } from '../../render/note-refs.js';
 import { plainClick } from '../../ui/link-click.js';
-import { htmlUiKey, isHtmlUiClosed, linksAsWritten, rememberedFrameHeight, rememberFrameHeight, REPLY_FRAME_SRC, setHtmlUiClosed } from './html-reply-links.js';
-import { Svg } from '../../ui/icons.js';
+import { htmlUiKey, linksAsWritten, rememberedFrameHeight, rememberFrameHeight, REPLY_FRAME_SRC } from './html-reply-links.js';
 import { jsonBody } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
 
@@ -404,48 +403,31 @@ function HtmlFrame({ source, state, onAnswer }: {
 
 /**
  * The card a framed reply sits in (note #1188), and since note #1193 the
- * whole reply sits in it. Adam, 17 Nov 2026: "this UI should have some
- * container and a close button. And the close button just hides this UI
- * that was sent by the agent … button should be subtle". The card and its
- * close mark are the Workspace's own, outside the locked frame, so the
- * agent's page can neither fake nor cover them.
+ * whole reply sits in it. It is the Workspace's own, outside the locked
+ * frame: its border is what says the agent drew what is inside.
  *
- * Closing hides the reply on this device and sends nothing; since the whole
- * reply is now what closes, the quiet line left in its place says how it
- * began, and Show brings it back, still answerable. Answered and older
- * replies are cards too.
+ * It had a close mark from note #1188 (Adam, 17 Nov 2026: "this UI should
+ * have some container and a close button"), which hid the card on that
+ * device. Once the whole reply was the card, closing hid the whole reply, and
+ * asked on 18 Nov 2026 whether that was fine he answered: "remove the
+ * close". So a card cannot be hidden any more, and one hidden before shows
+ * again: what was remembered on the device is no longer read.
  *
  * A sentence the agent wrote BEFORE its first tag (note #1191) is not HTML,
  * so it is drawn as Markdown, at the top of the same card: one surface.
+ * Answered and older replies are cards too.
  */
-function HtmlCard({ html, lead, opening, notes, state, onAnswer }: {
+function HtmlCard({ html, lead, notes, state, onAnswer }: {
   html: string;
   lead: string;
-  opening: string;
   notes: NoteRefs;
   state: HtmlReplyAnswerState;
   onAnswer?: (text: string) => void;
 }) {
-  const key = useMemo(() => htmlUiKey(`${lead}\n${html}`), [lead, html]);
-  const [closed, setClosed] = useState(() => isHtmlUiClosed(key));
-  const close = useCallback(() => { setHtmlUiClosed(key, true); setClosed(true); }, [key]);
-  const open = useCallback(() => { setHtmlUiClosed(key, false); setClosed(false); }, [key]);
-  if (closed) {
-    return (
-      <div className="chathtmlhidden">
-        <span>Hidden</span>
-        {opening ? <span className="chathtmlwas">{opening}</span> : null}
-        <button type="button" className="chathtmlshow" onClick={open}>Show</button>
-      </div>
-    );
-  }
   return (
     <div className={`chathtmlui${state === 'live' ? '' : ` ${state}`}`}>
       {lead ? <Markdown source={lead} className="chatmarkdown chathtmllead" notes={notes} workspaceLinks /> : null}
       <HtmlFrame source={html} state={state} onAnswer={onAnswer} />
-      <button type="button" className="chathtmlclose" onClick={close} aria-label="Hide this" title="Hide this">
-        <Svg name="x" size={14} />
-      </button>
     </div>
   );
 }
@@ -459,10 +441,9 @@ export const HtmlReply = memo(function HtmlReply({ source, seq, state, notes, on
 }) {
   const answer = useCallback((text: string) => onAnswer?.(seq, text), [onAnswer, seq]);
   const parts = useMemo(() => htmlReplyParts(source) ?? { lead: '', html: source }, [source]);
-  const opening = useMemo(() => replyOpening(source, 80), [source]);
   // Words alone: the Workspace's own renderer, on the page. A Markdown
   // lead-in is only ever taken before HTML that asks, so there is none here.
   if (!htmlReplyNeedsFrame(parts.html)) return <HtmlWords source={parts.html} notes={notes} />;
   // Anything else: the whole reply, in the locked frame, in one card.
-  return <HtmlCard html={parts.html} lead={parts.lead} opening={opening} notes={notes} state={state} onAnswer={onAnswer ? answer : undefined} />;
+  return <HtmlCard html={parts.html} lead={parts.lead} notes={notes} state={state} onAnswer={onAnswer ? answer : undefined} />;
 });

@@ -297,7 +297,9 @@ describe('agentbuilt help <topic>', () => {
     expect(stdout).toContain('"only your HTML" is about your REPLY, not the screen');
     expect(stdout).toContain('typing an answer always works beside your buttons; never draw a header or a message box of your own');
     expect(stdout).toContain('your page cannot draw outside its own card, so never imitate one');
-    expect(stdout).toContain('is drawn WHOLE, as you laid it out, in one white card');
+    expect(stdout).toContain('is drawn WHOLE, as you laid it out, in one white card.');
+    // Adam, 18 Nov 2026, asked about the card's close: "remove the close".
+    expect(stdout).not.toMatch(/hide and show|can hide|can close/);
     expect(stdout).toContain('A final message that does not start with a tag is not lost: it is drawn as Markdown words');
     // The rule that was replaced is gone, not left beside the new one.
     expect(stdout).not.toContain('YOU NEVER HAVE TO');

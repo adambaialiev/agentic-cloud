@@ -257,25 +257,22 @@ describe('a framed reply far from the screen (note #1193)', () => {
   });
 });
 
-describe('the card a framed reply sits in has a quiet close (note #1188)', () => {
-  it('closes the whole reply with the Workspace\'s own mark; closing sends nothing, the line left says how it began, Show brings it back, and it stays closed when drawn again', async () => {
+describe('the card a framed reply sits in cannot be hidden (notes #1188, #1193)', () => {
+  it('has no close mark, and shows a reply that was hidden on this device before the close was taken away', async () => {
+    // Note #1188 gave the card a close; once the whole reply was the card,
+    // Adam was asked whether closing the whole reply was fine: "remove the close".
+    window.localStorage.setItem('acc.htmlReplyClosed', JSON.stringify(['anything', 'at-all']));
     const reply: RecapMessage = { id: 'm1', role: 'assistant', text: '<p>Pick one.</p><button data-reply="A">A</button>', at: now };
-    const first = mount([reply]);
+    mount([reply]);
     await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlui iframe')).not.toBeNull());
     const row = document.querySelector('#recapChatLog .chatmsg.html')!;
-    const close = row.querySelector<HTMLButtonElement>('.chathtmlui > .chathtmlclose')!;
-    expect(close.getAttribute('aria-label')).toBe('Hide this');
-    await act(async () => fireEvent.click(close));
-    expect(row.querySelector('.chathtmlui')).toBeNull();
-    expect([...row.querySelector('.chathtmlhidden')!.children].map((child) => child.textContent)).toEqual(['Hidden', 'Pick one. [A]', 'Show']);
-    expect(first.sent).toEqual([]);
-    await act(async () => fireEvent.click(row.querySelector('.chathtmlshow')!));
-    expect(row.querySelector('.chathtmlui iframe')).not.toBeNull();
-    await act(async () => fireEvent.click(row.querySelector('.chathtmlclose')!));
-    document.body.innerHTML = '';
-    mount([reply]);
-    await waitFor(() => expect(document.querySelector('#recapChatLog .chathtmlhidden')).not.toBeNull());
-    expect(document.querySelector('#recapChatLog .chathtmlui')).toBeNull();
+    expect([...row.children].map((child) => child.className)).toEqual(['chathtmlui']);
+    // The card holds the frame's box and nothing else: no button of the Workspace's over it.
+    expect([...row.querySelector('.chathtmlui')!.children].map((child) => child.tagName)).toEqual(['DIV']);
+    expect(row.querySelector('button, .chathtmlclose, .chathtmlhidden, .chathtmlshow')).toBeNull();
+    expect(row.textContent).not.toContain('Hidden');
+    // What the device remembered about closed cards is tidied away, not read.
+    expect(window.localStorage.getItem('acc.htmlReplyClosed')).toBeNull();
   });
 });
 
