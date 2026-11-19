@@ -36,6 +36,7 @@
  * workplace founded.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { startMockWorkspace } from './support/mock-workspace.mjs';
 import {
   VIEWPORTS,
@@ -50,6 +51,13 @@ import {
   waitVisible,
 } from './support/browser-simulation.mjs';
 import { assertFaces, openAgents } from './support/team-steps.mjs';
+
+// The home page's guest agent switch (note #1196), read from its one source:
+// backend/src/shared/guest-agent.ts is TypeScript, so its line is read here.
+const guestSwitch = readFileSync(new URL('../backend/src/shared/guest-agent.ts', import.meta.url), 'utf8')
+  .match(/export const GUEST_AGENT_ON_HOME_PAGE: boolean = (true|false);/);
+assert.ok(guestSwitch, 'GUEST_AGENT_ON_HOME_PAGE is no longer declared as this journey reads it');
+const GUEST_AGENT_ON_HOME_PAGE = guestSwitch[1] === 'true';
 
 const screenshotPath = screenshotPathFor('onboarding');
 const app = await startMockWorkspace(repoRoot);
@@ -88,8 +96,11 @@ await runBrowserScenario({
     // own cloud keeps its place further down.
     assert.deepEqual(
       await page.$$eval('main > section[data-screen]', (screens) => screens.map((screen) => screen.id)),
-      ['film', 'value', 'workplace', 'own-cloud', 'start', 'your-agent'],
+      ['film', 'value', 'workplace', 'own-cloud', 'start', ...(GUEST_AGENT_ON_HOME_PAGE ? ['your-agent'] : [])],
     );
+    // Since note #1196 the guest agent's screen is hidden behind one switch,
+    // and with it the page's one live call.
+    if (!GUEST_AGENT_ON_HOME_PAGE) assert.equal(await page.$('#your-agent'), null, 'the hidden guest agent screen is on the page');
     assert.equal(normalizedText(await textOf(page, '#value h2')), 'Your agents. Your cloud. Your data.');
     // Since note #1088 the page is one column, the film's width: at 1440x900
     // the film, every heading below it, the footer and the workplace
