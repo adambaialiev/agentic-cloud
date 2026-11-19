@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import { agentChatHtmlAnswers, agentChatHtmlStates, htmlReplyAnswerable, htmlReplyNeedsFrame, htmlReplyParts, htmlToPlainText, isHtmlReply, replyPlainText } from '../../shared/agent-html.js';
 import { recapHtmlAnswers, recapHtmlStates, type RecapMessage } from '../../shared/workspace-recap-chat.js';
-import { REPLY_FRAME_CONTENT_SECURITY_POLICY, replyFrameRoutes, replyFrameTimingLine } from '../../routes/reply-frame.js';
+import { REPLY_FRAME_CONTENT_SECURITY_POLICY, REPLY_FRAME_MIN_CONTRAST, replyFrameDocument, replyFrameRoutes, replyFrameTimingLine } from '../../routes/reply-frame.js';
 import { WORKSPACE_AGENT_INSTRUCTIONS, quietLine } from '../../services/workspace-recap-chat.js';
 
 describe('HTML replies (note #1186): which reply is HTML, and its plain words', () => {
@@ -165,4 +165,29 @@ describe('What the Chief of Staff is told (note #1186)', () => {
     expect(written).toBe(30);
     expect(replyFrameTimingLine({ outcome: 'failed', attempt: 1 }, '', 70_000)).not.toBeNull();
   });
+
+  it('mends a button whose words cannot be read against what it shows, and keeps readable colours (note #1197)', () => {
+    const doc = replyFrameDocument();
+    const bridge = (JSON.parse(doc.match(/K=(\{.*?\}),frame=null/s)![1]!.replace(/\\u003c/g, '<')) as { bridge: string }).bridge;
+    expect(bridge).toContain(`var MIN=${REPLY_FRAME_MIN_CONTRAST};`);
+    expect(REPLY_FRAME_MIN_CONTRAST).toBe(4.5);
+    const helpers = bridge.slice(bridge.indexOf('function col('), bridge.indexOf('var INK='));
+    const { col, over, ratio } = new Function(`${helpers}; return { col, over, ratio };`)() as {
+      col: (s: string) => number[] | null; over: (t: number[], b: number[]) => number[]; ratio: (a: number[], b: number[]) => number;
+    };
+    const white = [255, 255, 255, 1];
+    expect(col('rgb(255, 255, 255)')).toEqual(white);
+    expect(col('rgba(0, 0, 0, 0)')).toEqual([0, 0, 0, 0]);
+    expect(col('color(srgb 1 1 1 / 0.5)')).toEqual([255, 255, 255, 0.5]);
+    expect(col('oklch(0.5 0.1 200)')).toBeNull();
+    // His screenshot: white words on a white button — 1:1, mended.
+    expect(ratio(white, white)).toBeCloseTo(1);
+    // The frame's own accent button stays as it is.
+    expect(ratio(white, col('rgb(26, 104, 216)')!)).toBeGreaterThan(4.5);
+    // A transparent button shows the card's white beneath it.
+    expect(over(col('rgba(0, 0, 0, 0)')!, white)).toEqual(white);
+    expect(bridge).toContain("el.style.setProperty('color',ratio(INK,bg)>=ratio(PAPER,bg)?'#1f1e1d':'#fff','important')");
+    expect(bridge).toContain("attributeFilter:['style','class']");
+  });
 });
+

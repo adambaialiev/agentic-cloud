@@ -1028,11 +1028,11 @@ describe('AgentService', () => {
         .update(readFileSync(new URL('../../../../cli/agentbuilt/agentbuilt.mjs', import.meta.url)))
         .digest('hex').slice(0, 16),
     }).toEqual({
-      version: 205,
-      templateHash: '03959420d341864f',
-      templateHashWithoutUrl: 'c099c706a680826d',
-      platformDocsHash: '3c1741d9e79082aa',
-      agentbuiltCliHash: '1c1de45966cb3e15',
+      version: 206,
+      templateHash: 'be52946261a12679',
+      templateHashWithoutUrl: 'c76eaffa8bf480e5',
+      platformDocsHash: '232bbcfbfdd268cd',
+      agentbuiltCliHash: 'f36500e85c1f7269',
     });
   });
 
@@ -1104,7 +1104,9 @@ describe('AgentService', () => {
         buildTelegramAgentIdentityBlock: (agent: unknown) => string;
       }).buildTelegramAgentIdentityBlock(telegramAgent(cli, { agentId: 'agent-a', name: 'Ben', serverId: 'fly_ia-1.aa11', connectedAt: 't' }));
       expect(docs, cli).toContain('YOUR REPLY IS ONE HTML INTERFACE, and of all you write your user sees ONLY what its HTML draws.');
-      expect(docs, cli).toContain('Lines written while you work show as small print; no recap is shown.');
+      // Note #1197: the small-print line lives in `help html` (WHILE YOU WORK);
+      // the base doc carries the button-colour rule instead.
+      expect(docs, cli).toContain('Restyle a button? Set its background and text colour together.');
       // Adam's next two messages: "chat input should be kept", "and header also".
       expect(docs, cli).toContain("The chat's header and message box stay, so typing always works.");
       expect(docs, cli).toContain('`agentbuilt help html` first.');

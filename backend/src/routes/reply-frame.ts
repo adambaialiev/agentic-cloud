@@ -114,6 +114,37 @@ html[data-reply-state=old] [data-reply]{cursor:default}
 `.replace(/\n/g, '');
 
 /**
+ * Note #1197 (Adam, 19 Nov 2026, with a screenshot of buttons drawn as white
+ * boxes with white words: "why buttons text is also white"). The base style
+ * gives every button the accent with white text; a reply that restyles a
+ * button's background and not its text colour kept that white. So the page
+ * mends what it cannot read: after it draws, and whenever its content or a
+ * style changes, every button and submit/button/reset input whose text has
+ * less than WCAG's 4.5:1 contrast against the background it really shows
+ * (every ancestor's background composited over the card's white, since the
+ * page is transparent over it) gets the page's text colour #1f1e1d, or
+ * white, whichever reads better, as an inline !important colour. An agent's
+ * own colours stay whenever they are readable. A background image or a
+ * colour the page cannot parse is left alone rather than guessed at. The
+ * tapped-answer check mark (note #1194) inherits the colour, so it is mended
+ * with the words. The page is light on every phone, so one rule serves
+ * light and dark.
+ */
+export const REPLY_FRAME_MIN_CONTRAST = 4.5;
+const LEGIBLE = String.raw`
+function col(s){var m=/^rgba?\(([^)]+)\)$/.exec(s||''),k=1;if(!m){m=/^color\(srgb ([^)]+)\)$/.exec(s||'');k=255}if(!m)return null;var p=m[1].split(/[\s,\/]+/).filter(Boolean),out=[];for(var i=0;i<p.length;i++){var v=parseFloat(p[i]);if(isNaN(v))return null;if(p[i].charAt(p[i].length-1)==='%')v=i<3?v*2.55:v/100;else if(i<3)v=v*k;out.push(v)}if(out.length<3)return null;if(out.length<4)out.push(1);return out}
+function over(t,b){var a=t[3];return [t[0]*a+b[0]*(1-a),t[1]*a+b[1]*(1-a),t[2]*a+b[2]*(1-a),1]}
+function lum(c){function ch(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}return 0.2126*ch(c[0])+0.7152*ch(c[1])+0.0722*ch(c[2])}
+function ratio(a,b){var x=lum(a),y=lum(b);return (Math.max(x,y)+0.05)/(Math.min(x,y)+0.05)}
+function shown(el){var chain=[];for(var n=el;n&&n.nodeType===1;n=n.parentElement)chain.push(n);var c=[255,255,255,1];for(var i=chain.length-1;i>=0;i--){var cs=getComputedStyle(chain[i]);if(cs.backgroundImage&&cs.backgroundImage!=='none')return null;var b=col(cs.backgroundColor);if(!b)return null;if(b[3]>0)c=over(b,c)}return c}
+var INK=[31,30,29,1],PAPER=[255,255,255,1];
+function legible(){var all=document.querySelectorAll('button,input[type=submit],input[type=button],input[type=reset]');for(var i=0;i<all.length;i++){var el=all[i],bg=shown(el);if(!bg)continue;var fg=col(getComputedStyle(el).color);if(!fg)continue;if(ratio(over(fg,bg),bg)>=MIN)continue;el.style.setProperty('color',ratio(INK,bg)>=ratio(PAPER,bg)?'#1f1e1d':'#fff','important');el.setAttribute('data-agentbuilt-legible','')}}
+var watch=null,queued=false;function mend(){if(queued)return;queued=true;setTimeout(function(){queued=false;try{legible()}catch(e){}if(watch)watch.takeRecords()},0)}
+addEventListener('DOMContentLoaded',function(){try{legible()}catch(e){}if(window.MutationObserver){watch=new MutationObserver(mend);watch.observe(root,{subtree:true,childList:true,characterData:false,attributes:true,attributeFilter:['style','class']})}});
+addEventListener('load',mend);
+`;
+
+/**
  * The bridge, inside the agent's page. Runs before the agent's own script,
  * which may replace any of it — that costs nothing, because nothing here is a
  * privilege: the frame can only post to its parent, and every check that
@@ -153,6 +184,7 @@ function measure(){post({t:'h',h:Math.ceil(root.getBoundingClientRect().height)}
 if(window.ResizeObserver)new ResizeObserver(measure).observe(root);
 document.addEventListener('DOMContentLoaded',measure);addEventListener('load',measure);setTimeout(measure,0);
 addEventListener('DOMContentLoaded',function(){marks();if(state==='old')lock()});
+var MIN=${REPLY_FRAME_MIN_CONTRAST};${LEGIBLE}
 var touched=false;function touch(){if(touched)return;touched=true;post({t:'touched'})}
 ['pointerdown','keydown','input','change'].forEach(function(n){document.addEventListener(n,touch,true)});
 })();`;

@@ -1140,7 +1140,13 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // v205 (note #1194): CLI 1.88.0 — `agentbuilt help html`: a reply takes as
 // many answers as the user gives (Adam: "Just let's not disable buttons"),
 // each its own message naming the reply; no longer "answered once".
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 205;
+// v206 (note #1197): CLI 1.89.0 — "Talking with your user" and `agentbuilt
+// help html` add one sentence: when you restyle a button, set its background
+// and its text colour together (Adam saw white words on white buttons). To
+// stay in the 31,000-byte docs budget, the line "Lines written while you
+// work show as small print; no recap is shown." left the base doc: `help
+// html` says the same under WHILE YOU WORK.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 206;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 
@@ -8267,7 +8273,7 @@ export class AgentService {
       // "your reply is": one HTML interface, and of the agent's own words it
       // is all that is drawn. The header and the message box are the
       // Workspace's and stay (his next two messages), so the line says so.
-      ...(this.deps.agentbuilt ? ['YOUR REPLY IS ONE HTML INTERFACE, and of all you write your user sees ONLY what its HTML draws. Start your final message with a tag and lay out all they must know, open or decide: what happened, what is waiting, buttons or a form to answer with. Lines written while you work show as small print; no recap is shown. The chat\'s header and message box stay, so typing always works. `agentbuilt help html` first.'] : []),
+      ...(this.deps.agentbuilt ? ['YOUR REPLY IS ONE HTML INTERFACE, and of all you write your user sees ONLY what its HTML draws. Start your final message with a tag and lay out all they must know, open or decide: what happened, what is waiting, buttons or a form to answer with. Restyle a button? Set its background and text colour together. The chat\'s header and message box stay, so typing always works. `agentbuilt help html` first.'] : []),
       'Your user may forward a delivery, so make it ONE message that stands on its own: say plainly what it is and include the link, for a stranger who reads only that.',
       'Some messages are voice TRANSCRIPTIONS, which garble words ("sales token" for "access token"): read an odd request charitably, say how you read it, and proceed on that reading.',
       '## Check before you call it done',
