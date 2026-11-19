@@ -138,6 +138,13 @@ export interface GuestAgentServiceDeps {
   fetch?: typeof fetch;
   now?: () => number;
   limits?: Partial<typeof GUEST_AGENT_LIMITS>;
+  /**
+   * Whether the home page offers guests (GUEST_AGENT_ON_HOME_PAGE, note
+   * #1196). False: no new guest is made and a visitor with no live agent
+   * reads `resting`; a live one keeps talking until the sweeper removes it.
+   * Unset counts as offered (tests).
+   */
+  offered?: boolean;
   /** Off in tests: no timer. */
   sweepEveryMs?: number | null;
   /** How often running background jobs are read (note #1063); off in tests. */
@@ -344,6 +351,8 @@ export class GuestAgentService {
   /** Resting, and until when — or null when guests may be made and may talk. */
   private async restingState(settings: GuestAgentSettings | null, forNewAgent: boolean): Promise<{ until: string | null } | null> {
     const now = this.now();
+    // Hidden from the home page (note #1196): no new guest; a live one is not affected.
+    if (forNewAgent && this.deps.offered === false) return { until: null };
     if (!settings?.enabled || !this.deps.doorUrl) return { until: null };
     if (this.restUntilMs > now) return { until: this.restUntilIso ?? new Date(this.restUntilMs).toISOString() };
     // The seat out of service rests guests; its share of the window or week does not (note #1048).
@@ -492,6 +501,8 @@ export class GuestAgentService {
       const current = await this.status(args.key);
       if (['creating', 'ready', 'working', 'asleep'].includes(current.state)) return { httpStatus: 200, answer: { status: current } };
     }
+    // Hidden from the home page (note #1196): the door is closed, before any challenge is checked.
+    if (this.deps.offered === false) return { httpStatus: 200, answer: { status: this.blankStatus('resting', { until: null }) } };
     if (!await this.verifyTurnstile(args.turnstileToken, args.address)) {
       return { httpStatus: 400, answer: { state: 'invalid', error: 'challenge' } };
     }

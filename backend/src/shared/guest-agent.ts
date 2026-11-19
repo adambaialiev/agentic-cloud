@@ -24,6 +24,26 @@
  * Knowledge page: sealed-public-agent.
  */
 
+/**
+ * Whether the home page offers a guest agent (note #1196; Adam, 19 Nov 2026,
+ * 08:50 UTC: "hide guest agent functionality from the landing page"). The ONE
+ * switch, read by the page and the backend alike:
+ *
+ *  - false (since note #1196): the home page draws no guest section and reads
+ *    nothing of it, the tab notes no link tags for it (main.tsx), the public
+ *    door makes no new guest (status without a live key and Start guest agent
+ *    both answer `resting`), and the Privacy Policy speaks of guests in the
+ *    past. A guest already alive keeps talking until the sweeper's own rules
+ *    remove it with its machine. The owner's Guests group, the stored
+ *    transcripts (90 days) and every route stay.
+ *  - true: all of it as it was (notes #1036–#1178).
+ *
+ * The admin's runtime switch (`agentbuilt agent guests on|off`) is separate
+ * and still applies on top of this one. Bringing guests back is flipping this
+ * to true (and the Privacy Policy's effective date). docs/guest-agents.md.
+ */
+export const GUEST_AGENT_ON_HOME_PAGE: boolean = false;
+
 /** Stored on AgentRecord.sealed for a guest's agent (beside 'public-guide'). */
 export const GUEST_AGENT_KIND = 'guest' as const;
 

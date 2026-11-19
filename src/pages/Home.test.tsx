@@ -9,6 +9,7 @@ import { TALL_FILM_QUERY } from '../components/HomeFilm';
 import { HOME_COLUMN, SCREEN_MAX_HEIGHT, SCREEN_MAX_WIDTH } from '../components/landing-kit';
 import { OWN_CLOUD_HEADING } from './PrivateCopy';
 import { GUEST_HEADING } from '../components/GuestAgent';
+import { GUEST_AGENT_ON_HOME_PAGE } from '../../backend/src/shared/guest-agent';
 import { VALUE_FACTS, VALUE_HEADING, VALUE_LEAD } from '../lib/value-copy';
 
 void React;
@@ -67,7 +68,9 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
     expect(links.some((link) => link.closest('footer'))).toBe(true);
   });
 
-  it('runs seven screens: the film, the value, the workplace, the own cloud, how to build yours, an agent of your own, the footer', () => {
+  // Note #1196 (Adam, 19 Nov 2026): the guest agent's screen is hidden behind
+  // GUEST_AGENT_ON_HOME_PAGE; off, how to build yours is last.
+  it('runs its screens: the film, the value, the workplace, the own cloud, how to build yours, an agent of your own while offered, the footer', () => {
     answer();
     draw();
     const headings = [...document.querySelectorAll('main h1, main section h2')]
@@ -78,13 +81,17 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
       VALUE_HEADING,
       OWN_CLOUD_HEADING,
       'Build your own Agentic Cloud.',
-      GUEST_HEADING,
+      ...(GUEST_AGENT_ON_HOME_PAGE ? [GUEST_HEADING] : []),
     ]);
     // Note #1012 (Adam, 6 Nov 2026, 05:50 UTC): the agent screen is last,
     // and the footer is the only thing under it. Since note #1039 it is the
     // guest's own agent; Hugo's "Ask an agent that reads the code." is gone.
-    const last = document.querySelector('main > section#your-agent')!;
-    expect(last.nextElementSibling?.tagName).toBe('FOOTER');
+    const footer = document.querySelector('main > footer')!;
+    expect(footer.previousElementSibling?.id).toBe(GUEST_AGENT_ON_HOME_PAGE ? 'your-agent' : 'start');
+    if (!GUEST_AGENT_ON_HOME_PAGE) {
+      expect(document.querySelector('#your-agent')).toBeNull();
+      expect(document.body.textContent).not.toMatch(/guest agent|Start guest|Meet your first agent/i);
+    }
     expect(document.querySelector('#ask')).toBeNull();
     // Since note #984 (the owner, 4 Nov 2026, 14:07 UTC) the page is five
     // screens: the film, the workplace drawing, the own cloud, how to build
@@ -267,10 +274,11 @@ describe('Home, the product first and the own cloud second (note #835)', () => {
   // nothing live: the prerendered page is the whole page. Since note #1010
   // the one exception is the guide's status, read once for its face and name
   // (the screen is whole without it).
-  it('reads nothing live but the guest agent’s status', () => {
+  // Since note #1196 the guest's screen is hidden, and with it the one call.
+  it('reads nothing live but the guest agent’s status, and nothing at all while it is hidden', () => {
     answer();
     draw();
-    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(['/workspace/api/public/guest']);
+    expect(vi.mocked(fetch).mock.calls.map((call) => String(call[0]))).toEqual(GUEST_AGENT_ON_HOME_PAGE ? ['/workspace/api/public/guest'] : []);
     expect(document.querySelector('[role="status"][aria-label="Loading"]')).toBeNull();
   });
 });
@@ -538,7 +546,7 @@ describe('Home, the film first and playing by itself (notes #965, #970, #971, #9
     draw();
     const screens = [...document.querySelectorAll('main > section')];
     expect(screens.map((section) => section.id)).toEqual([
-      ...(PRODUCT_FILM ? ['film'] : []), 'value', 'workplace', 'own-cloud', 'start', 'your-agent',
+      ...(PRODUCT_FILM ? ['film'] : []), 'value', 'workplace', 'own-cloud', 'start', ...(GUEST_AGENT_ON_HOME_PAGE ? ['your-agent'] : []),
     ]);
     for (const section of screens) {
       expect(section.hasAttribute('data-screen'), section.id).toBe(true);

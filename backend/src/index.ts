@@ -50,7 +50,7 @@ import { PublicGuideService } from './services/public-guide-service.js';
 import { GuestAgentService } from './services/guest-agent-service.js';
 import { GuestModelDoor, GUEST_MODEL_DOOR_PATH } from './services/guest-model-door.js';
 import { InMemoryGuestAgentStorage, SqliteGuestAgentStorage } from './services/guest-agent-storage.js';
-import { GUEST_AGENT_KIND } from './shared/guest-agent.js';
+import { GUEST_AGENT_KIND, GUEST_AGENT_ON_HOME_PAGE } from './shared/guest-agent.js';
 import type { GuideSource } from './services/public-guide-machine.js';
 import type { AgentRecord } from './types/user.js';
 import { PUBLIC_GUIDE_REPO_NAME } from './shared/public-guide.js';
@@ -2184,6 +2184,8 @@ const guestAgentService = new GuestAgentService({
   seats: orgStorage,
   sandboxClient: () => sessionManager.getSandboxClient(),
   turnstile: guestTurnstile,
+  // The home page's one switch (note #1196): off, no new guest is made.
+  offered: GUEST_AGENT_ON_HOME_PAGE,
   idleStopMs: FLY_IDLE_STOP_MINUTES * 60_000,
   // A guest whose link tags name one of the owner's own sites (notes #1139, #1178).
   appLink: (userId, utm) => guestAppLink({ deploymentStorage, orgStorage }, APPS_DOMAIN, userId, utm),
@@ -2192,7 +2194,7 @@ const guestAgentService = new GuestAgentService({
     : null,
 });
 guestAgentService.start();
-console.log(`[config] GUEST_AGENTS door=${guestDoorUrl ?? 'off (AGENTBUILT_API_URL is not https)'}, turnstile=${guestTurnstile ? 'on' : 'off'}`);
+console.log(`[config] GUEST_AGENTS on home page=${GUEST_AGENT_ON_HOME_PAGE ? 'yes' : 'no (note #1196)'}, door=${guestDoorUrl ?? 'off (AGENTBUILT_API_URL is not https)'}, turnstile=${guestTurnstile ? 'on' : 'off'}`);
 
 const deps: RouteDeps = {
   publicGuide: publicGuideService,

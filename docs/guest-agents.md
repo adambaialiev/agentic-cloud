@@ -1,5 +1,44 @@
 # Guests' own agents (notes #1038, #1055)
 
+## Hidden from the home page since 19 Nov 2026 (note #1196)
+
+Adam, 19 Nov 2026, 08:50 UTC: "hide guest agent functionality from the
+landing page". Hidden, not deleted. One switch,
+`GUEST_AGENT_ON_HOME_PAGE` in `backend/src/shared/guest-agent.ts`, read by
+the page and the backend alike, is `false`:
+
+- **The page.** `Home.tsx` draws no guest section: it ends on "Build your own
+  Agentic Cloud." and the footer, and reads nothing live (no
+  `/workspace/api/public/guest` call). `main.tsx` notes no link tags for a
+  guest (`rememberArrival`). The section's code (`GuestAgent.tsx`) and its
+  tests stay.
+- **The door is closed** (`offered: false` on `GuestAgentService`): a visitor
+  with no live agent reads `resting`, and Start guest agent answers `resting`
+  with no key and no record, before any Turnstile check. Nothing else on the
+  site offered a guest (link previews, structured data, sitemap, llms.txt,
+  workplace.md and the topic pages never named it; Outreach letters stopped on
+  11 Nov, note #1155).
+- **A guest open when it went live** keeps its key, its conversation and its
+  machine, and can go on talking from the tab it already has; the sweeper's
+  own rules remove it with its machine (30 quiet minutes, 3 hours, or its 40
+  messages). A reload shows the page without the section, so the agent goes
+  quiet and is removed within 30 minutes. A deploy's backend restart ends a
+  turn in flight, as any deploy does.
+- **What stays:** every route, the sweeper, the owner's Guests group in the
+  Workspace, and the stored transcripts (90 days, deleted on their own
+  clock). The admin's runtime switch (`agentbuilt agent guests on|off`)
+  still applies on top.
+- **The Privacy Policy** (section 3, effective November 19, 2026) speaks of
+  guests in the past: "Guest agents. Until November 19, 2026, anyone could
+  start a guest agent on our home page… Our home page no longer offers one."
+  The paragraph as it read while guests were offered is kept beside it, on
+  the same switch.
+
+**To bring it back:** set `GUEST_AGENT_ON_HOME_PAGE` to `true` and the
+Privacy Policy's `effectiveDate` to the day it ships. The page, the door, the
+link tags and the policy's present-tense paragraph all return with it; the
+home and legal tests follow the switch.
+
 A visitor of the home page, signed out, makes a Claude Code agent of their
 own: a name and a face, a dedicated 2-core machine nobody else uses, Sonnet
 at high effort, and a copy of the public agentic-cloud repository. They chat

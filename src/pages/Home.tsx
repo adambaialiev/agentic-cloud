@@ -1,4 +1,5 @@
 import { GuestAgentSection } from '../components/GuestAgent';
+import { GUEST_AGENT_ON_HOME_PAGE } from '../../backend/src/shared/guest-agent';
 import SiteFooter from '../components/SiteFooter';
 import { FOOTER_PITCH } from '../lib/product-copy';
 import { HOME_COLUMN, Screen } from '../components/landing-kit';
@@ -352,8 +353,11 @@ export default function Home() {
       {/* Adam, 6 Nov 2026: a visitor makes a real Claude Code agent of their
           own, talks to it and deletes it. It took the place of "Ask an agent
           that reads the code." (note #1010, Hugo), the page's last screen
-          since note #1012, with only the footer under it. */}
-      <GuestAgentSection />
+          since note #1012, with only the footer under it. Hidden since note
+          #1196 (Adam, 19 Nov 2026: "hide guest agent functionality from the
+          landing page"): GUEST_AGENT_ON_HOME_PAGE is the one switch, so the
+          page ends on how to build yours and reads nothing live. */}
+      {GUEST_AGENT_ON_HOME_PAGE && <GuestAgentSection />}
 
       <SiteFooter pitch={FOOTER_PITCH} tone="dark" wide mark />
     </main>

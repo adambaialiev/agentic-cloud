@@ -1,4 +1,5 @@
 import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
+import { GUEST_AGENT_ON_HOME_PAGE } from '../../backend/src/shared/guest-agent';
 
 /**
  * The Privacy Policy, rewritten 2026-09-14 against the running product (note
@@ -84,6 +85,14 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  * tags in the tab's sessionStorage (lib/guest-arrival.ts). An Outreach
  * letter's link names its company (utm_content), hence the letter sentence.
  *
+ * 2026-11-19 (note #1196, Adam: "hide guest agent functionality from the
+ * landing page"): the home page no longer offers a guest agent
+ * (GUEST_AGENT_ON_HOME_PAGE), so "Guest agents" speaks of them in the past:
+ * the conversations already kept stay for their 90 days, the founder still
+ * reads them, and nothing new is collected. The paragraph as it read while
+ * guests were offered stays beside it, chosen by the same switch; turning
+ * guests back on brings it back, with a new effective date.
+ *
  * 2026-11-08 (note #1081, after the acceptance pass of notes #1077–#1080):
  * section 2 names what release 2026.11.07.0 sends and reads. The daily
  * pulse (note #1057; routes/copy-pulse.ts keeps it in copy_pulses) is held
@@ -94,7 +103,7 @@ import LegalLayout, { ContactLines, LegalSection } from './LegalLayout';
  */
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="November 10, 2026">
+    <LegalLayout title="Privacy Policy" effectiveDate="November 19, 2026">
       <LegalSection title="1. Who we are">
         <p>
           Agentic Cloud Computer makes a shared Workspace for a company&rsquo;s AI agents. We offer it
@@ -185,19 +194,36 @@ export default function PrivacyPolicy() {
           tab. The questions and answers are processed by Anthropic&rsquo;s Claude, on the
           founder&rsquo;s own Claude subscription.
         </p>
-        <p>
-          <b className="text-white">Guest agents on our home page.</b> Anyone can start a guest agent
-          on our home page, signed out, and talk to it about the product. We keep that conversation
-          for 90 days, and the founder reads it. With it we keep where you came from: your country,
-          as our network provider Cloudflare reports it for the visit (two letters, never your
-          address or city), the campaign tags on the link you followed (such as utm_source), and the
-          name of the site that sent you, if your browser says. If that link was in a letter from the
-          founder, we can tell which company it was sent to. We store no address, cookie or account
-          with it: your internet address is only used, in memory, to count the guest agents started
-          from it in a day, and your browser keeps the agent&rsquo;s key and the link tags for the
-          open tab. The conversation is processed by Anthropic&rsquo;s Claude, on the
-          founder&rsquo;s own Claude subscription.
-        </p>
+        {GUEST_AGENT_ON_HOME_PAGE ? (
+          <p>
+            <b className="text-white">Guest agents on our home page.</b> Anyone can start a guest agent
+            on our home page, signed out, and talk to it about the product. We keep that conversation
+            for 90 days, and the founder reads it. With it we keep where you came from: your country,
+            as our network provider Cloudflare reports it for the visit (two letters, never your
+            address or city), the campaign tags on the link you followed (such as utm_source), and the
+            name of the site that sent you, if your browser says. If that link was in a letter from the
+            founder, we can tell which company it was sent to. We store no address, cookie or account
+            with it: your internet address is only used, in memory, to count the guest agents started
+            from it in a day, and your browser keeps the agent&rsquo;s key and the link tags for the
+            open tab. The conversation is processed by Anthropic&rsquo;s Claude, on the
+            founder&rsquo;s own Claude subscription.
+          </p>
+        ) : (
+          <p>
+            <b className="text-white">Guest agents.</b> Until November 19, 2026, anyone could start a
+            guest agent on our home page, signed out, and talk to it about the product. Our home page
+            no longer offers one. We keep each of those conversations for 90 days, and the founder
+            reads them. With each we
+            keep where its visitor came from: the country, as our network provider Cloudflare reported
+            it for the visit (two letters, never the address or city), the campaign tags on the link
+            followed (such as utm_source), and the name of the site that sent the visitor, if the
+            browser said. If that link was in a letter from the founder, we can tell which company it
+            was sent to. We store no address, cookie or account with them: the internet address was
+            only used, in memory, to count the guest agents started from it in a day. The
+            conversations were processed by Anthropic&rsquo;s Claude, on the founder&rsquo;s own
+            Claude subscription.
+          </p>
+        )}
         <p>
           <b className="text-white">Recent Workspace conversations.</b> We store a rolling window of
           up to 500 chat rows per agent: your messages, agent replies and platform notices. New rows

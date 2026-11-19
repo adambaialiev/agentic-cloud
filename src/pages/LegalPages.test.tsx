@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import TermsOfService from './TermsOfService';
 import PrivacyPolicy from './PrivacyPolicy';
+import { GUEST_AGENT_ON_HOME_PAGE } from '../../backend/src/shared/guest-agent';
 
 describe('Terms of Service', () => {
   // Note #1081 (claims 9, 11 and 44 of the acceptance pass, note #1080).
@@ -102,19 +103,31 @@ describe('Privacy Policy', () => {
     expect(body).toMatch(/We keep the questions you type and\s+its answers for 90 days, and the founder reads them/);
     expect(body).toMatch(/We store no\s+address, cookie or account with them/);
     expect(body).toMatch(/processed by Anthropic’s Claude, on the\s+founder’s own Claude subscription/);
-    expect(body).toMatch(/November 10, 2026/);
+    expect(body).toMatch(/November 19, 2026/);
   });
 
   // Note #1139 (Adam, 10 Nov 2026): a guest agent's conversation, with where its visitor came from.
+  // Note #1196 (Adam, 19 Nov 2026): while the home page offers no guest agent
+  // (GUEST_AGENT_ON_HOME_PAGE), the paragraph speaks of them in the past and
+  // never offers one; the kept conversations are still described.
   it('says what a guest agent keeps: the conversation, the country and the link tags, 90 days, never the address', () => {
     render(<PrivacyPolicy />);
     const body = (document.body.textContent ?? '').replace(/\s+/g, ' ');
-    expect(body).toMatch(/Guest agents on our home page\./);
-    expect(body).toMatch(/We keep that conversation for 90 days, and the founder reads it\./);
-    expect(body).toMatch(/your country, as our network provider Cloudflare reports it for the visit \(two letters, never your address or city\)/);
-    expect(body).toMatch(/the campaign tags on the link you followed \(such as utm_source\)/);
+    if (GUEST_AGENT_ON_HOME_PAGE) {
+      expect(body).toMatch(/Guest agents on our home page\./);
+      expect(body).toMatch(/We keep that conversation for 90 days, and the founder reads it\./);
+      expect(body).toMatch(/your country, as our network provider Cloudflare reports it for the visit \(two letters, never your address or city\)/);
+      expect(body).toMatch(/the campaign tags on the link you followed \(such as utm_source\)/);
+      expect(body).toMatch(/We store no address, cookie or account with it/);
+    } else {
+      expect(body).not.toMatch(/Anyone can start a guest agent/);
+      expect(body).toMatch(/Guest agents\. Until November 19, 2026, anyone could start a guest agent on our home page, signed out, and talk to it about the product\. Our home page no longer offers one\./);
+      expect(body).toMatch(/We keep each of those conversations for 90 days, and the founder reads them\./);
+      expect(body).toMatch(/the country, as our network provider Cloudflare reported it for the visit \(two letters, never the address or city\)/);
+      expect(body).toMatch(/the campaign tags on the link followed \(such as utm_source\)/);
+      expect(body).toMatch(/We store no address, cookie or account with them/);
+    }
     expect(body).toMatch(/If that link was in a letter from the founder, we can tell which company it was sent to\./);
-    expect(body).toMatch(/We store no address, cookie or account with it/);
   });
 
   it('says a builder page’s numbers are shown only to its person, and names no Leaderboard (note #824)', () => {

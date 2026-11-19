@@ -338,8 +338,11 @@ function world(options: {
   appLink?: ConstructorParameters<typeof GuestAgentService>[0]['appLink'];
   /** The owner's apps' feed (note #1178). */
   appFeed?: ConstructorParameters<typeof GuestAgentService>[0]['appFeed'];
+  /** Whether the home page offers guests (note #1196); unset counts as offered. */
+  offered?: boolean;
 } = {}) {
   let clock = Date.parse('2026-11-06T18:00:00Z');
+  let offered = options.offered;
   const storage = new InMemoryGuestAgentStorage();
   const commands: string[] = [];
   const uploads: Array<{ path: string; content: string; mode?: number }> = [];
@@ -408,11 +411,14 @@ function world(options: {
     limits: options.limits ?? {},
     ...(options.appLink ? { appLink: options.appLink } : {}),
     ...(options.appFeed ? { appFeed: options.appFeed } : {}),
+    get offered() { return offered; },
   });
   if (options.enabled !== false) void service.setEnabled('owner-1', 'org-1', true);
   return {
     service, storage, commands, uploads, pool, client, door, agents, deleted, fetchTurnstile,
     advance: (ms: number) => { clock += ms; },
+    /** The home page stops offering guests (note #1196), as a deploy would. */
+    hide: () => { offered = false; },
     turns: () => commands.filter((c) => c.includes('--output-format stream-json')),
   };
 }
@@ -642,6 +648,47 @@ describe('GuestAgentService — making one', () => {
     const x = world({ createFails: true });
     const made = await x.service.create({ address: 'a' });
     expect((made.answer as { status: { state: string } }).status.state).toBe('failed');
+  });
+});
+
+// Note #1196 (Adam, 19 Nov 2026: "hide guest agent functionality from the
+// landing page"): GUEST_AGENT_ON_HOME_PAGE off closes the door that makes a
+// guest, and leaves a live one to the sweeper's own rules.
+describe('GuestAgentService — hidden from the home page (note #1196)', () => {
+  it('makes no new guest: a stranger reads resting, Start answers resting with no key, no record and no challenge', async () => {
+    const x = world({ offered: false, turnstile: true });
+    expect(await x.service.status(undefined)).toMatchObject({ state: 'resting', until: null });
+    const made = await x.service.create({ address: 'a', turnstileToken: 'tok' });
+    await x.service.idle();
+    expect(made.httpStatus).toBe(200);
+    expect(made.answer).toEqual({ status: expect.objectContaining({ state: 'resting', until: null }) });
+    expect((made.answer as { key?: string }).key).toBeUndefined();
+    expect(x.agents.size).toBe(0);
+    expect(x.fetchTurnstile).not.toHaveBeenCalled();
+  });
+
+  it('a guest open when it is hidden keeps talking, and is removed with its machine after 30 quiet minutes', async () => {
+    const x = world();
+    const { key } = await makeAgent(x);
+    const id = [...x.agents.keys()][0]!;
+    x.hide();
+    expect((await x.service.status(key)).state).toBe('ready');
+    const again = await x.service.create({ key, address: 'b' });
+    expect((again.answer as { status: { state: string } }).status.state).toBe('ready');
+    const sent = await x.service.message(key, 'Still there?');
+    expect(sent).toMatchObject({ httpStatus: 202, answer: { state: 'accepted' } });
+    await x.service.idle();
+    expect(await x.service.turnStatus(key, (sent.answer as { turnId: string }).turnId)).toMatchObject({ state: 'answered' });
+    // A second visitor, or the same one after it is gone, gets no new guest.
+    expect((await x.service.status(undefined)).state).toBe('resting');
+    x.advance(31 * 60_000);
+    await x.service.tick();
+    await x.service.idle();
+    expect(x.deleted).toEqual([id]);
+    expect(await x.service.status(key)).toMatchObject({ state: 'removed', removedReason: 'quiet' });
+    // Its conversation is kept for the owner.
+    const row = (await x.storage.listByPhase(['removed']))[0]!;
+    expect(row.transcript.messages.map((m) => m.role)).toEqual(['agent', 'visitor', 'agent']);
   });
 });
 

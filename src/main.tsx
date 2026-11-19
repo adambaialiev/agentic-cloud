@@ -5,13 +5,15 @@ import './index.css'
 import App from './App.tsx'
 import { rememberFirstVisit } from '../backend/src/shared/first-visit'
 import { rememberArrival } from './lib/guest-arrival'
+import { GUEST_AGENT_ON_HOME_PAGE } from '../backend/src/shared/guest-agent'
 
 // The site that sent this browser here, noted once on its first visit and
 // sent along only if the person creates an account (shared/first-visit.ts).
 rememberFirstVisit(window)
 // This visit's link tags and referring site, kept for the tab and sent only
-// with Start guest agent (note #1139, lib/guest-arrival.ts).
-rememberArrival(window)
+// with Start guest agent (note #1139, lib/guest-arrival.ts). Not while the
+// home page offers no guest (note #1196): nothing would ever send them.
+if (GUEST_AGENT_ON_HOME_PAGE) rememberArrival(window)
 
 const container = document.getElementById('root')!
 
