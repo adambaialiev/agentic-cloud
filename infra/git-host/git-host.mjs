@@ -40,7 +40,8 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, statfsSync, renameSync, utimesSync, rmSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, statfsSync, renameSync, utimesSync, rmSync, lstatSync, readlinkSync, createReadStream } from 'node:fs';
+import { createDeflateRaw, crc32 as zlibCrc32 } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
@@ -1580,6 +1581,363 @@ function runGitBackend(req, res, { dir, userId, name, rest, auth, isPush }) {
   });
 }
 
+// ── Download: the whole repository as one .zip (note #1199) ─────────────────
+//
+// What a person takes away when they leave: the default branch's files, plus
+// the full `.git` — every branch, every tag, every commit — so that unzipping
+// it gives an ordinary git repository on any computer, and `git push --mirror
+// <new host>` from inside it moves everything.
+//
+// How it is built: a LOCAL mirror clone into a scratch directory on the same
+// disk (git hardlinks the object files, so a 300 MB repository costs no second
+// 300 MB, and the snapshot is consistent even while a push lands), made an
+// ordinary non-bare repository, its default branch checked out — and then
+// that directory streamed as a zip that is written here, entry by entry, as
+// the bytes leave. Nothing is held whole in memory and no zip file is ever
+// written to disk.
+//
+// The zip writer is this file's own (zero dependencies, like the rest of it):
+// object files and packs — already compressed by git — are STORED with their
+// sizes and CRC known before their header goes out; everything else is
+// DEFLATED with a data descriptor after it, the combination every unzip tool
+// reads. A clone without hooks or this host's config: the server's gates and
+// webhook address are not part of anybody's history.
+
+const DOWNLOADS_ROOT = path.join(path.dirname(REPOS_ROOT), 'downloads');
+/** Downloads being built at once. Each holds a checkout on disk and a CPU
+ *  busy deflating; a third waits for one of these rather than both slowing. */
+const DOWNLOADS_AT_ONCE = Number(process.env.DOWNLOADS_AT_ONCE || 2);
+/** The plain zip format's own ceiling, with room to spare: past it we would
+ *  need ZIP64 offsets, and a repository that big is a `git clone` anyway. */
+const DOWNLOAD_MAX_BYTES = Number(process.env.DOWNLOAD_MAX_BYTES || 3.5 * 1024 * 1024 * 1024);
+/** Space the checkout must leave free on the repositories' disk. */
+const DOWNLOAD_DISK_MARGIN_BYTES = 512 * 1024 * 1024;
+let downloadsRunning = 0;
+
+/** Leftovers from a process that died mid-download are nobody's. */
+function sweepDownloads() {
+  try { rmSync(DOWNLOADS_ROOT, { recursive: true, force: true }); } catch { /* nothing there */ }
+}
+
+function freeBytes() {
+  try {
+    const stat = statfsSync(REPOS_ROOT);
+    return stat.bavail * stat.bsize;
+  } catch {
+    return 0;
+  }
+}
+
+/** Bytes of the default branch's files, as git records them. */
+function treeBytes(dir) {
+  const tip = revParse(dir, 'HEAD');
+  if (!tip) return 0;
+  let total = 0;
+  const out = git(dir, ['ls-tree', '-r', '-l', '-z', tip], { maxBuffer: 256 * 1024 * 1024 });
+  for (const line of out.split('\0')) {
+    // <mode> SP <type> SP <object> SP+ <size> TAB <path>
+    const size = Number(line.split('\t')[0]?.trim().split(/\s+/)[3]);
+    if (Number.isFinite(size)) total += size;
+  }
+  return total;
+}
+
+/** What the download will hold, before anyone asks for it. `estimateBytes`
+ *  is an upper bound — the history as it sits on disk plus the files
+ *  uncompressed; the zip comes out at or under it. */
+function downloadInfo(userId, name) {
+  const dir = repoPath(userId, name);
+  if (!existsSync(dir)) return null;
+  const refs = git(dir, ['for-each-ref', '--format=%(refname)']).split('\n').filter(Boolean);
+  const branches = refs.filter((ref) => ref.startsWith('refs/heads/')).length;
+  const tags = refs.filter((ref) => ref.startsWith('refs/tags/')).length;
+  let commits = 0;
+  try {
+    commits = Number(git(dir, ['rev-list', '--all', '--count']).trim()) || 0;
+  } catch { /* no commits yet */ }
+  const historyBytes = repoSizeBytes(dir);
+  const filesBytes = treeBytes(dir);
+  const estimateBytes = historyBytes + filesBytes;
+  return {
+    defaultBranch: defaultBranchOf(dir) ?? null,
+    branches,
+    tags,
+    commits,
+    historyBytes,
+    filesBytes,
+    estimateBytes,
+    tooLarge: estimateBytes > DOWNLOAD_MAX_BYTES,
+  };
+}
+
+/**
+ * The scratch copy a download is zipped from: `<work>/<name>/` with the
+ * default branch checked out and the full history in `.git`. Answers the
+ * path of `<work>`; the caller removes it.
+ */
+function prepareDownload(userId, name) {
+  const dir = repoPath(userId, name);
+  mkdirSync(DOWNLOADS_ROOT, { recursive: true });
+  const work = path.join(DOWNLOADS_ROOT, `${userId}.${name}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}`);
+  mkdirSync(work);
+  const top = path.join(work, name);
+  const gitDir = path.join(top, '.git');
+  const quiet = { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' };
+  // Every ref exactly as the server holds it (refs/heads/*, refs/tags/*, and
+  // anything else) — a plain clone would turn branches into origin/* names.
+  // No template: a scratch copy needs no sample hooks, and the person gets
+  // git's own defaults the first time they run anything in it.
+  execFileSync('git', ['clone', '--mirror', '--quiet', '--template=', dir, gitDir], quiet);
+  const inRepo = (args) => execFileSync('git', ['--git-dir', gitDir, '--work-tree', top, ...args], quiet);
+  inRepo(['config', '--bool', 'core.bare', 'false']);
+  inRepo(['config', '--bool', 'core.logallrefupdates', 'true']);
+  // The remote points at a path on THIS disk, which means nothing anywhere
+  // else; with its mirror refspec it would also make a stray `git fetch`
+  // prune refs. Only the config section goes — never `git remote remove`,
+  // which deletes the refs its refspec covers, and here that is all of them.
+  try { inRepo(['config', '--remove-section', 'remote.origin']); } catch { /* none */ }
+  // `--template=` leaves out the directories git normally creates; every git
+  // works without them, but the next `git push --mirror` should not be the
+  // first thing to find an odd repository.
+  for (const sub of ['hooks', 'info', 'branches']) mkdirSync(path.join(gitDir, sub), { recursive: true });
+  writeFileSync(path.join(gitDir, 'description'), `${name}\n`);
+  // A repository with no commits yet has nothing to check out: it arrives as
+  // its history alone, which is everything it has.
+  if (revParse(gitDir, 'HEAD')) inRepo(['reset', '--quiet', '--hard', 'HEAD']);
+  // The checkout's own traces: a reflog that says "reset" and an ORIG_HEAD
+  // describe our scratch copy, not anything that happened in the repository.
+  rmSync(path.join(gitDir, 'ORIG_HEAD'), { force: true });
+  rmSync(path.join(gitDir, 'logs'), { recursive: true, force: true });
+  return work;
+}
+
+// ── A streaming zip writer ──────────────────────────────────────────────────
+
+const ZIP_STORED_SUFFIXES = new Set([
+  '.pack', '.idx', '.rev', '.zip', '.gz', '.tgz', '.bz2', '.xz', '.zst', '.7z', '.rar',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.heic', '.ico',
+  '.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.flac',
+  '.woff', '.woff2', '.pdf', '.jar', '.apk',
+]);
+
+function dosDateTime(date) {
+  const year = Math.max(1980, date.getUTCFullYear());
+  return {
+    time: (date.getUTCHours() << 11) | (date.getUTCMinutes() << 5) | (date.getUTCSeconds() >> 1),
+    date: ((year - 1980) << 9) | ((date.getUTCMonth() + 1) << 5) | date.getUTCDate(),
+  };
+}
+
+/** Every path under `root`, directories before what they hold, in a stable
+ *  order — relative, with `/` separators. */
+function* walk(root, rel = '') {
+  const here = rel ? path.join(root, rel) : root;
+  const names = readdirSync(here).sort();
+  for (const entry of names) {
+    const child = rel ? `${rel}/${entry}` : entry;
+    const stats = lstatSync(path.join(root, child));
+    yield { rel: child, stats };
+    if (stats.isDirectory()) yield* walk(root, child);
+  }
+}
+
+async function crcOfFile(file) {
+  let crc = 0;
+  for await (const chunk of createReadStream(file)) crc = zlibCrc32(chunk, crc);
+  return crc;
+}
+
+/**
+ * The zip of everything under `root`, as a stream of Buffers. `prefix` is the
+ * folder the archive unpacks into. Plain zip, no ZIP64 except the end record
+ * when there are more than 65,535 entries; callers keep the total under 4 GB
+ * (DOWNLOAD_MAX_BYTES).
+ */
+async function* zipDirectory(root, prefix) {
+  const central = [];
+  let offset = 0;
+  const emit = (buffer) => { offset += buffer.length; return buffer; };
+
+  const entries = [{ rel: '', stats: lstatSync(root) }, ...walk(root)];
+  for (const { rel, stats } of entries) {
+    const isDir = stats.isDirectory();
+    const isLink = stats.isSymbolicLink();
+    if (!isDir && !isLink && !stats.isFile()) continue; // sockets, fifos: nothing to carry
+    const zipName = rel ? `${prefix}/${rel}${isDir ? '/' : ''}` : `${prefix}/`;
+    const nameBytes = Buffer.from(zipName, 'utf8');
+    const { time, date } = dosDateTime(stats.mtime);
+    const unixMode = isDir ? 0o40755 : isLink ? 0o120777 : (stats.mode & 0o111 ? 0o100755 : 0o100644);
+    const external = (((unixMode & 0xffff) << 16) | (isDir ? 0x10 : 0)) >>> 0;
+    const full = rel ? path.join(root, rel) : root;
+    const linkTarget = isLink ? Buffer.from(readlinkSync(full), 'utf8') : null;
+    const suffix = path.extname(rel).toLowerCase();
+    const store = isDir || isLink || stats.size === 0
+      || ZIP_STORED_SUFFIXES.has(suffix) || /(^|\/)\.git\/objects\//.test(`${prefix}/${rel}`);
+    const headerOffset = offset;
+
+    if (store) {
+      const size = isDir ? 0 : isLink ? linkTarget.length : stats.size;
+      const crc = isDir ? 0 : isLink ? zlibCrc32(linkTarget) : await crcOfFile(full);
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4);           // version needed
+      local.writeUInt16LE(0x0800, 6);       // UTF-8 names
+      local.writeUInt16LE(0, 8);            // stored
+      local.writeUInt16LE(time, 10);
+      local.writeUInt16LE(date, 12);
+      local.writeUInt32LE(crc >>> 0, 14);
+      local.writeUInt32LE(size, 18);
+      local.writeUInt32LE(size, 22);
+      local.writeUInt16LE(nameBytes.length, 26);
+      local.writeUInt16LE(0, 28);
+      yield emit(local);
+      yield emit(nameBytes);
+      if (isLink) yield emit(linkTarget);
+      else if (!isDir) {
+        let sent = 0;
+        for await (const chunk of createReadStream(full)) { sent += chunk.length; yield emit(chunk); }
+        // A file that changed size under us would leave a header that lies.
+        if (sent !== size) throw new Error(`${rel} changed while it was being zipped`);
+      }
+      central.push({ nameBytes, flags: 0x0800, method: 0, time, date, crc: crc >>> 0, csize: size, usize: size, external, headerOffset });
+      continue;
+    }
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0808, 6);         // data descriptor + UTF-8 names
+    local.writeUInt16LE(8, 8);              // deflated
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(date, 12);
+    // CRC and sizes are zero here and follow the data, in the descriptor.
+    local.writeUInt16LE(nameBytes.length, 26);
+    yield emit(local);
+    yield emit(nameBytes);
+    let crc = 0;
+    let usize = 0;
+    let csize = 0;
+    const source = createReadStream(full);
+    const deflater = createDeflateRaw({ level: 6 });
+    source.on('data', (chunk) => { crc = zlibCrc32(chunk, crc); usize += chunk.length; });
+    source.on('error', (error) => deflater.destroy(error));
+    source.pipe(deflater);
+    for await (const chunk of deflater) { csize += chunk.length; yield emit(chunk); }
+    const descriptor = Buffer.alloc(16);
+    descriptor.writeUInt32LE(0x08074b50, 0);
+    descriptor.writeUInt32LE(crc >>> 0, 4);
+    descriptor.writeUInt32LE(csize, 8);
+    descriptor.writeUInt32LE(usize, 12);
+    yield emit(descriptor);
+    central.push({ nameBytes, flags: 0x0808, method: 8, time, date, crc: crc >>> 0, csize, usize, external, headerOffset });
+  }
+
+  if (offset > 0xffffffff) throw new Error('archive passed the 4 GB a plain zip can address');
+  const centralStart = offset;
+  for (const entry of central) {
+    const record = Buffer.alloc(46);
+    record.writeUInt32LE(0x02014b50, 0);
+    record.writeUInt16LE((3 << 8) | 20, 4); // made by: Unix, so modes and links survive
+    record.writeUInt16LE(20, 6);
+    record.writeUInt16LE(entry.flags, 8);
+    record.writeUInt16LE(entry.method, 10);
+    record.writeUInt16LE(entry.time, 12);
+    record.writeUInt16LE(entry.date, 14);
+    record.writeUInt32LE(entry.crc, 16);
+    record.writeUInt32LE(entry.csize, 20);
+    record.writeUInt32LE(entry.usize, 24);
+    record.writeUInt16LE(entry.nameBytes.length, 28);
+    record.writeUInt32LE(entry.external, 38);
+    record.writeUInt32LE(entry.headerOffset, 42);
+    yield emit(record);
+    yield emit(entry.nameBytes);
+  }
+  const centralSize = offset - centralStart;
+  const count = central.length;
+  if (count > 0xffff) {
+    // ZIP64 end record + locator: the one ZIP64 part a big .git needs (many
+    // loose objects), since every size and offset still fits in 32 bits.
+    const zip64End = Buffer.alloc(56);
+    zip64End.writeUInt32LE(0x06064b50, 0);
+    zip64End.writeBigUInt64LE(44n, 4);
+    zip64End.writeUInt16LE((3 << 8) | 45, 12);
+    zip64End.writeUInt16LE(45, 14);
+    zip64End.writeBigUInt64LE(BigInt(count), 24);
+    zip64End.writeBigUInt64LE(BigInt(count), 32);
+    zip64End.writeBigUInt64LE(BigInt(centralSize), 40);
+    zip64End.writeBigUInt64LE(BigInt(centralStart), 48);
+    const endAt = offset;
+    yield emit(zip64End);
+    const locator = Buffer.alloc(20);
+    locator.writeUInt32LE(0x07064b50, 0);
+    locator.writeBigUInt64LE(BigInt(endAt), 8);
+    locator.writeUInt32LE(1, 16);
+    yield emit(locator);
+  }
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(Math.min(count, 0xffff), 8);
+  end.writeUInt16LE(Math.min(count, 0xffff), 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(centralStart, 16);
+  yield emit(end);
+}
+
+/** Answer the zip. Refusals are JSON with a sentence; once the first byte has
+ *  gone, a failure can only cut the stream, which every browser reports as a
+ *  failed download rather than a finished one. */
+async function streamDownload(res, userId, name) {
+  const info = downloadInfo(userId, name);
+  if (!info) return json(res, 404, { error: 'no such repo' });
+  if (info.tooLarge) {
+    return json(res, 413, { error: 'This repository is too big for one zip — clone it with git instead.', code: 'too_large' });
+  }
+  if (freeBytes() < info.filesBytes + DOWNLOAD_DISK_MARGIN_BYTES) {
+    return json(res, 507, { error: 'The code host is short of disk for this download right now.', code: 'disk' });
+  }
+  if (downloadsRunning >= DOWNLOADS_AT_ONCE) {
+    return json(res, 429, { error: 'Another download is being prepared — try again in a minute.', code: 'busy' });
+  }
+  downloadsRunning += 1;
+  let work = null;
+  const started = Date.now();
+  try {
+    try {
+      work = prepareDownload(userId, name);
+    } catch (error) {
+      log('download prepare failed', { userId, name, error: String(error.stderr || error.message || error).slice(0, 500) });
+      return json(res, 500, { error: 'Could not prepare this download.' });
+    }
+    res.writeHead(200, {
+      'content-type': 'application/zip',
+      'cache-control': 'no-store',
+      'x-download-estimate-bytes': String(info.estimateBytes),
+    });
+    let sent = 0;
+    try {
+      for await (const chunk of zipDirectory(path.join(work, name), name)) {
+        if (res.destroyed) throw new Error('the reader went away');
+        sent += chunk.length;
+        if (!res.write(chunk)) {
+          await new Promise((resolve) => {
+            const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
+            res.on('drain', done);
+            res.on('close', done);
+          });
+        }
+      }
+      res.end();
+      log('download sent', { userId, name, bytes: sent, seconds: Math.round((Date.now() - started) / 1000) });
+    } catch (error) {
+      log('download cut', { userId, name, bytes: sent, error: String(error.message || error) });
+      res.destroy();
+    }
+  } finally {
+    downloadsRunning -= 1;
+    if (work) rmSync(work, { recursive: true, force: true });
+  }
+}
+
 // ── Server ──────────────────────────────────────────────────────────────────
 
 const server = createServer(async (req, res) => {
@@ -1920,6 +2278,19 @@ const server = createServer(async (req, res) => {
         return json(res, 409, { error: String(error.message || error) });
       }
     }
+    // The whole repository as one .zip (note #1199): what it will hold, then
+    // the bytes themselves, streamed.
+    if (pathname === '/internal/repos/download-info' && req.method === 'POST') {
+      try {
+        const info = downloadInfo(userId, name);
+        return info ? json(res, 200, info) : json(res, 404, { error: 'no such repo' });
+      } catch (error) {
+        return json(res, 500, { error: String(error.message || error) });
+      }
+    }
+    if (pathname === '/internal/repos/download' && req.method === 'POST') {
+      return streamDownload(res, userId, name);
+    }
     if (pathname === '/internal/repos/stat' && req.method === 'POST') {
       const dir = repoPath(userId, name);
       const exists = existsSync(dir);
@@ -2030,4 +2401,5 @@ server.listen(PORT, HOST, () => {
   });
   if (!SECRET) log('WARNING: GIT_HOST_SECRET is empty — every control call and verification will fail');
   ensureProtectedDefaultsEverywhere();
+  sweepDownloads();
 });

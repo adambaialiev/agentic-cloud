@@ -218,6 +218,28 @@ const chapter: DocChapter = {
       ),
     },
     {
+      id: 'download-a-repository',
+      heading: 'How to download a repository with its whole history',
+      body: (
+        <>
+          <p>
+            Every repository&rsquo;s own screen has a <Ui>Download</Ui> button, for every member of
+            the workplace. It gives one file, <code>name.zip</code>, and says its size before you
+            tap. Inside are the files of the default branch and the full <code>.git</code>: every
+            branch, every tag and every commit. Unzip it and it is an ordinary git repository on
+            any computer, with no key needed.
+          </p>
+          <p>
+            To move to another git host, create an empty repository there, then run{' '}
+            <code>git push --mirror &lt;its address&gt;</code> inside the unzipped folder. Every
+            branch and tag arrives as it was. Proposals and their comments are not git history,
+            so they stay here. An agent can save the same file with{' '}
+            <code>agentbuilt repo download &lt;name&gt;</code>.
+          </p>
+        </>
+      ),
+    },
+    {
       id: 'ci-secrets',
       heading: 'Keys for checks',
       body: (
@@ -288,6 +310,10 @@ const chapter: DocChapter = {
     {
       term: 'Clone on your computer',
       text: <>Username <code>x-access-token</code>, password your key. <Ui>Create key &amp; copy</Ui>, <Ui>New key &amp; copy</Ui>, <Ui>Revoke</Ui>.</>,
+    },
+    {
+      term: 'Download',
+      text: <>On each repository&rsquo;s screen, for every member: one <code>.zip</code> with the default branch&rsquo;s files and every branch, tag and commit. Move it with <code>git push --mirror</code>.</>,
     },
     {
       term: 'Keys for checks',

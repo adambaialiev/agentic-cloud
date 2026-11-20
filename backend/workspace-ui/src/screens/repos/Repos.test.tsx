@@ -756,3 +756,57 @@ describe('the public repository page', () => {
     expect(document.querySelector('.code .gutter')?.textContent).toBe('1');
   });
 });
+
+describe('download: the whole repository as one zip (note #1199)', () => {
+  const info = {
+    fileName: 'motion-videos.zip', estimateBytes: 297_795_584, commits: 4843, branches: 8, tags: 2,
+    defaultBranch: 'main', tooLarge: false,
+  };
+  const openRepo = (answer: () => unknown, role = 'admin') => open(
+    inWorkplace({ org: { ...org, role }, repos: [repo({ name: 'motion-videos' })] }),
+    {
+      ...repoScreenScript('motion-videos', () => ({ branch: 'main', entries: [] })),
+      'GET api/repos/motion-videos/download-info': answer as Answer,
+    },
+    `/repositories/motion-videos${scoped}`,
+  );
+
+  it('says the size and what is inside before the tap, and the tap is a plain download link', async () => {
+    openRepo(() => info);
+    expect(await screen.findByRole('heading', { name: 'Download' })).toBeTruthy();
+    await waitFor(() => expect(document.getElementById('repoDownloadSize')!.textContent)
+      .toBe('about 284.0 MB · 4,843 commits · 8 branches · 2 tags'));
+    expect(document.querySelector('#repoDownload .name')!.textContent).toBe('motion-videos.zip');
+    const link = screen.getByRole('link', { name: 'Download' }) as HTMLAnchorElement;
+    // The browser streams it to disk on the session cookie, in THIS workplace.
+    expect(link.getAttribute('href')).toBe('/workspace/api/repos/motion-videos/download?org=o1');
+    expect(link.getAttribute('download')).toBe('motion-videos.zip');
+    // How to finish leaving, beside the button.
+    const hint = document.getElementById('repoDownloadHint')!.textContent!;
+    expect(hint).toContain('Every branch, tag and commit, with the files of main beside them');
+    expect(hint).toContain('git push --mirror <its address>');
+  });
+
+  it('is offered to every member, not only admins', async () => {
+    openRepo(() => info, 'member');
+    expect(await screen.findByRole('link', { name: 'Download' })).toBeTruthy();
+  });
+
+  it('a repository with no commits says so, and still downloads', async () => {
+    openRepo(() => ({ ...info, commits: 0, branches: 0, tags: 0, estimateBytes: 2048, defaultBranch: null }));
+    await waitFor(() => expect(document.getElementById('repoDownloadSize')!.textContent).toBe('about 2 KB · no commits yet'));
+    expect(screen.getByRole('link', { name: 'Download' })).toBeTruthy();
+  });
+
+  it('one too big for a zip says to clone it, with no button that would fail', async () => {
+    openRepo(() => ({ ...info, tooLarge: true }));
+    expect(await screen.findByText(/Too big for one zip\. Clone it with git instead/)).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Download' })).toBeNull();
+  });
+
+  it('says nothing when the code host cannot make downloads', async () => {
+    openRepo(() => { throw new WorkspaceApiError('Downloads are not available', 503, {}); });
+    await waitFor(() => expect(document.getElementById('repoDownload')?.hidden).toBe(true));
+    expect(screen.queryByRole('heading', { name: 'Download' })).toBeNull();
+  });
+});

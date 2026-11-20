@@ -2575,6 +2575,21 @@ export interface WorkspaceRepoTreeEntry {
   type: 'dir' | 'file' | 'symlink' | 'submodule';
   sizeBytes?: number;
 }
+/** GET /workspace/api/repos/:name/download-info — what the Download button
+ *  will give, said before the tap (note #1199). `estimateBytes` is an upper
+ *  bound; the zip comes out at or a little under it. */
+export interface WorkspaceRepoDownloadInfo {
+  fileName: string;
+  estimateBytes: number;
+  commits: number;
+  branches: number;
+  tags: number;
+  /** The branch whose files are unpacked beside the history. */
+  defaultBranch: string | null;
+  /** Too big for one zip: the screen says to clone instead. */
+  tooLarge: boolean;
+}
+
 export interface WorkspaceRepoTreeAnswer {
   branch: string | null;
   entries: WorkspaceRepoTreeEntry[];

@@ -1,3 +1,4 @@
+import { repoZipFileName, sendRepoZip } from '../services/repo-download.js';
 import { replyFrameRoutes, replyFrameTimingLine } from './reply-frame.js';
 import { WorkspaceRecapChat, RecapChatError, recapChatFilePath, type RecapScope } from '../services/workspace-recap-chat.js';
 import { AUTO_APPROVE_HISTORY_MAX, type WorkplaceAutoApprove } from '../shared/auto-approve.js';
@@ -163,6 +164,7 @@ import {
   type WorkspaceRepoPublicAccessAnswer,
   type WorkspaceRepoRow,
   type WorkspaceRepoTreeAnswer,
+  type WorkspaceRepoDownloadInfo,
   type WorkspacePublicAddressAnswer,
   type WorkspacePublicPersonAnswer,
   type WorkspaceAppCatalogueAnswer,
@@ -6635,6 +6637,50 @@ self.addEventListener('activate', (event) => {
     } catch {
       return res.status(404).json({ error: 'No such folder in this repository' });
     }
+  });
+
+  /**
+   * The whole repository as one .zip (note #1199) — the way out for a person
+   * who wants to take their code to another git host: the default branch's
+   * files plus the full `.git`, every branch, tag and commit. Any member of
+   * the workplace, like every other read of the repository's bytes here.
+   * `download-info` is what the button says before the tap.
+   */
+  router.get('/api/repos/:name/download-info', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!deps.gitRepoStorage || !deps.gitHostClient) {
+      return res.status(503).json({ error: 'Repository hosting is not available on this backend yet' });
+    }
+    const name = String(req.params.name ?? '');
+    const repo = await namespacedRepo(auth, req, name, res);
+    if (!repo) return;
+    try {
+      const info = await (await gitHostFor(repo.orgId)).downloadInfo(repo.userId, repo.name);
+      return res.json({
+        fileName: repoZipFileName(repo.name),
+        estimateBytes: info.estimateBytes,
+        commits: info.commits,
+        branches: info.branches,
+        tags: info.tags,
+        defaultBranch: info.defaultBranch,
+        tooLarge: info.tooLarge,
+      } satisfies WorkspaceRepoDownloadInfo);
+    } catch {
+      return res.status(503).json({ error: 'Downloads are not available for this repository right now.' });
+    }
+  });
+
+  router.get('/api/repos/:name/download', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    if (!deps.gitRepoStorage || !deps.gitHostClient) {
+      return res.status(503).json({ error: 'Repository hosting is not available on this backend yet' });
+    }
+    const name = String(req.params.name ?? '');
+    const repo = await namespacedRepo(auth, req, name, res);
+    if (!repo) return;
+    return sendRepoZip(await gitHostFor(repo.orgId), repo, res);
   });
 
   router.get('/api/repos/:name/file', async (req, res) => {

@@ -1,3 +1,4 @@
+import { sendRepoZip } from '../services/repo-download.js';
 import { PUBLIC_GUIDE_EFFORT, PUBLIC_GUIDE_KIND, PUBLIC_GUIDE_MODEL } from '../shared/public-guide.js';
 import { CATALOGUE_FULL_NAME, CATALOGUE_NAME, CATALOGUE_URL } from '../shared/public-host.js';
 import { harnessName, isHarnessCli } from '../shared/harness-clis.js';
@@ -2167,6 +2168,21 @@ export function agentCliRoutes(deps: RouteDeps): Router {
       },
       ...(stat ? {} : { note: 'The git host did not answer just now — sizes and branch protection are from the last known state.' }),
     });
+  });
+
+  /**
+   * `agentbuilt repo download <name>` (note #1199): the same .zip the
+   * Workspace's Download button gives — the default branch's files plus the
+   * full `.git`, every branch, tag and commit — streamed to the agent's disk.
+   */
+  router.get('/repos/:name/download', async (req, res) => {
+    const auth = await authenticate(req, res);
+    if (!auth) return;
+    const git = requireGit(res);
+    if (!git) return;
+    const repo = await ownedRepo(auth, git.storage, String(req.params.name ?? ''), res);
+    if (!repo) return;
+    return sendRepoZip(await git.hostFor(repo.orgId), repo, res);
   });
 
   /**

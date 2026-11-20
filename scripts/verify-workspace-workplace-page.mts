@@ -149,6 +149,9 @@ app.get('/workspace/api/org/cloud', (_req, res) => res.json({
 app.get('/workspace/api/repos/:name/tree', (_req, res) => res.json({ branch: 'main', entries: tree.entries }));
 app.get('/workspace/api/repos/:name/commits', (_req, res) => res.json({ branch: 'main', commits }));
 app.get('/workspace/api/repos/:name/contributors', (_req, res) => res.json({ contributors: [] }));
+app.get('/workspace/api/repos/:name/download-info', (req, res) => res.json({
+  fileName: `${req.params.name}.zip`, estimateBytes: 4_200_000, commits: 12, branches: 2, tags: 0, defaultBranch: 'main', tooLarge: false,
+}));
 app.get('/workspace/api/repos/:name/prs', (_req, res) => res.json({ prs: [] }));
 app.get('/workspace/api/repos/:name/checks', (_req, res) => res.json({ runs: [] }));
 app.get('/workspace/api/prs/:id', (req, res) => res.json({

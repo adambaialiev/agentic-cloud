@@ -37,7 +37,7 @@ import process from 'node:process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-const VERSION = '1.89.0';
+const VERSION = '1.90.0';
 
 /**
  * The names this deployment answers on (note #807): ours by default; a
@@ -315,6 +315,12 @@ the workplace: every agent in it lists, clones and pushes them all):
   agentbuilt repo show <name>     everything about one repo: protection, CI, grants, dates
   agentbuilt repo url <name>      the clone URL, for \`git remote add\`
   agentbuilt repo clone <name> [dir]
+  agentbuilt repo download <name> [-o <file>] [--overwrite]
+      The whole repo as one .zip, the same file the Workspace's Download button
+      gives: the default branch's files plus the full .git (every branch, tag
+      and commit). Unzipped it is an ordinary git repository; to move it to
+      another host, create an empty repo there and run
+      \`git push --mirror <url>\` inside the unzipped folder.
   agentbuilt repo protect <name> [<branch>...] [--require-checks]   protect more branches / require green CI (add-only)
   agentbuilt repo ci enable|disable <name>   run this repo's committed .agentbuilt/ci.sh on every push
   agentbuilt repo checks [<name>] [--sha <40-hex>] [--wait [seconds]] [--logs]
@@ -785,6 +791,7 @@ const HELP_TOPICS = {
       "SHOW THEM THE CHANGE, do not only describe it: `agentbuilt pr attach <n> <file>` puts a file ON the proposal (10 MB, 5 per proposal), and a photo appears AS the photo on the screen where they decide. Your user answers on a phone, off a title, a body and a diff — and a diff is the worst of those on a small screen. A screenshot of the page you changed turns \"trust me\" into something they can see, in the one place the tap happens; sent into the chat instead it arrives detached from the proposal and is scrolled past. `pr fetch <n> <name>` brings one back to this machine and `pr detach <n> <name>` takes one off, and files stop being accepted once the proposal is decided — evidence is for a question still being asked.",
       "A proposal has a MARGIN: `agentbuilt pr comment <n> \"...\"` leaves a signed remark under it, and everyone in the workplace — your user included, from their Workspace — writes in the same thread. Use it for what belongs ON the record where the decision is made (\"CI flake, re-ran green\", \"this touches the same table as #12\"); `pr show <n>` prints the thread, and a question your user asked there is answered there, where the next reader finds it. The margin closes when the proposal is decided. A comment STARTS NOBODY — not the agent it names, not even you on a proposal YOU opened. It is a durable remark on the record, found by whoever opens the proposal next, so READ the whole margin every time you come back to a proposal of yours: a question your user left there has been waiting, and nothing told you. When you need another agent to act on one, message that agent; when your user needs you to, they say so in this chat.",
       "Your user can work on these repos from their OWN computer too: the Workspace's repositories card closes with \"Clone on your computer\", which puts a personal git key on their clipboard (you never see it, and cannot mint it for them). When they ask how to get the code onto their laptop, point them there — never export files into chat as a workaround.",
+      "LEAVING WITH THEIR CODE: each repository's own screen in the Workspace (Repositories → the repo) has a **Download** button, for every member of the workplace — one `<name>.zip` holding the default branch's files plus the full `.git`, every branch, tag and commit, with its size said before the tap. Unzipped, it is an ordinary git repository on any computer, no key needed; to move to another git host they create an EMPTY repository there and run `git push --mirror <its url>` inside the unzipped folder. Proposals and their comments are not git history and do not come with it. `agentbuilt repo download <name> [-o <file>]` saves the same zip on your machine, for when they ask you for the file or you are the one moving the code.",
     ],
   },
   knowledge: {
@@ -1247,8 +1254,9 @@ async function sendFileInParts({ file, size, uploads, startBody, completeBody, q
 
 /** A signed file address saved to disk as it arrives, never held whole —
  *  a 1 GB Drive file on a 4 GB machine (note #784). */
-async function saveDownload(url, out, { overwrite = true } = {}) {
-  const response = await fetch(url);
+async function saveDownload(source, out, { overwrite = true } = {}) {
+  // A signed address to fetch, or a response already in hand.
+  const response = typeof source === 'string' ? await fetch(source) : source;
   if (!response.ok || !response.body) fail(`the file store answered ${response.status} — try again in a moment`);
   try {
     await pipeline(Readable.fromWeb(response.body), createWriteStream(out, { flags: overwrite ? 'w' : 'wx' }));
@@ -4687,8 +4695,34 @@ async function repo(args) {
       }
       break;
     }
+    case 'download': {
+      // The same zip as the Workspace's Download button (note #1199), saved
+      // as it arrives — a 300 MB repository never sits in this process.
+      const [name] = positionals(rest, ['-o']);
+      if (!name) fail('usage: agentbuilt repo download <name> [-o <file>] [--overwrite]');
+      const out = argValue(rest, '-o') ?? `${name}.zip`;
+      const { apiUrl, token } = loadConfig();
+      let response;
+      try {
+        response = await fetch(new URL(`api/agent-cli/repos/${encodeURIComponent(name)}/download`, apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (error) {
+        fail(`could not reach the platform backend (${error.message})`);
+      }
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        fail(data.error || `backend answered ${response.status}`);
+      }
+      const estimate = Number(response.headers.get('x-download-estimate-bytes') || 0);
+      if (estimate > 64 * 1024 * 1024) process.stderr.write(`Downloading ${name} — about ${formatBytes(estimate)}…\n`);
+      await saveDownload(response, out, { overwrite: rest.includes('--overwrite') });
+      console.log(`Saved ${out} (${formatBytes(statSync(out).size)}): every branch, tag and commit of ${name}, with its default branch's files.`);
+      console.log('Unzipped, it is an ordinary git repository. To move it to another host: create an empty repository there, then run `git push --mirror <its url>` inside the unzipped folder.');
+      break;
+    }
     default:
-      fail('usage: agentbuilt repo <create|list|show|url|clone|protect|ci|ci-secrets|publish|rename|delete|restore>');
+      fail('usage: agentbuilt repo <create|list|show|url|clone|download|protect|ci|ci-secrets|publish|rename|delete|restore>');
   }
 }
 

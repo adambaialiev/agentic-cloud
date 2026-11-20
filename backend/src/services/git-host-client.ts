@@ -31,6 +31,21 @@ export interface GitHostRepoStat {
   ci?: boolean;
 }
 
+/** What a repository's download will hold (note #1199), read before anyone
+ *  asks for the bytes. `estimateBytes` is an upper bound: the history as it
+ *  sits on disk plus the default branch's files uncompressed. */
+export interface GitHostDownloadInfo {
+  defaultBranch: string | null;
+  branches: number;
+  tags: number;
+  commits: number;
+  historyBytes: number;
+  filesBytes: number;
+  estimateBytes: number;
+  /** Past what one plain zip can carry: clone it instead. */
+  tooLarge: boolean;
+}
+
 export interface GitHostCompare {
   headSha: string;
   baseSha: string | null;
@@ -279,6 +294,35 @@ export class GitHostClient {
       ...(Array.isArray(protectedBranches) ? { protectedBranches: protectedBranches.map(String) } : {}),
       ...(typeof (body as { ci?: unknown }).ci === 'boolean' ? { ci: (body as { ci: boolean }).ci } : {}),
     };
+  }
+
+  async downloadInfo(userId: string, name: string): Promise<GitHostDownloadInfo> {
+    const body = await this.call('POST', '/internal/repos/download-info', { userId, name }) as Partial<GitHostDownloadInfo>;
+    return {
+      defaultBranch: typeof body.defaultBranch === 'string' ? body.defaultBranch : null,
+      branches: Number(body.branches ?? 0),
+      tags: Number(body.tags ?? 0),
+      commits: Number(body.commits ?? 0),
+      historyBytes: Number(body.historyBytes ?? 0),
+      filesBytes: Number(body.filesBytes ?? 0),
+      estimateBytes: Number(body.estimateBytes ?? 0),
+      tooLarge: Boolean(body.tooLarge),
+    };
+  }
+
+  /**
+   * The whole repository as one .zip (note #1199): the host's own answer,
+   * unread, so the caller streams its body on to the person — a 300 MB
+   * repository never sits in this process. `signal` stops the host zipping
+   * when the person cancels.
+   */
+  async download(userId: string, name: string, signal?: AbortSignal): Promise<Response> {
+    return await this.fetchImpl(`${this.config.controlUrl.replace(/\/+$/, '')}/internal/repos/download`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-git-host-secret': this.config.secret },
+      body: JSON.stringify({ userId, name }),
+      ...(signal ? { signal } : {}),
+    });
   }
 
   /** One directory of the repo's default branch — the Mini App's explorer.

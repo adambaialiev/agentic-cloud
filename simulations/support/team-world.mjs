@@ -1209,7 +1209,7 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
       });
       return true;
     }
-    const repoMatch = pathname.match(/^\/workspace\/api\/repos\/([^/]+)\/(tree|commits|prs|checks|contributors|file)$/);
+    const repoMatch = pathname.match(/^\/workspace\/api\/repos\/([^/]+)\/(tree|commits|prs|checks|contributors|file|download-info)$/);
     if (repoMatch && method === 'GET') {
       if (decodeURIComponent(repoMatch[1]) !== team.repo.name) { respondJson(404, { error: 'No such repository.' }); return true; }
       const kind = repoMatch[2];
@@ -1222,6 +1222,8 @@ export function createTeamWorld({ fixture, team, stage = 'joined' }) {
       else if (kind === 'checks') respondJson(200, { runs: commits.slice(0, 3).map((c) => ({ sha: c.sha, context: 'ci', state: 'success', description: 'Build, lint and 12 tests passed', startedAt: c.at, completedAt: c.at })) });
       else if (kind === 'contributors') respondJson(200, { contributors: [{ name: ruby.name, email: 'ruby@agents.northstar', commits: 4, insertions: 512, deletions: 40, agentId: ruby.id, agentAvatarUrl: dogFace(ruby.name) }, { name: milo.name, email: 'milo@agents.northstar', commits: 1, insertions: 18, deletions: 9, agentId: milo.id, agentAvatarUrl: dogFace(milo.name) }], countedAt: iso(Date.now()) });
       else if (kind === 'file') respondJson(200, { branch: 'main', sizeBytes: team.repo.readme.length, content: team.repo.readme });
+      // The Download card (note #1199): what the zip will hold, before the tap.
+      else if (kind === 'download-info') respondJson(200, { fileName: `${team.repo.name}.zip`, estimateBytes: team.repo.sizeBytes * 2, commits: commits.length, branches: 2, tags: 0, defaultBranch: 'main', tooLarge: false });
       return true;
     }
     if (method === 'GET' && pathname === '/workspace/api/mail/unread') {

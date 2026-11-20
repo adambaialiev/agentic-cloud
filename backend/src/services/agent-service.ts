@@ -1146,7 +1146,11 @@ const TELEGRAM_AGENT_TASK_HISTORY = 2;
 // stay in the 31,000-byte docs budget, the line "Lines written while you
 // work show as small print; no recap is shown." left the base doc: `help
 // html` says the same under WHILE YOU WORK.
-export const TELEGRAM_AGENT_IDENTITY_VERSION = 206;
+// v207 (note #1199): CLI 1.90.0 — `agentbuilt repo download <name>` saves a
+// repository as one .zip with its whole history, and `agentbuilt help repos`
+// says each repository's Workspace screen has a Download button beside
+// "Clone on your computer". Delivery only.
+export const TELEGRAM_AGENT_IDENTITY_VERSION = 207;
 /** How long `agentbuilt agent create` waits for the new record's name before answering without one (note #710). */
 export const AGENT_CREATION_NAME_WAIT_MS = 10_000;
 

@@ -31,6 +31,7 @@ import { ProposalRow } from '../home/Decisions.js';
 import { PressableRow } from '../home/PressableRow.js';
 import { RepoCiSecrets } from './RepoCiSecrets.js';
 import { RepoDanger } from './RepoDanger.js';
+import { RepoDownload } from './RepoDownload.js';
 import { RepoPublicAccess } from './RepoPublicAccess.js';
 import { RepoPublishing } from './RepoPublishing.js';
 import { RepoRooms } from './RepoRooms.js';
@@ -248,6 +249,8 @@ export function RepoOverview({ repoName }: { repoName: string }) {
           seventeen rows at the top pushed the proposals and actions off the
           screen. Above the danger zone, which stays last. */}
       <RepoPeople repoName={repoName} />
+      {/* The way out, with its size said before the tap (note #1199). */}
+      <RepoDownload repoName={repoName} />
       <RepoPublicAccess repoName={repoName} />
       <RepoCiSecrets repoName={repoName} />
       <RepoPublishing repoName={repoName} />
